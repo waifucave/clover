@@ -152,11 +152,10 @@ describe("bundled host halves reach only the plugin API's host members", () => {
     expect(memberProblem(["env", "CLOVER_HOOKS_ORIGIN"])).toBe("api.env doesn't exist in the plugin API");
     expect(memberProblem(["computer"])).toBe("api.computer doesn't exist in the plugin API");
     expect(memberProblem(["t"])).toBe("api.t is a component's alone");
-    expect(memberProblem(["keys", "publicKey"])).toStartWith("api.keys.publicKey isn't served yet");
+    // No call a host half can reach is marked not-yet any more (the last, browser.onCdpEvent, is a component's alone).
     expect(memberProblem(["settings", "get", "x"])).toBe("api.settings.get.x reaches past the call settings.get");
     expect(memberProblem(["device", "id"])).toBeDefined();
-    expect(memberProblem(["memory"])).toBe("api.memory has no call served to a host half yet");
-    for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"]]) expect(memberProblem(ok)).toBeUndefined();
+    for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"], ["memory"], ["keys", "publicKey"]]) expect(memberProblem(ok)).toBeUndefined();
     expect(opaque("const v = api[\"env\"]; ctx.api.settings?.[k]; function f(api: any) {} const g = (api?: any) => api as any;")).toEqual([
       "api[…] is a computed member", "api.settings[…] is a computed member", "api: any: the plugin API typed any", "api?: any: the plugin API typed any", "api as any: the plugin API typed any",
     ]);

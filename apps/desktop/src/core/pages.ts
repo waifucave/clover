@@ -189,7 +189,7 @@ export async function showPlugins(host: HTMLElement, t: Translate, call: Call, c
       return;
     }
     list.replaceChildren(...plugins.map((p) => {
-      const state = p.state === "found" ? t("safe.state.found") : p.state === "blocked" ? t("safe.state.blocked") : p.state === "invalid" ? t("safe.state.invalid") : p.enabled ? t("safe.on") : t("safe.off");
+      const state = p.state === "found" ? t("safe.state.found") : p.state === "invalid" ? t("safe.state.invalid") : p.enabled ? t("safe.on") : t("safe.off");
       const row = el("article", { class: "clover-page__item", "data-clover-plugin": p.id },
         el("h2", {}, p.name),
         el("p", { class: "clover-page__note" }, `${p.id} · ${state}${p.reason !== undefined ? ` · ${p.reason}` : ""}`));

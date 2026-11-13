@@ -1,13 +1,12 @@
 // The plugin index browser's props: what the user searched for, what the indexes they added answered, and the
-// indexes themselves (spec §5.6, open question 25's answer: an official curated index, and others added by URL with a
-// warning). Installing asks for the plugin's OK, which is a sealed card (§5.6): the page says it waits on it.
+// indexes themselves (spec §5.1: plain lists the user added by URL; the owner's ruling, 2026-11-13: no official index,
+// nothing signed). Installing asks for the plugin's OK, which is a sealed card (§5.6): the page says it waits on it.
 
 export interface IndexResult {
   id: string;
   /** The index it came from: its URL, and its name when it has one. */
   index: string;
   indexName: string;
-  official: boolean;
   name: string;
   description?: string;
   /** Its newest version. */
@@ -21,7 +20,6 @@ export interface IndexResult {
 export interface IndexSource {
   url: string;
   name?: string;
-  official: boolean;
   lastCheckedAt?: number;
 }
 
@@ -63,7 +61,7 @@ export interface InstalledPlugin {
   icon?: { url: string; /** It may have none to show (the app's `/_icon/` route): one that doesn't load is the puzzle. */ mayFail?: true } | "clover";
   /** Where it came from, in words ("From the plugin index"…). */
   source: string;
-  state: "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";
+  state: "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped";
   reason?: string;
   enabled: boolean;
   dev: boolean;
@@ -77,7 +75,7 @@ export interface InstalledPlugin {
 }
 
 /** The list's groups, in order. */
-export type InstalledGroup = "revoked" | "attention" | "on" | "off";
+export type InstalledGroup = "attention" | "on" | "off";
 
 /** A setting as the detail shows it: a key's value never, only whether one is saved. */
 export interface DetailSetting {
@@ -133,8 +131,29 @@ export interface PluginDetailView extends InstalledPlugin {
   notifies: boolean;
   /** Its notifications are muted (lane D's `notify.mutes`). */
   muted: boolean;
-  /** It was revoked and the user may run it anyway (on a sealed warning card). */
-  revoked?: boolean;
+  /** Self-declared adult content (§5.7). */
+  adult?: boolean;
+  /** The files and folders the user picked for it. */
+  grants?: GrantRow[];
+  /** Each command that names a default key, and what became of it (bound, or why not). */
+  commandKeys?: { name: string; key: string; bound: boolean; note: string }[];
+}
+
+/** A file or folder the user picked for a plugin (`plugin.grant.list`). */
+export interface GrantRow {
+  token: string;
+  path: string;
+  kind: "file" | "folder";
+  access: "read" | "write";
+}
+
+/** A development folder (`plugin.dev.list`). */
+export interface DevRow {
+  path: string;
+  pluginId?: string;
+  addedAt: number;
+  expiresAt: number;
+  lastReloadAt?: number;
 }
 
 export interface InstalledProps {
@@ -157,18 +176,23 @@ export interface DetailProps {
   onSwitch: (on: boolean) => void;
   onRestart: () => void;
   onRemove: () => void;
+  /** Removes it and deletes its data too (`plugin.remove` with `deleteData`). */
+  onRemoveWithData?: () => void;
   /** Opens the app's own key dialog for a secret setting or a key sign-in. */
   onKey: (target: { key: string } | { index: number }) => void;
   onSignIn: (index: number) => void;
   onSignOut: (index: number) => void;
-  /** Runs a revoked plugin anyway: its warning card first. */
-  onRunAnyway: () => void;
-  /** Holds its updates back on this computer, or lets them through (an index or npm plugin's). */
+  /** Holds its updates back on this computer (none offered), or lets them through (an index or npm plugin's). */
   onPin?: (pinned: boolean) => void;
   /** Mutes its notifications, or lets them through (lane D's `notify.setMuted`). */
   onMute?: (muted: boolean) => void;
   /** Changes one of its plain settings (`plugin.settings.set`; null puts the default back). */
   onSetting?: (key: string, value: unknown, asks: boolean) => void;
+  /** The user said they are 18 or older already. */
+  adultConfirmed?: boolean;
+  onConfirmAdult?: () => void;
+  /** Takes a picked file or folder back (`plugin.grant.remove`). */
+  onGrantRemove?: (token: string) => void;
   status?: DetailStatus;
 }
 
@@ -198,18 +222,15 @@ export interface UpdatesProps {
 export interface IndexRow {
   url: string;
   name?: string;
-  official: boolean;
   lastCheckedAt?: number;
-  stale?: boolean;
   error?: string;
-  revocations?: { lastCheckedAt?: number; stale?: boolean; error?: string };
 }
 
 export interface IndexesProps {
   indexes: IndexRow[];
-  /** Its health in words: checked when, a failed fetch, a stale copy, its revocation list. */
+  /** Its health in words: checked when, a failed fetch. */
   health: (index: IndexRow) => string;
-  onAdd: (url: string, key: string) => void;
+  onAdd: (url: string) => void;
   onRemove: (url: string) => void;
   status?: DetailStatus;
 }
@@ -231,4 +252,13 @@ export interface AddProps {
   onFind: () => void;
   busy?: boolean;
   status?: DetailStatus;
+  /** The development folders (`plugin.dev.list`), the one main's picker just gave, and what the page does with them. */
+  devFolders?: DevRow[];
+  devPicked?: { token: string; name: string };
+  onDevPick?: () => void;
+  onDevAdd?: (token: string) => void;
+  onDevRemove?: (path: string) => void;
+  onDevRenew?: (path: string) => void;
+  now?: number;
+  format?: { locale: string; timeZone?: string };
 }

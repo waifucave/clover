@@ -27,8 +27,8 @@ const beforeTool: Handler<HookInput, HookOutput> = (input) =>
 // A service: an object of handlers, whose caller names the one it calls (the waifucave forwarder's `webhook.ingress`).
 const ingress: WebhookIngressHandler = {
   register: async (args, ctx) => {
-    // @ts-expect-error `keys.*` isn't served yet (the catalog's `notYet`): calling it is a type error.
-    const pub = (await ctx.api.keys?.publicKey("forwarder")) as Uint8Array | undefined;
+    // The `clover` process's own key pair (only there: elsewhere the core refuses it).
+    const pub: Uint8Array | undefined = await ctx.api.keys?.publicKey("forwarder");
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/routines", { method: "POST", body: JSON.stringify({ ...args, key: pub?.length }) }, { auth: WAIFUCAVE_AUTH });
     return res.status === 409 ? { conflict: { device: "Laptop" } } : { url: `https://hooks.waifucave.com/t/${args.routine}` };
   },
@@ -37,7 +37,6 @@ const ingress: WebhookIngressHandler = {
   next: async (_args, ctx) => {
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
     const sealed = new Uint8Array(await res.arrayBuffer());
-    // @ts-expect-error `keys.*` isn't served yet.
     await ctx.api.keys?.open("forwarder", { enc: sealed.subarray(0, 32), ciphertext: sealed.subarray(32), info: new Uint8Array([1]) });
     return { deliveries: [] };
   },

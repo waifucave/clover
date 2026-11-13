@@ -94,8 +94,7 @@
                     "off",
                     "waiting",
                     "running",
-                    "stopped",
-                    "blocked"
+                    "stopped"
                   ]
                 },
                 "reason": {
@@ -141,11 +140,19 @@
                   "maxLength": 40
                 },
                 "scope": {
-                  "type": "string",
-                  "enum": [
-                    "bots",
-                    "agents",
-                    "both"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "bots",
+                        "agents",
+                        "both"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "const": "own-bot"
+                    }
                   ]
                 },
                 "adult": {
@@ -290,8 +297,7 @@
                   "off",
                   "waiting",
                   "running",
-                  "stopped",
-                  "blocked"
+                  "stopped"
                 ]
               },
               "reason": {
@@ -337,11 +343,19 @@
                 "maxLength": 40
               },
               "scope": {
-                "type": "string",
-                "enum": [
-                  "bots",
-                  "agents",
-                  "both"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "bots",
+                      "agents",
+                      "both"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "const": "own-bot"
+                  }
                 ]
               },
               "adult": {
@@ -377,7 +391,8 @@
                       "bot",
                       "migration",
                       "found",
-                      "bundled"
+                      "bundled",
+                      "plugin"
                     ]
                   },
                   "at": {
@@ -386,6 +401,11 @@
                     "maximum": 9007199254740991
                   },
                   "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "plugin": {
                     "type": "string",
                     "maxLength": 81,
                     "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
@@ -1857,8 +1877,7 @@
               "off",
               "waiting",
               "running",
-              "stopped",
-              "blocked"
+              "stopped"
             ]
           },
           "treeHash": {
@@ -1890,8 +1909,7 @@
                     "off",
                     "waiting",
                     "running",
-                    "stopped",
-                    "blocked"
+                    "stopped"
                   ]
                 },
                 "treeHash": {
@@ -1919,7 +1937,7 @@
       }
     },
     "plugin.remove": {
-      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
+      "doc": "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -1938,6 +1956,10 @@
             "minLength": 2
           },
           "card": {
+            "type": "boolean",
+            "const": true
+          },
+          "deleteData": {
             "type": "boolean",
             "const": true
           }
@@ -1983,8 +2005,74 @@
         ]
       }
     },
+    "plugin.review": {
+      "doc": "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "peek": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "card"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "failed",
+              "unavailable",
+              "changed"
+            ]
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "report": {
+            "type": "string",
+            "maxLength": 6000
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 400
+          }
+        },
+        "required": [
+          "state",
+          "pluginId"
+        ],
+        "additionalProperties": false
+      }
+    },
     "plugin.update": {
-      "doc": "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1). With an id, the user asks for that plugin's update: an npm update or one that asks for the OK again applies too.",
+      "doc": "Checks the indexes now and lists the newer versions of plugins that aren't pinned, forward only, applying none (§5.1; the owner's ruling, 2026-11-13: nothing updates on its own). With an id, the user's click on that plugin's update applies it; one that adds to its OK card asks for the OK again.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2114,7 +2202,7 @@
       }
     },
     "plugin.pin": {
-      "doc": "Pins an index or npm plugin to its version on this computer (never synced), or lets it update again.",
+      "doc": "Pins an index or npm plugin to its version on this computer (never synced): it isn't offered updates. Unpinned, it is offered them again.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2475,7 +2563,7 @@
       }
     },
     "plugin.index.list": {
-      "doc": "The indexes plugins come from; the official one first.",
+      "doc": "The indexes the user added, in the order added.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2504,73 +2592,18 @@
                   "type": "string",
                   "maxLength": 256
                 },
-                "keys": {
-                  "minItems": 1,
-                  "maxItems": 8,
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}$"
-                  }
-                },
-                "official": {
-                  "type": "boolean"
-                },
                 "lastCheckedAt": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
                 },
-                "issued": {
-                  "type": "string",
-                  "maxLength": 40
-                },
-                "stale": {
-                  "type": "boolean"
-                },
                 "error": {
                   "type": "string",
                   "maxLength": 300
-                },
-                "revocations": {
-                  "type": "object",
-                  "properties": {
-                    "url": {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    "lastCheckedAt": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    },
-                    "issued": {
-                      "type": "string",
-                      "maxLength": 40
-                    },
-                    "stale": {
-                      "type": "boolean"
-                    },
-                    "error": {
-                      "type": "string",
-                      "maxLength": 300
-                    },
-                    "entries": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    }
-                  },
-                  "required": [
-                    "url"
-                  ],
-                  "additionalProperties": false
                 }
               },
               "required": [
-                "url",
-                "keys",
-                "official"
+                "url"
               ],
               "additionalProperties": false
             }
@@ -2583,7 +2616,7 @@
       }
     },
     "plugin.index.add": {
-      "doc": "Adds another index by URL with its key, after a warning (§5.1, §14.2 item 25).",
+      "doc": "Adds an index by its https URL (§5.1). It runs nothing, so it asks nothing: each plugin installed from it asks for its OK.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -2599,20 +2632,10 @@
           "url": {
             "type": "string",
             "format": "uri"
-          },
-          "keys": {
-            "minItems": 1,
-            "maxItems": 8,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            }
           }
         },
         "required": [
-          "url",
-          "keys"
+          "url"
         ]
       },
       "result": {
@@ -2653,7 +2676,7 @@
       }
     },
     "plugin.index.remove": {
-      "doc": "Removes an index that isn't the official one. A block its revocation list holds on an installed plugin stays, marked as from a removed index; only the override card lifts it.",
+      "doc": "Removes an index the user added. Plugins installed from it stay, and get no more updates from it.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -3308,7 +3331,7 @@
       }
     },
     "plugin.layer.call": {
-      "doc": "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
+      "doc": "A plugin component's plugin API call on its own layer connection: its host half's handler, its synced store and settings, or any member the catalog gives components, through the core's capability gate as the plugin, never as the user.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -3320,21 +3343,11 @@
         "properties": {
           "call": {
             "type": "string",
-            "enum": [
-              "host.call",
-              "storage.synced.get",
-              "storage.synced.keys",
-              "settings.get",
-              "settings.set",
-              "points.entries",
-              "avatar.cue",
-              "avatar.catalogue",
-              "avatar.box",
-              "avatar.report"
-            ]
+            "minLength": 1,
+            "maxLength": 128
           },
           "args": {
-            "maxItems": 3,
+            "maxItems": 8,
             "type": "array",
             "items": {}
           }
@@ -3353,6 +3366,77 @@
         "required": [
           "result"
         ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.watch": {
+      "doc": "A plugin component's watch: each value comes back as `plugin_api_event` to this layer connection alone, until `plugin.layer.unwatch`, the connection closes, or the plugin stops, is turned off or removed, or loses the capability (`ended`).",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "watch"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.unwatch": {
+      "doc": "Ends one of this layer connection's own watches (`plugin.layer.watch`); an unknown or another connection's id is a no-op.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "watch"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
         "additionalProperties": false
       }
     },
@@ -3614,6 +3698,81 @@
                 "key": {
                   "type": "string",
                   "maxLength": 64
+                },
+                "keyState": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "bound"
+                        },
+                        "chord": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "chord"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "app"
+                        },
+                        "what": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "what"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "bare"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "clash"
+                        },
+                        "with": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "with"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "runsOn": {
                   "type": "string",
@@ -4959,8 +5118,7 @@
               "off",
               "waiting",
               "running",
-              "stopped",
-              "blocked"
+              "stopped"
             ]
           },
           "enabled": {
@@ -5270,6 +5428,60 @@
         ]
       }
     },
+    "plugin_api_event": {
+      "doc": "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_api_event"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "value": {},
+          "ended": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "watch"
+        ]
+      }
+    },
     "plugin_settings_changed": {
       "doc": "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
       "owner": "B",
@@ -5391,7 +5603,7 @@
       }
     },
     "plugin_card_note": {
-      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
+      "doc": "A yes on a plugin change card (a removal, an update, an index, a development folder) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
       "owner": "B",
       "scope": "core",
       "roles": [

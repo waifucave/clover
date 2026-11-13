@@ -68,7 +68,9 @@ function frameFor(item: { mount: string; url: string; ref: string; layer: string
   frame.dataset.cloverLayer = item.layer;
   frame.dataset.cloverMount = item.mount;
   // Only a plugin whose manifest asks (`client.isolated`) gets a cross-origin isolated frame.
-  frame.setAttribute("allow", item.isolated === true ? "cross-origin-isolated" : "");
+  // The `clover` layer's frame alone may record (push-to-talk: the app's shell records, never a plugin; main's permission handler
+  // answers only while the user's press has a recording open).
+  frame.setAttribute("allow", [item.isolated === true ? "cross-origin-isolated" : "", item.layer === "clover" ? "microphone" : ""].filter((a) => a !== "").join("; "));
   frame.referrerPolicy = "no-referrer";
   return frame;
 }

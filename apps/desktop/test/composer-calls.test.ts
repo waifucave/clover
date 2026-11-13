@@ -178,4 +178,53 @@ describe("the composer spot's callbacks", () => {
       }
     });
   });
+
+  describe("push-to-talk: listenStatus, listenStart, listenStop", () => {
+    const holds = () => {
+      const log: string[] = [];
+      return { log, holds: { start: async (w: number, bot: string) => { log.push(`start:${w}:${bot}`); return {}; }, stop: async (w: number) => { log.push(`stop:${w}`); return { text: "heard" }; } } };
+    };
+
+    test("the status is a read of the composer's own bot, with no gesture", async () => {
+      const calls: string[] = [];
+      const { r } = setup({ op: "listenStatus", asApp: async (m, p) => { calls.push(`${m}:${JSON.stringify(p)}`); return { listens: true }; } });
+      expect(await routeComposer(r)).toEqual({ listens: true });
+      expect(calls).toEqual(['voice.status:{"bot":"alpha"}']);
+    });
+
+    test("a start needs the user's own press, takes it last, and names the mount's bot and window, never the page's", async () => {
+      const h = holds();
+      const none = setup({ op: "listenStart", args: { bot: "someone-else" }, gestures: 0, listens: h.holds });
+      await expect(routeComposer(none.r)).rejects.toThrow("only right after your own key press or click");
+      expect(h.log).toEqual([]);
+      const { r } = setup({ op: "listenStart", args: { bot: "someone-else", session: "x" }, gestures: 1, listens: h.holds });
+      expect(await routeComposer(r)).toEqual({});
+      expect(h.log).toEqual(["start:1:alpha"]);
+      // One press covers one recording.
+      await expect(routeComposer(r)).rejects.toThrow("only right after your own");
+      expect(h.log).toEqual(["start:1:alpha"]);
+    });
+
+    test("a stop is the release: it needs no gesture and answers what was heard", async () => {
+      const h = holds();
+      const { r, logs } = setup({ op: "listenStop", gestures: 0, listens: h.holds });
+      expect(await routeComposer(r)).toEqual({ text: "heard" });
+      expect(h.log).toEqual(["stop:1"]);
+      expect(logs.some((l) => l.includes("listenStop went through"))).toBe(true);
+    });
+
+    test("an app without holds, a conversation with no bot, and a third party's composer are refused all three", async () => {
+      const h = holds();
+      for (const op of ["listenStatus", "listenStart", "listenStop"]) {
+        // No holds (an app that can't record): the status is still a read of the core's; a start and a stop are refused.
+        if (op !== "listenStatus") await expect(routeComposer(setup({ op, gestures: 1 }).r)).rejects.toThrow("can't record");
+        const agent = setup({ composer: { windowId: 1, pluginId: "clover/composer", session: "agent-1", tree: true }, op, gestures: 1, listens: h.holds });
+        await expect(routeComposer(agent.r)).rejects.toThrow("no bot");
+        const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", tree: false };
+        const t = setup({ composer: third, op, gestures: 1, listens: h.holds });
+        await expect(routeComposer(t.r)).rejects.toThrow("only Clover's own composer");
+      }
+      expect(h.log).toEqual([]);
+    });
+  });
 });

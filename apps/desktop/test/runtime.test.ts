@@ -1086,6 +1086,32 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
   });
 });
 
+describe("a part's Review on a plugin's card: the app's own page for it, by the same placing rule", () => {
+  test("a plugin's OK card of its own bot opens; another bot's card is refused; a tool card or an unknown one doesn't open", async () => {
+    const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)]);
+    const shell = mountShell(s);
+    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    if (item.kind !== "frame") throw new Error("not a frame");
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-card", token);
+    const docFrame = frame(item.url, shell.shellFrame);
+    const info = s.rt.describe(docFrame, WIN, token);
+    const store = new SealedFrames();
+    s.rt.sealed = store;
+    const base = { computer: null, origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64), fields: {}, options: [{ id: "approve", kind: "approve", label: "Approve" }] } as const;
+    store.fromCore({ ...base, id: "card_okown", kind: "plugin-ok", bot: "fixture-card/bot" });
+    store.fromCore({ ...base, id: "card_okother", kind: "plugin-ok", bot: "alpha" });
+    store.fromCore({ ...base, id: "card_toolown", kind: "tool", bot: "fixture-card/bot" });
+    const opened: string[] = [];
+    s.rt.onCardPage = async (id) => { opened.push(id); return true; };
+    expect(await s.rt.cardPageOf(docFrame, info.mount, "card_okown")).toBe(true);
+    await expect(s.rt.cardPageOf(docFrame, info.mount, "card_okother")).rejects.toThrow("takes a card of this plugin's own bot");
+    expect(await s.rt.cardPageOf(docFrame, info.mount, "card_toolown")).toBe(false);
+    expect(await s.rt.cardPageOf(docFrame, info.mount, "card_unknown")).toBe(false);
+    expect(opened).toEqual(["card_okown"]);
+  });
+});
+
 describe("the row diagnosis log lines (ids only, once per pair, no change of what a call does)", () => {
   test("a part asked of a document that isn't its own is refused as before and named once; an unbound frame is named once, without its address", () => {
     const lines: string[] = [];

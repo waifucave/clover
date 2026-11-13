@@ -52,7 +52,9 @@ const pluginFetch = searchOnlySeam({
     console.error(`acceptance daemon: the fake search backend answered ${req.method} ${new URL(req.url).pathname}`);
     return res;
   },
-}, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`));
+}, (host) => console.error(`acceptance daemon: net.fetch to ${host} refused: the run reaches no network`),
+// The run's fake plugin index and npm registry (fake-exa.ts pluginWorldResponse): files the run writes to publish.
+process.env.CLOVER_ACCEPTANCE_PLUGIN_WORLD);
 const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 let stopping = false;

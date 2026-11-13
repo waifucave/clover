@@ -12,7 +12,7 @@ import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
 import { useCore, useKept } from "./sdk";
 import { S } from "./strings";
-import type { AddSource, DetailSetting, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
+import type { AddSource, DetailSetting, DevRow, GrantRow, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
 
 export interface PluginIndexEntryProps {
   route?: string;
@@ -36,7 +36,6 @@ export function toResults(entries: IndexEntryView[], indexes: IndexView[]): Inde
       id: e.id,
       index: e.index,
       indexName: index?.name ?? e.index,
-      official: index?.official ?? false,
       name: plain(e.name) || e.id,
       ...(e.description ? { description: plain(e.description) } : {}),
       ...(version ? { version } : {}),
@@ -88,6 +87,7 @@ const PROVENANCE: Record<PluginDetail["provenance"]["by"], string> = {
   migration: "It came over from the old app.",
   found: "It was found on disk.",
   bundled: "It ships with Clover.",
+  plugin: "Another plugin installed it.",
 };
 
 /** Clover's own tree, whose notices are the app's: never muted (a bundled bot such as `alpha` is, like any plugin). */
@@ -175,10 +175,23 @@ export function toDetailSetting(s: SettingRow, lang = "en"): DetailSetting {
   return { key: s.key, title, secret: false, value: words, ...(control ? { control } : {}), ...(s.asks === true ? { asks: true } : {}) };
 }
 
+/** The keys of a plugin's commands (its manifest's `key`s) and what the core made of each (`command.list`'s `keyState`). */
+export function commandKeys(d: PluginDetail, listed: readonly { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] | undefined): { name: string; key: string; bound: boolean; note: string }[] {
+  const cmds = ((d.manifest as { contributes?: { commands?: { name?: unknown; key?: unknown }[] } }).contributes?.commands ?? []);
+  const out: { name: string; key: string; bound: boolean; note: string }[] = [];
+  for (const c of cmds) {
+    if (typeof c.name !== "string" || typeof c.key !== "string") continue;
+    const st = listed?.find((l) => l.pluginId === d.id && l.name.endsWith(`.${c.name}`))?.keyState;
+    const note = st === undefined ? S.keyOff : st.state === "bound" ? S.keyBound : st.state === "app" ? S.keyApp(st.what ?? "the app") : st.state === "clash" ? S.keyClash(st.with ?? []) : S.keyBare;
+    out.push({ name: c.name, key: c.key, bound: st?.state === "bound", note });
+  }
+  return out;
+}
+
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
+  more: { childTools?: string[]; settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[]; commands?: { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
@@ -206,7 +219,8 @@ export function toDetail(
     ...(description ? { description } : {}),
     provenance: PROVENANCE[d.provenance.by] ?? "",
     oks,
-    tools: servers.flatMap(([, s]) => Object.keys(s.tools ?? {})),
+    // Its own tools and its child plugins' (a child's server is a tool the bots get like any other).
+    tools: [...servers.flatMap(([, s]) => Object.keys(s.tools ?? {})), ...(more.childTools ?? [])],
     servers: servers.filter(([, s]) => Object.keys(s.tools ?? {}).length === 0).map(([name]) => name),
     settings: (more.settings ?? []).map((s) => toDetailSetting(s, lang)),
     signIns: (more.auth ?? []).filter((a) => a.method !== "core").map((a) => ({
@@ -222,7 +236,9 @@ export function toDetail(
     agents,
     notifies: d.capabilities.includes("notify") && d.id.split("/")[0] !== CLOVER_TREE,
     muted: more.muted === true,
-    ...(d.state === "blocked" ? { revoked: true } : {}),
+    adult: d.adult,
+    grants: more.grants ?? [],
+    commandKeys: commandKeys(d, more.commands),
   };
 }
 
@@ -267,6 +283,9 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [detail, setDetail] = useState<PluginDetailView | undefined>(undefined);
   const [status, setStatus] = useState<DetailStatus | undefined>(undefined);
   const [revision, setRevision] = useState(0);
+  const [devFolders, setDevFolders] = useState<DevRow[] | undefined>(undefined);
+  const [devPicked, setDevPicked] = useState<{ token: string; name: string } | undefined>(undefined);
+  const [adultConfirmed, setAdultConfirmed] = useState<boolean | undefined>(undefined);
 
   // What is installed: `plugin.list` alone, never a call per plugin.
   useEffect(() => {
@@ -279,6 +298,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
         for (const v of ui.plugins) if (typeof (v as { icon?: unknown }).icon === "string") next[v.pluginId] = (v as { icon: string }).icon;
         setIcons(next);
         setInstalled(toInstalled(r.plugins, "en", next));
+        setAdultConfirmed(r.adultConfirmed === true);
       },
       () => live && setInstalled([]),
     );
@@ -293,19 +313,34 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     let live = true;
     const quiet = <T,>(p: Promise<T>) => p.catch(() => undefined);
     void Promise.all([
-      core.call("plugin.get", { id: open }),
+      core.call("plugin.get", { id: open }).then(async (d) => {
+        // Its children's tools too: each child is a plugin of its own, with its own servers.
+        const kids = await Promise.all(d.plugin.children.map((c) => quiet(core.call("plugin.get", { id: c }))));
+        const childTools = kids.flatMap((k) => Object.values((k?.plugin.manifest as { contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }> } } | undefined)?.contributes?.mcpServers ?? {}).flatMap((s) => Object.keys(s.tools ?? {})));
+        return { d, childTools };
+      }),
       quiet(core.call("plugin.settings.get", { id: open })),
       quiet(core.call("plugin.auth.list", { id: open })),
       quiet(core.call("plugin.logs", { id: open, lines: 200 })),
       quiet(core.call("notify.mutes", {})),
+      quiet(core.call("plugin.grant.list", { pluginId: open })),
+      quiet(core.call("command.list", {})),
     ]).then(
-      ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) }, "en", icons)),
+      ([{ d, childTools }, settings, auth, logs, mutes, grants, cmds]) => live && setDetail(toDetail(d.plugin, { childTools, ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)),
       () => live && setOpen(null),
     );
     return () => {
       live = false;
     };
   }, [core, open, revision]);
+
+  // The development folders, read when the Add tab shows and again after each change.
+  useEffect(() => {
+    if (!core || tab !== "add") return;
+    let live = true;
+    core.call("plugin.dev.list", {}).then((r) => live && setDevFolders(r.folders.map((f) => ({ path: f.path, addedAt: f.addedAt, expiresAt: f.expiresAt, ...(f.pluginId ? { pluginId: f.pluginId } : {}), ...(f.lastReloadAt ? { lastReloadAt: f.lastReloadAt } : {}) }))), () => live && setDevFolders([]));
+    return () => { live = false; };
+  }, [core, tab, revision]);
 
   // A change: done (the page reads again), or asked on a sealed card (the page says so; it reads again when answered).
   const act = useCallback((run: () => Promise<unknown>, asked?: string) => {
@@ -335,7 +370,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       const shown: DetailStatus = { tone: "danger", text: note };
       const change = String(e.change ?? "");
       if (change === "plugin-update") setUpdateStatus(shown);
-      else if (change === "plugin-index" || change === "plugin-index-remove") setIndexStatus(shown);
+      else if (change === "plugin-index-remove") setIndexStatus(shown);
       else if (change === "dev-folder") {
         setAddStatus(shown);
         setStatus(shown);
@@ -424,14 +459,13 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     core.call("plugin.pin", { id, pinned }).then(() => setRevision((n) => n + 1), (err: unknown) => setUpdateStatus({ tone: "danger", text: S.failed(why(err)) }));
   };
 
-  // The Indexes tab: each index with its health; add by address and key (a warning card), remove (a card when plugins came from it).
+  // The Indexes tab: each index with its health; add by address (no card: each install asks), remove (a card when plugins came from it).
   useEffect(() => {
     if (!core || tab !== "indexes") return;
     let live = true;
     core.call("plugin.index.list", {}).then((r) => live && setIndexRows(r.indexes.map((i) => ({
-      url: i.url, official: i.official,
-      ...(i.name ? { name: i.name } : {}), ...(i.lastCheckedAt ? { lastCheckedAt: i.lastCheckedAt } : {}), ...(i.stale ? { stale: true } : {}), ...(i.error ? { error: i.error } : {}),
-      ...(i.revocations ? { revocations: { ...(i.revocations.lastCheckedAt ? { lastCheckedAt: i.revocations.lastCheckedAt } : {}), ...(i.revocations.stale ? { stale: true } : {}), ...(i.revocations.error ? { error: i.revocations.error } : {}) } } : {}),
+      url: i.url,
+      ...(i.name ? { name: i.name } : {}), ...(i.lastCheckedAt ? { lastCheckedAt: i.lastCheckedAt } : {}), ...(i.error ? { error: i.error } : {}),
     }))), () => undefined);
     return () => {
       live = false;
@@ -439,10 +473,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   }, [core, tab, revision]);
   const now = props.now ?? Date.now();
   const health = (i: IndexRow) => {
-    const parts = [i.error ? S.health.failed(i.error) : i.lastCheckedAt ? S.checked(whenAgo(i.lastCheckedAt, now)) : S.health.never];
-    if (i.stale) parts.push(S.health.stale);
-    parts.push(i.revocations ? (i.revocations.error ? S.health.failed(i.revocations.error) : S.health.revocations) : S.health.noRevocations);
-    return parts.join(" · ");
+    return i.error ? S.health.failed(i.error) : i.lastCheckedAt ? S.checked(whenAgo(i.lastCheckedAt, now)) : S.health.never;
   };
   const indexChange = (run: () => Promise<unknown>) => {
     setIndexStatus(undefined);
@@ -493,6 +524,39 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     );
   };
 
+  const devPick = () => {
+    if (!core) return;
+    setAddStatus(undefined);
+    core.call("ui.pick", { kind: "folder", use: "plugin.dev.add" }).then(
+      (r) => {
+        if ("cancelled" in r) {
+          setDevPicked(undefined);
+          setAddStatus({ tone: "info", text: S.pickCancelled });
+        } else setDevPicked({ token: r.token, name: r.name });
+      },
+      (err: unknown) => setAddStatus({ tone: "danger", text: S.failed(why(err)) }),
+    );
+  };
+  const devChange = (run: () => Promise<unknown>, asked: string, done?: string) => {
+    setAddStatus(undefined);
+    run().then(
+      (r) => {
+        const pending = typeof r === "object" && r !== null && (r as { applied?: unknown }).applied === false;
+        setAddStatus({ tone: "info", text: pending ? asked : (done ?? "") });
+        setRevision((n) => n + 1);
+      },
+      (err: unknown) => {
+        setAddStatus({ tone: "danger", text: S.failed(why(err)) });
+        setRevision((n) => n + 1);
+      },
+    );
+  };
+  const devAdd = (token: string) => {
+    if (!core) return;
+    setDevPicked(undefined);
+    devChange(() => core.call("plugin.dev.add", { path: token }), S.devAsked, S.devAdded);
+  };
+
   const find = (
     <PluginIndex
       bare
@@ -501,7 +565,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       onSearch={setAsked}
       results={results}
       searching={searching}
-      indexes={indexes.map((i) => ({ url: i.url, ...(i.name ? { name: i.name } : {}), official: i.official, ...(i.lastCheckedAt ? { lastCheckedAt: i.lastCheckedAt } : {}) }))}
+      indexes={indexes.map((i) => ({ url: i.url, ...(i.name ? { name: i.name } : {}), ...(i.lastCheckedAt ? { lastCheckedAt: i.lastCheckedAt } : {}) }))}
       {...(looking ? { looking } : {})}
       installs={installs}
       onInstall={install}
@@ -533,13 +597,20 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
               if ((r as { applied?: unknown }).applied !== false) setOpen(null);
               return r;
             }, S.removeAsked)}
+            onRemoveWithData={() => act(async () => {
+              const r = await core.call("plugin.remove", { id, deleteData: true });
+              if ((r as { applied?: unknown }).applied !== false) setOpen(null);
+              return r;
+            }, S.removeAsked)}
             onKey={(target) => act(() => core.call("ui.secret", { id, ...target } as never))}
             onSignIn={(index) => act(() => core.call("plugin.auth.signIn", { id, index }))}
             onSignOut={(index) => act(() => core.call("plugin.auth.signOut", { id, index }), S.signOutAsked)}
-            onRunAnyway={() => act(() => core.call("plugin.setEnabled", { id, enabled: true }), S.runAnywayAsked)}
             onPin={(pinned) => act(() => core.call("plugin.pin", { id, pinned }))}
             onMute={(muted) => act(() => core.call("notify.setMuted", { pluginId: id, muted }))}
             onSetting={(key, value, asks) => act(() => core.call("plugin.settings.set", { id, key, value }), asks ? S.settingAsked : undefined)}
+            {...(adultConfirmed !== undefined ? { adultConfirmed } : {})}
+            onConfirmAdult={() => act(() => core.call("plugin.confirmAdult", {}))}
+            onGrantRemove={(token) => act(() => core.call("plugin.grant.remove", { pluginId: id, token }))}
             {...(status ? { status } : {})}
           />
         ) : (
@@ -564,9 +635,9 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             ) : tab === "updates" ? (
               <Updates updates={updates} checking={checking} onCheck={check} onApply={apply} onPin={pin} {...(updateStatus ? { status: updateStatus } : {})} />
             ) : tab === "indexes" ? (
-              <Indexes indexes={indexRows} health={health} onAdd={(url, key) => indexChange(() => core!.call("plugin.index.add", { url, keys: [key] }))} onRemove={(url) => indexChange(() => core!.call("plugin.index.remove", { url }))} {...(indexStatus ? { status: indexStatus } : {})} />
+              <Indexes indexes={indexRows} health={health} onAdd={(url) => indexChange(() => core!.call("plugin.index.add", { url }))} onRemove={(url) => indexChange(() => core!.call("plugin.index.remove", { url }))} {...(indexStatus ? { status: indexStatus } : {})} />
             ) : tab === "add" ? (
-              <Add {...(picked ? { picked } : {})} onPick={pick} onInstall={add} onFind={() => setTab("find")} busy={adding} {...(addStatus ? { status: addStatus } : {})} />
+              <Add {...(picked ? { picked } : {})} onPick={pick} onInstall={add} onFind={() => setTab("find")} busy={adding} {...(addStatus ? { status: addStatus } : {})} {...(devFolders ? { devFolders } : {})} {...(devPicked ? { devPicked } : {})} onDevPick={devPick} onDevAdd={devAdd} onDevRemove={(path) => devChange(() => core!.call("plugin.dev.remove", { path }), "", "")} onDevRenew={(path) => devChange(() => core!.call("plugin.dev.renew", { path }), S.devRenewAsked)} now={props.now ?? Date.now()} />
             ) : (
               find
             )}

@@ -25,6 +25,17 @@ function stateDir(s: unknown = good): string {
   return d;
 }
 
+describe("the kept state's layout", () => {
+  test("the Clover home is .clover in the user home, as on the owner's Mac; an older harness's sibling home is kept", () => {
+    const fresh = temp();
+    expect(statePaths(fresh).home).toBe(join(fresh, "user", ".clover"));
+    const old = temp();
+    mkdirSync(join(old, "home"));
+    mkdirSync(join(old, "user"));
+    expect(statePaths(old).home).toBe(join(old, "home"));
+  });
+});
+
 describe("the kept state", () => {
   test("round-trips, the file the run's own (0600)", () => {
     const d = stateDir();
@@ -75,6 +86,8 @@ describe("the settings an upgrade starts from", () => {
   });
   test("a settings file that isn't an object throws", () => {
     expect(() => settingsWithFake("[]", "u")).toThrow(/object/);
+    // The other providers' endpoints, beside what each had.
+    expect(JSON.parse(settingsWithFake('{"providers":{"groq":{"x":1}}}', "http://a", { google: "http://g", groq: "http://q/openai/v1" })).providers).toEqual({ groq: { x: 1, baseUrl: "http://q/openai/v1" }, anthropic: { baseUrl: "http://a" }, google: { baseUrl: "http://g" } });
   });
 });
 

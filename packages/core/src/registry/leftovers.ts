@@ -2,8 +2,8 @@
 // `plugin.remove` forgets them at once (`forgetRemovedPlugin`). A folder that goes any other way (deleted by hand, or by
 // a sync) leaves them, with a small "left by" record in the MAC'd state (the controller's ruling, 2026-11-11); deleting
 // nothing yet. The controller's amended rule: a forget happens only (a) in `plugin.remove`, or (b) when a tree comes
-// under an id that HAS a left-by record and its tree and source both differ (another tree hash; another index, by URL
-// and its signing keys, or another npm package; a local or wrapped plugin is the same only by its tree). Then it is
+// under an id that HAS a left-by record and its tree and source both differ (another tree hash; another index URL, or
+// another npm package name; a local or wrapped plugin is the same only by its tree; the owner's ruling, 2026-11-13). Then it is
 // forgotten first, before the new tree is put, and a forget that fails stops it with the reason. With no record,
 // nothing is forgotten, ever: records read as empty (a bad MAC, a counter rolled back, a missing key, a home restored
 // from a backup) must never cost a plugin its keys. And while the records weren't trusted at start, no left-by record
@@ -24,7 +24,7 @@ import { PluginSecretFiles } from "./secret-files";
  *  Its data folder is kept, as the spec says (§5.4), but moved out of the id's path to
  *  `<home>/plugin-data/.removed/<id>/<when>-<tree hash>/`, keyed to that install, so another publisher's plugin with
  *  the same id starts with an empty one. No plugin id starts with a dot. */
-export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: Pick<PluginRecord, "id" | "source" | "treeHash" | "okHash" | "provenance">; children: readonly string[]; now?: () => number }): Promise<{ dataKeptAt?: string }> {
+export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: Pick<PluginRecord, "id" | "source" | "treeHash" | "okHash" | "provenance">; children: readonly string[]; now?: () => number; deleteData?: boolean }): Promise<{ dataKeptAt?: string }> {
   const ids = [o.record.id, ...o.children];
   for (const pluginId of ids) {
     if (o.secrets !== undefined) for (const meta of await o.secrets.list({ kind: "plugin", pluginId })) await o.secrets.delete(meta.ref);
@@ -34,6 +34,13 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
   // Its secrets' files (`${secretFile:…}`) go with it.
   new PluginSecretFiles(o.home).releasePlugin(o.record.id);
   const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
+  // The user asked for its data to go too (`plugin.remove`'s `deleteData`): its folder, and what earlier removals of
+  // the same id set aside.
+  if (o.deleteData === true) {
+    rmSync(data, { recursive: true, force: true });
+    rmSync(join(o.home, "plugin-data", ".removed", ...o.record.id.split("/")), { recursive: true, force: true });
+    return {};
+  }
   if (!existsSync(data)) return {};
   const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);
   const kept = join(o.home, "plugin-data", ".removed", ...o.record.id.split("/"), `${new Date(o.now?.() ?? Date.now()).toISOString().replace(/[:.]/g, "-")}-${hash}`);
@@ -44,14 +51,10 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
 }
 
 
-/** Whether two provenances are the same source and identity: the same index URL with at least one of its signing keys
- *  in common (the same URL with all-new keys is another source), or the same npm package (the owner's call, on the
- *  sign-off list). A local folder or a wrapped item is never: only its tree hash says it is the same. */
-export function sameSource(a: PluginProvenance | undefined, b: PluginProvenance | undefined, keys: { a?: readonly string[]; b?: readonly string[] } = {}): boolean {
-  if (a?.index !== undefined || b?.index !== undefined) {
-    if (a?.index === undefined || b?.index === undefined || a.index.url !== b.index.url) return false;
-    return (keys.a ?? []).some((k) => (keys.b ?? []).includes(k));
-  }
+/** Whether two provenances are the same source: the same index URL, or the same npm package name (the owner's ruling,
+ *  2026-11-13). A local folder or a wrapped item is never: only its tree hash says it is the same. */
+export function sameSource(a: PluginProvenance | undefined, b: PluginProvenance | undefined): boolean {
+  if (a?.index !== undefined || b?.index !== undefined) return a?.index !== undefined && b?.index !== undefined && a.index.url === b.index.url;
   if (a?.npm !== undefined || b?.npm !== undefined) return a?.npm !== undefined && b?.npm !== undefined && a.npm.name === b.npm.name;
   return false;
 }
@@ -73,12 +76,6 @@ export class Leftovers {
     return this.#settled.has(id);
   }
 
-  /** The index's signing keys this computer trusts now, for a provenance from an index. */
-  #keysOf(p: PluginProvenance | undefined): string[] | undefined {
-    const url = p?.index?.url;
-    return url === undefined ? undefined : [...(this.#o.client.trusts().find((t) => t.url === url)?.keys ?? [])];
-  }
-
   /** A plugin's folder went without `plugin.remove`: what it leaves stays, recorded. Not while an update of it is coming
    *  up (its previous version is kept and comes back), and not in a run whose records weren't trusted. */
   left(r: Pick<PluginRecord, "id" | "source" | "treeHash" | "okHash" | "provenance">, children: readonly string[]): void {
@@ -89,11 +86,9 @@ export class Leftovers {
       this.#untrustedSaid = true;
       return;
     }
-    const keys = this.#keysOf(r.provenance);
     this.#o.client.setLeftBy(r.id, {
       source: r.source, provenance: r.provenance as Record<string, unknown>, at: (this.#o.now ?? Date.now)(), children: [...children],
       ...(r.treeHash !== undefined ? { treeHash: r.treeHash } : {}), ...(r.okHash !== undefined ? { okHash: r.okHash } : {}),
-      ...(keys !== undefined ? { keys } : {}),
     });
   }
 
@@ -115,7 +110,7 @@ export class Leftovers {
     if (rec === undefined) return;
     const prov = rec.provenance as PluginProvenance;
     const same = (rec.treeHash !== undefined && rec.treeHash === incoming.treeHash)
-      || sameSource(prov, incoming.provenance, { a: rec.keys ?? [], b: this.#keysOf(incoming.provenance) ?? [] });
+      || sameSource(prov, incoming.provenance);
     if (same) {
       this.#o.client.setLeftBy(id, undefined);
       return;

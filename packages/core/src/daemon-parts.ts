@@ -85,6 +85,8 @@ export interface DaemonBotsInput {
   sideUp?(side: BotSide): () => void;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** Whether a model can be set as a bot's (`bot.setUserLayer`; models-list.ts `modelOffer`). */
+  modelOffer?: BotSideOptions["modelOffer"];
   /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
    *  nothing). */
   bundledChoice?: BotSideOptions["bundledChoice"];
@@ -112,6 +114,9 @@ export interface DaemonBotsInput {
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
+  /** Lane B's plugin triggers' arm and disarm, where the daemon gives no `pluginHost` (whose webhook ingress this
+   *  leaves off): a routine file that names a plugin's trigger type is armed through that plugin. */
+  pluginTriggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
@@ -192,6 +197,8 @@ export interface DaemonParts {
   broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
+  /** Lane D's usage ledger, with the bot side: the plugin API's `usage.*` reads it. */
+  usage?: UsageLedger;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
   close(): Promise<void>;
 }
@@ -216,6 +223,9 @@ export interface DaemonAgentsInput {
   /** The bot's own shell write roots for a conversation at a level, its grants among them: a bot's agent in a root they
    *  cover runs its commands with no card; every other command of a bot's agent asks on a card. */
   botWriteRoots?: AgentsOptions["botWriteRoots"];
+  /** How the plugins reach the agents (spec §9.3, agents/plugin-reach.ts): their tools on the bridge, their skills and
+   *  agent definitions placed where a backend reads its own, and `Glossary` on the bridge. */
+  plugins?: Pick<AgentsOptions, "pluginTools" | "pluginParts" | "glossary">;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -292,6 +302,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
   };
   try {
     let side: BotSide | undefined;
+    let usageLedger: UsageLedger | undefined;
     const nodeLinks = links ? computerNodeLinks(links) : undefined;
     const computer = nodeLinks?.self.name;
     // The lease's main computer, as lane D reads it; a lone computer (no links, or no lease here) is its own.
@@ -413,6 +424,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
             },
             ...(a.backends ? { backends: a.backends } : {}),
             ...(a.botWriteRoots ? { botWriteRoots: a.botWriteRoots } : {}),
+            ...(a.plugins?.pluginTools ? { pluginTools: a.plugins.pluginTools } : {}),
+            ...(a.plugins?.pluginParts ? { pluginParts: a.plugins.pluginParts } : {}),
+            ...(a.plugins?.glossary ? { glossary: a.plugins.glossary } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;
@@ -428,6 +442,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.modelOffer ? { modelOffer: b.modelOffer } : {}),
         ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
         ...(b.workshop ? { workshop: b.workshop } : {}),
         ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
@@ -505,6 +520,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ledger.close();
       });
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
+      usageLedger = ledger;
     }
     // The Clover Browser (lane L), started after the bot side and stopped before it. Its tabs live in the app; the app
     // reports back with `browser.report` and `browser.hold` (its own connection only). The bundled tree's Browser tool
@@ -535,7 +551,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => b.close());
     }
     const registry = input.bots ? input.bots.registry : undefined;
-    return { ...(node ? { node } : {}), ...(browser ? { browser } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    return { ...(node ? { node } : {}), ...(browser ? { browser } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
   } catch (err) {
     await close();
     throw err;
@@ -571,6 +587,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
       writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
     } : {}),
     ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
+    ...(!host?.triggers && b.pluginTriggers ? { pluginTriggers: b.pluginTriggers } : {}),
   };
   return {
     ...(relay ? { relay } : {}),

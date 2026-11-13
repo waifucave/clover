@@ -404,8 +404,9 @@ export const ManifestSchema = z.strictObject({
    *  no server, no hooks, no part, no tool, no capability in force) and refuses to switch it; its OK, switch and
    *  settings stay as they were. A plugin outside Clover's tree carrying it is refused at validation. */
   availability: z.strictObject({ status: z.literal("not-yet"), reason: utf16(40, 1).regex(/^[a-z0-9][a-z0-9-]*$/) }).optional(),
-  /** Default "both"; covers mcpServers, skills, agents, hooks. */
-  scope: Scope.optional(),
+  /** Default "both"; covers mcpServers, skills, agents, hooks. `own-bot`: a bot plugin's own parts, only the sessions of
+   *  the bots its tree contributes and the agents they delegate to (a server or hook may still say otherwise). */
+  scope: z.union([Scope, z.literal("own-bot")]).optional(),
   /** Only these Agent backends receive it, e.g. ["claude-code"]. */
   onlyBackends: z.array(EntryId).min(1).max(64).optional(),
   host: z.strictObject({

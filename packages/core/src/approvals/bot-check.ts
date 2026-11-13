@@ -455,6 +455,9 @@ export function botApprovalCheck(
      *  the fence just allowed it, is recorded for that bot (`PluginFolders.dropped`), so the registry's read names it
      *  as the plugin's builder. */
     dropped?: (name: string, bot: string) => void;
+    /** A write the fence let through into the plugins folder (a bot editing its plugin): the registry reads that folder
+     *  once it settles, without waiting for the OS's file watch (`PluginFolders.touched`). */
+    touched?: (path: string) => void;
     /** The folder this computer's privacy settings keep Clover out of on the way to a path (`unreachableFolder`), or
      *  undefined. Default: looked up on this computer's disk. */
     unreachable?: (path: string) => string | undefined;
@@ -504,6 +507,9 @@ export function botApprovalCheck(
     if (known.command !== undefined) req.fields.command = { type: "code", code: plainOf(known.command) };
     if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
     if (known.cardAlways === true) req.cardAlways = true;
+    // A bot's agent's call to a plugin tool (agents/plugin-reach.ts): its bot's saved rules answer it as they would the
+    // bot's own, but its card offers no "always", which would be saved under the bot's id and answer the bot's own calls.
+    if ((ctx as { offersAlways?: boolean }).offersAlways === false) req.options = [{ id: "approve", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }];
     // The user's secret places (`SECRET_READ_PLACES`: keys, cloud and tool credentials, the Keychain, browser profiles,
     // password managers, sign-ins, shell history), by the place each path really reaches: a read or a search of one is
     // refused with no card at every level, as `BOT_READ_DENIED` is (the runtime's sandbox denies them to Read, Grep, Glob
@@ -565,6 +571,7 @@ export function botApprovalCheck(
             if (!there) opts.dropped(name, ctx.botId);
           }
         }
+        if (opts.touched !== undefined) for (const p of req.paths) if (insideFolder(p, join(home!, "plugins"))) opts.touched(p);
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }

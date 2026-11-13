@@ -21,6 +21,8 @@ import type { TokenValue } from "@waifucave/clover-plugin-sdk";
 export interface SealedCard {
   id: string;
   kind: string;
+  /** A `change` card's subject (`plugin-update`…), as the core sent it. */
+  change?: string;
   computer: string | null;
   session?: string;
   bot?: string;
@@ -123,7 +125,7 @@ export class SealedFrames {
     const c = card as Partial<SealedCard>;
     if (c === null || typeof c !== "object" || typeof c.id !== "string" || typeof c.hash !== "string" || !Array.isArray(c.options)) return;
     this.cards.set(c.id, {
-      id: c.id, kind: String(c.kind ?? "tool"), computer: c.computer ?? null, session: c.session, bot: c.bot,
+      id: c.id, kind: String(c.kind ?? "tool"), ...(typeof c.change === "string" ? { change: c.change } : {}), computer: c.computer ?? null, session: c.session, bot: c.bot,
       pluginId: c.pluginId, origin: String(c.origin ?? "user"), issuedAt: Number(c.issuedAt ?? this.now()),
       expiresAt: c.expiresAt == null ? null : Number(c.expiresAt), hash: c.hash, fields: c.fields ?? {}, options: c.options,
     });
@@ -139,6 +141,12 @@ export class SealedFrames {
       return true;
     }
     return false;
+  }
+
+  /** Whether one card still waits (known, not answered or resolved, not past its expiry). */
+  isPending(id: string): boolean {
+    const c = this.cards.get(id);
+    return c !== undefined && !this.resolved.has(id) && !this.answered.has(id) && (c.expiresAt === null || c.expiresAt > this.now());
   }
 
   /** One card, pending or resolved. */

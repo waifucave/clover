@@ -27,7 +27,7 @@
 // must then be the one that is really at `<dir>/<file>` (same device and inode), with every folder on the way still
 // real, and must have one link only, so a hard link to a file elsewhere isn't written either. A step that fails stops
 // the transcript, never the agent.
-import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { isAnyPluginId, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
@@ -109,6 +109,26 @@ export const TRANSCRIPT_CAPS: Readonly<Record<string, number>> = {
   "calls.ndjson": 16 * 1024 * 1024,
   "agent.stderr.log": 8 * 1024 * 1024,
 };
+
+/** Every file the writer makes in a session's folder: `agent.json` and the three logs. */
+export const TRANSCRIPT_FILE_NAMES: ReadonlySet<string> = new Set(["agent.json", ...Object.keys(TRANSCRIPT_CAPS)]);
+
+/** Finder's own files (`.DS_Store`, AppleDouble `._*`), which a look at the folder leaves behind. */
+export function isFolderNoise(name: string): boolean {
+  return name === ".DS_Store" || name.startsWith("._");
+}
+
+/** Whether `dir` is a transcript folder this writer made: a real folder holding only its files (no subfolder, no
+ *  other name). Migration C's old-layout check leaves these out of `<home>/agents`: a botless agent's transcript
+ *  lives there (`transcriptPaths`), and it never is an old-layout agent definition (`agents/*.md`). */
+export function isAgentTranscriptFolder(dir: string): boolean {
+  if (!realFolder(dir)) return false;
+  try {
+    return readdirSync(dir, { withFileTypes: true }).every((e) => isFolderNoise(e.name) || (e.isFile() && TRANSCRIPT_FILE_NAMES.has(e.name)));
+  } catch {
+    return false;
+  }
+}
 
 /** Every string in a value with each secret replaced, keys too; the value itself is left as it was. */
 export function redactDeep<T>(value: T, secrets: Iterable<string>): T {

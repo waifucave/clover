@@ -162,3 +162,43 @@ describe("every press a sealed page sees is told to the app, in one word of a fi
     for (const w of words) expect(SEALED_PRESS_WORDS).toContain(w);
   });
 });
+
+describe("the Review on the app's own card page (the owner's ruling, 2026-11-13)", () => {
+  const base = {
+    cardId: "card_okreview", token: TOKEN, origin: "user", issuedAt: 0, expiresAt: null,
+    fields: { title: { type: "text", text: "Tarot" }, detail: { type: "list", items: ["It adds: tools."] } },
+    options: [{ id: "approve", kind: "approve" as const, label: "Approve" }, { id: "deny", kind: "deny" as const, label: "Deny" }],
+  };
+
+  test("a plugin's OK or update card offers a Review beside its fields, not among the sealed buttons; any other card doesn't", () => {
+    const p = ownCardPage({ ...base, reviewable: true });
+    expect(p).toContain('class="review-button"');
+    expect(p).toContain("it doesn&#39;t answer this card");
+    // Its control isn't a sealed button: it answers nothing.
+    expect(p.match(/class="seal-button"/g)?.length).toBe(2);
+    expect(p.indexOf('class="review"')).toBeLessThan(p.indexOf('class="own-foot"'));
+    expect(ownCardPage(base)).not.toContain('class="review-button"');
+  });
+
+  test("its report goes in as text, never markup, and only from the app's own fetch", () => {
+    const p = ownCardPage({ ...base, reviewable: true });
+    const script = p.slice(p.indexOf("const section = document.querySelector(\".review\")"));
+    expect(script).toContain("report.textContent = typeof r.report");
+    expect(script).not.toContain("innerHTML");
+    expect(script).toContain("b.review()");
+    // The click must be the user's own.
+    expect(script).toContain("if (!e.isTrusted) return;");
+    // A heading over the report, so its text can't pass for the card's own lines; the note names where the files go.
+    expect(p).toContain("A model&#39;s reading of the plugin&#39;s files");
+    expect(script).toContain("Review sends this plugin's files to {model}.");
+    expect(script).toContain("b.review(true)");
+    // A peek refused before the window binds the page's channel is asked again.
+    expect(script).toContain("setTimeout(() => peek(n + 1), 400)");
+  });
+
+  test("the script is in the head, so the Review wires its elements only once the body is parsed", () => {
+    const p = ownCardPage({ ...base, reviewable: true });
+    expect(p.indexOf("<script>")).toBeLessThan(p.indexOf("<body"));
+    expect(p).toContain('addEventListener("DOMContentLoaded", wireReview)');
+  });
+});

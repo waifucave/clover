@@ -48,6 +48,7 @@ import { ToolDisplays } from "../tool-display";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
+import { modelProviderKey } from "../model-plugins";
 import { cloverSessions } from "../sessions";
 import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
@@ -57,6 +58,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
+import { partsServe } from "./only-backends";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
@@ -201,6 +203,10 @@ export interface BotDriverDeps {
   /** `settled`: waits (briefly) for the first listing of a server just installed or enabled, so the turn that starts
    *  right after sees its tools (`PluginMcp.settled`). */
   mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner; settled?(): Promise<void> };
+  /** What the model plugins give a session on `provider` now (`modelProviderKey`: its catalog rows and how its adapter
+   *  is served, or `absent`). The runtime takes them only when it opens, so a change for the bot's own provider reopens
+   *  it at the next turn; another provider's change never does. Default: `modelProviderKey`. */
+  modelCatalogKey?(provider: string): string;
   /** Lane J's holds (`ComputerNode.holds`): the session lets go of them at each turn's end. */
   holds?: { releaseSession(session: string): Promise<number> | number };
   /** Lane J's terminals (`ComputerNode.terminals`): the session's close at its end. */
@@ -427,6 +433,13 @@ export class BotSessionDriver implements SessionDriver {
   /** The model and effort the open runtime was given: the runtime takes both, and the provider fill computes the bot's
    *  credential allowlist from the model (#350's ruling), only when it opens, so a switch reopens it (`#ensureOpen`). */
   #builtModel: string | undefined;
+  /** The bot's provider and what the model plugins gave the open runtime for it (`modelCatalogKey`): a change for that
+   *  provider since (the model plugins coming up after this runtime opened, its plugin installed, updated, turned on
+   *  or off) reopens it at the next turn, so a provider the plugins bring is never missing from a runtime that opened
+   *  before it was there; another plugin's change leaves it alone. */
+  #builtCatalog: { provider: string; key: string } | undefined;
+  /** The provider key a reopen was held back for (background work running), said once. */
+  #catalogHeldSaid: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   /** Plugin servers already logged as left out for a runtime-reserved name. */
   readonly #runtimeReservedSaid = new Set<string>();
@@ -815,6 +828,10 @@ export class BotSessionDriver implements SessionDriver {
     const glossary = glossaryTool({
       tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
+      // A plugin's skills and agent definitions reach the session its `scope` serves (`servesScope`: an `agents` plugin's
+      // no bot's, an `own-bot` one's only its own bot's) and, for an agent's or a coding session, only from plugins whose
+      // `onlyBackends` name Clover's own backend, which runs it (only-backends.ts).
+      ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }) }),
       // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
       servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
       bot: bot.id,
@@ -844,6 +861,8 @@ export class BotSessionDriver implements SessionDriver {
     const sandbox = hostSandbox !== undefined ? hostSandbox.settings : this.#hostSandbox();
     this.#builtSandbox = canonicalSandbox(sandbox);
     this.#builtModel = modelKey(bot);
+    this.#builtCatalog = { provider: providerOfModel(bot.model), key: this.#catalogKey(providerOfModel(bot.model)) };
+    this.#catalogHeldSaid = undefined;
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -1085,13 +1104,33 @@ export class BotSessionDriver implements SessionDriver {
       }
       throw err;
     }
-    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged) return this.#inc!;
+    // Its own provider's key moved. Held back while the runtime runs background work (a shell, a monitor, an agent),
+    // which a reopen would end, unless the provider became unusable (`absent`): its next turn's error then says why.
+    let catalogChanged = false;
+    if (open && this.#builtCatalog !== undefined) {
+      const now = this.#catalogKey(this.#builtCatalog.provider);
+      if (now !== this.#builtCatalog.key) {
+        if (this.#inc!.tasks.size > 0 && now !== "absent") {
+          if (this.#catalogHeldSaid !== now) this.#log(`bot driver ${this.#ctx.sessionId}: its provider ${this.#builtCatalog.provider} changed; it reopens once its background work ends`);
+          this.#catalogHeldSaid = now;
+        } else {
+          catalogChanged = true;
+        }
+      }
+    }
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged && !catalogChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
+    if (catalogChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its provider ${this.#builtCatalog?.provider} changed in the model plugins`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open({ settings });
     return this.#inc;
+  }
+
+  /** What the model plugins give a session on `provider` now (`BotDriverDeps.modelCatalogKey`). */
+  #catalogKey(provider: string): string {
+    return this.#d.modelCatalogKey?.(provider) ?? modelProviderKey(provider);
   }
 
   /** Whether the session's MCP servers differ from the set the open runtime got (an install, an enable, a removal):
@@ -1441,6 +1480,12 @@ function modelKey(bot: { model: string; effort?: string }): string {
 }
 
 /** The model part of a `modelKey`. */
+/** The provider of a model tag (`<provider>/<model>`); the whole tag when it has none. */
+function providerOfModel(model: string): string {
+  const slash = model.indexOf("/");
+  return slash > 0 ? model.slice(0, slash) : model;
+}
+
 function modelOf(key: string): string {
   return key.slice(0, key.indexOf("\u0000"));
 }

@@ -1,5 +1,5 @@
 // The controller's principle for updates: every line the OK card shows from the tree is covered. For each kind of line
-// the card builder can emit (describeOk, hookOkLines, agentEnvLines), an update whose manifest adds or alters that line
+// the card builder can emit (describeOk, hookOkLines, backgroundOkLines, agentEnvLines), an update whose manifest adds or alters that line
 // asks for the OK again (`updateAddsTrigger`); a plain code change doesn't. The lines left out on purpose say why.
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -46,12 +46,11 @@ describe("every OK-card line an update adds or alters asks again", () => {
       ["the hosts it reaches", withContrib({}, { capabilities: ["network:api.example.com"] })],
       ["this computer or the local network", withContrib({}, { capabilities: ["network:localhost:8080"] })],
       ["hosts from its settings", withContrib({}, { capabilities: ["network:${setting:region}.example.com"], settings: { region: { type: "string", title: "Region" } } })],
-      ["its helper's permissions", withContrib({}, { helper: { bin: { "darwin-arm64": "bin/helper" }, permissions: ["microphone"] } }), { "bin/helper": "#!/bin/sh\n" }],
       ["code fetched at run time", withContrib(srv({ command: "npx", args: ["-y", "some-server"] }))],
       ["read-only tools", withContrib(srv({ readOnly: ["search"] }))],
       ["keys in a server's environment", withContrib(srv({ env: { KEY: "${secret:key}" } }), { settings: { key: { type: "secret", title: "Key" } } })],
-      // "It runs its own programs" comes with a helper (the case above adds both lines) or a node host, which only a
-      // bundled plugin may have.
+      // "It runs its own programs" comes with a stdio server (the base has one) or a node host, which only a bundled
+      // plugin may have; a helper is refused, so it never reaches the card.
       ["add-ons of its own", withContrib({}, { addons: { description: "Effects" } })],
       ["adult content", withContrib({}, { adult: true })],
       // hookOkLines.
@@ -59,6 +58,9 @@ describe("every OK-card line an update adds or alters asks again", () => {
       // The agent backend line (the controller's ruling) and agentEnvLines.
       ["an agent backend", withContrib({ agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "bin/agent" }] }), { "bin/agent": "#!/bin/sh\n" }],
       ["what an agent backend gets from your environment", withContrib({ agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "bin/agent", quirks: "quirks.json" }] }), { "bin/agent": "#!/bin/sh\n", "quirks.json": JSON.stringify({ launch: { envAllow: ["HOME_TOKEN"] } }) }],
+      // backgroundOkLines: what it runs without being asked.
+      ["host code that starts at once (host.start)", withContrib({}, { host: { entry: "host/index.js", start: "each" } }), { "host/index.js": "export {};\n" }],
+      ["routine triggers", withContrib({ triggers: [{ type: "luna-ping", title: "Ping", handler: "ping" }] }, { host: { entry: "host/index.js" } }), { "host/index.js": "export const ping = {};\n" }],
       // The card's title and the plugin list name it: the label.
       ["its name", { ...BASE, version: "1.1.0", name: "Clover Settings" }],
       ["its author", { ...BASE, version: "1.1.0", author: { name: "waifucave" } }],
@@ -73,6 +75,13 @@ describe("every OK-card line an update adds or alters asks again", () => {
     const a1 = await snap(agent("bin/agent"), { "bin/agent": "#!/bin/sh\n", "bin/agent2": "#!/bin/sh\n" });
     const a2 = await snap({ ...agent("bin/agent2"), version: "1.2.0" }, { "bin/agent": "#!/bin/sh\n", "bin/agent2": "#!/bin/sh\n" });
     expect(updateAddsTrigger(a1.snapshot, a2.snapshot)).toBe("it adds or changes an agent backend");
+    // Host code that already ran on demand now starts at once, or moves from the main to every computer: its line alters.
+    const host = (start?: string) => withContrib({}, { host: { entry: "host/index.js", ...(start ? { start } : {}) } });
+    const h0 = await snap(host(), { "host/index.js": "export {};\n" });
+    const h1 = await snap({ ...host("main"), version: "1.2.0" }, { "host/index.js": "export {};\n" });
+    const h2 = await snap({ ...host("each"), version: "1.3.0" }, { "host/index.js": "export {};\n" });
+    expect(updateAddsTrigger(h0.snapshot, h1.snapshot)).toContain("It runs in the background from the moment Clover starts, on your main computer.");
+    expect(updateAddsTrigger(h1.snapshot, h2.snapshot)).toContain("on every computer it's installed on");
     // A data plugin that now runs code: its first line alters.
     const data = await snap({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0" }, {});
     expect(updateAddsTrigger(data.snapshot, base.snapshot)).toBe("it now runs code");
@@ -89,7 +98,7 @@ describe("every OK-card line an update adds or alters asks again", () => {
     expect(updateAddsTrigger(base.snapshot, (await snap({ ...BASE, version: "1.1.0" })).snapshot)).toBeUndefined();
   });
 
-  // Left out of `treeOkLines` on purpose, so never compared: the source line ("Not reviewed", where it came from, not
+  // Left out of `treeOkLines` on purpose, so never compared: the source line (where it came from, not
   // the tree), the wrapper's lines (the install record's; wrapped plugins don't update), and the per-computer lines (code
   // on Windows and Linux reads the logins, no sandbox on this computer, host code held to its proxy), which follow the
   // class and the computer, both judged above or not the update's.

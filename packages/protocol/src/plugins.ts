@@ -17,7 +17,7 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 // -------------------------------------------------------------------------------------------------
 
 /** What Settings shows for each plugin, with the reason (§5.1 "States"). */
-export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped", "blocked"] as const;
+export const PLUGIN_STATES = ["found", "refused", "invalid", "off", "waiting", "running", "stopped"] as const;
 export const PluginState = z.enum(PLUGIN_STATES);
 /** The reason the registry gives a plugin of Clover's own that this build can't run yet (its manifest's
  *  `availability: { status: "not-yet" }`): its state is `off`, and it can't be switched. */
@@ -35,9 +35,11 @@ export type WrapKind = z.infer<typeof WrapKind>;
 
 /** Who wrote it, from the core's own record (§5.6); the manifest's `generated.by` is only a hint. */
 export const PluginProvenance = z.object({
-  by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled"]),
+  by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled", "plugin"]),
   at: Timestamp,
   bot: BotId.optional(),
+  /** `by: "plugin"`: the plugin whose component asked for the install (`plugins.install`); its OK card names it. */
+  plugin: AnyPluginId.optional(),
   /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
    *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's.
    *  `network: "any"`: the owner's ruling for a server the user brought (2026-11-10, §5.3): its local servers and hooks
@@ -51,8 +53,7 @@ export const PluginProvenance = z.object({
     from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional(),
     reads: z.array(utf16(4096, 1)).max(32).optional(), unreadable: z.array(utf16(4096, 1)).max(8).optional(),
   }).optional(),
-  /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
-   *  (the controller's ruling B), as do its updates. */
+  /** Installed from a plugin index (§5.1): which one, and the version. Its updates come from that index. */
   index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),
   /** Installed from npm (§5.1): the package and version, unpacked as it is (no install scripts, no dependencies). */
   npm: z.object({ name: utf16(214, 1), version: SemverVersion }).optional(),
@@ -87,7 +88,7 @@ export const PluginSummary = z.object({
   icon: utf16(4096).optional(),
   version: utf16(256),
   state: PluginState,
-  /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …", the revocation's reason. */
+  /** Why it is in that state: "waiting for `island.tab`", "plugin stopped: …". */
   reason: utf16(2000).optional(),
   waitingFor: z.array(utf16(256)).max(64).optional(),
   enabled: z.boolean(),
@@ -96,7 +97,8 @@ export const PluginSummary = z.object({
   treeHash: TreeHash.optional(),
   /** Tool prefix: `mcp__<namespace>__<Tool>` (§6.7). Children share their top-level plugin's. */
   namespace: utf16(40),
-  scope: Scope,
+  /** The manifest's scope (§5.1); `own-bot`: a bot plugin's own parts, its own bot's sessions and their agents only. */
+  scope: z.union([Scope, z.literal("own-bot")]),
   adult: z.boolean(),
   children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
   /** A development folder (§5.6), on this computer only. */
@@ -146,6 +148,13 @@ export const CommandView = z.object({
   args: z.record(z.string(), z.unknown()).optional(),
   /** Its default shortcut; a core shortcut or the user's own binding wins (§5.4). */
   key: utf16(64).optional(),
+  /** What the core made of `key` here: bound, taken by the app, too bare to bind, or shared with another command. */
+  keyState: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("bound"), chord: utf16(64) }),
+    z.object({ state: z.literal("app"), what: utf16(64) }),
+    z.object({ state: z.literal("bare") }),
+    z.object({ state: z.literal("clash"), with: z.array(utf16(128)).max(64) }),
+  ]).optional(),
   runsOn: z.enum(["each", "main", "chosen"]).optional(),
 });
 export type CommandView = z.infer<typeof CommandView>;
@@ -285,26 +294,14 @@ export const DevFolderView = z.object({
   lastReloadAt: Timestamp.optional(),
 });
 
-const IndexKey = z.string().regex(/^[0-9a-f]{64}$/);
+/** An index the user added (§5.1): a plain list of plugins at an https URL, unsigned (the owner's ruling, 2026-11-13). */
 export const IndexView = z.object({
   url: z.string().url(),
   name: utf16(256).optional(),
-  /** The Ed25519 public keys (hex) the index is trusted under; any one verifies, so a key rotates by shipping the new
-   *  one beside the old. The official index's ship in the app (§5.1). */
-  keys: z.array(IndexKey).min(1).max(8),
-  official: z.boolean(),
-  /** When its last good copy was taken, and when that copy was signed (`issued`). */
+  /** When its last good copy was taken. */
   lastCheckedAt: Timestamp.optional(),
-  issued: utf16(40).optional(),
-  /** Its last good copy was signed more than 7 days ago (the controller's ruling D): Settings says so. */
-  stale: z.boolean().optional(),
   /** Why the last fetch failed; its last good copy is still used. */
   error: utf16(300).optional(),
-  /** Its revocation list, when it has one: checked at start and every 6 hours (§5.1), stale past 7 days. */
-  revocations: z.object({
-    url: z.string().url(), lastCheckedAt: Timestamp.optional(), issued: utf16(40).optional(), stale: z.boolean().optional(),
-    error: utf16(300).optional(), entries: z.number().int().nonnegative().optional(),
-  }).optional(),
 });
 
 export const IndexEntryView = z.object({
@@ -362,7 +359,7 @@ export const PLUGINS_METHODS = {
   pluginSetEnabled: defineMethod({
     /** Switching a `found` plugin on is a sensitive change (§5.5; F-M2's review, S2): it raises the plugin's sealed OK
      *  card (`{ applied: false, card }`) and never loads it directly, from any caller. Switching on a plugin the user
-     *  OK'd and only switched off applies at once. Refused for a blocked, refused or invalid plugin, and for switching
+     *  OK'd and only switched off applies at once. Refused for a refused or invalid plugin, and for switching
      *  the bundled `clover` plugin off (it would turn off Settings itself). */
     name: "plugin.setEnabled", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({
@@ -486,9 +483,32 @@ export const PLUGINS_METHODS = {
       /** Ask first, on a sealed card (the app sets it for a part of its own tree: a part's page shows plugin text, so a
        *  click there never deletes keys by itself). Only the yes removes. */
       card: z.literal(true).optional(),
+      /** Delete its data folder too (and copies set aside by earlier removals), instead of setting it aside. */
+      deleteData: z.literal(true).optional(),
     }),
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
-    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
+    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
+  }),
+  pluginReview: defineMethod({
+    name: "plugin.review", owner: "B", roles: ["app", "cli"], userOnly: true,
+    params: z.object({
+      card: CardId,
+      /** Only say where a review would go (`idle` and the model, or the review already there), starting nothing. */
+      peek: z.literal(true).optional(),
+    }),
+    result: z.object({
+      /** `idle` (a peek, nothing asked yet), `running` (ask again for its report), `done`, `failed` (asking again starts
+       *  it over), `unavailable` (no model can run a review; `why` says what to set) or `changed` (the plugin's files
+       *  changed since the card was made: the card doesn't approve what a review would read). */
+      state: z.enum(["idle", "running", "done", "failed", "unavailable", "changed"]),
+      pluginId: AnyPluginId,
+      /** The model a review sends the plugin's files to (the `reviewer.model` role's), by its tag. */
+      model: utf16(200).optional(),
+      /** Plain text, Clover's own last line saying it is a model's reading of the plugin's files. */
+      report: utf16(6000).optional(),
+      why: utf16(400).optional(),
+    }),
+    doc: "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
   }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
@@ -496,24 +516,24 @@ export const PLUGINS_METHODS = {
       id: TopPluginId.optional(),
       /** Only list what is newer (each `offered`, with why), applying nothing. */
       list: z.literal(true).optional(),
-      /** Ask first, on a sealed card, before an update that isn't from the official index runs on the OK given before (the
-       *  app sets it for its Plugins page; one that asks for its OK again shows that card instead). */
+      /** Ask first, on a sealed card, before an update runs on the OK given before (the app sets it for its Plugins page;
+       *  one that asks for its OK again shows that card instead). */
       card: z.literal(true).optional(),
     }),
     result: z.object({
       updated: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string() })),
-      /** Newer versions not applied, and why: an npm plugin's (offered, the owner's answer E), one that asks for the OK
-       *  again (applied only when the user names it), a pinned plugin's. */
+      /** Newer versions not applied, and why: every one without an id (offered, applied on the user's click), a pinned
+       *  plugin's named one. */
       offered: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string(), why: utf16(400) })).max(1024).optional(),
       /** Newer versions that couldn't be put in place, and why; the version installed stays. */
       failed: z.array(z.object({ id: TopPluginId, from: z.string(), to: z.string(), why: utf16(400) })).max(1024).optional(),
     }),
-    doc: "Checks the indexes now and updates plugins that aren't pinned, forward only (§5.1). With an id, the user asks for that plugin's update: an npm update or one that asks for the OK again applies too.",
+    doc: "Checks the indexes now and lists the newer versions of plugins that aren't pinned, forward only, applying none (§5.1; the owner's ruling, 2026-11-13: nothing updates on its own). With an id, the user's click on that plugin's update applies it; one that adds to its OK card asks for the OK again.",
   }),
   pluginPin: defineMethod({
     name: "plugin.pin", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({ id: TopPluginId, pinned: z.boolean() }), result: ChangeResult,
-    doc: "Pins an index or npm plugin to its version on this computer (never synced), or lets it update again.",
+    doc: "Pins an index or npm plugin to its version on this computer (never synced): it isn't offered updates. Unpinned, it is offered them again.",
   }),
   pluginRenameFolder: defineMethod({
     name: "plugin.renameFolder", owner: "B", roles: ["app"], userOnly: true,
@@ -553,12 +573,12 @@ export const PLUGINS_METHODS = {
   pluginIndexList: defineMethod({
     name: "plugin.index.list", owner: "B", roles: ["app", "cli"],
     params: Empty, result: z.object({ indexes: z.array(IndexView) }),
-    doc: "The indexes plugins come from; the official one first.",
+    doc: "The indexes the user added, in the order added.",
   }),
   pluginIndexAdd: defineMethod({
     name: "plugin.index.add", owner: "B", roles: ["app", "cli"], userOnly: true, change: "core",
-    params: z.object({ url: z.string().url(), keys: z.array(IndexKey).min(1).max(8) }), result: ChangeResult,
-    doc: "Adds another index by URL with its key, after a warning (§5.1, §14.2 item 25).",
+    params: z.object({ url: z.string().url() }), result: ChangeResult,
+    doc: "Adds an index by its https URL (§5.1). It runs nothing, so it asks nothing: each plugin installed from it asks for its OK.",
   }),
   pluginIndexRemove: defineMethod({
     name: "plugin.index.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
@@ -568,7 +588,7 @@ export const PLUGINS_METHODS = {
       card: z.literal(true).optional(),
     }),
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
-    doc: "Removes an index that isn't the official one. A block its revocation list holds on an installed plugin stays, marked as from a removed index; only the override card lifts it.",
+    doc: "Removes an index the user added. Plugins installed from it stay, and get no more updates from it.",
   }),
   pluginIndexSearch: defineMethod({
     name: "plugin.index.search", owner: "B", roles: ["app", "cli"],
@@ -615,15 +635,42 @@ export const PLUGINS_METHODS = {
        *  `points.entries`, the entries of a point its own tree declares (§5.4: the declarer reads them), as its host
        *  half reads them. The settings and points calls only while the plugin is on and running. `avatar.cue`,
        *  `avatar.catalogue` and `avatar.box`: its own bot's figure (the plugin's top-level id is the bot), each by its
-       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box. */
-      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries", "avatar.cue", "avatar.catalogue", "avatar.box", "avatar.report"]),
+       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box.
+       *  `confirm` and `confirmCard`: a question to the user on the app's own sealed card naming the plugin (§5.4);
+       *  `plugins.install`: an install through the user's door, behind its OK card (capability `plugins.install`). */
+      //
+      // Any other member the plugin SDK's catalog gives components (`COMPONENT_CALLS`: `where` "ui" or "both", not
+      // `notYet`) goes through the same capability gate, fence and limits as its host half's call, as the plugin from
+      // the `ui` side; a member that takes a listener is `plugin.layer.watch`'s. The core refuses any other name (the
+      // protocol can't read the SDK's catalog: the core holds the list to it, and a test holds the core to the catalog).
+      call: utf16(128, 1),
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
        *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key; `settings.set` the key and the
-       *  value (`null` for the default). At most 64 KiB serialized. */
-      args: z.array(z.unknown()).max(3),
+       *  value (`null` for the default). Bytes cross as `{ $bytes: base64 }`. At most 64 KiB serialized (an
+       *  `audio.play` clip or a `files.write`, 1,500,000: under the app's own cap on a layer's call). */
+      args: z.array(z.unknown()).max(8),
     }),
     result: z.object({ result: z.unknown() }),
-    doc: "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
+    doc: "A plugin component's plugin API call on its own layer connection: its host half's handler, its synced store and settings, or any member the catalog gives components, through the core's capability gate as the plugin, never as the user.",
+  }),
+  pluginLayerWatch: defineMethod({
+    name: "plugin.layer.watch", owner: "A", roles: ["layer"],
+    params: z.object({
+      /** A member that takes a listener the catalog gives components (`files.watch`, `logs.follow`, `usage.watch`,
+       *  `conversation.follow`, `audio.onRecording` …): the core calls it as the plugin from the `ui` side, with its own
+       *  listener in the listener's place, after the same capability and fence checks as a host half's. */
+      call: utf16(128, 1),
+      /** The member's parameters in order, the listener's place `null`. */
+      args: z.array(z.unknown()).max(8),
+    }),
+    result: z.object({ watch: utf16(64, 1) }),
+    doc: "A plugin component's watch: each value comes back as `plugin_api_event` to this layer connection alone, until `plugin.layer.unwatch`, the connection closes, or the plugin stops, is turned off or removed, or loses the capability (`ended`).",
+  }),
+  pluginLayerUnwatch: defineMethod({
+    name: "plugin.layer.unwatch", owner: "A", roles: ["layer"],
+    params: z.object({ watch: utf16(64, 1) }),
+    result: z.object({}),
+    doc: "Ends one of this layer connection's own watches (`plugin.layer.watch`); an unknown or another connection's id is a no-op.",
   }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],
@@ -879,6 +926,16 @@ export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: u
  *  (`host.on(event)`). */
 export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
 export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
+/** A watch's value (`plugin.layer.watch`): a component's listener member (`files.watch`, `logs.follow`, `usage.watch`
+ *  …) called on its own layer connection; each value the core's listener got, as JSON (bytes as `{ $bytes }`), for that
+ *  connection alone. `ended` once, last: the watch is over (the connection's plugin stopped, was turned off or removed,
+ *  lost the capability, or the source ended) and why. */
+export const PluginApiEvent = coreEvent("plugin_api_event", {
+  pluginId: AnyPluginId,
+  watch: utf16(64, 1),
+  value: z.unknown().optional(),
+  ended: z.object({ reason: utf16(500, 1) }).optional(),
+});
 /** The entries of a point the plugin's tree declares changed (its name only, never the entries): for that plugin's
  *  own layer, whose `points.watch` reads them again. */
 export const PluginPointChangedEvent = coreEvent("plugin_point_changed", { pluginId: AnyPluginId, point: utf16(128, 1) });
@@ -928,6 +985,11 @@ export const PLUGINS_EVENTS = {
     fixture: { type: "plugin_ui_message", ts: 1781270000000, pluginId: "luna", event: "drawn", value: { card: "The Fool" } },
     doc: "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
   }),
+  pluginApiEvent: defineEvent({
+    type: "plugin_api_event", owner: "A", roles: ["layer"], schema: PluginApiEvent, transient: true,
+    fixture: { type: "plugin_api_event", ts: 1781270000000, pluginId: "luna", watch: "w_1", value: { type: "changed", path: "notes/today.md" } },
+    doc: "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
+  }),
   pluginSettingsChanged: defineEvent({
     type: "plugin_settings_changed", owner: "B", roles: ["layer"], schema: PluginSettingsChangedEvent, transient: true,
     fixture: { type: "plugin_settings_changed", ts: 1781270000000, pluginId: "luna", key: "deck" },
@@ -946,6 +1008,6 @@ export const PLUGINS_EVENTS = {
   pluginCardNote: defineEvent({
     type: "plugin_card_note", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginCardNoteEvent,
     fixture: { type: "plugin_card_note", ts: 1781270000000, card: "card_0a1b2c3d", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." },
-    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder, running a revoked plugin) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
+    doc: "A yes on a plugin change card (a removal, an update, an index, a development folder) couldn't do what the card asked: why, for that card. A layer gets it only with `plugins.watch` (the Plugins page).",
   }),
 } as const;

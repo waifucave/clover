@@ -6,9 +6,9 @@
 // Each top-level folder is read without running anything: its tree hash, `validateTree`'s report for it and its
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
 import { shownCode } from "../approvals/strings";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, watch, type Dirent, type FSWatcher } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
@@ -21,7 +21,6 @@ export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalog
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import { wrapperNetworkOpen } from "./wrap";
-import type { RevocationSubject } from "./indexes/revocations";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
@@ -70,12 +69,24 @@ export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> =
   migration: "It came over in the migration from the old app.",
   found: "It was found on disk.",
   bundled: "It ships with Clover.",
+  plugin: "A plugin asked to add it.",
 };
+
+/** The OK card's source line for a plugin a component asked to install (`plugins.install`): which plugin asked. */
+export function askedByPluginText(asker: string, name: string): string {
+  return `${asker} wants to add ${name}.`;
+}
 import { TreeProblem, folderReader, treeEntries } from "./tree";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 
 /** How long a folder must be unchanged before it is read (§5.1). */
 export const SETTLE_MS = 2_000;
+/** The catch-up look (`#catchUp`): the OS's file watch can drop an event (Bun's `fs.watch` on macOS loses some, under
+ *  load and as a watch starts), so every few seconds the folders a change must reach are looked at too, and one that
+ *  changed is read as a watched change is. */
+export const CATCH_UP_MS = 5_000;
+/** The most entries a catch-up fingerprint looks at in one folder (`node_modules` and `.git` are never walked). */
+const CATCH_UP_ENTRIES = 5_000;
 /** How long a development folder stays on unless renewed (§5.6). */
 export const DEV_FOLDER_MS = 24 * 60 * 60 * 1000;
 
@@ -91,6 +102,8 @@ export interface PluginFoldersOptions {
   /** The fields of a plugin point whose format is `program` or `code`. */
   codeFieldsOf?: CodeFieldsOf;
   settleMs?: number;
+  /** How often the catch-up look runs (`CATCH_UP_MS`; 0: never). */
+  catchUpMs?: number;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -177,13 +190,14 @@ interface Source {
  *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
 /** The OK card's lines that come from the tree alone, as `okText` builds them, with nothing of this computer or of where
  *  it came from: the lines an update may not add or alter without a new OK (`updateAddsTrigger`). Left out on purpose:
- *  the source line ("Not reviewed") and the wrapper's lines (the install record's, never the tree's; wrappers don't
+ *  the source line and the wrapper's lines (the install record's, never the tree's; wrappers don't
  *  update), and the per-computer lines (non-macOS logins, no sandbox here, host code held), which follow the class. */
 export function treeOkLines(folder: string, tree: TreeReport): string[] {
   const all = [tree.top, ...tree.children.map((c) => c.report)];
   return [
     ...describeOk(tree.top, { restylesCards: tree.restylesCards, treeCapabilities: all.flatMap((m) => m.capabilities) }),
     ...hookOkLines(all),
+    ...backgroundOkLines(all),
     ...agentEnvLines(folder, tree),
   ];
 }
@@ -233,12 +247,21 @@ export class PluginFolders {
   #bootNames: Set<string> | undefined;
   /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
   readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
+  /** An update's files line for its OK card, by the tree it put in place (`updated`). */
+  readonly #updateLines = new Map<string, { treeHash: string; line: string }>();
   readonly #watchers = new Map<string, FSWatcher>();
+  /** The catch-up look's timer, and what it saw last: the plugins folder's names, each development folder's and each
+   *  waiting plugin folder's fingerprint. */
+  #catchUpTimer: ReturnType<typeof setInterval> | undefined;
+  #seenNames: Set<string> | undefined;
+  readonly #seenPrints = new Map<string, string>();
   /** Each folder's read generation, and its newest read (`refresh`). */
   readonly #gens = new Map<string, number>();
   readonly #newest = new Map<string, Promise<void>>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
+  /** Each development folder's plugin's tree as last read, to tell a save that changed it (`lastReloadAt`). */
+  readonly #devHashes = new Map<string, string | undefined>();
   readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance; folder: string }>();
 
   constructor(opts: PluginFoldersOptions) {
@@ -246,7 +269,6 @@ export class PluginFolders {
     this.#now = opts.now ?? Date.now;
   }
 
-  #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
   #leftovers: Leftovers | undefined;
 
   /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`): recorded when it goes, and
@@ -261,20 +283,6 @@ export class PluginFolders {
     if (this.#leftovers === undefined || r === undefined || r.dev || r.source === "bundled" || r.parent !== undefined) return;
     this.#leftovers.left(r, this.#o.core.list().filter((c) => c.parent === id).map((c) => c.id));
   }
-  #officialIndex: string | undefined;
-
-  /** The official index's URL: only a plugin installed from it is "reviewed" on its OK (§5.6); one from an added index
-   *  is "not reviewed". */
-  setOfficialIndex(url: string | undefined): void {
-    this.#officialIndex = url;
-  }
-
-  /** Revocation (§5.1): a tree it names is read as `blocked`, with the reason; set before the first scan, so a revoked
-   *  plugin never starts. */
-  setBlocker(fn: (p: RevocationSubject) => string | undefined): void {
-    this.#blocker = fn;
-  }
-
   /** The OK for a tree was given: keep what it held (`oks/<id>.json`). */
   okGiven(id: string, treeHash: string): void {
     const top = parentOf(id) ?? id;
@@ -318,6 +326,17 @@ export class PluginFolders {
     return true;
   }
 
+  /** A path Clover's own tools just wrote (a bot's Write or Edit the fence let through): the plugins-folder folder it is
+   *  in is read once it settles, without waiting for the watch or the catch-up look. Any other path is ignored. */
+  touched(path: string): void {
+    // As written, or by real paths (the fence hands real ones; the plugins folder may sit under a link, as /var does).
+    const inside = (dir: string, p: string) => { const r = relative(dir, p); return r !== "" && !r.startsWith("..") && !isAbsolute(r) ? r : undefined; };
+    const rel = inside(resolve(this.#o.pluginsDir), resolve(path)) ?? inside(realPath(this.#o.pluginsDir), resolve(path));
+    const name = rel?.split(/[\\/]/)[0];
+    if (name === undefined || name === "" || name.startsWith(".")) return;
+    this.#settle(join(this.#o.pluginsDir, name));
+  }
+
   /** The names a bot dropped that the registry hasn't recorded yet (its sessions write inside them meanwhile); every
    *  bot's without one. */
   pendingDrops(bot?: string): string[] {
@@ -332,10 +351,57 @@ export class PluginFolders {
       // A dot-name is never a plugin (`#sources` skips them too): an install's staging folder, a system file.
       if (name && !name.startsWith(".")) this.#settle(join(this.#o.pluginsDir, name));
     });
-    for (const d of this.devFolders()) this.#watchDev(d.path);
+    for (const d of this.devFolders()) {
+      this.#devHashes.set(d.path, this.#devTreeHash(d.path));
+      this.#watchDev(d.path);
+    }
+    this.#catchUp();
+    const every = this.#o.catchUpMs ?? CATCH_UP_MS;
+    if (every > 0 && this.#catchUpTimer === undefined) {
+      this.#catchUpTimer = setInterval(() => this.#catchUp(), every);
+      (this.#catchUpTimer as { unref?: () => void }).unref?.();
+    }
+  }
+
+  /** The watch's safety net: a change it dropped is read anyway, within `CATCH_UP_MS` (5 s: a look over three bot-built
+   *  plugins of 300 files each took about 4.5 ms, 0.09% of a core at 5 s against 0.15% at 3 s; the listing alone 0.03 ms). One listing of the plugins
+   *  folder (a name that appeared or went), and a fingerprint (each file's path, size and time) of every development
+   *  folder, of every plugins-folder folder still waiting to be a plugin (no record yet, or found or invalid: a copy
+   *  in progress, a card waiting), and of every plugin a bot built ("Built by …"), running or not. Other installed
+   *  plugins aren't looked at. With none of those, the listing is all it does. The first look only records what is
+   *  there. */
+  #catchUp(): void {
+    const first = this.#seenNames === undefined;
+    const names = new Set(listDirs(this.#o.pluginsDir).filter((n) => !n.startsWith(".")));
+    const changed = new Set<string>();
+    if (!first) for (const n of new Set([...names, ...this.#seenNames!])) if (names.has(n) !== this.#seenNames!.has(n)) changed.add(join(this.#o.pluginsDir, n));
+    this.#seenNames = names;
+    const dev = new Set(this.devFolders().map((d) => d.path));
+    const looked = new Set<string>(dev);
+    for (const n of names) {
+      const folder = join(this.#o.pluginsDir, n);
+      const id = [...this.#byFolder].find(([, f]) => f === resolve(folder))?.[0];
+      const record = id === undefined ? undefined : this.#o.core.get(id);
+      const state = record?.state;
+      // Waiting to be a plugin, or one a bot built here, running or not (its builder edits it in place, with its shell
+      // or a build step too, which no tool path tells the registry about).
+      if (state === undefined || state === "found" || state === "invalid" || record?.provenance.by === "bot") looked.add(folder);
+    }
+    for (const folder of [...this.#seenPrints.keys()]) if (!looked.has(folder)) this.#seenPrints.delete(folder);
+    for (const folder of looked) {
+      const print = fingerprint(folder);
+      const was = this.#seenPrints.get(folder);
+      this.#seenPrints.set(folder, print);
+      if (was !== undefined && was !== print) changed.add(folder);
+    }
+    for (const folder of changed) this.#settle(folder, dev.has(folder) ? () => this.#reloadedIfChanged(folder) : undefined);
   }
 
   stop(): void {
+    if (this.#catchUpTimer !== undefined) clearInterval(this.#catchUpTimer);
+    this.#catchUpTimer = undefined;
+    this.#seenNames = undefined;
+    this.#seenPrints.clear();
     for (const w of this.#watchers.values()) w.close();
     this.#watchers.clear();
     for (const t of this.#timers.values()) clearTimeout(t);
@@ -347,10 +413,12 @@ export class PluginFolders {
   /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
    *  (the OK card's "from" line). A plugin the core generated around a bare item is `wrapped`: its source says so, and
    *  its provenance keeps what it was made from and the parts left unused (§5.1). */
-  async installed(id: string, by: "user-app" | "user-terminal" | "bot", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]>; bot?: string } = {}): Promise<void> {
+  async installed(id: string, by: "user-app" | "user-terminal" | "bot" | "plugin", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]>; npm?: NonNullable<PluginProvenance["npm"]>; bot?: string; plugin?: string } = {}): Promise<void> {
     // A bot's install (the workshop's `PluginInstall`) names its builder: its edits are judged by the workshop rule.
     if (by === "bot" && from.bot === undefined) throw new Error("a bot's install names the bot");
-    this.#installedBy.set(id, { by, at: this.#now(), ...(from.bot !== undefined ? { bot: from.bot } : {}), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
+    // A component's (`plugins.install`) names the plugin that asked: its OK card says so.
+    if (by === "plugin" && from.plugin === undefined) throw new Error("a plugin's install names the plugin");
+    this.#installedBy.set(id, { by, at: this.#now(), ...(from.bot !== undefined ? { bot: from.bot } : {}), ...(from.plugin !== undefined ? { plugin: from.plugin } : {}), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}), ...(from.npm !== undefined ? { npm: from.npm } : {}) });
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -360,8 +428,11 @@ export class PluginFolders {
 
   /** An update from an index or npm was put in place (`indexes/update.ts`): read it with its new provenance; the OK
    *  given carries over to this exact tree unless it adds a trigger (`updateAddsTrigger`), when it asks again. */
-  async updated(id: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+  async updated(id: string, treeHash: string, provenance: PluginProvenance, changed?: string): Promise<void> {
     this.#updating.set(id, { treeHash, provenance });
+    // What changed in its files, for the OK card an update that asks again raises (the user's click was an informed one).
+    if (changed !== undefined) this.#updateLines.set(id, { treeHash, line: changed });
+    else this.#updateLines.delete(id);
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -482,11 +553,12 @@ export class PluginFolders {
     const r = this.#reports.get(id);
     if (!r) return { title: id, lines: [`${id} was found on disk.`], source: PROVENANCE_TEXT.found };
     const name = r.tree.top.manifest?.name;
+    const title = typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id;
     return {
-      title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
+      title,
       lines: [
         ...describeOk(r.tree.top, {
-          os, source: r.source === "index" && this.#officialIndex !== undefined && r.provenance.index?.url === this.#officialIndex ? "index" : "other", restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
+          os, restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
           ...(sandboxed !== undefined ? { sandboxed } : {}),
           // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
           ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
@@ -496,12 +568,32 @@ export class PluginFolders {
         }),
         // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
+        // What it runs without being asked: its routine triggers, and where its host code runs in the background.
+        ...backgroundOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
         ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
+        ...this.#updateLineOf(id),
       ],
-      source: r.provenance.by === "bot" && r.provenance.bot !== undefined ? builtByText(this.#botName?.(r.provenance.bot) ?? r.provenance.bot) : PROVENANCE_TEXT[r.provenance.by],
+      source: r.provenance.by === "bot" && r.provenance.bot !== undefined ? builtByText(this.#botName?.(r.provenance.bot) ?? r.provenance.bot)
+        : r.provenance.by === "plugin" && r.provenance.plugin !== undefined ? askedByPluginText(this.#pluginName(r.provenance.plugin), title)
+        : PROVENANCE_TEXT[r.provenance.by],
     };
+  }
+
+  /** The files line of the update that put this tree in place, while the record is on that tree. */
+  #updateLineOf(id: string): string[] {
+    const u = this.#updateLines.get(id);
+    if (u === undefined) return [];
+    const now = this.#o.core.get(id)?.treeHash;
+    return now === undefined || now === u.treeHash ? [u.line] : [];
+  }
+
+  /** A plugin's name as its record has it (its id when it has none, or isn't installed). */
+  #pluginName(id: string): string {
+    const n = this.#o.core.get(id)?.name as unknown;
+    const text = typeof n === "string" ? n : (n as { en?: unknown } | undefined)?.en;
+    return typeof text === "string" && text.trim() !== "" ? text : id;
   }
 
   // ---- development folders (§5.6) ----
@@ -535,7 +627,11 @@ export class PluginFolders {
     this.#o.core.devFolders = [...this.#o.core.devFolders.filter((d) => d.path !== abs), entry];
     this.#devChanged();
     this.#watchDev(abs);
+    // The catch-up look's starting point is the folder as added: a save from here on is read even if the watch misses it.
+    this.#seenPrints.set(abs, fingerprint(abs));
     await this.refresh(abs);
+    // The tree as added: a save that changes it later is a reload.
+    this.#devHashes.set(abs, this.#devTreeHash(abs));
     return entry;
   }
 
@@ -638,8 +734,12 @@ export class PluginFolders {
     let change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
     // An update the core put in place (§5.1): its OK covers this exact tree when it adds no trigger, code changes
     // included. Anything else about it (a tree other than the one fetched) is judged as any change.
-    if (change === "asks-again" && ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash && updateAddsTrigger(ok, r.snapshot) === undefined) {
-      change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+    if (ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash) {
+      if (updateAddsTrigger(ok, r.snapshot) !== undefined) {
+        // It adds to its OK card (a new name or author, more capabilities…): it asks again, whatever else changed, so
+        // nothing new runs on the old OK (the owner's ruling, 2026-11-13).
+        change = "asks-again";
+      } else if (change === "asks-again") change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
     }
     // The workshop rule (§5.6): a plugin a bot built, which that bot's sessions edit in place. Its edits, code included,
     // apply without a card while they ask for nothing the user's last OK didn't list (`workshopAdds`); one that does
@@ -651,18 +751,11 @@ export class PluginFolders {
     if (change === "asks-again" && ok && r.snapshot && update === undefined && !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined && workshopAdds(ok, r.snapshot) === undefined) {
       change = r.snapshot.cards !== ok.cards || placesCards(ok) ? "card-styling" : "applies";
     }
-    // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
-    // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an
-    // override is keyed to that same tree hash, so a change anywhere in the tree, a child's included, blocks it again.
-    // Files, data and secrets stay.
-    const top = r.inputs.find((i) => i.id === r.id);
-    const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
     const workshop = !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined;
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
       if (workshop) input.workshop = true;
-      if (blocked !== undefined) input.blocked = blocked;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
     if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });
@@ -698,13 +791,13 @@ export class PluginFolders {
     return this.#o.core.list().filter((p) => p.parent === r.id && !now.has(p.id)).map((p) => p.id);
   }
 
-  #settle(folder: string): void {
+  #settle(folder: string, after?: () => void): void {
     const key = resolve(folder);
     const t = this.#timers.get(key);
     if (t) clearTimeout(t);
     this.#timers.set(key, setTimeout(() => {
       this.#timers.delete(key);
-      this.refresh(key).catch((e) => this.#o.log?.(`plugins: ${key} can't be read: ${(e as Error).message}`));
+      this.refresh(key).then(() => after?.(), (e) => this.#o.log?.(`plugins: ${key} can't be read: ${(e as Error).message}`));
     }, this.#o.settleMs ?? SETTLE_MS));
   }
 
@@ -720,7 +813,25 @@ export class PluginFolders {
   }
 
   #watchDev(path: string): void {
-    this.#watch(path, () => this.#settle(path));
+    this.#watch(path, () => this.#settle(path, () => this.#reloadedIfChanged(path)));
+  }
+
+  /** The tree of the plugin a development folder holds, as the registry read it last. */
+  #devTreeHash(path: string): string | undefined {
+    const id = [...this.#byFolder].find(([, f]) => f === resolve(path))?.[0];
+    return id === undefined ? undefined : this.#o.core.get(id)?.treeHash;
+  }
+
+  /** After a settled save in a development folder: when its plugin's tree changed, it was loaded again, and the
+   *  folder says when (`plugin.dev.list`'s `lastReloadAt`, the Plugins page's "Loaded again" line). */
+  #reloadedIfChanged(path: string): void {
+    const now = this.#devTreeHash(path);
+    const before = this.#devHashes.get(path);
+    this.#devHashes.set(path, now);
+    if (now === undefined || before === undefined || now === before) return;
+    const at = this.#now();
+    this.#o.core.devFolders = this.#o.core.devFolders.map((d) => (d.path === path ? { ...d, lastReloadAt: at } : d));
+    for (const fn of this.#devListeners) fn();
   }
 
   #devChanged(): void {
@@ -745,6 +856,25 @@ function realPath(path: string): string {
   } catch {
     return resolve(path);
   }
+}
+
+/** A folder's files as they are now (each one's path, size and time), for the catch-up look: `node_modules` and `.git`
+ *  aren't walked, links aren't followed, and it stops at `CATCH_UP_ENTRIES`. Empty when the folder isn't there. */
+function fingerprint(folder: string): string {
+  const out: string[] = [];
+  const walk = (dir: string, rel: string): void => {
+    let entries: Dirent[];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (out.length >= CATCH_UP_ENTRIES) return;
+      if (e.name === "node_modules" || e.name === ".git") continue;
+      const path = join(dir, e.name);
+      if (e.isDirectory()) { out.push(`${rel}${e.name}/`); walk(path, `${rel}${e.name}/`); continue; }
+      try { const st = lstatSync(path); out.push(`${rel}${e.name}:${st.size}:${st.mtimeMs}`); } catch { /* gone meanwhile */ }
+    }
+  };
+  walk(folder, "");
+  return out.sort().join("\n");
 }
 
 function listDirs(dir: string): string[] {

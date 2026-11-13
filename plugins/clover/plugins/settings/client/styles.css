@@ -273,8 +273,7 @@
 
 .cl-settings__state[data-state="refused"],
 .cl-settings__state[data-state="invalid"],
-.cl-settings__state[data-state="stopped"],
-.cl-settings__state[data-state="blocked"] {
+.cl-settings__state[data-state="stopped"] {
   color: var(--clover-color-danger);
 }
 

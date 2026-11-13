@@ -179,7 +179,7 @@ export async function installStaged(staged: string, o: InstallTarget, expect: { 
   if (expect.treeHash !== undefined && v.treeHash !== expect.treeHash) throw new ContractError("invalid", `the download's tree hash (${v.treeHash}) isn't the one its index lists (${expect.treeHash})`);
   // And the version it was listed as: what an update later compares against is the version recorded, so the two agree.
   if (expect.version !== undefined && manifestVersion(staged) !== expect.version) throw new ContractError("invalid", `the download says it is version ${JSON.stringify(manifestVersion(staged) ?? null)}, not ${expect.version} as listed`);
-  // The caller's last word on the tree before it lands (a revocation list naming its hash).
+  // The caller's last word on the tree before it lands.
   expect.check?.(id, v.treeHash);
   // A top-level plugin's id, as the protocol takes it (never a child's `a/b`).
   if (!TopPluginId.safeParse(id).success) throw new ContractError("invalid", `${JSON.stringify(id)} isn't a plugin id`);

@@ -61,6 +61,9 @@ export interface MountInfo {
   /** The document's strings: its plugin's keys (`<top-level id>.…`; `clover.…` for the `clover` layer and the core),
    *  in the user's language (§5.5). */
   strings?: StringTable;
+  /** How long a frame of this document's stays away from the screen before it sleeps, when the app sets it (a test or
+   *  acceptance build's seam only; the layer's own `SLEEP_AFTER_MS` otherwise). */
+  sleepAfterMs?: number;
 }
 
 /** A question a bot asked (`AskUserQuestion`), with its text (lane B's `PendingQuestion`). */
@@ -214,6 +217,11 @@ export type LayerMessage =
   | { type: "avatar-up"; child: string; message: AvatarUp }
   /** One piece of a bot's spoken reply (`voice.play`), to the main window's `clover` shell only: its player plays it. */
   | { type: "voice"; piece: VoicePiece }
+  /** Push-to-talk, to the main window's `clover` shell only, which records (a plugin never gets the microphone): `start` is sent
+   *  only after the user's own press reached main (the composer's `listenStart`) and carries the utterance main minted; `stop`
+   *  after their release (or the cap). The shell sends the audio back as `voice.listen` pieces, which main numbers and checks. */
+  | { type: "listen"; op: "start"; bot: string; utterance: string; maxMs: number }
+  | { type: "listen"; op: "stop"; utterance: string }
   /** An act of the window a bot's own frame asked for through `shell.*` (main checked the capability, the user's press and whose tab shows), to the main
    *  window's `clover` shell only. */
   | { type: "shell-act"; act: ShellAct }
@@ -376,8 +384,10 @@ export interface LayerBridge {
   windowDrag(mount: string): void;
   /** The `composer` spot's host callbacks (spec §5.5), for the entry the core mounted there: `models` and `commands`,
    *  and the acting `setModel`, `interrupt`, `stop` and `runCommand`, each of which counts only inside the user's own key
-   *  press or click. `commands` and `runCommand` are the bundled composer's only. */
-  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown): Promise<unknown>;
+   *  press or click. `commands` and `runCommand` are the bundled composer's only, and so are the push-to-talk three:
+   *  `listenStatus` (a read: does the bot's voice listen), `listenStart` (the user's press: the app records) and
+   *  `listenStop` (the release: what was heard, as text). */
+  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand" | "listenStatus" | "listenStart" | "listenStop", args?: unknown): Promise<unknown>;
   /** `PluginApi.shell` from a component: the window's state and apps, or an act of the window's own. Main checks the plugin's capability, that a bot of
    *  the plugin shows its tab, and for an act the user's own key press or click in this frame. */
   shell(mount: string, method: ShellMethod, args?: unknown): Promise<unknown>;
@@ -400,6 +410,9 @@ export interface LayerBridge {
    *  scheme, which the part can position and style but never read. `option` names the option a button answers;
    *  undefined for a field. */
   sealedFrame(mount: string, cardId: string, element: `field:${string}` | `button:${string}`, look?: "label" | "check" | "cross" | "open", tokens?: Readonly<Record<string, TokenValue>>): Promise<string | undefined>;
+  /** Opens the app's own page for a plugin's OK card the part `mount` places (navigation, never an answer): the card
+   *  whole, with its Review (the owner's ruling, 2026-11-13). The user's click only. True when it opened. */
+  cardPage?(mount: string, cardId: string): Promise<boolean>;
   onMessage(listener: (message: LayerMessage) => void): () => void;
 }
 

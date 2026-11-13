@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, MICROPHONE_ORIGIN, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
@@ -100,7 +100,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (type === undefined) return notFound();
     // The core's document is the top of every window: same-origin opener policy (with the embedder policy of `commonHeaders`) is
     // what lets a frame of it be cross-origin isolated; it severs `window.opener`, which no window of the app uses (popups are denied).
-    return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP, "Cross-Origin-Opener-Policy": "same-origin" } : {}) });
+    return fileResponse(file, type, { ...(type.startsWith("text/html") ? withMicrophone(commonHeaders(), `(self "${MICROPHONE_ORIGIN}")`) : commonHeaders()), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP, "Cross-Origin-Opener-Policy": "same-origin" } : {}) });
   });
 
   // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
@@ -142,7 +142,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover");
+      // The clover layer's document alone may open the microphone (push-to-talk's shell, listen.ts); the policy still needs the frame's `allow`.
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover");
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
@@ -383,6 +384,8 @@ export interface IpcHooks {
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
   /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
   takeGesture(windowId: number): boolean;
+  /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
+  listens?: import("./listen").ListenHolds;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
@@ -421,6 +424,8 @@ export interface IpcHooks {
   sealedPress(token: string, what: string): void;
   /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
   sealedSize(token: string, height: number): void;
+  /** The app's own card page asks for its card's Review (`plugin.review`): only that page, on its own token. */
+  sealedReview(token: string, peek: boolean): Promise<{ state: string; report?: string; why?: string; model?: string }>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -668,6 +673,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       method,
       params: a.params,
       tokens: pickTokens,
+      ...(hooks.listens ? { listens: hooks.listens } : {}),
       ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
       ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
@@ -756,6 +762,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const pluginId = runtime.partOf(s.frame, mount);
     return routeComposer({
       composer: runtime.composerOf(s.frame, mount),
+      ...(hooks.listens ? { listens: hooks.listens } : {}),
       op: a.op,
       args: a.args,
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
@@ -809,6 +816,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const token = str(a.token, 128);
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
+  });
+  // The app's own page for a plugin's OK card a part places, for its Review: navigation the user's click asks for, never an
+  // answer (the runtime holds the same placing rule as for its frames).
+  handle("clover:card-page", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const cardId = str(a.cardId, 64);
+    if (mount === undefined || cardId === undefined) throw new LayerError("bad card page");
+    if (a.active !== true) throw new LayerError("opening a card's page takes the user's click");
+    return runtime.cardPageOf(s.frame, mount, cardId);
   });
   // A sealed frame's own single-use URL: its part asks, the runtime mints (the plugin's `approvals` capability's own
   // gate), and the scheme's handler serves once from the store's own copy of the card's sealed content.
@@ -905,6 +922,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (urlToken === null || urlToken !== token) return;
     if (runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) return;
     hooks.sealedSize(token, height);
+  });
+  // The Review on the app's own card page: like the size, only its own window's main frame, on its own token, bound to
+  // that frame (a plugin's sealed frame, a part's, can't ask for a review's report).
+  handle("clover:sealed-review", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) throw new LayerError("not the app's own card page");
+    const token = str(a.token, 128);
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (token === undefined || urlToken === null || urlToken !== token || runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) throw new LayerError("not the app's own card page");
+    return hooks.sealedReview(token, a.peek === true);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {

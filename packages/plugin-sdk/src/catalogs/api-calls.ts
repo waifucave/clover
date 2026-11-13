@@ -47,7 +47,6 @@ export type ApiCaller = "ui" | HostProcess;
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 /** A call the catalog lists that no side serves yet (`ApiCallInfo.notYet`). */
 const notYet = (info: ApiCallInfo, why: string): ApiCallInfo => ({ ...info, notYet: why });
-const NO_SERVICE = "no service of the core answers it for plugins yet";
 /** The Clover Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
  *  the bundled panel (its component, for the person). The core serves no other plugin's. */
 const BROWSER: ApiCallInfo = { capability: "browser", where: "both" };
@@ -58,7 +57,8 @@ export const API_CALLS = {
   // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
   t: { where: "ui" },
   "points.entries": both(), "points.watch": both(), "points.call": both(),
-  "commands.run": notYet(both("call:*"), "running another plugin's command from a plugin isn't served yet; the user runs commands from the composer"), "commands.list": both(),
+  /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
+  "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
   "ui.send": { where: "host" },
   /** A layer reads its own store (`plugin.layer.call`) and hears its changes (`plugin_store_changed`); only its host half
@@ -68,19 +68,23 @@ export const API_CALLS = {
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
   "secrets.get": { where: "own" },
-  /** Only the `clover` process (S4), and none of them served yet: the core keeps no per-plugin key store for plugins. */
-  "keys.publicKey": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
-  "keys.open": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
-  "keys.delete": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
+  /** Only the `clover` process (S4): a bundled plugin's own per-computer key pairs, whose private half stays in the core. */
+  "keys.publicKey": { where: "clover" }, "keys.open": { where: "clover" }, "keys.delete": { where: "clover" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
   "conversation.history": both("conversation.read"), "conversation.follow": both("conversation.read"),
   "conversation.note": both("conversation.post"), "conversation.send": both("conversation.post"), /** A component's only, and only as the user's own answer (the conversation part answers the question card the user filled
    *  in, through the app's `session.answer`): no host half answers a question as the user. */
   "conversation.answer": { capability: "conversation.post", where: "ui" },
-  "memory.list": notYet(both("memory.read"), NO_SERVICE), "memory.read": notYet(both("memory.read"), NO_SERVICE),
+  /** A bot plugin's own bot's memory needs no capability; any other bot's needs `memory.read`, which the core checks per
+   *  bot (the coordinator's ruling: what the OK card says decides). Read-only. */
+  "memory.list": both(), "memory.read": both(),
   "bots.list": both("bots.read"), "bots.get": both("bots.read"), "bots.watch": both("bots.read"),
-  "routines.list": notYet(both("routines.read"), NO_SERVICE), "routines.runs": notYet(both("routines.read"), NO_SERVICE),
+  /** A bot plugin's own bot's routines need no capability; every bot's need `routines.read`, checked per bot. */
+  "routines.list": both(), "routines.runs": both(),
+  /** A host half's own trigger firing a routine it was armed for: no capability, the core checks the plugin contributes
+   *  that trigger type (its card says it starts routines). */
+  "routines.fire": { where: "host" },
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),
   "computers.holds": both("computers.control"), "computers.takeHold": { capability: "computers.control", where: "host" },
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },
@@ -120,9 +124,12 @@ export const API_CALLS = {
   "shell.go": { capability: "shell.control", where: "ui" }, "shell.openSettings": { capability: "shell.control", where: "ui" }, "shell.dragWindow": { capability: "shell.control", where: "ui" }, "shell.provide": { capability: "shell.control", where: "ui" },
   /** Components only, of the bundled `clover` tree (the plugin index browser). */
   "plugins.install": { capability: "plugins.install", where: "ui" },
-  "usage.rows": notYet(both("usage.read"), NO_SERVICE), "usage.plans": notYet(both("usage.read"), NO_SERVICE),
-  "usage.summary": notYet(both("usage.read"), NO_SERVICE), "usage.watch": notYet(both("usage.read"), NO_SERVICE),
-  "logs.read": notYet(both("logs.read"), NO_SERVICE), "logs.follow": notYet(both("logs.read"), NO_SERVICE),
+  /** Lane D's usage rows and this computer's plan readings, read-only. */
+  "usage.rows": both("usage.read"), "usage.plans": both("usage.read"),
+  "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
+  /** A plugin's own tree's logs need no capability; Clover's own (`"core"`) and any other plugin's need `logs.read`,
+   *  which the core checks per source (the coordinator's ruling: what the OK card says decides). */
+  "logs.read": both(), "logs.follow": both(),
   "notify.send": both("notify"),
   /** This computer's own notifications (the local app's `app.notify`): only the bundled `clover` tree's process, for its
    *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name
@@ -132,7 +139,8 @@ export const API_CALLS = {
    *  host half alike. The renderer's side is the stage's: only the bundled `clover` tree reports what it drew. */
   "avatar.cue": both("avatar.control"), "avatar.catalogue": both("avatar.read"), "avatar.box": both("avatar.read"), "avatar.watch": both("avatar.read"),
   "avatar.report": { capability: "avatar.report", where: "ui" },
-  "audio.play": notYet(both("audio"), NO_SERVICE), "audio.onRecording": notYet(both("audio"), NO_SERVICE),
+  /** The app plays a plugin's audio as a bot's speech; push-to-talk audio reaches the plugin as it comes. */
+  "audio.play": both("audio"), "audio.onRecording": both("audio"),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't

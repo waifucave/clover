@@ -26,3 +26,23 @@ export function canSend(text: string, attachments: number, max: number, asleep: 
   if (attachments > max) return false;
   return text.trim().length > 0 || attachments > 0;
 }
+
+/** The key that holds push-to-talk while the box has the focus: Ctrl+Shift+Space (no system shortcut takes it on any of the three
+ *  desktops; Ctrl+Space and Option+Space are input-source and launcher keys). Pure, like `keyAction`. */
+export function isTalkKey(e: KeyInfo & { code?: string }): boolean {
+  if (e.isComposing || e.keyCode === 229) return false;
+  return e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && (e.code === "Space" || e.key === " ");
+}
+
+/** Whether releasing this key ends a hold that Ctrl+Shift+Space began: any of the three keys of the chord. */
+export function endsTalkKey(e: { key: string; code?: string }): boolean {
+  return e.key === "Control" || e.key === "Shift" || e.key === " " || e.code === "Space";
+}
+
+/** The words heard, put after what is already in the box: a space between when the box ends in a word, none after a space,
+ *  a line break or nothing. The box stays the user's to edit and send. */
+export function appendHeard(draft: string, heard: string): string {
+  const text = heard.trim();
+  if (text === "") return draft;
+  return draft === "" || /\s$/.test(draft) ? `${draft}${text}` : `${draft} ${text}`;
+}

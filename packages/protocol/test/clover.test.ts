@@ -195,9 +195,9 @@ describe("the allow lists", () => {
   });
 
   test("a plugin's call needs a capability unless it becomes a card, is its own confirm, or is the host channel", () => {
-    // `plugin.layer.call` reaches only the layer's own plugin (its host half, its store read only), and each call it
-    // carries goes through the plugin API's own gate (`API_CALLS`), as the plugin.
-    const free = new Set(["protocol.hello", "events.subscribe", "events.unsubscribe", "card.confirm", "plugin.layer.call"]);
+    // `plugin.layer.call` and `plugin.layer.watch` (and its `unwatch`) carry the layer's own plugin's calls of the
+    // plugin API, and each goes through the plugin API's own gate (`API_CALLS`), as the plugin.
+    const free = new Set(["protocol.hello", "events.subscribe", "events.unsubscribe", "card.confirm", "plugin.layer.call", "plugin.layer.watch", "plugin.layer.unwatch"]);
     for (const role of PLUGIN_ROLES) {
       for (const name of calls(role)) {
         const m = CLOVER_METHODS.get(name)!;

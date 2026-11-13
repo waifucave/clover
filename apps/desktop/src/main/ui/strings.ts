@@ -6,8 +6,9 @@
 // English for `clover.` keys among them), then packs: the one the user chose for that language, then the first
 // enabled. A pack is any plugin's table for keys that aren't its own, except a bot's: a bot's plugin translates only
 // its own keys (a pack for the rest can be a child in its folder). The strings of sealed cards and the OK (`clover.card.…`,
-// `clover.ok.…`) come only from the built-in tables, the `clover` tree's own and packs whose tree hash matches the
-// official index, so a pack a bot edits can't relabel them; without one they read in English.
+// `clover.ok.…`) come only from the built-in tables and the `clover` tree's own, so a pack a bot edits can't relabel
+// them; without one they read in English (there is no official index to vouch for another pack: the owner's ruling,
+// 2026-11-13).
 import { readFileSync } from "node:fs";
 import { LocaleSchema, localeFallbacks, type Locale } from "@waifucave/clover-plugin-sdk";
 import type { LocaleValue, StringTable } from "@waifucave/clover-plugin-sdk/ui/bridge";
@@ -36,8 +37,6 @@ export interface StringsInput {
   packs?: Readonly<Record<string, string>>;
   /** The core's own tables, by language: English at least. */
   builtIn: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
-  /** Whether a plugin's tree hash matches the official index's (lane B's registry says so). */
-  official?: (plugin: UiPlugin) => boolean;
 }
 
 interface Table {
@@ -92,7 +91,7 @@ function tablesFor(store: StringStore, input: StringsInput, owner: string): Tabl
       if (locale === null) continue;
       const lang = normalizeLang(locale.lang);
       const chosen = input.packs?.[lang] === p.id || input.packs?.[locale.lang] === p.id;
-      out.push({ lang, strings: locale.strings, own, trusted: p.topId === "clover" || (input.official?.(p) ?? false), rank: chosen ? -1 : index });
+      out.push({ lang, strings: locale.strings, own, trusted: p.topId === "clover", rank: chosen ? -1 : index });
     }
   }
   return out;

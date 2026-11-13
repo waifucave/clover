@@ -1,22 +1,21 @@
-// Updating plugins from an index or npm (spec §5.1 "Updates"; the owner's answer E and the controller's rulings,
-// 2026-11-11):
+// Updating plugins from an index or npm (spec §5.1 "Updates"; the owner's ruling, 2026-11-13):
 //
 // * Forward only: a version above the one recorded at install (`provenance.index.version` / `provenance.npm.version`,
 //   which an install checks against the manifest), never below or equal.
-// * Applied on their own (after each index check), unless pinned (`plugin.pin`, a local record): only updates from the
-//   official index that add no trigger (`INDEX_AUTO_UPDATE`). An added index's and npm's (`NPM_UPDATES`) are offered,
-//   as is one that adds a trigger. `plugin.update` with an id is the user asking for that plugin's update: it applies an
-//   offered one too, but never a pinned plugin's.
+// * Offered, never applied on their own, whatever the source: a check lists them. `plugin.update` with an id is the
+//   user's click on that plugin's update, which applies it. A pinned plugin (`plugin.pin`, a local record) isn't offered
+//   updates at all, and its update isn't applied until the user unpins it.
 // * The OK carries over: an update that adds none of the triggers (`updateAddsTrigger`) runs on the OK given, its code
-//   changes included, and its OK snapshot moves to the new tree; one that adds a trigger asks again, from any source.
+//   changes included, after the user's yes on its update card when asked from a page (`confirm`), and its OK snapshot
+//   moves to the new tree; one that adds a trigger asks again for its OK, from any source. Nothing new runs silently.
 // * Checked as an install is: the index's tree hash (or npm's integrity record), Clover's own unpacker, validation with
-//   the same id and the listed version, and never a revoked tree.
+//   the same id and the listed version.
 // * The previous version is kept beside it (`.<id>.previous-*` in the plugins folder, which the registry skips), with a
 //   record in the MAC'd state written before the first rename, until the new tree is OK'd; it comes back if the new one
-//   is refused, invalid, blocked or stopped, across restarts too. A crash between the renames puts it back at start.
+//   is refused, invalid or stopped, across restarts too. A crash between the renames puts it back at start.
 // * One check at a time: a check the user asks for waits for the one running (never two swaps of one plugin).
-import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, lstatSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
@@ -26,12 +25,7 @@ import { manifestVersion, newStage, type InstallTarget } from "../install-folder
 import { validatePluginFolder } from "../validate";
 import { byVersion, type IndexClient } from "./client";
 import { stageIndexVersion } from "./install";
-import { npmMetadata, npmVersionOf, NPM_UPDATES, stageNpmVersion } from "./npm";
-import type { Revocations } from "./revocations";
-
-/** Which indexes' updates apply on their own (the controller's ruling, 2026-11-11): the official one's only; an added
- *  index's are offered, as npm's are. The official slot is empty today, so every update is offered for now. */
-export const INDEX_AUTO_UPDATE: "official" | "all" = "official";
+import { npmMetadata, npmVersionOf, stageNpmVersion } from "./npm";
 
 export interface UpdateChange {
   id: string;
@@ -42,7 +36,7 @@ export interface UpdateChange {
 export interface UpdateResult {
   /** Put in place: running on its OK, or (asked for by the user, with a trigger) waiting for a new one. */
   updated: UpdateChange[];
-  /** Newer, not applied: why (npm's and an added index's are offered; it adds a trigger; it's pinned). */
+  /** Newer, not applied: why (every update waits for the user's click; it's pinned). */
   offered: (UpdateChange & { why: string })[];
   /** Newer, but it couldn't be put in place: why. */
   failed: (UpdateChange & { why: string })[];
@@ -52,17 +46,51 @@ export interface UpdateResult {
 /** Asks the user about one update: yes, no, `"asked"` (a card is up and the update is applied on its yes, by a check
  *  of its own, so this check, and the updater's one-at-a-time turn, never waits on the user), or `"pending"` (its card
  *  is up already). */
-export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string }) => Promise<boolean | "asked" | "pending">;
+export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string; root: string; changed: string }) => Promise<boolean | "asked" | "pending">;
+
+/** What an update changes in the files, in a line for its card: how many changed, were added and were removed (the
+ *  owner's ruling, 2026-11-13: the click on Update is an informed one). `sameAsks`: it runs on the OK given before, and
+ *  the line says so; one that asks again lists what it adds on its OK card instead. */
+export function filesChanged(from: string, to: string, sameAsks = true): string {
+  const hashes = (root: string): Map<string, string> => {
+    const out = new Map<string, string>();
+    const walk = (dir: string, rel: string) => {
+      let names: string[];
+      try {
+        names = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        if (name === ".git" || name === ".DS_Store") continue;
+        const path = join(dir, name);
+        const st = lstatSync(path);
+        const r = rel === "" ? name : `${rel}/${name}`;
+        if (st.isDirectory()) walk(path, r);
+        else if (st.isFile()) out.set(r, createHash("sha256").update(readFileSync(path)).digest("hex"));
+      }
+    };
+    walk(root, "");
+    return out;
+  };
+  const a = hashes(from);
+  const b = hashes(to);
+  let changed = 0;
+  let added = 0;
+  for (const [p, h] of b) {
+    const was = a.get(p);
+    if (was === undefined) added++;
+    else if (was !== h) changed++;
+  }
+  const removed = [...a.keys()].filter((p) => !b.has(p)).length;
+  return `Its files: ${changed} changed, ${added} added, ${removed} removed.${sameAsks ? " It asks for the same things as before." : ""}`;
+}
 
 export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
   client: IndexClient;
-  revocations?: Revocations;
   registry: Pick<PluginRegistry, "get" | "list" | "watch">;
   folders: Pick<PluginFolders, "updated" | "updateTrigger">;
   adultConfirmed: () => boolean;
-  /** `NPM_UPDATES` and `INDEX_AUTO_UPDATE`; tests set them. */
-  npmUpdates?: "offer" | "apply";
-  indexAutoUpdate?: "official" | "all";
   log?: (line: string) => void;
   /** The folder renames (tests make one fail). */
   rename?: (from: string, to: string) => void;
@@ -116,8 +144,8 @@ export class PluginUpdater {
     }
   }
 
-  /** Checks for updates and applies those that may apply: every one that applies on its own (`only` absent), or the
-   *  one plugin the user asked for (`only`). One check runs at a time. */
+  /** Checks for updates: lists them (`only` absent: none is applied), or applies the one plugin the user asked for
+   *  (`only`). One check runs at a time. */
   check(o: { only?: string; listOnly?: boolean; confirm?: UpdateConfirm; signal?: AbortSignal } = {}): Promise<UpdateResult> {
     if (o.only === undefined && o.listOnly !== true && this.#auto !== undefined) return this.#auto;
     const run = this.#tail.then(() => this.#run(o));
@@ -189,7 +217,6 @@ export class PluginUpdater {
     let provenance: PluginProvenance;
     let stage: (dir: string) => Promise<string>;
     let expectHash: string | undefined;
-    let offer: string | undefined;
     if (r.provenance.index !== undefined) {
       const e = this.#o.client.find(r.id, { index: r.provenance.index.url, adultConfirmed: this.#o.adultConfirmed() });
       if (e === undefined || byVersion(e.version, from) <= 0) return;
@@ -197,7 +224,6 @@ export class PluginUpdater {
       expectHash = e.hash;
       provenance = { ...r.provenance, index: { url: e.index, version: e.version } };
       stage = (dir) => stageIndexVersion(this.#o.client, r.id, e, dir, signal);
-      if ((this.#o.indexAutoUpdate ?? INDEX_AUTO_UPDATE) === "official" && !this.#o.client.isOfficial(e.index)) offer = "updates from an index you added are offered, not applied on their own";
     } else {
       const name = r.provenance.npm!.name;
       const v = npmVersionOf(await npmMetadata(this.#o.client, name, undefined, signal), name);
@@ -205,20 +231,16 @@ export class PluginUpdater {
       to = v.version;
       provenance = { ...r.provenance, npm: { name, version: v.version } };
       stage = (dir) => stageNpmVersion(this.#o.client, name, v, dir, signal);
-      if ((this.#o.npmUpdates ?? NPM_UPDATES) === "offer") offer = "npm updates are offered, not applied on their own";
     }
     const change = { id: r.id, from, to };
+    // Pinned: not offered; asked for by id, it says why it isn't applied.
     if (this.#o.client.isPinned(r.id)) {
-      out.offered.push({ ...change, why: "it's pinned to its version" });
+      if (asked) out.offered.push({ ...change, why: "it's pinned to its version; unpin it to update" });
       return;
     }
-    if (offer !== undefined && !asked) {
-      out.offered.push({ ...change, why: offer });
-      return;
-    }
-    // Listed only: what it adds is known once it is downloaded and read, when it is applied.
-    if (listOnly) {
-      out.offered.push({ ...change, why: asked ? "you can apply it" : "it applies on its own at the next check unless it asks for your OK again" });
+    // Not the user's click on it: listed, never applied. What it adds is known once it is downloaded and read.
+    if (!asked || listOnly) {
+      out.offered.push({ ...change, why: "you can apply it" });
       return;
     }
     const st = newStage(this.#o.stagingDir);
@@ -233,25 +255,19 @@ export class PluginUpdater {
       if (expectHash !== undefined && v.treeHash !== expectHash) throw new ContractError("invalid", `the download's tree hash (${v.treeHash}) isn't the one its index lists (${expectHash})`);
       const says = manifestVersion(root);
       if (says !== to) throw new ContractError("invalid", `the download says it is version ${JSON.stringify(says ?? null)}, not ${to} as listed`);
-      const blocked = this.#o.revocations?.blockedOf({ id: r.id, treeHash: v.treeHash, version: to, provenance });
-      if (blocked !== undefined) throw new ContractError("refused", `${r.id} ${to} isn't installed: ${blocked}`);
-      // What it adds that asks for a new OK, against the OK'd tree: an automatic check never applies that.
+      // What it adds that asks for a new OK, against the OK'd tree: then its OK card asks again once it is in place.
       const trigger = await this.#o.folders.updateTrigger(r.id, root, provenance);
-      if (trigger !== undefined && !asked) {
-        out.offered.push({ ...change, why: `it asks for your OK again: ${trigger}` });
-        return;
-      }
-      // Asked for from a page (`confirm`): an update that isn't from the official index and runs on the OK given before
-      // asks first; one that asks for its OK again shows that card instead.
-      const official = r.provenance.index !== undefined && this.#o.client.isOfficial(provenance.index!.url);
-      if (confirm !== undefined && trigger === undefined && !official) {
-        const answer = await confirm({ ...change, treeHash: v.treeHash, source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) });
+      // Asked for from a page (`confirm`): an update that runs on the OK given before asks first on its update card;
+      // one that asks for its OK again shows that card instead.
+      if (confirm !== undefined && trigger === undefined) {
+        const answer = await confirm({ ...change, treeHash: v.treeHash, root, changed: filesChanged(join(this.#o.pluginsDir, r.id), root), source: r.provenance.npm !== undefined ? `npm (${r.provenance.npm.name})` : (this.#o.client.index(provenance.index!.url)?.name ?? provenance.index!.url) });
         if (answer !== true) {
           out.offered.push({ ...change, why: answer === "asked" ? "waiting for your yes on its card" : answer === "pending" ? "already waiting for your yes on its card" : "you didn't apply it" });
           return;
         }
       }
-      await this.#swap(r, root, v.treeHash, provenance);
+      // One that asks for its OK again: its OK card says what changed in the files too (counted before the swap).
+      await this.#swap(r, root, v.treeHash, provenance, trigger === undefined ? undefined : filesChanged(join(this.#o.pluginsDir, r.id), root, false));
       out.updated.push(change);
     } finally {
       st.done();
@@ -259,7 +275,7 @@ export class PluginUpdater {
   }
 
   /** Puts the new version in place, the previous one kept beside it (its record first), and reads it. */
-  async #swap(r: PluginRecord, root: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+  async #swap(r: PluginRecord, root: string, treeHash: string, provenance: PluginProvenance, changed?: string): Promise<void> {
     if (r.treeHash === undefined) throw new ContractError("failed", `${r.id} has no tree to keep`);
     const dest = join(this.#o.pluginsDir, r.id);
     const name = `.${r.id}.previous-${randomBytes(6).toString("hex")}`;
@@ -277,7 +293,7 @@ export class PluginUpdater {
       this.#o.client.setUpdating(r.id, undefined);
       throw new ContractError("failed", `${r.id} couldn't be moved into the plugins folder: ${(err as NodeJS.ErrnoException).code ?? errText(err)}`);
     }
-    await this.#o.folders.updated(r.id, treeHash, provenance);
+    await this.#o.folders.updated(r.id, treeHash, provenance, changed);
     await this.#settle(r.id);
   }
 
@@ -286,7 +302,7 @@ export class PluginUpdater {
   }
 
   /** The new version's fate: OK'd (running, off or waiting for a point) lets the previous go; refused, invalid,
-   *  blocked or stopped brings it back; waiting for its OK waits. A tree that is neither (the user changed the
+   *  or stopped brings it back; waiting for its OK waits. A tree that is neither (the user changed the
    *  folder, or the previous one is back) ends the record. */
   async #settle(id: string): Promise<void> {
     const k = this.#keptOf(id);
@@ -306,7 +322,7 @@ export class PluginUpdater {
       this.#drop(id);
       return;
     }
-    if (r.state === "refused" || r.state === "invalid" || r.state === "blocked" || r.state === "stopped") {
+    if (r.state === "refused" || r.state === "invalid" || r.state === "stopped") {
       this.#o.log?.(`update of ${id}: the new version is ${r.state}${r.reason ? ` (${r.reason})` : ""}; the previous one comes back`);
       const dest = join(this.#o.pluginsDir, id);
       const previous = join(this.#o.pluginsDir, k.previous);

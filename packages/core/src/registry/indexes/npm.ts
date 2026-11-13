@@ -6,11 +6,9 @@
 //   `latest` tag. Ranges aren't resolved: what installs is the version the user saw.
 // * Its tarball: https, the download limits, and its `dist.integrity` (SHA-512, npm's own record of the bytes) checked
 //   before it is unpacked; a package without one isn't installed (a SHA-1 `shasum` alone isn't enough).
-// * Unpacked by Clover's own reader (`unpack.ts`, npm's `package/` folder as its root), validated as any install, and
-//   refused when a revocation list names its tree (the official list blocks a tree hash from any source).
+// * Unpacked by Clover's own reader (`unpack.ts`, npm's `package/` folder as its root) and validated as any install.
 //
-// npm has no signature of Clover's: the OK says "not reviewed", and its updates are offered, never applied on their
-// own (`NPM_UPDATES`, the owner's answer E).
+// Its OK card decides, as for every source; its updates are offered, applied on the user's click (`update.ts`).
 import { createHash } from "node:crypto";
 import { readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
@@ -20,15 +18,10 @@ import { ContractError } from "../../contracts/common";
 import { installStaged, newStage, type InstallTarget } from "../install-folder";
 import { INDEX_MAX_BYTES, type IndexClient } from "./client";
 import { DOWNLOAD_MAX_BYTES } from "./install";
-import type { Revocations } from "./revocations";
 import { unpackTarGz } from "./unpack";
 
 /** The npm registry. */
 export const NPM_REGISTRY = "https://registry.npmjs.org";
-
-/** Whether an npm plugin's update applies on its own or is offered: the owner's answer E (2026-11-11), offered. Index
- *  plugins update on their own unless pinned; an update that adds an OK trigger asks again from any source. */
-export const NPM_UPDATES: "offer" | "apply" = "offer";
 
 /** npm's abbreviated metadata (the versions' `dist` and the tags, what an install reads), else the full document. */
 export const NPM_ACCEPT = { accept: "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8" } as const;
@@ -64,7 +57,6 @@ export function npmVersionOf(meta: unknown, name: string, version?: string): { v
 
 export interface NpmInstallOptions extends InstallTarget {
   client: IndexClient;
-  revocations?: Revocations;
   name: string;
   version?: string;
   registry?: string;
@@ -113,10 +105,6 @@ export async function installFromNpm(o: NpmInstallOptions): Promise<{ id: string
     const npm = { name: o.name, version: v.version };
     const done = await installStaged(root, o, {
       version: v.version, from: { npm },
-      check: (id, treeHash) => {
-        const blocked = o.revocations?.blockedOf({ id, treeHash, version: v.version, provenance: { by: "user-app", at: 0, npm } });
-        if (blocked !== undefined) throw new ContractError("refused", `${o.name} ${v.version} isn't installed: ${blocked}`);
-      },
     });
     return { ...done, npm };
   } finally {

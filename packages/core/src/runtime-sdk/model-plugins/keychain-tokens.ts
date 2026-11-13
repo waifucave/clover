@@ -65,10 +65,11 @@ function tokenOf(material: Awaited<ReturnType<typeof readCredentialMaterial>>): 
 }
 
 export interface KeychainModelPluginCredentials extends Pick<ModelPluginApiOptions, "tokens" | "secret"> {
-  /** Fills a code adapter's connection with what its sign-in holds beside the token (Codex's account id). */
-  connectionFor<C extends { account?: string }>(pluginId: string, connection: C): C;
-  /** Reads the OAuth sign-ins' account ids once (the code plugins with an `oauth-pkce` entry: Codex), so
-   *  `connectionFor`, which is synchronous, has them before the first turn. Every later read refreshes them. */
+  /** Fills a code adapter's connection with what its sign-in holds beside the token (Codex's account id), read from
+   *  its slot at the call, so a sign-in made after the daemon started serves its first turn whole. */
+  connectionFor<C extends { account?: string }>(pluginId: string, connection: C): Promise<C>;
+  /** Reads the OAuth sign-ins' account ids once (the code plugins with an `oauth-pkce` entry: Codex): what
+   *  `connectionFor` falls back on when a read fails. Every later read refreshes them. */
   prime(): Promise<void>;
 }
 
@@ -118,10 +119,19 @@ export function keychainModelPluginCredentials(opts: KeychainModelPluginCredenti
       const raw = await opts.secrets.get(slot.account);
       return raw === null || raw.length === 0 ? undefined : raw;
     },
-    connectionFor(pluginId, connection) {
+    async connectionFor(pluginId, connection) {
       const slot = slotOf(pluginId);
-      const id = slot === undefined ? undefined : accountIds.get(slot.account);
-      return id === undefined || connection.account !== undefined ? connection : { ...connection, account: id };
+      if (slot === undefined || connection.account !== undefined) return connection;
+      if (CODE_PLUGINS[slot.provider]?.auth.some((a) => a.method === "oauth-pkce") === true) {
+        try {
+          const material = await readCredentialMaterial(opts.secrets, slot.account);
+          if (material?.kind === "oauth" && material.accountId !== undefined) accountIds.set(slot.account, material.accountId);
+        } catch {
+          // the last account id read stands
+        }
+      }
+      const id = accountIds.get(slot.account);
+      return id === undefined ? connection : { ...connection, account: id };
     },
     async prime() {
       for (const [provider, t] of Object.entries(CODE_PLUGINS)) {

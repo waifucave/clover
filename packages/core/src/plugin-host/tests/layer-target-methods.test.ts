@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, COMPONENT_CALLS, listenerArgOf, type ApiCallInfo } from "@waifucave/clover-plugin-sdk";
 import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_EVENTS, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
 import { PLUGIN_OWN_EVENTS } from "../../ipc/core-events";
 import { pointsApi } from "../api/points";
@@ -14,6 +14,7 @@ import { commandsApi } from "../../commands/views";
 import { grantsInForce, type PluginRecord } from "../../contracts/plugin-registry";
 import { mayRunCommand, runCommand, type RunnableCommand } from "../../registry/commands";
 import { createApiRouter } from "../api/router";
+import { layerCallRefusal } from "../ui";
 
 const plugin = (pluginId: string): Caller => ({ kind: "plugin", pluginId });
 const USER: Caller = { kind: "user", client: "app" };
@@ -80,11 +81,11 @@ const LAYER_TARGETS: Record<string, string> = {
 };
 
 describe("what a plugin may use now (grantsInForce): exactly what its host process would get", () => {
-  test("its grant while it is on and running (or waiting for a point); nothing while off, stopped, blocked, refused, invalid or awaiting its OK", () => {
+  test("its grant while it is on and running (or waiting for a point); nothing while off, stopped, refused, invalid or awaiting its OK", () => {
     const granted = ["conversation.read", "call:tarot"];
     expect(grantsInForce({ enabled: true, state: "running", granted })).toEqual(granted);
     expect(grantsInForce({ enabled: true, state: "waiting", granted })).toEqual(granted);
-    for (const state of ["off", "stopped", "blocked", "refused", "invalid", "found"] as const) expect([state, grantsInForce({ enabled: true, state, granted })]).toEqual([state, []]);
+    for (const state of ["off", "stopped", "refused", "invalid", "found"] as const) expect([state, grantsInForce({ enabled: true, state, granted })]).toEqual([state, []]);
     // Turned off by the user: the OK still covers it (granted stays set), but it may use none of it.
     expect(grantsInForce({ enabled: false, state: "running", granted })).toEqual([]);
     // Awaiting a new OK while the old version runs on the old one (the registry keeps the old grant): the old grant.
@@ -165,10 +166,14 @@ describe("command.run, from every route a plugin has", () => {
   });
   const call = (pluginId: string, path: string, args: unknown[], caller: Caller = plugin(pluginId)) => router({ pluginId, process: "shared", path, args, caller } as never);
 
-  test("the plugin API (a host half, a hook or tool handler, a component): commands.run isn't available yet, for any target, also inside the user's call", async () => {
-    for (const [id, caller] of [["vn-composer", undefined], ["vn-composer", USER], ["tarot", undefined], ["friend", undefined]] as const) {
-      await expect(call(id, "commands.run", ["tarot.draw"], caller ?? plugin(id))).rejects.toMatchObject({ code: "refused", message: expect.stringContaining("commands.run isn't available yet") });
+  test("the plugin API (a host half, a hook or tool handler, a component): commands.run runs a plugin's own tree's commands, another's only with call:<id>, also inside the user's call", async () => {
+    for (const [id, caller] of [["tarot", undefined], ["tarot", USER], ["friend", undefined], ["friend", USER]] as const) {
+      expect(await call(id, "commands.run", ["tarot.draw"], caller ?? plugin(id))).toBe("ran");
     }
+    for (const caller of [undefined, USER]) {
+      await expect(call("vn-composer", "commands.run", ["tarot.draw"], caller ?? plugin("vn-composer"))).rejects.toMatchObject({ code: "refused", message: expect.stringContaining("call:tarot") });
+    }
+    await expect(call("friend", "commands.run", ["nobody.thing"])).rejects.toMatchObject({ code: "not_installed" });
   });
 
   test("commands.list lists only what the calling plugin may run", async () => {
@@ -221,8 +226,9 @@ describe("what a layer hears and reads of other plugins", () => {
   });
 });
 
-/** Every call a layer makes to its own plugin (`plugin.layer.call`), and what holds it to that plugin. The plugin is
- *  the connection's in each (the method takes no plugin id at all); this table says what each reads or runs. */
+/** The calls a layer makes to its own plugin's own things (`plugin.layer.call`), and what holds each to that plugin. The
+ *  plugin is the connection's in each (the method takes no plugin id at all). Every other member the catalog gives
+ *  components goes through the same method into the same router (below: the accepted set is the catalog's). */
 const OWN_CALLS: Record<string, string> = {
   "host.call": "its host half's `ui` table, as the plugin, no session",
   "storage.synced.get": "its synced store, read only",
@@ -234,15 +240,31 @@ const OWN_CALLS: Record<string, string> = {
   "avatar.catalogue": "its own bot's figure's catalogue (`avatar.read`)",
   "avatar.box": "its own bot's figure's box (`avatar.read`)",
   "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `clover` tree only)",
+  "confirm": "a question to the user on the app's own sealed card naming the plugin; the answer only",
+  "confirmCard": "the same, with the card's id",
+  "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`, bundled-only)",
 };
 
 describe("plugin.layer.call, as a class", () => {
-  test("every call is in the table, and the method takes no plugin id, session or bot (the connection's plugin, never a parameter)", () => {
-    const shape = (CLOVER_METHODS.get("plugin.layer.call")!.params as unknown as { shape: { call: { options: string[] } } }).shape;
-    expect([...shape.call.options].sort()).toEqual(Object.keys(OWN_CALLS).sort());
-    expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
-    expect(pluginIdKeys("plugin.layer.call")).toEqual([]);
-    expect(CLOVER_METHODS.get("plugin.layer.call")!.capability).toBeUndefined();
+  test("the calls it accepts are exactly the catalog's component members (less the listeners, which are watches); the method takes no plugin id, session or bot", () => {
+    const comp = (p: string) => { const i = (API_CALLS as Record<string, ApiCallInfo>)[p]!; return (i.where === "ui" || i.where === "both") && i.notYet === undefined; };
+    const calls = Object.keys(API_CALLS).filter((p) => layerCallRefusal(p) === undefined).sort();
+    const watches = Object.keys(API_CALLS).filter((p) => layerCallRefusal(p, true) === undefined).sort();
+    expect(calls).toEqual(Object.keys(API_CALLS).filter((p) => comp(p) && listenerArgOf(p) === undefined).sort());
+    expect(watches).toEqual(Object.keys(API_CALLS).filter((p) => comp(p) && listenerArgOf(p) !== undefined).sort());
+    expect([...calls, ...watches].sort()).toEqual([...COMPONENT_CALLS].sort());
+    // The table's own-plugin calls are among them; host-only, own-process and clover-process members never are.
+    for (const call of Object.keys(OWN_CALLS)) expect([call, layerCallRefusal(call)]).toEqual([call, undefined]);
+    for (const call of ["secrets.get", "keys.open", "desktop.show", "ui.send", "storage.synced.set", "routines.fire", "computers.takeHold", "files.path"]) expect(layerCallRefusal(call)).toMatch(/host code/);
+    expect(layerCallRefusal("browser.onCdpEvent", true)).toMatch(/isn't available yet/);
+    expect(layerCallRefusal("nope.nothing")).toMatch(/isn't a call of the plugin API/);
+    for (const method of ["plugin.layer.call", "plugin.layer.watch"]) {
+      const shape = (CLOVER_METHODS.get(method)!.params as unknown as { shape: Record<string, unknown> }).shape;
+      expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
+      expect(pluginIdKeys(method)).toEqual([]);
+      expect(CLOVER_METHODS.get(method)!.capability).toBeUndefined();
+      expect(CLOVER_METHODS.get(method)!.roles).toEqual(["layer"]);
+    }
   });
 
   test("every call the SDK's layer makes through it, and every layer-callable avatar call the catalog lists, is accepted by its params", () => {

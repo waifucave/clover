@@ -5,15 +5,18 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
-import { PluginIcon, stateText } from "../client/Installed";
+import { Detail, PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
 /** How the fake core answers a setting's change, by key (a card's ask, a refusal); applied otherwise. */
 const settingAnswers: Record<string, () => unknown> = {};
+/** The development folders the fake core lists. */
+let devFolders: { path: string; pluginId?: string; addedAt: number; expiresAt: number; lastReloadAt?: number }[] = [];
 afterEach(() => {
   for (const k of Object.keys(settingAnswers)) delete settingAnswers[k];
+  devFolders = [];
 });
 
 async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
@@ -28,6 +31,16 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.settings.set": ({ key }) => (settingAnswers[key]?.() ?? { applied: true }) as never,
     "plugin.restart": () => ({ ok: true }),
+    "plugin.dev.list": () => ({ folders: devFolders as never }),
+    "plugin.dev.add": () => ({ applied: false, card: "card_dev" }),
+    "plugin.dev.remove": () => ({ ok: true }),
+    "plugin.dev.renew": () => ({ applied: false, card: "card_renew" }),
+    "plugin.grant.list": () => ({ grants: [{ token: "g1", path: "/Users/me/clips/a.mov", kind: "file", access: "read", addedAt: NOW }, { token: "g2", path: "/Users/me/exports", kind: "folder", access: "write", addedAt: NOW }] as never }),
+    "plugin.grant.remove": () => ({ removed: true }),
+    "plugin.setScope": () => ({ applied: true }),
+    "plugin.setComputers": () => ({ applied: true }),
+    "plugin.confirmAdult": () => ({ ok: true }),
+    "computer.list": () => ({ computers: [{ name: "Studio" }, { name: "Laptop" }] as never }),
     "ui.secret": () => ({ opened: true }),
     "ui.pick": () => ({ token: "pick-1", name: "tarot" }),
     "plugin.update": ({ id, list }) => (list
@@ -60,27 +73,27 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
 const rows = () => within(screen.getByRole("list", { name: "Results" })).getAllByRole("listitem");
 
 describe("the plugin index", () => {
-  test("results name their index, their newest version and whether they are reviewed", () => {
+  test("results name their index and their newest version", () => {
     const results = toResults(ENTRIES, INDEXES);
-    expect(results.map((r) => [r.id, r.indexName, r.version, r.official])).toEqual([
-      ["tarot-panel", "Clover index", "1.2.0", true],
-      ["weather-routine", "Clover index", "0.3.1", true],
-      ["chibi-pack", "Clover index", "2.1.0", true],
-      ["terminal-plus", "Friends' plugins", "0.9.0", false],
-      ["story-mode", "Friends' plugins", "0.1.0", false],
+    expect(results.map((r) => [r.id, r.indexName, r.version])).toEqual([
+      ["tarot-panel", "Community plugins", "1.2.0"],
+      ["weather-routine", "Community plugins", "0.3.1"],
+      ["chibi-pack", "Community plugins", "2.1.0"],
+      ["terminal-plus", "Friends' plugins", "0.9.0"],
+      ["story-mode", "Friends' plugins", "0.1.0"],
     ]);
   });
 
-  test("lists every result, marks what is installed, newer, unreviewed or for adults, and the indexes", async () => {
+  test("lists every result, marks what is installed, newer or for adults (no review mark), and the indexes", async () => {
     await mount();
-    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Tarot panel", "Weather routine", "Chibi pack", "Terminal plusNot reviewed", "Story mode18+Not reviewed"]);
+    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Tarot panel", "Weather routine", "Chibi pack", "Terminal plus", "Story mode18+"]);
     expect(rows()[0]!.textContent).toContain("Installed 1.2.0");
     expect(rows()[2]!.textContent).toContain("2.1.0 available");
     expect(within(rows()[1]!).getByRole("button", { name: "Install Weather routine" })).toBeTruthy();
     const indexes = within(screen.getByRole("list", { name: "Indexes" })).getAllByRole("listitem");
     expect(indexes.map((i) => i.textContent)).toEqual([
-      "Clover indexOfficialhttps://github.com/waifucave/clover-index · Checked 12 min ago",
-      "Friends' pluginsNot reviewedhttps://plugins.example.net/index.json · Checked 3 h ago",
+      "Community pluginshttps://plugins.example.org/index.json · Checked 12 min ago",
+      "Friends' pluginshttps://plugins.example.net/index.json · Checked 3 h ago",
     ]);
   });
 
@@ -111,7 +124,7 @@ describe("the plugin index", () => {
     const { core } = await mount({ spot: "panel", key: "terminal" });
     expect(screen.getByRole("note").textContent).toContain("Looking for a plugin for the terminal panel.");
     expect(core.calls.find((c) => c.method === "plugin.index.search")?.params).toEqual({ query: "terminal", limit: 50 });
-    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Terminal plusNot reviewed"]);
+    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Terminal plus"]);
   });
 
   test("the tabs: Installed and Find plugins", async () => {
@@ -129,16 +142,14 @@ describe("the Plugins page: what is installed", () => {
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);
-    expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
-    expect(names("Revoked")).toEqual(["Story modeRevoked"]);
-    expect(names("Needs you")).toEqual(["My panelIn development", "Weather routine"]);
+    expect(groupNames()).toEqual(["Needs you", "On", "Off"]);
+    expect(names("Needs you")).toEqual(["My panelIn development", "Story mode", "Weather routine"]);
     expect(names("On")).toEqual(["Clover", "linear", "Tarot panel"]);
     expect(names("Off")).toEqual(["Terminal plus"]);
     const clover = screen.getByRole("button", { name: "Open Clover" }).closest("li")!;
     expect(clover.textContent).toContain("2 parts");
     const story = screen.getByRole("button", { name: "Open Story mode" }).closest("li")!;
-    expect(story.textContent).toContain("Revoked: revoked by Friends' plugins");
-    // The list never offers to turn it on: only Open (its detail's override card).
+    expect(story.textContent).toContain("Can't load: needs a newer Clover");
     expect(within(story).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open"]);
   });
 
@@ -202,15 +213,6 @@ describe("the Plugins page: what is installed", () => {
     for (const bad of ["https://x.example/a.png", "data:image/png;base64,AA", "/etc/a.png", "../a.png", "a//b.png", "a/../../b.png", ""]) expect(iconUrl("tarot", bad)).toBeUndefined();
   });
 
-  test("a revoked filter: only the revoked ones, with their reason (one kept since its index was removed among them)", async () => {
-    await mount({});
-    fireEvent.click(screen.getByRole("radio", { name: "Revoked (1)" }));
-    expect(groupNames()).toEqual(["Revoked"]);
-    expect(screen.getByRole("list", { name: "Revoked" }).textContent).toContain("revoked by Friends' plugins");
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-    expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
-  });
-
   test("the search narrows by name, id or a part's name", async () => {
     await mount({});
     const search = screen.getByRole("searchbox", { name: "Search your plugins" });
@@ -229,7 +231,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["notify.mutes", "plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["command.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -336,6 +338,12 @@ describe("the Plugins page: what is installed", () => {
     }
   });
 
+  test("a plugin's detail lists its child plugins' tools after its own", () => {
+    const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { mcpServers: { own: { tools: { own_tool: "preload" } } } } } } as never;
+    expect(toDetail(d, { childTools: ["kid_tool"] }).tools).toEqual(["own_tool", "kid_tool"]);
+    expect(toDetail(d, {}).tools).toEqual(["own_tool"]);
+  });
+
   test("an agent definition given as a file shows its name, cut like a named one", () => {
     const long = "x".repeat(200);
     const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { agents: [`agents/${long}.md`, { id: "r", name: long }] } } } as never;
@@ -375,13 +383,19 @@ describe("the Plugins page: what is installed", () => {
     expect(screen.getByRole("tab", { name: "Installed" })).toBeTruthy();
   });
 
-  test("a revoked plugin says it is blocked and offers to run it anyway, on its warning card", async () => {
-    const { core } = await mount({ id: "story-mode" });
-    expect(screen.getByRole("status").textContent).toContain("Blocked: revoked by Friends' plugins");
-    expect(screen.queryByRole("button", { name: "Turn on" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Run it anyway…" }));
+  test("remove and delete its data sends deleteData with the id and asks on the card", async () => {
+    const { core } = await mount({ id: "tarot-panel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove and delete its data…" }));
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "plugin.setEnabled")?.params).toEqual({ id: "story-mode", enabled: true });
+    expect(core.calls.find((c) => c.method === "plugin.remove")?.params).toEqual({ id: "tarot-panel", deleteData: true });
+    expect(screen.getByText("Answer the card to remove it.")).toBeTruthy();
+  });
+
+  test("no plugin is revoked or run anyway: no such group, filter or button (the owner's ruling, 2026-11-13)", async () => {
+    await mount({ id: "story-mode" });
+    expect(screen.getByRole("status").textContent).toContain("needs a newer Clover");
+    expect(screen.queryByRole("button", { name: /anyway/i })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/revoked|reviewed|official/i);
   });
 });
 
@@ -453,35 +467,23 @@ describe("the Plugins page: updates and indexes", () => {
     expect(core.calls.find((c) => c.method === "plugin.pin")?.params).toEqual({ id: "mcp-linear", pinned: false });
   });
 
-  test("indexes: the official slot says this build has none; each added one with its health; add by address and key, remove on its card", async () => {
+  test("indexes: each added one with its health; add by address alone, remove on its card", async () => {
     const { core } = await mount({ tab: "indexes" });
-    // The fixtures' first index is marked official: a build with none shows the plain sentence instead.
-    expect(screen.getByRole("region", { name: "Clover's index" }).textContent).toContain("Clover index");
+    expect(screen.queryByRole("region", { name: "Clover's index" })).toBeNull();
     const yours = within(screen.getByRole("list", { name: "Indexes you added" })).getAllByRole("listitem");
-    expect(yours[0]!.textContent).toContain("Checked 3 h ago");
+    expect(yours.map((y) => y.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Community plugins", "Friends' plugins"]);
+    expect(yours[1]!.textContent).toContain("Checked 3 h ago");
     fireEvent.click(screen.getByRole("button", { name: "Remove Friends' plugins" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "plugin.index.remove")?.params).toEqual({ url: INDEXES[1]!.url });
     expect(screen.getByRole("status").textContent).toBe("Answer the card to go on.");
     const add = screen.getByRole("button", { name: "Add index" }) as HTMLButtonElement;
-    fireEvent.change(screen.getByRole("textbox", { name: "Index address (https://…)" }), { target: { value: "https://plugins.example.org/index.json" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Its signing key (64 hex characters)" }), { target: { value: "not a key" } });
     expect(add.disabled).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: "Its signing key (64 hex characters)" }), { target: { value: "a".repeat(64) } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Index address (https://…)" }), { target: { value: "https://plugins.example.com/index.json" } });
+    expect(screen.queryByRole("textbox", { name: /key/i })).toBeNull();
     fireEvent.click(add);
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "plugin.index.add")?.params).toEqual({ url: "https://plugins.example.org/index.json", keys: ["a".repeat(64)] });
-  });
-
-  test("a build with no official index says so", async () => {
-    const core = fakeCore({ "plugin.list": () => ({ plugins: [], adultConfirmed: false }), "plugin.index.list": () => ({ indexes: [INDEXES[1]!] }) });
-    render(
-      <UiRuntimeProvider runtime={runtimeWith({ core: () => core })}>
-        <PluginIndexEntry props={{ route: "plugins", params: { tab: "indexes" }, now: NOW }} />
-      </UiRuntimeProvider>,
-    );
-    await act(() => settle());
-    expect(screen.getByText("The official index isn't set up in this build.")).toBeTruthy();
+    expect(core.calls.find((c) => c.method === "plugin.index.add")?.params).toEqual({ url: "https://plugins.example.com/index.json" });
   });
 
   test("the detail holds an index plugin's updates back, or lets them through", async () => {
@@ -511,4 +513,76 @@ describe("the Plugins page: updates and indexes", () => {
     await mount({ tab: "find" }, "found", atReload);
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
+
+  test("development folders: listed with when they expire and reload; a folder from main's picker is added on a card; Renew asks on a card; Remove stops loading it", async () => {
+    devFolders = [{ path: "/Users/me/dev/reel", pluginId: "reel", addedAt: NOW - 3_600_000, expiresAt: NOW + 3_600_000, lastReloadAt: NOW - 60_000 }];
+    const { core } = await mount({ tab: "add" });
+    const row = document.querySelector('[data-dev-folder="/Users/me/dev/reel"]')!;
+    expect(row.textContent).toContain("Loads as reel");
+    expect(row.textContent).toContain("Loaded again");
+    fireEvent.click(screen.getByRole("button", { name: "Choose a development folder…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick" && (c.params as { use: string }).use === "plugin.dev.add")?.params).toEqual({ kind: "folder", use: "plugin.dev.add" });
+    fireEvent.click(screen.getByRole("button", { name: "Add tarot as a development folder" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.add")?.params).toEqual({ path: "pick-1" });
+    expect(screen.getAllByRole("status").some((e) => e.textContent === "Answer the card to add the development folder.")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Keep /Users/me/dev/reel on for another 24 hours" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.renew")?.params).toEqual({ path: "/Users/me/dev/reel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove the development folder /Users/me/dev/reel" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.remove")?.params).toEqual({ path: "/Users/me/dev/reel" });
+  });
+
+  test("a plugin's page: the files it may open (each can be taken back), and the adult confirm", async () => {
+    const { core } = await mount({});
+    fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
+    await act(() => settle());
+    expect(screen.queryByRole("radio", { name: "Agents" })).toBeNull();
+    expect(document.querySelector('[data-grant="g1"]')?.textContent).toContain("/Users/me/clips/a.mov");
+    expect(document.querySelector('[data-grant="g2"]')?.textContent).toContain("folder, to save");
+    fireEvent.click(screen.getByRole("button", { name: "Take back /Users/me/clips/a.mov" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.grant.remove")?.params).toEqual({ pluginId: "tarot-panel", token: "g1" });
+  });
+
+  test("an adult plugin says so until the user confirms", () => {
+    const calls: unknown[] = [];
+    const view = { ...toDetail(installedDetail("tarot-panel"), {}), adult: true };
+    const common = { onBack: () => undefined, onSwitch: () => undefined, onRestart: () => undefined, onRemove: () => undefined, onKey: () => undefined, onSignIn: () => undefined, onSignOut: () => undefined };
+    render(<Detail plugin={view} adultConfirmed={false} {...common} onConfirmAdult={() => calls.push(["adult"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "I am 18 or older" }));
+    expect(calls).toEqual([["adult"]]);
+    expect(screen.queryByRole("checkbox", { name: /Run on/ })).toBeNull();
+    cleanup();
+    render(<Detail plugin={view} adultConfirmed {...common} onConfirmAdult={() => undefined} />);
+    expect(screen.queryByRole("button", { name: "I am 18 or older" })).toBeNull();
+  });
+
+  test("a plugin's command keys: each shows its key, and bound or why not (the app's, too bare, shared, or not running)", () => {
+    const base = installedDetail("tarot-panel");
+    const d = { ...base, manifest: { ...base.manifest, contributes: { commands: [
+      { name: "draw", key: "mod+shift+k" }, { name: "quit", key: "mod+q" }, { name: "bare", key: "k" }, { name: "both", key: "mod+j" }, { name: "off", key: "mod+u" }, { name: "plain" },
+    ] } } } as never;
+    const listed = [
+      { name: "tarot.draw", pluginId: base.id, keyState: { state: "bound" } },
+      { name: "tarot.quit", pluginId: base.id, keyState: { state: "app", what: "Quit" } },
+      { name: "tarot.bare", pluginId: base.id, keyState: { state: "bare" } },
+      { name: "tarot.both", pluginId: base.id, keyState: { state: "clash", with: ["other.go"] } },
+    ];
+    const keys = toDetail(d, { commands: listed }).commandKeys!;
+    expect(keys.map((k) => [k.name, k.key, k.bound])).toEqual([["draw", "mod+shift+k", true], ["quit", "mod+q", false], ["bare", "k", false], ["both", "mod+j", false], ["off", "mod+u", false]]);
+    expect(keys[1]!.note).toBe("Not bound: Quit already uses it.");
+    expect(keys[3]!.note).toBe("Not bound: other.go uses it too.");
+    expect(keys[4]!.note).toBe("Not bound: it isn't running.");
+    render(<Detail plugin={toDetail(d, { commands: listed })} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} />);
+    const list = screen.getByRole("list", { name: "Keys for its commands" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    expect(list.textContent).toContain("mod+shift+k");
+    expect(list.textContent).toContain("Not bound: other.go uses it too.");
+    expect(list.querySelectorAll("[data-key-bound]")).toHaveLength(1);
+  });
 });
+
+

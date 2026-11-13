@@ -8,6 +8,11 @@
 //   ACCEPTANCE-AGENT <root> → a `tool_use` of `Agent`: Alpha's study-buddy definition on clover-code in <root>, with
 //                       the brief `ACCEPTANCE-CHILD …`
 //   ACCEPTANCE-CHILD  → the child agent's own turn: text, `CHILD_REPORT`
+//   ACCEPTANCE-AGENT-ECHO <root> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//                       `ACCEPTANCE-CHILD-ECHO …`
+//   ACCEPTANCE-CHILD-ECHO → an agent's turn (a bot's or the user's coding session): a `tool_use` of the echo plugin's
+//                       tool on its bridge (`BRIDGE_ECHO`: never a bot's own Echo) with `acceptance-child-ping`; its
+//                       result is then said back (`ACCEPTANCE-DONE: …`), or `ACCEPTANCE-CHILD-NO-ECHO <its tools>`
 //   ACCEPTANCE-STAGE-STATUS → a `tool_use` of the tool whose name ends in `__stage_status` (Alpha's read-only tool)
 //   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
 //   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
@@ -189,6 +194,9 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
 const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|STREAM|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
 
+/** The echo plugin's tool on an agent's bridge: `mcp__<the session's bridge, clover_ and 16 hex>__<its server's key>__Echo`. */
+export const BRIDGE_ECHO = /^mcp__clover_[0-9a-f]{16}__acceptance-echo-echo__Echo$/;
+
 /** The command that needs the network (the outside-the-sandbox step's): one request to <url>, its body printed. The
  *  run's own loopback server is the target, never the real network. */
 export function netCommand(url: string): string {
@@ -344,7 +352,14 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const callInput = callWant?.input;
       const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
-      if (shell !== undefined) {
+      // A plugin's Review (the internal `reviewer.model` job, registry/plugin-review.ts): its report, naming the plugin
+      // it was given, so the run sees the job got that plugin's tree.
+      const reviewing = JSON.stringify((body as { system?: unknown }).system ?? "").includes("You review a plugin for Clover");
+      if (reviewing) {
+        const reviewed = /PLUGIN: (\S+)/.exec(record.lastUserText)?.[1] ?? /PLUGIN: (\S+)/.exec(textOf(messages[0]?.content))?.[1] ?? "unknown";
+        content = [{ type: "text", text: `${REVIEW_MARK} ${reviewed}: it echoes text back. Nothing odd found.` }];
+        stop = "end_turn";
+      } else if (shell !== undefined) {
         content = shell;
         stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
         if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
@@ -385,6 +400,27 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-CHILD-ECHO")) {
+        const tool = record.tools.find((t) => BRIDGE_ECHO.test(t));
+        if (tool === undefined) {
+          content = [{ type: "text", text: `ACCEPTANCE-CHILD-NO-ECHO ${record.tools.filter((t) => t.startsWith("mcp__")).join(", ") || "no MCP tools"}` }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-child-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-AGENT-ECHO")) {
+        const tool = record.tools.find((t) => t === "Agent");
+        const root = /ACCEPTANCE-AGENT-ECHO (\S+)/.exec(said)?.[1] ?? "";
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-AGENT-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "clover-code", root, description: "Echo probe", prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
@@ -599,3 +635,6 @@ function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolea
   });
   return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }
+
+/** What the fake's plugin Review report starts with (the acceptance run's Review clause looks for it). */
+export const REVIEW_MARK = "ACCEPTANCE-REVIEW";

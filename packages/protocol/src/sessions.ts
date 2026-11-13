@@ -194,6 +194,9 @@ export const RoutineView = z.object({
   level: utf16(32),
   /** A raised level waiting for its card, or a copy with the same id paused (§7). */
   state: z.enum(["active", "paused", "waiting-for-ok", "duplicate", "bot-removed"]),
+  /** Why Clover paused it, while it stays paused (a plugin's trigger started it too often, §7); the user's resume (the
+   *  file's `paused` taken out) clears it. */
+  pausedWhy: utf16(300).optional(),
   lastRunAt: Timestamp.optional(),
   nextRunAt: Timestamp.optional(),
 });

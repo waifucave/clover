@@ -355,8 +355,20 @@ File `clover.json`:
 
 File `host/index.ts`:
 ```ts
-// Ex trigger's host half: the handler its `triggers` entry names. The routine engine asks it whether a routine's
-// fields read (`check`), when it fires next (`next`), and which fires a computer that was off missed (`missed`).
+// Ex trigger's host half: the handler its `triggers` entry names. A routine file that uses the trigger arms it with
+// its fields (`arm`); it then runs the routine every `every` minutes (`api.routines.fire`) until the routine is
+// disarmed. Clover arms it again whenever this host half starts, so `arm` replaces what it had for a routine.
+
+// The API `start` is given: what the plugin does later, from a timer, it does as itself (a call's own `ctx.api` ends
+// with the call).
+let api: { routines?: { fire(routine: string, type: string, payload?: string): Promise<void> } } | undefined;
+
+export function start(given: NonNullable<typeof api>): void {
+  api = given;
+}
+
+const TYPE = "ex-trigger";
+const timers = new Map<string, ReturnType<typeof setInterval>>();
 
 function minutes(fields: unknown): number {
   const every = (fields as { every?: unknown } | null | undefined)?.every;
@@ -365,19 +377,16 @@ function minutes(fields: unknown): number {
 }
 
 export const exTrigger = {
-  check(args: { fields: unknown }): { ok: true; summary: string } | { ok: false; reason: string } {
-    try {
-      return { ok: true, summary: `every ${minutes(args.fields)} minutes` };
-    } catch (err) {
-      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
-    }
+  arm(args: { routine: string; fields: unknown }): void {
+    const every = minutes(args.fields);
+    clearInterval(timers.get(args.routine));
+    timers.set(args.routine, setInterval(() => {
+      void api?.routines?.fire(args.routine, TYPE).catch(() => {});
+    }, every * 60_000));
   },
-  next(args: { fields: unknown; after: number }): { at: number } {
-    return { at: args.after + minutes(args.fields) * 60_000 };
-  },
-  // An interval has no fixed times: the engine runs a missed one once when the computer wakes.
-  missed(_args: { fields: unknown; after: number; until: number }): { at: number[] } {
-    return { at: [] };
+  disarm(args: { routine: string }): void {
+    clearInterval(timers.get(args.routine));
+    timers.delete(args.routine);
   },
 };
 ```

@@ -8,6 +8,8 @@
 //    Alpha can change its code later without asking, within what this card lists."; the row presses it in the window,
 //    and the plugin runs: its tool answers a call.
 // 3. `PluginStatus` reports it running.
+// 3c. `Glossary` with `load: "<id>"` answers her plugin's state and its tool; while step 5's OK card waits, her
+//    Glossary search lists it as waiting for the OK, with where its log is.
 // 3b. `AppScreenshot` shows her the Plugins page (where her plugin is listed), wide and narrow: drawn in a render window
 //    the user never sees, saved in her scratch's shots/ at the size asked, the picture reaching the model as an image,
 //    the page's frames listed, no card; no window is shown, and the user's own window stays where it was.
@@ -25,15 +27,21 @@
 // 6b. While her tool's card waits in her conversation, the peer bot's AppScreenshot of her tab draws the card as
 //    placeholders (clover-sealed://placeholder), never a live card frame, and the app logs no sealed ask for a render
 //    window; her card is then pressed in the user's own window.
+// 7. Alpha edits a throw into the plugin's host code: it reloads, crashes until the crash rules stop it, and Alpha (its
+//    builder) is told in her conversation ("… stopped: … PluginStatus ws-greeter has the log."); she edits the throw
+//    back out, and the changed tree starts it again with no card: running, and its tool answers.
+// 8. The drop (row 3.8): Alpha writes a second plugin into her scratch and moves it into the plugins folder with one
+//    `Bash` `mv`, with no card; it lands found behind its OK card, which names her ("Built by Alpha…"); pressed, it
+//    runs and its tool answers.
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -53,6 +61,23 @@ export function workshopFiles(): Record<string, string> {
   for (const [path, body] of Object.entries(made.files)) out[path] = body.replaceAll('"hello"', `"${WORKSHOP_TOOL}"`);
   return out;
 }
+
+/** The plugin Alpha drops in with her shell (7): the same template, its own id and tool. */
+export const DROP_ID = "ws-dropped";
+export const DROP_NAME = "Dropped greeter";
+export const DROP_TOOL = "ws_drop_hello";
+
+/** The dropped plugin's files: the tool template's, with its tool `hello` renamed. */
+export function dropFiles(): Record<string, string> {
+  const made = templateFiles("tool", { id: DROP_ID, name: DROP_NAME });
+  if ("error" in made) throw new Error(made.error);
+  const out: Record<string, string> = {};
+  for (const [path, body] of Object.entries(made.files)) out[path] = body.replaceAll('"hello"', `"${DROP_TOOL}"`);
+  return out;
+}
+
+/** The one shell command that drops it: a move from her scratch into the plugins folder. */
+export const dropCommand = (scratchFolder: string, pluginsFolder: string) => `mv ${JSON.stringify(scratchFolder)} ${JSON.stringify(pluginsFolder)}/`;
 
 /** The greeting the tool answers with, as its code says it (the template's), and the two edits of it. */
 export const GREETING = { first: "Hello, ${who}!", second: "Hi again, ${who}!" } as const;
@@ -114,9 +139,10 @@ export async function workshopStep(ctx: ExampleCtx, session: string): Promise<st
   } finally {
     // Whatever happened: the card step 5 leaves waiting is answered no, and both plugins go, so no step after this one
     // runs with them.
-    for (const c of await cardsOf(ctx).catch(() => [] as Card[])) if (c.pluginId === WORKSHOP_ID || c.pluginId === PEER_ID) await ctx.denyCard(c.id).catch(() => undefined);
+    for (const c of await cardsOf(ctx).catch(() => [] as Card[])) if (c.pluginId === WORKSHOP_ID || c.pluginId === PEER_ID || c.pluginId === DROP_ID) await ctx.denyCard(c.id).catch(() => undefined);
     await leave(ctx, WORKSHOP_ID);
     await leave(ctx, PEER_ID);
+    await leave(ctx, DROP_ID);
   }
 }
 
@@ -196,10 +222,11 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const made = await ok(ctx, session, "PluginNew", { template: "tool", id: WORKSHOP_ID, name: WORKSHOP_NAME });
     if (!made.called!.endsWith("__PluginNew")) fail(`the scaffold call was ${made.called}, not the builder's mcp__builder__PluginNew`);
     if (!made.result.text.startsWith(`Made a tool plugin, ${WORKSHOP_ID}: 3 files.`)) fail(`PluginNew answered "${made.result.text.slice(0, 160)}"`);
-    for (const [path, content] of Object.entries(files)) await ok(ctx, session, "Write", { file_path: join(folder, path), content });
+    const wrote: Record<string, string> = {};
+    for (const [path, content] of Object.entries(files)) wrote[path] = (await ok(ctx, session, "Write", { file_path: join(folder, path), content })).result.text;
     for (const [path, content] of Object.entries(files)) {
       const on = (() => { try { return readFileSync(join(folder, path), "utf8"); } catch { return undefined; } })();
-      if (on !== content) fail(`${path} in her scratch ${on === undefined ? "isn't there" : "isn't what she wrote"}`);
+      if (on !== content) fail(`${path} in her scratch (${folder}) ${on === undefined ? "isn't there" : "isn't what she wrote"}; Write said "${wrote[path]!.slice(0, 300)}"`);
     }
     const checked = await ok(ctx, session, "PluginValidate", { folder: WORKSHOP_ID });
     if (!/\bvalid\b/.test(checked.result.text) || /invalid/.test(checked.result.text)) fail(`PluginValidate said "${checked.result.text.slice(0, 300)}"`);
@@ -230,6 +257,15 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const s = await ok(ctx, session, "PluginStatus", { id: WORKSHOP_ID });
     if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
     done.push("3 PluginStatus: running");
+  });
+
+  // 3c. Glossary is the way into what a plugin offers a bot (checklist 5.1): loading hers by id answers its state and its
+  // tool's index, and makes the tool callable.
+  await stepOf("3c. Glossary loads her plugin by id: its state and its tool", async () => {
+    const g = await ok(ctx, session, "Glossary", { load: WORKSHOP_ID });
+    if (!g.result.text.includes(`Plugin ${WORKSHOP_ID} (${WORKSHOP_NAME}), running.`)) fail(`Glossary's load of ${WORKSHOP_ID} answered "${g.result.text.slice(0, 300)}"`);
+    if (!new RegExp(`mcp__[\\w-]+__${WORKSHOP_TOOL}\\b`).test(g.result.text)) fail(`Glossary's load of ${WORKSHOP_ID} named no ${WORKSHOP_TOOL} tool ("${g.result.text.slice(0, 300)}")`);
+    done.push(`3c Glossary load ${WORKSHOP_ID}: running, its ${WORKSHOP_TOOL} indexed`);
   });
 
   // 3b. A look at the app, as she would after building a page.
@@ -302,6 +338,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new });
     const card = await askedCard(ctx, "notify", NOTIFY_LINE);
+    // While it waits for the OK, her Glossary search lists it to her with its state and where its log is (5.1).
+    const found = await ok(ctx, session, "Glossary", { query: WORKSHOP_ID });
+    if (!found.result.text.includes("waiting for the user's OK") || !found.result.text.includes(`PluginStatus ${WORKSHOP_ID} has the log`)) fail(`with its OK card waiting, Glossary's search for ${WORKSHOP_ID} answered "${found.result.text.slice(0, 300)}"`);
     await ctx.pressCard("its OK card for notify", (c) => c.id === card.id);
     await until(`${WORKSHOP_ID} running after the OK`, 30_000, async () => ((await pluginOf(ctx, WORKSHOP_ID))?.state === "running" ? true : undefined));
     const p = await pluginOf(ctx, WORKSHOP_ID);
@@ -310,7 +349,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`after the OK PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
     const g = await greet(ctx, session);
     if (!g.result.text.includes(answerFor(GREETING.second))) fail(`after the OK its tool answered "${g.result.text.slice(0, 200)}"`);
-    done.push("5 +notify paused it behind its OK card (line named, not granted); OK'd: running, granted, PluginStatus running, tool answered");
+    done.push("5 +notify paused it behind its OK card (line named, not granted; Glossary lists it to her as waiting, with where its log is); OK'd: running, granted, PluginStatus running, tool answered");
   }));
 
   // 5b. A second request answered No: it stays off; the bot takes the request back out and it runs again with no card.
@@ -395,6 +434,66 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
       if (asked !== null) fail(`the app logged a sealed ask for render window ${id}: ${asked[0].slice(0, 200)}`);
     }
     done.push(`6b with her tool card waiting, the peer's AppScreenshot of her tab: ${held} placeholder card frame(s), no live card frame, no sealed ask for render windows ${[...new Set(renders)].join(", ")}`);
+  }));
+
+  // 7. A crash: the crash rules stop it, its builder is told, and her fix starts it again (lane B's crash notice).
+  await own(() => stepOf("7. made to crash, it stops and Alpha is told; her fix starts it again", async () => {
+    const hostFile = join(installed, "host", "index.ts");
+    const anchor = readFileSync(hostFile, "utf8").split("\n").find((l) => l.startsWith("import "));
+    if (anchor === undefined) fail("the plugin's host code has no import line to put the throw after");
+    const broken = `${anchor}\nthrow new Error("acceptance crash: the workshop's step 7");`;
+    const before = Math.max(0, ...(await ctx.history(session)).map((e: Ev) => (typeof e.seq === "number" ? e.seq : 0)));
+    await ok(ctx, session, "Read", { file_path: hostFile });
+    await ok(ctx, session, "Edit", { file_path: hostFile, old_string: anchor!, new_string: broken });
+    let last: string | undefined;
+    await until(`${WORKSHOP_ID} stopped by the crash rules`, 90_000, async () => {
+      last = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return last === "stopped" || last === "crashed" ? true : undefined;
+    }, async () => `it is ${last ?? "gone"}`).catch(() => undefined);
+    const told = await until("Alpha told it stopped", 90_000, async () => {
+      const text = JSON.stringify((await ctx.history(session)).filter((e: Ev) => typeof e.seq === "number" && e.seq > before));
+      return text.includes(`PluginStatus ${WORKSHOP_ID} has the log`) ? text : undefined;
+    }, async () => `its state is ${(await pluginOf(ctx, WORKSHOP_ID))?.state ?? "gone"}`);
+    if (!told.includes("stopped:")) fail("the notice in her conversation doesn't say it stopped");
+    // Her fix: the throw edited back out (read again first: the runtime edits only what this session read).
+    await ok(ctx, session, "Read", { file_path: hostFile });
+    await ok(ctx, session, "Edit", { file_path: hostFile, old_string: broken, new_string: anchor! });
+    let state: string | undefined;
+    await until(`${WORKSHOP_ID} running again after her fix`, 60_000, async () => {
+      if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("her fix raised a card");
+      state = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return state === "running" ? true : undefined;
+    }, async () => `it is ${state ?? "gone"}`);
+    // Its host half restarts from the changed tree a moment after the registry applies it: a few tries.
+    let answer = "";
+    for (let i = 0; i < 4; i++) {
+      const t = await callOnce(ctx, session, WORKSHOP_TOOL, { name: "Acceptance" }, () => true);
+      answer = t.result?.text ?? "";
+      if (t.result?.isError !== true && answer.includes(answerFor(GREETING.second))) break;
+      await sleep(3_000);
+    }
+    if (!answer.includes(answerFor(GREETING.second))) fail(`after her fix its tool answered "${answer.slice(0, 200)}"`);
+    done.push("7 a throw edited in: stopped by the crash rules, Alpha told in her conversation; her fix: running again with no card, tool answered");
+  }));
+
+  // 8. The drop: a plugin she moves into the plugins folder with her shell is found, its OK card names her; OK'd, it runs.
+  await own(() => stepOf("8. a plugin she moves into the plugins folder with her shell lands found behind its OK card naming her; OK'd, its tool answers", async () => {
+    const from = join(scratch, DROP_ID);
+    for (const [path, content] of Object.entries(dropFiles())) await ok(ctx, session, "Write", { file_path: join(from, path), content });
+    const mv = await ok(ctx, session, "Bash", { command: dropCommand(from, join(home, "plugins")), description: "Install the plugin by moving it into the plugins folder" });
+    if (/not permitted|denied/i.test(mv.result.text)) fail(`the move was refused: "${mv.result.text.slice(0, 200)}"`);
+    if (!existsSync(join(home, "plugins", DROP_ID, "clover.json"))) fail(`after the move there's no ${DROP_ID} in the plugins folder (Bash: "${mv.result.text.slice(0, 200)}")`);
+    const card = mv.raised.find((c) => c.kind === "plugin-ok" && c.pluginId === DROP_ID)
+      ?? await until("its OK card", 30_000, async () => (await cardsOf(ctx)).find((c) => c.kind === "plugin-ok" && c.pluginId === DROP_ID), async () => `no OK card for ${DROP_ID}; it is ${(await pluginOf(ctx, DROP_ID))?.state ?? "not in the registry"}`);
+    const state = (await pluginOf(ctx, DROP_ID))?.state;
+    if (state !== "found") fail(`before the OK it is ${state ?? "not installed"}, not found`);
+    const text = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
+    if (!text.includes(BUILT_BY_ALPHA)) fail(`its OK card doesn't say "${BUILT_BY_ALPHA}" (card: ${text.slice(0, 500)})`);
+    await ctx.pressCard("its OK card", (c) => c.id === card.id);
+    await until(`${DROP_ID} running after its OK`, 60_000, async () => ((await pluginOf(ctx, DROP_ID))?.state === "running" ? true : undefined));
+    const g = await ok(ctx, session, DROP_TOOL, { name: "Acceptance" }, () => true);
+    if (!g.result.text.includes(answerFor(GREETING.first))) fail(`its tool answered "${g.result.text.slice(0, 200)}", not "${answerFor(GREETING.first)}"`);
+    done.push(`8 drop: ${Object.keys(dropFiles()).length} Writes and one Bash mv with no card; found, OK card "Built by Alpha…" pressed; running; tool answered`);
   }));
 
   if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ")})`);

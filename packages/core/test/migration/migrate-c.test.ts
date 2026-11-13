@@ -445,10 +445,14 @@ describe("both phases", () => {
     expect(m.status).toBe("complete");
     expect(existsSync(migrationCCompletePath(home))).toBe(true);
     // move-dirs: content in sdk/, relative links at the old paths
-    for (const [name, target] of [["projects", "sdk/projects"], ["skills", "sdk/skills"], ["agents", "sdk/agents"], ["backups", "sdk/file-history"]]) {
+    for (const [name, target] of [["projects", "sdk/projects"], ["skills", "sdk/skills"], ["backups", "sdk/file-history"]]) {
       expect(lstatSync(join(home, name!)).isSymbolicLink()).toBe(true);
       expect(readlinkSync(join(home, name!))).toBe(target!);
     }
+    // agents: each definition moved on its own, no link — `<home>/agents` stays a real folder (botless agents' transcripts)
+    expect(lstatSync(join(home, "agents")).isDirectory()).toBe(true);
+    expect(existsSync(join(home, "agents", "reviewer.md"))).toBe(false);
+    expect(existsSync(join(home, "sdk", "agents", "reviewer.md"))).toBe(true);
     expect(readFileSync(join(home, "sdk", "projects", key, "memory", "MEMORY.md"), "utf8")).toBe("- remembers\n");
     expect(existsSync(join(home, "sdk", "projects", key, "s-clover", "subagents", "agent-a.jsonl"))).toBe(true);
     expect(existsSync(join(home, "sdk", "projects", key, "s-clover.provider-state.jsonl"))).toBe(true);

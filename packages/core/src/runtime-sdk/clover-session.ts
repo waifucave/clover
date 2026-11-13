@@ -393,6 +393,11 @@ export interface CloverSession {
   readonly init: CloverInitFacts | undefined;
   /** A host-side fact: pushes minus results, for the current incarnation. */
   readonly turnRunning: boolean;
+  /** Whether the current incarnation runs background work (a background shell, a monitor, a child agent: the
+   *  runtime's backgrounded tasks), which replacing the child would end. */
+  readonly backgroundRunning: boolean;
+  /** Resolves once no background work runs (at once when none does), or the incarnation ends. */
+  backgroundDone(): Promise<void>;
   /** When the running turn's first push happened (epoch ms); undefined while idle. */
   readonly turnStartedAt: number | undefined;
   /** Resolves when the CURRENT incarnation's iteration has returned (and its teardown ran).
@@ -614,6 +619,31 @@ class CloverSessionImpl implements CloverSession {
   get query(): Query | undefined { return this.inc?.query; }
   get init(): CloverInitFacts | undefined { return this.initFacts; }
   get turnRunning(): boolean { return this.inFlight > 0; }
+  get backgroundRunning(): boolean { return this.background.size > 0; }
+  backgroundDone(): Promise<void> {
+    if (this.background.size === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => { this.backgroundWaiters.push(resolve); });
+  }
+  /** The runtime's backgrounded tasks still running in the current incarnation, by task id. */
+  private readonly background = new Set<string>();
+  private backgroundWaiters: (() => void)[] = [];
+  private backgroundChanged(): void {
+    if (this.background.size > 0) return;
+    const waiters = this.backgroundWaiters;
+    this.backgroundWaiters = [];
+    for (const w of waiters) w();
+  }
+  /** A task frame: a backgrounded task started, or one ended (its notification, or a terminal status). */
+  private noteTaskFrame(msg: Record<string, unknown>): void {
+    if (msg.type !== "system" || typeof msg.task_id !== "string") return;
+    const patch = msg.subtype === "task_updated" && typeof msg.patch === "object" && msg.patch !== null ? msg.patch as { is_backgrounded?: unknown; status?: unknown } : undefined;
+    if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
+      this.background.add(msg.task_id);
+    } else if (msg.subtype === "task_notification" || (patch !== undefined && typeof patch.status === "string" && ["completed", "failed", "stopped", "killed", "cancelled"].includes(patch.status))) {
+      this.background.delete(msg.task_id);
+      this.backgroundChanged();
+    }
+  }
   get turnStartedAt(): number | undefined { return this.inFlight > 0 ? this.turnStart : undefined; }
   get done(): Promise<void> { return this.inc?.done ?? this.lastDone; }
   get pendingSends(): readonly string[] { return this.pending; }
@@ -1212,6 +1242,7 @@ class CloverSessionImpl implements CloverSession {
           this.attachMessaging(inc);
           if (this.inFlight === 0) this.armIdleTimer();
         }
+        this.noteTaskFrame(msg as unknown as Record<string, unknown>);
         let batch: ProjectedBatch;
         try {
           batch = inc.projector.accept(msg);
@@ -1254,6 +1285,9 @@ class CloverSessionImpl implements CloverSession {
       try { this.emit(inc.projector.closeOpenThinking()); } catch { /* bounded: the store may be closed */ }
       try { inc.projector.flush(); } catch { /* the checkpoint store may already be closed */ }
       this.clearIdleTimer();
+      // Its background work ended with it.
+      this.background.clear();
+      this.backgroundChanged();
       try { inc.attachment?.detach(); } catch { /* detach never throws by contract; belt only */ }
       inc.attachment = undefined;
       this.deps.runtime.untrack(this.sessionId);

@@ -39,7 +39,12 @@ export interface KeptState {
 
 /** Where the kept things live under the state dir. */
 export function statePaths(dir: string): { home: string; user: string; keychain: string } {
-  return { home: join(dir, "home"), user: join(dir, "user"), keychain: join(dir, "kc", "acceptance.keychain-db") };
+  // The Clover home inside the user home (`<user>/.clover`), as on the owner's Mac; a state dir an older harness made
+  // keeps its sibling `home` (the upgrade pair's old half may be an older tree's run).
+  const user = join(dir, "user");
+  const sibling = join(dir, "home");
+  const home = existsSync(sibling) && !existsSync(join(user, ".clover")) ? sibling : join(user, ".clover");
+  return { home, user, keychain: join(dir, "kc", "acceptance.keychain-db") };
 }
 
 /** The test app's kept answer key (`CLOVER_TEST_ANSWER_KEY`): a file beside the run's throwaway keychain file. */
@@ -92,7 +97,7 @@ export function readState(dir: string): KeptState {
 
 /** The home's settings with Anthropic's endpoint set to this run's fake, everything else as the earlier build left it
  *  (an upgrade keeps the user's settings). A missing file starts empty; one that isn't a JSON object throws. */
-export function settingsWithFake(existing: string | undefined, fakeUrl: string): string {
+export function settingsWithFake(existing: string | undefined, fakeUrl: string, others: Readonly<Record<string, string>> = {}): string {
   let s: Record<string, unknown> = { schemaVersion: 1 };
   if (existing !== undefined && existing.trim() !== "") {
     const parsed = JSON.parse(existing) as unknown;
@@ -101,7 +106,13 @@ export function settingsWithFake(existing: string | undefined, fakeUrl: string):
   }
   const providers = (typeof s.providers === "object" && s.providers !== null && !Array.isArray(s.providers) ? s.providers : {}) as Record<string, unknown>;
   const anthropic = (typeof providers.anthropic === "object" && providers.anthropic !== null && !Array.isArray(providers.anthropic) ? providers.anthropic : {}) as Record<string, unknown>;
-  return `${JSON.stringify({ ...s, providers: { ...providers, anthropic: { ...anthropic, baseUrl: fakeUrl } } }, null, 2)}\n`;
+  // Other providers' endpoints are the run's fakes too (the code-adapter clause: google, openai, groq), when it has them.
+  const more: Record<string, unknown> = {};
+  for (const [id, url] of Object.entries(others)) {
+    const p = (typeof providers[id] === "object" && providers[id] !== null && !Array.isArray(providers[id]) ? providers[id] : {}) as Record<string, unknown>;
+    more[id] = { ...p, baseUrl: url };
+  }
+  return `${JSON.stringify({ ...s, providers: { ...providers, anthropic: { ...anthropic, baseUrl: fakeUrl }, ...more } }, null, 2)}\n`;
 }
 
 /** The daemon's lines that say it distrusts state an earlier build signed (the registry's MAC, the device key). */
@@ -114,7 +125,7 @@ export const OLD_HALF_STATE_STEPS: readonly string[] = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
-  "a plugin installs from a folder, its OK card approved",
+  "a plugin installs from a folder, its Review reports on its card, its OK card approved; a plugin whose host.start says each starts at once with no call; a plugin trigger arms a routine and fires it",
   "the bot calls the plugin's MCP tool",
   "the daemon restarts on the same home and boots",
 ];

@@ -6,7 +6,7 @@ import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment, type Caller, typ
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../approval-broker";
 import type { Clock } from "../clock";
 import { ContractError, isInside, normalizePosix, type Unsubscribe } from "../common";
-import { fenceContextFor, type Fence, type FenceOp } from "../fence";
+import { fenceContextFor, fencedOutText, type Fence, type FenceOp } from "../fence";
 import { MemoryAnswerLedger } from "./approval-broker";
 import {
   peerTreeDecision, checkNoFollow, splitTreePath, transferChange, treeCallBinding,
@@ -305,7 +305,7 @@ export class FakeTree implements Tree {
     if (as === undefined) throw new ContractError("invalid", "a tree call says whom it is for (`as`)");
     if (as.kind === "user" || as.kind === "core") return;
     const verdict = this.#computers.get(computer)?.fence?.check(op, fenceContextFor(as));
-    if (verdict && !verdict.allowed) throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer, reason: verdict.reason });
+    if (verdict && !verdict.allowed) throw new ContractError("fenced", fencedOutText(as, verdict.path), { computer, reason: verdict.reason });
   }
 
   #computerName(nameOrAlias: string): string | undefined {

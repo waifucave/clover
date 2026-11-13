@@ -13,7 +13,9 @@
 //   record), and only for a secret its own `auth` entries name.
 import type { ApiHandlers } from "../../plugin-host/api/router";
 import { isBundledClover } from "./load";
-import { pinnedFetch } from "../../plugin-host/pinned-fetch";
+import { pinnedFetch, PinnedFetchRefused } from "../../plugin-host/pinned-fetch";
+import { ipAddressClass } from "../../agent/tools/web";
+import { originOf } from "./user-endpoint";
 import { maskError, maskResponse, noteKeys } from "./key-redaction";
 import { publicFetch } from "./public-fetch";
 import { reachesPublicNetwork } from "@waifucave/clover-plugin-sdk";
@@ -34,7 +36,7 @@ function declaredHost(record: Pick<PluginRecord, "capabilities">, raw: string): 
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
-import { clampKeyedIdleTimeoutMs, createKeyedFetch, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
+import { clampKeyedIdleTimeoutMs, createKeyedFetch, isLoopbackHost, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
 
 export interface ModelPluginApiOptions {
   registry: Pick<PluginRegistry, "get">;
@@ -53,6 +55,69 @@ export interface ModelPluginApiOptions {
   dangerousAdded?: () => readonly string[];
   /** The daemon's log: a public fetch's refusal detail the plugin doesn't get. */
   log?: (line: string) => void;
+  /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, `user-endpoint.ts`), read at each
+   *  call: the plugin's fetch reaches that origin (with its key: the provider's API calls) beside its declared hosts. */
+  userEndpoint?: (pluginId: string) => string | undefined;
+  /** The platform fetch to a host on this computer a plugin declared (`withThisComputer`): by default the pinned fetch
+   *  reaching loopback addresses only. A test passes its own. */
+  loopbackFetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** The platform fetch to a user's own endpoint: by default the pinned fetch, reaching that one host even at a
+   *  loopback or private address. A test passes its own. */
+  userFetch?: (origin: string) => (url: string, init: RequestInit) => Promise<Response>;
+}
+
+/** The pinned fetch to one origin the user set: its host may be at a loopback or private address, and every hop
+ *  (the keyed fetch follows redirects by hand, through here) must be that origin. */
+function userOriginFetch(origin: string, platform: (url: string, init: RequestInit) => Promise<Response>): (url: string, init: RequestInit) => Promise<Response> {
+  return (url, init) => {
+    if (originOf(url) !== origin) return Promise.reject(new PinnedFetchRefused(`the user's endpoint for this provider is ${origin}; ${originOf(url) ?? "that URL"} is another`));
+    return platform(url, init);
+  };
+}
+
+/** A `network:` entry naming a host on this computer with its port (`localhost:11434`, `127.0.0.1:1234`, `[::1]:8080`):
+ *  the one kind of local host a plugin may declare for its keyed fetch (a model server on this computer). A LAN or other
+ *  private address stays refused, and so does a loopback entry without a port. */
+const THIS_COMPUTER_ENTRY = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]):(\d{1,5})$/i;
+
+/** The host and port of each of a plugin's declared hosts on this computer. */
+function thisComputerHosts(record: Pick<PluginRecord, "capabilities">): { host: string; port: number }[] {
+  return networkHostsOf(record).flatMap((e) => {
+    const m = THIS_COMPUTER_ENTRY.exec(e.trim());
+    return m === null ? [] : [{ host: m[1]!.toLowerCase().replace(/^\[|\]$/g, ""), port: Number(m[2]) }];
+  });
+}
+
+/** The pinned fetch reaching loopback addresses only (a name that resolves elsewhere is still refused). */
+const LOOPBACK_FETCH = pinnedFetch({ reach: (_host, address) => ipAddressClass(address) === "loopback" });
+
+/** A plugin's platform fetch: a request to a host on this computer its OK names (with its port) goes through
+ *  `loopback`, which reaches only loopback addresses; every other request through `platform`, which refuses them.
+ *  Every hop of a redirect comes through here and is held to the same rule. */
+function withThisComputer(record: Pick<PluginRecord, "capabilities">, platform: (url: string, init: RequestInit) => Promise<Response>, loopback: (url: string, init: RequestInit) => Promise<Response>): (url: string, init: RequestInit) => Promise<Response> {
+  const local = thisComputerHosts(record);
+  if (local.length === 0) return platform;
+  return (url, init) => {
+    let u: URL;
+    try { u = new URL(url); } catch { return platform(url, init); }
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    const port = u.port !== "" ? Number(u.port) : u.protocol === "https:" ? 443 : 80;
+    return local.some((l) => l.host === host && l.port === port) ? loopback(url, init) : platform(url, init);
+  };
+}
+
+/** The fetch a plugin's OAuth token requests go through (its sign-in's code exchange and its renewals): the pinned
+ *  fetch, which reaches public addresses only, and a host on this computer only when its OK names it with its port
+ *  (`withThisComputer`, as its keyed fetch). */
+export function pluginTokenFetch(record: Pick<PluginRecord, "capabilities"> | undefined): (url: string, init: RequestInit) => Promise<Response> {
+  const platform = pinnedFetch();
+  return record === undefined ? platform : withThisComputer(record, platform, LOOPBACK_FETCH);
+}
+
+/** The keyed fetch's host entry for an origin: its host, with its port when the URL names one. */
+function hostEntryOf(origin: string): string {
+  const u = new URL(origin);
+  return u.port === "" ? u.hostname : `${u.hostname}:${u.port}`;
 }
 
 interface AuthLike {
@@ -101,8 +166,11 @@ function keyedInit(init: RequestInit | undefined): KeyedFetchInit {
  * The model plugins' two calls of the plugin API, `net.fetch` (keyed) and `secrets.get`, as handlers in B's router
  * (`DaemonPluginHost.addApiHandlers`, #302's review B1): B's gate runs first (the call exists where it was made, the
  * plugin is on and running, the capability is granted, and `net.fetch`'s host is in its GRANTED `network:` entries).
- * Until B's fence and network rules land (2f, 2g), a third-party plugin is refused here with the reason: only the
- * bundled tree's plugins get a keyed fetch or a secret.
+ * They serve every plugin, a third party's as a bundled one's (spec §5.4; B's fence and network rules, 2f and 2g,
+ * hold its processes to its own hosts too): a plugin's fetch reaches only its declared hosts, with only its own keys
+ * (a third party's are its own items, which the user stored for it; never a provider slot, `keychain-tokens.ts`), and
+ * `secrets.get` reads only its own `auth` entries' secrets, in a process of its own. The keyless `network:public` path
+ * is the bundled tree's alone (the capability is `bundledOnly`, and is checked here again).
  */
 export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers {
   const fetches = new Map<string, { key: string; fetch: KeyedFetch }>();
@@ -121,23 +189,47 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     if (held !== undefined && held.key === key) return held.fetch;
     const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
     for (const [name, a] of authEntriesOf(record)) auth[name] = { source: noteKeys(opts.tokens(record.id, name), keysOf(record.id)), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
-    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: opts.fetch ?? pinnedFetch(), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: withThisComputer(record, opts.fetch ?? pinnedFetch(), opts.loopbackFetch ?? LOOPBACK_FETCH), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
     fetches.set(record.id, { key, fetch });
     return fetch;
   };
-  const publicOf = publicFetch({ fetch: opts.fetch ?? pinnedFetch(), ...(opts.log !== undefined ? { log: opts.log } : {}), ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}) });
-  const bundledOnly = (record: PluginRecord, what: string): void => {
-    if (!isBundledClover(record)) throw new ContractError("refused", `${what} is served to Clover's own bundled plugins only until the plugin API's fence and network rules land; ${record.id} is a third-party plugin`);
+  const userFetches = new Map<string, { key: string; fetch: KeyedFetch }>();
+  /** A plugin's keyed fetch to the user's own endpoint for its provider: that origin alone, its own keys. */
+  const userFetchFor = (record: PluginRecord, origin: string): KeyedFetch => {
+    const key = JSON.stringify([origin, record.treeHash ?? null, [...authEntriesOf(record)].map(([n, a]) => [n, a.method, a.placement ?? null])]);
+    const held = userFetches.get(record.id);
+    if (held !== undefined && held.key === key) return held.fetch;
+    const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
+    for (const [name, a] of authEntriesOf(record)) auth[name] = { source: noteKeys(opts.tokens(record.id, name), keysOf(record.id)), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
+    const platform = opts.userFetch?.(origin) ?? pinnedFetch({ reach: (host) => host === new URL(origin).hostname.replace(/^\[|\]$/g, "") });
+    const fetch = createKeyedFetch({ hosts: [hostEntryOf(origin)], auth, fetch: userOriginFetch(origin, platform), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    userFetches.set(record.id, { key, fetch });
+    return fetch;
   };
+  const publicOf = publicFetch({ fetch: opts.fetch ?? pinnedFetch(), ...(opts.log !== undefined ? { log: opts.log } : {}), ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}) });
   return {
     "net.fetch": async (ctx, args) => {
-      bundledOnly(ctx.record, "a keyed net.fetch");
       const [url, init, fetchOpts] = args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
       const keys = keysOf(ctx.record.id);
+      // The user pointed this plugin's provider at an endpoint of their own: a request to that origin (the provider's API
+      // calls, which carry its key) goes there; every other request keeps the plugin's declared hosts (a token
+      // exchange, discovery), below.
+      const userOrigin = opts.userEndpoint?.(ctx.record.id);
+      if (userOrigin !== undefined && originOf(url) === userOrigin) {
+        // Plain http reaches only this computer (the keyed fetch's rule); say so in words, not as `insecure_url`.
+        if (new URL(userOrigin).protocol === "http:" && !isLoopbackHost(new URL(userOrigin))) {
+          throw new ContractError("refused", `your endpoint for this provider (${userOrigin}) is on the local network over plain http: an endpoint on the local network needs https; plain http reaches only this computer (localhost or 127.0.0.1)`);
+        }
+        try {
+          return maskResponse(await userFetchFor(ctx.record, userOrigin)(url, keyedInit(init), fetchOpts), keys);
+        } catch (err) {
+          throw maskError(err, keys);
+        }
+      }
       try {
         // A host on the plugin's declared network: list goes through its keyed fetch; any other only with
         // `network:public` granted (B's gate checked it too), keyless, through Clover's web safeguards.
-        if (!declaredHost(ctx.record, url) && reachesPublicNetwork(ctx.record.granted)) {
+        if (!declaredHost(ctx.record, url) && isBundledClover(ctx.record) && reachesPublicNetwork(ctx.record.granted)) {
           return maskResponse(await publicOf(ctx.record.id, url, init ?? {}, fetchOpts as Record<string, unknown> | undefined), keys);
         }
         return maskResponse(await fetchFor(ctx.record)(url, keyedInit(init), fetchOpts), keys);
@@ -146,7 +238,6 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       }
     },
     "secrets.get": async (ctx, args) => {
-      bundledOnly(ctx.record, "secrets.get");
       // B's gate already holds it to a process of the plugin's own; said again here, where the secret is read.
       if (ctx.process !== "own") throw new ContractError("refused", "secrets.get exists only in a process of the plugin's own (spec §5.2)");
       const [name] = args as [string];

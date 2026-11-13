@@ -70,7 +70,7 @@ export interface PluginRecord extends PluginSummary {
    *  host half's API calls go by. A plugin's layer connection gets exactly what its host process would get at that
    *  moment: nothing while it is off, stopped, blocked, refused, invalid or waiting for its OK; while a change waits for a
    *  new OK, the registry's own answer for its process (the old grant while the old version keeps running on the old
-   *  OK, as an official index's update does; nothing while it is held until the OK). */
+   *  OK, as an update that adds no trigger does; nothing while it is held until the OK). */
   granted: readonly string[];
   issues: readonly ValidationIssue[];
   provenance: PluginProvenance;

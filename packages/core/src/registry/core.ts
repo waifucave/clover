@@ -27,7 +27,6 @@ export interface RegistryInput {
   approved?: boolean;
   enabled?: boolean;
   invalid?: string;
-  blocked?: string;
   folder?: string;
   issues?: ValidationIssue[];
   class?: PluginClass;
@@ -64,6 +63,15 @@ export interface RegistryCoreOptions {
   now?: () => number;
   /** A plugin's OK was answered or a folder changed: the folder layer keeps the OK'd tree's snapshot. */
   onOk?: (id: string, treeHash: string) => void;
+  /** This computer's platform, for plugins' `platforms` (`thisPlatform()`); absent, none is held to it. */
+  platform?: string;
+}
+
+/** This computer's platform as a manifest's `platforms` names it (`darwin-arm64`, `windows-x64`, `linux-x64`,
+ *  `linux-arm64`); another (an Intel Mac) is named the same way and matches no list that leaves it out. */
+export function thisPlatform(): string {
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : process.platform;
+  return `${os}-${process.arch}`;
 }
 
 interface Held {
@@ -128,7 +136,7 @@ export class RegistryCore implements PluginRegistry {
     const held = this.#mustGet(id);
     const state = this.#snap.records.get(id)?.state;
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
-    if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+    if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     // The rules' not-yet state (the mark in Clover's own tree): its switch stays as it is.
     if (state === "off" && this.#snap.records.get(id)?.reason === NOT_AVAILABLE_YET) {
       throw new ContractError("refused", `${id} isn't available in this build yet, so it can't be turned on or off`);
@@ -428,7 +436,6 @@ export class RegistryCore implements PluginRegistry {
       if (h.okHash !== undefined) p.okHash = h.okHash;
       if (i.invalid !== undefined) p.invalid = i.invalid;
       else if (h.buildFailed !== undefined && h.buildFailed.hash === h.hash) p.invalid = h.buildFailed.reason;
-      if (i.blocked !== undefined) p.blocked = i.blocked;
       if (h.stopped !== undefined) p.stopped = h.stopped;
       if (i.folder !== undefined) p.folder = i.folder;
       if (i.issues !== undefined) p.issues = i.issues;
@@ -439,7 +446,7 @@ export class RegistryCore implements PluginRegistry {
     }
     this.#persist(ids);
     const before = this.#snap;
-    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability });
+    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability, ...(this.#o.platform !== undefined ? { platform: this.#o.platform } : {}) });
     const changes = registryChanges(before, this.#snap);
     for (const change of changes) this.#listeners.emit(change);
     // A plugin whose tree changed under the same id (an update applied, a folder edited) and is still there, when the

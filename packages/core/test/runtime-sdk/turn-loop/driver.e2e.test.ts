@@ -465,6 +465,64 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("its own provider's key changing reopens it at the next turn, once; another provider's change never does", async () => {
+    const home = tempHome();
+    const keys: Record<string, string> = { "winter-test": "compiled:t:1", acme: "absent" };
+    let opened = 0;
+    const query: typeof sdkQuery = (args) => { opened += 1; return sdkQuery(args); };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, modelCatalogKey: (p) => keys[p] ?? "absent", log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect(opened).toBe(1);
+      // Another plugin (another provider) comes up, then changes: no reopen.
+      keys.acme = "host:plugin.acme.adapter@1:abc";
+      await driver.turn(user("again"), control());
+      keys.acme = "host:plugin.acme.adapter@2:abc";
+      await driver.turn(user("and again"), control());
+      expect(opened).toBe(1);
+      // Its own provider's plugin comes up: reopened once.
+      keys["winter-test"] = "host:t@1:x";
+      expect((await driver.turn(user("now"), control())).reason).toBe("end_turn");
+      expect(opened).toBe(2);
+      await driver.turn(user("once more"), control());
+      expect(opened).toBe(2);
+      expect(lines.filter((l) => l.includes("reopening: its provider winter-test changed"))).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  darwinTest("a reopen for its provider is held while its runtime runs background work, and comes at the first turn after it ends; a provider gone reopens at once", async () => {
+    const home = tempHome();
+    const keys: Record<string, string> = { "winter-test": "compiled:t:1" };
+    let opened = 0;
+    const query: typeof sdkQuery = (args) => { opened += 1; return sdkQuery(args); };
+    const lines: string[] = [];
+    const live: number[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, modelCatalogKey: (p) => keys[p] ?? "absent", log: (l) => lines.push(l), observe: { tasks: (_c, n) => live.push(n) } }));
+    try {
+      expect((await driver.turn(user('CALL Bash {"command":"sleep 4; echo finished","run_in_background":true,"description":"wait"}'), control())).reason).toBe("end_turn");
+      expect(live.at(-1)).toBe(1);
+      keys["winter-test"] = "host:t@1:x";
+      await driver.turn(user("while it runs"), control());
+      expect(opened).toBe(1);
+      expect(lines.some((l) => l.includes("its provider winter-test changed; it reopens once its background work ends"))).toBe(true);
+      for (let i = 0; i < 100 && live.at(-1) !== 0; i++) await Bun.sleep(100);
+      expect(live.at(-1)).toBe(0);
+      await driver.turn(user("after it ended"), control());
+      expect(opened).toBe(2);
+      // Background work again, and then its provider gone: reopened at once (the next turn's error says why).
+      await driver.turn(user('CALL Bash {"command":"sleep 4; echo finished","run_in_background":true,"description":"wait"}'), control());
+      expect(live.at(-1)).toBe(1);
+      keys["winter-test"] = "absent";
+      await driver.turn(user("gone"), control());
+      expect(opened).toBe(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 120_000);
+
   test("a server set that can't be read fails the turn and closes the runtime open under the old set, as the sandbox read does; a readable set opens it again", async () => {
     const home = tempHome();
     const runner: McpRunner = { async run(_s, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };
