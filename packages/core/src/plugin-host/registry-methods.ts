@@ -146,9 +146,9 @@ export function pluginRegistryMethods(o: {
     if (r === undefined) throw new ContractError("not_found", `${id} isn't installed`);
     return r;
   };
-  const devView = (d: { path: string; addedAt: number; expiresAt: number }): { path: string; addedAt: number; expiresAt: number; pluginId?: string } => {
+  const devView = (d: { path: string; addedAt: number; expiresAt: number; lastReloadAt?: number }): { path: string; addedAt: number; expiresAt: number; pluginId?: string; lastReloadAt?: number } => {
     const plugin = registry.list().find((r) => r.dev && resolve(r.folder) === resolve(d.path));
-    return { path: d.path, addedAt: d.addedAt, expiresAt: d.expiresAt, ...(plugin !== undefined ? { pluginId: plugin.id } : {}) };
+    return { path: d.path, addedAt: d.addedAt, expiresAt: d.expiresAt, ...(plugin !== undefined ? { pluginId: plugin.id } : {}), ...(d.lastReloadAt !== undefined ? { lastReloadAt: d.lastReloadAt } : {}) };
   };
   return {
     [M.pluginList.name]: handler(M.pluginList, () => ({ plugins: registry.list().map(summaryOf), adultConfirmed: registry.adultConfirmed })),
