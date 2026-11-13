@@ -130,7 +130,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
   // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.
   "plugin.grant.list": { disposition: READ, part: PLUGINS_PART },
-  "computer.list": { disposition: READ, part: PLUGINS_PART },
+  // Read by every bundled part that shows where it is or where to send (the shell's and the sidebar's account row, the composer's
+  // "where" picker, Settings' and the panel's computers), not only the page that listed it to tick.
+  "computer.list": { disposition: READ, part: [PLUGINS_PART, SETTINGS_PART, "clover/shell", "clover/sidebar", "clover/composer", "clover/panel"] },
   // Every command with what became of its default key (bound, or the app's, too bare, or shared): the detail's "Keys" lines.
   "command.list": { disposition: READ, part: PLUGINS_PART },
   // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.

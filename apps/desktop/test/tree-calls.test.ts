@@ -373,7 +373,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.grant.list": { parts: [PLUGINS_PART], gesture: [] },
-  "computer.list": { parts: [PLUGINS_PART], gesture: [] },
+  "computer.list": { parts: [PLUGINS_PART, "clover/settings", "clover/shell", "clover/sidebar", "clover/composer", "clover/panel"], gesture: [] },
   "command.list": { parts: [PLUGINS_PART], gesture: [] },
   "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
   ...Object.fromEntries(["ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),

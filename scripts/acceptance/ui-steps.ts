@@ -33,7 +33,7 @@ export const UI_STEPS = [
   "a third-party plugin with UI installed from its folder as it is (a TSX client importing React and the UI SDK, no react shipped) renders in its own layer once OK'd, its client built by the registry at load; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
   "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
   "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
-  "a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
+  "a bot's question card (AskUserQuestion) takes a pressed option and Send answer in the window and the turn goes on with the answer; a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
   "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
@@ -48,7 +48,7 @@ class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
 interface Ctx {
-  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string; answered?: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
+  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string; answered?: string; toolResult?: { text: string; isError: boolean } }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
   /** What the Settings step set, as the daemon keeps it (the upgrade's first half records it). */
   onSetting?(key: string, value: unknown): void;
   /** Runs a turn that raises a tool card, calls `inspect` with the card while it is pending, then presses its Approve in the window. */
@@ -1531,8 +1531,42 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (ends.at(-1) !== "end_turn" || ends.at(-2) !== "error") fail(`the turns ended ${ends.slice(-3).join(", ")}, not an error then a completed turn`);
     const stale = await cdp.centerOf(button.session, ".cl-conv-note__retry").catch(() => undefined);
     if (stale !== undefined || (await treeText(cdp)).includes("Try again")) fail("Try again is still on screen after the turn completed");
+    // The bot asks a question (the fake calls AskUserQuestion): the card in the conversation shows its options; one is pressed and "Send answer"
+    // pressed, in the window. The conversation part answers on its plugin's own connection (session.answer needs conversation.post, which its
+    // OK lists), so the answer is accepted, the card shows it answered, and the turn goes on with that answer as the tool's result.
+    const qTag = `ACCEPTANCE-ASK-${randomBytes(3).toString("hex").toUpperCase()}`;
+    const choice = "Blue sky";
+    const input = JSON.stringify({ questions: [{ question: `Which colour for ${qTag}?`, header: "Colour", multiSelect: false, options: [{ label: choice, description: "the first" }, { label: "Green leaf", description: "the second" }] }] });
+    const qBox = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    await cdp.evaluate(qBox.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
+    await cdp.send("Input.insertText", { text: `ACCEPTANCE-CALL AskUserQuestion ${input}` }, qBox.session);
+    await sleep(300);
+    const qSend = await until("the send button", 10_000, () => cdp.centerOf(qBox.session, "button.cl-composer__send").catch(() => undefined));
+    await cdp.click(qBox.session, qSend.x, qSend.y);
+    const pending = await until("the question card, pending, in the conversation", 90_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const v = await cdp.evaluate(d.session, `(() => { const c = [...document.querySelectorAll('.cl-conv-question[data-state=pending]')].find((e) => e.textContent.includes(${JSON.stringify(qTag)})); return c ? true : null; })()`).catch(() => null);
+        if (v === true) return d;
+      }
+      return undefined;
+    }, async () => `requests: ${ctx.requests().slice(-3).map((r) => `${r.answered}:${r.lastUserText.slice(0, 60)}`).join(" | ")} || ${await dumpFrames(cdp)}`);
+    const optSel = ".cl-conv-question[data-state=pending] .cl-conv-question__option";
+    const optAt = await until("the first option on the card", 10_000, () => cdp.centerOf(pending.session, optSel, choice).catch(() => undefined));
+    await cdp.click(pending.session, optAt.x, optAt.y);
+    await sleep(300);
+    const sendSel = ".cl-conv-question[data-state=pending] button.cl-conv-question__send";
+    const sendAt = await until("an enabled Send answer", 10_000, async () => {
+      const ok = await cdp.evaluate(pending.session, `(() => { const b = document.querySelector(${JSON.stringify(sendSel)}); return !!b && !b.disabled; })()`).catch(() => false);
+      return ok === true ? await cdp.centerOf(pending.session, sendSel).catch(() => undefined) : undefined;
+    });
+    await cdp.click(pending.session, sendAt.x, sendAt.y);
+    await until("the card answered and the turn gone on with the answer", 90_000, async () => {
+      const failed = await cdp.evaluate(pending.session, `!!document.querySelector('.cl-conv-question__failed')`).catch(() => false);
+      if (failed === true) return fail("the card said the answer didn't go through");
+      return ctx.requests().some((r) => r.toolResult?.text.includes(choice) && r.lastUserText.length >= 0) && (await treeText(cdp)).includes("ACCEPTANCE-DONE") ? true : undefined;
+    }, async () => `tool results: ${ctx.requests().slice(-3).map((r) => r.toolResult?.text.slice(0, 120)).join(" | ")}`);
     const asked = ctx.requests().filter((r) => r.lastUserText.includes(tag));
-    return `a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
+    return `the bot's question card (${qTag}) took a pressed option and "Send answer" in the window and the turn went on with "${choice}" as the tool's result (no "didn't go through"); a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
   });
   // 17: a bot plugin of its own with its own Live2D model in its assets (the placeholder generator's files, copied into a temp
   // folder), installed from that folder. Its tab's stage draws the model: the model's JSON files are served to that bot, so the
