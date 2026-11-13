@@ -25,6 +25,7 @@ import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBu
 import { openPluginRegistry } from "../../registry/open";
 import { startModelPlugins } from "../../runtime-sdk/model-plugins/start";
 import { createPluginAuth, type OAuthRun } from "../../runtime-sdk/plugin-auth";
+import { createOAuthRenewal } from "../../runtime-sdk/model-plugins/oauth-renewal";
 import { startPluginHost } from "../daemon-host";
 
 const REPO_PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins");
@@ -263,6 +264,152 @@ export const adapter = {
       const adapter = started.plugins.providerAdapterFor("acceptance-oauth", { caller: { kind: "core" } })!;
       expect(await text(adapter.streamTurn(turn("oauth-fast"), ctxOf("acceptance-oauth")))).toEqual({ text: "hello over oauth" });
       expect(oauth.seen.bearer).toEqual([`Bearer ${oauth.token}`]);
+    } finally {
+      started?.stop();
+      await ph.close();
+      opened.close();
+      oauth.stop();
+    }
+  }, 120_000);
+});
+
+/** The fake OAuth server with renewal: each token it issues is new and lives `expiresIn` seconds; a refresh-token
+ *  grant gives a new token (and a new refresh token) unless refused; a token can be revoked, so the provider answers
+ *  it 401. */
+function renewingOAuth(o: { expiresIn: number }) {
+  const codes = new Map<string, { challenge: string; redirect: string }>();
+  const live = new Set<string>();
+  const refreshTokens = new Set<string>();
+  const seen = { refreshes: 0, refusedRefreshes: 0, bearer: [] as string[] };
+  let refuse = false;
+  const issue = () => {
+    const access = `acc-${randomBytes(6).toString("hex")}`;
+    const refresh = `ref-${randomBytes(6).toString("hex")}`;
+    live.add(access);
+    refreshTokens.add(refresh);
+    return Response.json({ access_token: access, refresh_token: refresh, expires_in: o.expiresIn, token_type: "Bearer" });
+  };
+  const server = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    async fetch(req) {
+      const u = new URL(req.url);
+      if (u.pathname === "/authorize") {
+        const q = u.searchParams;
+        const code = randomBytes(8).toString("hex");
+        codes.set(code, { challenge: q.get("code_challenge")!, redirect: q.get("redirect_uri")! });
+        return new Response(null, { status: 302, headers: { location: `${q.get("redirect_uri")}?code=${code}&state=${encodeURIComponent(q.get("state")!)}` } });
+      }
+      if (u.pathname === "/token") {
+        const f = new URLSearchParams(await req.text());
+        if (f.get("grant_type") === "authorization_code") {
+          const c = codes.get(f.get("code") ?? "");
+          if (c === undefined || createHash("sha256").update(f.get("code_verifier") ?? "").digest("base64url") !== c.challenge) return Response.json({ error: "invalid_grant" }, { status: 400 });
+          codes.delete(f.get("code")!);
+          return issue();
+        }
+        if (f.get("grant_type") === "refresh_token") {
+          const r = f.get("refresh_token") ?? "";
+          if (refuse || !refreshTokens.has(r) || f.get("client_id") !== "acme-client") { seen.refusedRefreshes += 1; return Response.json({ error: "invalid_grant" }, { status: 400 }); }
+          refreshTokens.delete(r);
+          seen.refreshes += 1;
+          return issue();
+        }
+        return Response.json({ error: "unsupported_grant_type" }, { status: 400 });
+      }
+      if (u.pathname === "/v1/turn") {
+        const token = (req.headers.get("authorization") ?? "").replace(/^Bearer /, "");
+        seen.bearer.push(token);
+        return live.has(token) ? new Response("hello again") : new Response("no", { status: 401 });
+      }
+      return new Response("not here", { status: 404 });
+    },
+  });
+  return {
+    port: server.port!, url: `http://127.0.0.1:${server.port}`, seen,
+    revokeAll: () => live.clear(),
+    refuseRefresh: () => { refuse = true; },
+    stop: () => void server.stop(true),
+  };
+}
+
+describe("auth oauth-pkce renewal: a third party's token renewed at its own token endpoint", () => {
+  test("near expiry it is renewed before the call; after a 401 it is renewed once and the call retried; a refused renewal signs the plugin out and says to sign in again; the refresh token never reaches the plugin", async () => {
+    const home = temp("clover-a-auth-renew-");
+    // A token that lives 30 s: inside RENEW_BEFORE_MS from the start.
+    const oauth = renewingOAuth({ expiresIn: 30 });
+    const folder = join(home, "plugins", "acme-oauth");
+    mkdirSync(join(folder, "host"), { recursive: true });
+    const row = (await import("@waifucave/clover-provider-catalog")).loadCatalog().models.find((m) => m.providerId === "groq")!;
+    writeFileSync(join(folder, "catalog.json"), JSON.stringify({ catalog: 1, rows: [{ ...row, key: "acme-oauth/fast", providerId: "acme-oauth", upstreamId: "fast", displayName: "Fast", aliases: [] }] }));
+    writeFileSync(join(folder, "clover.json"), JSON.stringify({
+      manifest: 1, id: "acme-oauth", name: "Acme OAuth", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own" },
+      capabilities: [`network:127.0.0.1:${oauth.port}`],
+      contributes: { models: [{ provider: "acme-oauth", name: "Acme OAuth", catalog: "catalog.json", adapter: "adapter",
+        auth: [{ method: "oauth-pkce", authorizeUrl: `${oauth.url}/authorize`, tokenUrl: `${oauth.url}/token`, clientId: "acme-client", scopes: ["models"], secret: "oauth" }] }] },
+    }));
+    writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(folder, "host", "index.js"), `
+export const peek = async (args, ctx) => { try { return await ctx.api.secrets.get(args.name); } catch (e) { return "refused: " + e.message; } };
+export const adapter = {
+  describe: () => ({ interfaceVersion: 1, id: "plugin.acme-oauth.adapter", version: "1.0.0", family: "custom", protocol: "openai-chat", countTokens: false }),
+  async *streamTurn(args, ctx) {
+    const r = await ctx.api.net.fetch(${JSON.stringify(`${oauth.url}/v1/turn`)}, { method: "POST", body: "{}", signal: ctx.signal }, { auth: "oauth" });
+    if (!r.ok) { yield { type: "error", error: { code: "auth", message: "status " + r.status, retryable: false } }; return; }
+    yield { type: "text_delta", text: await r.text() };
+    yield { type: "done", stopReason: "end_turn" };
+  },
+  listModels: async () => ({ models: [] }),
+  validateCredential: async () => ({ ok: true }),
+};`);
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
+    const signedOut: string[] = [];
+    const renewal = createOAuthRenewal({ store: secrets, registry: opened.registry, onSignedOut: (id, _s, reason) => { signedOut.push(`${id}: ${reason}`); } });
+    let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
+    try {
+      await approve(opened, broker, "acme-oauth");
+      started = await startModelPlugins({ registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: new DaemonStore(), addApiHandlers: (h) => ph.addApiHandlers(h), oauth: renewal });
+      const oauthRun = (entry: { authorizeUrl: string; tokenUrl: string; clientId: string; scopes?: string[] }): OAuthRun => {
+        let resolveUrl!: (u: string) => void;
+        const authorizeUrl = new Promise<string>((r) => { resolveUrl = r; });
+        return { authorizeUrl, tokens: runLoginFlow({ clientId: entry.clientId, authorizeUrl: entry.authorizeUrl, tokenUrl: entry.tokenUrl, callbackPort: 0, scope: (entry.scopes ?? []).join(" "), openBrowser: async (u) => { resolveUrl(u); } }) };
+      };
+      const auth = createPluginAuth({ registry: opened.registry, host: ph.host, secrets: new DaemonStore(), pluginSecrets: secrets, oauth: oauthRun as never, oauthRenewal: renewal });
+      const signing = await auth.signIn("acme-oauth", 0);
+      await fetch((await fetch(signing.authorizeUrl!, { redirect: "manual" })).headers.get("location")!);
+      for (let i = 0; i < 100 && (await auth.list("acme-oauth"))[0]!.state !== "signed-in"; i++) await Bun.sleep(20);
+      const first = (await secrets.get({ owner: { kind: "plugin", pluginId: "acme-oauth" }, name: "oauth" }))!.value.reveal();
+      // The plugin's own items hold the access token alone; the refresh token is a device item it has no name for.
+      expect((await secrets.list({ kind: "plugin", pluginId: "acme-oauth" })).map((m) => m.ref.name)).toEqual(["oauth"]);
+      expect(await ph.host.invoke({ pluginId: "acme-oauth", handler: "peek", args: { name: "oauth" }, caller: { kind: "user", client: "app" } })).toBe(first);
+      expect(String(await ph.host.invoke({ pluginId: "acme-oauth", handler: "peek", args: { name: "plugin-oauth" }, caller: { kind: "user", client: "app" } }))).toStartWith("refused");
+      const adapter = started.plugins.providerAdapterFor("acme-oauth", { caller: { kind: "core" } })!;
+      // 1. Near expiry: renewed before the call, which carries the new token.
+      expect(await text(adapter.streamTurn(turn("fast"), ctxOf("acme-oauth")))).toEqual({ text: "hello again" });
+      expect(oauth.seen.refreshes).toBeGreaterThanOrEqual(1);
+      expect(oauth.seen.bearer.at(-1)).not.toBe(first);
+      // 2. A 401 (the token revoked): renewed once, the call retried once, and it goes through.
+      const refreshes = oauth.seen.refreshes;
+      oauth.revokeAll();
+      const bearers = oauth.seen.bearer.length;
+      expect(await text(adapter.streamTurn(turn("fast"), ctxOf("acme-oauth")))).toEqual({ text: "hello again" });
+      expect(oauth.seen.refreshes).toBeGreaterThan(refreshes);
+      expect(oauth.seen.bearer.length - bearers).toBeLessThanOrEqual(3);
+      // 3. The service refuses the renewal: signed out, with the reason the user reads; the call fails.
+      oauth.revokeAll();
+      oauth.refuseRefresh();
+      const out = await text(adapter.streamTurn(turn("fast"), ctxOf("acme-oauth")));
+      expect(out.error).toBeDefined();
+      expect(signedOut).toEqual([expect.stringContaining("acme-oauth: Your sign-in to Acme OAuth expired and couldn't be renewed (the service answered 400): sign in again.")]);
+      expect(await auth.list("acme-oauth")).toEqual([expect.objectContaining({ state: "signed-out", reason: expect.stringContaining("sign in again") })]);
+      expect(await secrets.get({ owner: { kind: "plugin", pluginId: "acme-oauth" }, name: "oauth" })).toBeNull();
+      // Signing in again clears the notice.
+      const again = await auth.signIn("acme-oauth", 0);
+      await fetch((await fetch(again.authorizeUrl!, { redirect: "manual" })).headers.get("location")!);
+      for (let i = 0; i < 100 && (await auth.list("acme-oauth"))[0]!.state !== "signed-in"; i++) await Bun.sleep(20);
+      expect((await auth.list("acme-oauth"))[0]).toEqual(expect.not.objectContaining({ reason: expect.anything() }));
     } finally {
       started?.stop();
       await ph.close();

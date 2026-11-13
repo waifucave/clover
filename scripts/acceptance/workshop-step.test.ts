@@ -13,7 +13,7 @@ import { startFakeAnthropic } from "./fake-anthropic";
 import { FULL_STEPS } from "./steps";
 import { CARDS_STEP } from "./cards-step";
 import {
-  ADD_CAPABILITY, BUILT_BY_ALPHA, DEVICES_LINE, GREETING, NOTIFY_LINE, PEER_ID, SECOND_REQUEST, WORKSHOP_ID, WORKSHOP_NAME, WORKSHOP_STEP,
+  ADD_CAPABILITY, BUILT_BY_ALPHA, DEVICES_LINE, DROP_ID, DROP_NAME, DROP_TOOL, dropCommand, dropFiles, GREETING, NOTIFY_LINE, PEER_ID, SECOND_REQUEST, WORKSHOP_ID, WORKSHOP_NAME, WORKSHOP_STEP,
   WORKSHOP_TOOL, answerFor, callText, reloadMiss, stepOf, waitingProblems, workshopFiles,
 } from "./workshop-step";
 
@@ -60,6 +60,20 @@ describe("the plugin Alpha builds", () => {
   });
 });
 
+test("the plugin Alpha drops in is the tool template's under its own id and tool, valid, and the move names both folders", async () => {
+  const files = dropFiles();
+  expect(files["clover.json"]).toContain(`"${DROP_TOOL}": "preload"`);
+  expect(files["host/index.ts"]).toContain(GREETING.first);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-a-drop-")));
+  temps.push(root);
+  for (const [p, body] of Object.entries(files)) await Bun.write(join(root, DROP_ID, p), body);
+  const v = await validatePluginFolder(join(root, DROP_ID), { os: "macos" });
+  expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
+  expect(v.plugin?.toolNames).toEqual([`mcp__${DROP_ID}__${DROP_TOOL}`]);
+  expect(JSON.parse(files["clover.json"]!).name).toBe(DROP_NAME);
+  expect(dropCommand("/h/scratch/alpha/ws-dropped", "/h/plugins")).toBe('mv "/h/scratch/alpha/ws-dropped" "/h/plugins"/');
+});
+
 test("the peer bot's fixture is a valid plain bot with no code", async () => {
   const v = await validatePluginFolder(resolve(import.meta.dir, "fixtures", PEER_ID), { os: "macos" });
   expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
@@ -70,7 +84,7 @@ test("the peer bot's fixture is a valid plain bot with no code", async () => {
 test("the scripted fake calls each of the row's tools with exactly the row's input", async () => {
   const fake = startFakeAnthropic({ key: "dummy-key", writePath: "/nonexistent/lane-d", writeContent: "x" });
   try {
-    const tools = ["Glossary", "Read", "Write", "Edit", "PluginValidate", "PluginInstall", "PluginStatus", "mcp__builder__PluginNew", `mcp__${WORKSHOP_ID}-tools__${WORKSHOP_TOOL}`];
+    const tools = ["Glossary", "Read", "Write", "Edit", "Bash", "PluginValidate", "PluginInstall", "PluginStatus", "mcp__builder__PluginNew", `mcp__${WORKSHOP_ID}-tools__${WORKSHOP_TOOL}`, `mcp__${DROP_ID}-tools__${DROP_TOOL}`];
     const home = "/Users/someone/.clover";
     const files = workshopFiles();
     const calls: [string, Record<string, unknown>, string][] = [
@@ -83,6 +97,9 @@ test("the scripted fake calls each of the row's tools with exactly the row's inp
       ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/host/index.ts`, old_string: GREETING.first, new_string: GREETING.second }, "Edit"],
       ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/clover.json`, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new }, "Edit"],
       ["Edit", { file_path: `${home}/plugins/${WORKSHOP_ID}/clover.json`, old_string: SECOND_REQUEST.old, new_string: SECOND_REQUEST.new }, "Edit"],
+      ...Object.entries(dropFiles()).map(([p, content]) => ["Write", { file_path: `${home}/scratch/alpha/${DROP_ID}/${p}`, content }, "Write"] as [string, Record<string, unknown>, string]),
+      ["Bash", { command: dropCommand(`${home}/scratch/alpha/${DROP_ID}`, `${home}/plugins`), description: "Install the plugin by moving it into the plugins folder" }, "Bash"],
+      [DROP_TOOL, { name: "Acceptance" }, `mcp__${DROP_ID}-tools__${DROP_TOOL}`],
     ];
     for (const [tool, input, name] of calls) {
       const text = callText(tool, input);
@@ -131,6 +148,6 @@ test("a reload that never came says how long the row waited and what the tree ha
 
 test("the row sits after the card-placing row, and its name says each step", () => {
   expect(FULL_STEPS.indexOf(WORKSHOP_STEP)).toBe(FULL_STEPS.indexOf(CARDS_STEP) + 1);
-  for (const part of ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "Edit in place", "capability", "answered No", "another bot"]) expect(WORKSHOP_STEP).toContain(part);
+  for (const part of ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "Edit in place", "capability", "answered No", "another bot", "the drop"]) expect(WORKSHOP_STEP).toContain(part);
   expect(BUILT_BY_ALPHA).toBe("Built by Alpha. Alpha can change its code later without asking, within what this card lists.");
 });

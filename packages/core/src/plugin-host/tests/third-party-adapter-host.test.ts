@@ -154,6 +154,12 @@ describe("a third-party code model plugin through a real plugin host", () => {
       started = await startModelPlugins({ registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: new DaemonStore(), addApiHandlers: (h) => ph.addApiHandlers(h) });
       expect(started.plugins.snapshot!.refused.filter((r) => r.pluginId === "acceptance-models")).toEqual([]);
       expect(started.plugins.snapshot!.set.catalog.models.some((m) => m.key === "acceptance-models/acceptance-fast")).toBe(true);
+      // What a bot session's runtime is opened on names its served adapter (the driver reopens one opened on another).
+      expect(started.plugins.sessionKey()).toContain("plugin.acceptance-models.adapter");
+      expect(started.plugins.sessionKey()).toStartWith(started.plugins.snapshot!.catalogSha256);
+      // And the user's picker offers its model (a deprecated or blocked row never is).
+      const { catalogModelListings } = await import("../../runtime-sdk/models-list");
+      expect(catalogModelListings(started.plugins.snapshot!.set.catalog, new Set()).map((m) => m.id)).toContain("acceptance-models/acceptance-fast");
       const adapter = started.plugins.providerAdapterFor("acceptance-models", { caller: { kind: "core" } })!;
       const ctx = { connection: { providerId: "acceptance-models" }, credentials: { get: async () => null, set: async () => {}, delete: async () => {} }, authRef: { kind: "none" }, stallTimeoutMs: 10_000, log: () => {} } as never;
       expect(await text(adapter.streamTurn({ model: "acceptance-fast", messages: [{ role: "user", content: "hi" }] } as TurnRequest, ctx))).toEqual({ text: "ACCEPTANCE-THIRDPARTY-OK" });
