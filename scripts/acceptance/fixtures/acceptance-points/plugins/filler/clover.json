@@ -1,0 +1,35 @@
+{
+  "manifest": 1,
+  "name": "Acceptance points filler",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "contributes": {
+    "acceptance-points.items": [
+      {
+        "id": "hello",
+        "title": "Hello",
+        "greet": "greet"
+      }
+    ],
+    "hooks": [
+      {
+        "id": "events",
+        "on": [
+          "message.in",
+          "message.out",
+          "tool.before",
+          "tool.after",
+          "turn.start",
+          "turn.end"
+        ],
+        "command": "sh hooks/events.sh",
+        "timeoutMs": 20000
+      }
+    ]
+  }
+}

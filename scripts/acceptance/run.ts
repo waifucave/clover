@@ -545,6 +545,9 @@ const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
 /** The command hook step's outcome, from the plugin's turn on the first daemon. */
 let hookOutcome: { status: Status; detail: string } | undefined;
+/** The plugin's own host API step (acceptance-points; its turn here, on the first daemon; recorded at the end). */
+let pointsOutcome: { status: Status; detail: string } | undefined;
+const POINTS_PREFIX = "a plugin's own API in its host half";
 /** A listener on 127.0.0.1 the fixture's hook must never reach (directly, or through its proxy as an undeclared host). */
 let hookTarget: { port: number; connections: number; stop(): void } | undefined;
 /** Where the fixture's hook tries to write outside its allowed folders: in the run's user home. */
@@ -1778,6 +1781,67 @@ async function main(): Promise<void> {
     }
   }
 
+  // The plugin's own host API (recorded at the end): the acceptance-points fixture, with a child that fills its point,
+  // from a folder; its probe command (run as the user, with no model turn) reads and calls the point, keeps and deletes
+  // store keys, and posts a note and a message into Alpha's conversation; the run sets a setting and switches the child
+  // off, which its watches hear; a turn with a tool call runs its hooks on six events (compaction's two have no
+  // user-level way in, so they stay unit-tested); then it is removed with its data, and its data folder is gone.
+  if (!STEPS.some((x) => x.startsWith(POINTS_PREFIX))) { /* not in this run */ }
+  else if (session === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (oldHalf) pointsOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
+  else {
+    try {
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-points");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-points"), folder, { recursive: true });
+      const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      const id = installed.id;
+      const card = await until(`${id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === id));
+      await approve(c, card);
+      await until(`${id} to run after its OK`, 60_000, async () => {
+        const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin?.state;
+        return st === "enabled" || st === "running" ? st : undefined;
+      });
+      const before = Math.max(0, ...(await history(c, session)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
+      const probe = (await c.request<{ result: Record<string, unknown> }>("command.run", { name: `${id}.probe`, args: { session } }, 60_000)).result;
+      const wrong: string[] = [];
+      const child = `${id}/filler`;
+      if (JSON.stringify(probe.entries) !== JSON.stringify([`${child}:hello`])) wrong.push(`points.entries gave ${JSON.stringify(probe.entries)}`);
+      if (probe.called !== "hello probe from the filler") wrong.push(`points.call gave ${JSON.stringify(probe.called)}`);
+      if (JSON.stringify(probe.keys) !== JSON.stringify(["acceptance-a", "acceptance-b"]) || JSON.stringify(probe.keysAfter) !== JSON.stringify(["acceptance-b"])) wrong.push(`the store's keys were ${JSON.stringify(probe.keys)}, then ${JSON.stringify(probe.keysAfter)} after a delete`);
+      if (probe.mood !== "calm") wrong.push(`settings.get gave ${JSON.stringify(probe.mood)}, not the default`);
+      if (probe.posted !== "posted") wrong.push(`conversation.note/send: ${String(probe.posted)}`);
+      if (wrong.length > 0) fail(wrong.join("; "));
+      // Its note and its message reach Alpha's conversation; the message starts a turn the fake answers.
+      await until("its note and its message's turn in Alpha's conversation", 120_000, async () => {
+        const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
+        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") ? true : undefined;
+      });
+      // Its child's hooks: a turn with a tool call runs each of its six events (before the child is switched off below).
+      await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+      const events = readLog(join(home, "plugin-data", id, "filler", "events.txt"));
+      const missing = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end"].filter((e) => !events.split("\n").includes(e));
+      if (missing.length > 0) wrong.push(`its hooks didn't note ${missing.join(", ")} (they noted ${JSON.stringify(events.trim().split("\n"))})`);
+      // A setting the user changes, and the child switched off: its watches hear both.
+      await c.request("plugin.settings.set", { id, key: "mood", value: "loud" });
+      await c.request("plugin.setEnabled", { id: child, enabled: false });
+      const heard = await until("its watches to hear the setting and the point", 30_000, async () => {
+        const r = (await c.request<{ result: { store: string[]; settings: string[]; points: number[] } }>("command.run", { name: `${id}.report`, args: {} })).result;
+        return r.settings.includes("mood") && r.points.includes(0) ? r : undefined;
+      });
+      if (!heard.store.includes("acceptance-a") || !heard.store.includes("acceptance-b")) wrong.push(`storage.synced.watch heard ${JSON.stringify(heard.store)}`);
+      if (wrong.length > 0) fail(wrong.join("; "));
+      // Removed with its data (the user's choice): its data folder goes with it.
+      await c.request("plugin.remove", { id, deleteData: true });
+      await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined));
+      if (existsSync(join(home, "plugin-data", id))) fail(`${id} was removed with deleteData, but its data folder is still there`);
+      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all six events; removed with deleteData, its data folder gone` };
+    } catch (err) {
+      pointsOutcome = { status: statusOf(err), detail: why(err) };
+      // Its hooks would run on every later turn: it goes, whatever failed.
+      await c.request("plugin.remove", { id: "acceptance-points", deleteData: true }).catch(() => undefined);
+    }
+  }
+
   // The stdio server step (recorded at the end): the fixture's `probe` server is a stdio one, which runs on this computer
   // (ticked here by the plugin's OK) through lane J's launcher, fenced (B's guard: its folders, its tree's proxy). Its
   // tool lists to the bot, answers a call, and reports what its fence let it do; the run checks the disk and its
@@ -2039,6 +2103,7 @@ async function main(): Promise<void> {
   searchStep();
   record(stepNo("the bot's WebFetch reads a page"), fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
   record(stepNo("a folder-installed plugin's command hook"), hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
+  if (STEPS.some((x) => x.startsWith(POINTS_PREFIX))) record(stepNo(POINTS_PREFIX), pointsOutcome?.status ?? "BLOCKED", pointsOutcome?.detail ?? "the host API step didn't run");
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");

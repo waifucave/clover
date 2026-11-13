@@ -1,0 +1,75 @@
+{
+  "manifest": 1,
+  "id": "acceptance-points",
+  "name": "Acceptance points",
+  "description": "The acceptance run's fixture for a host half's own API: it declares a point its child fills, keeps a synced store, watches a setting and posts a note and a message into a conversation (its probe command); its child notes six hook events in its data folder.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "capabilities": [
+    "conversation.post"
+  ],
+  "settings": {
+    "mood": {
+      "type": "string",
+      "title": "Mood",
+      "default": "calm"
+    }
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "declares": {
+      "acceptance-points.items": {
+        "shape": "list",
+        "fields": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "greet": {
+              "type": "string",
+              "format": "handler"
+            }
+          }
+        }
+      }
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "name": "probe",
+        "description": "Runs the host API probe; posts into the session it is given",
+        "handler": "probe",
+        "args": {
+          "type": "object",
+          "required": [
+            "session"
+          ],
+          "properties": {
+            "session": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "report",
+        "description": "Says what its watches heard",
+        "handler": "report",
+        "args": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}
