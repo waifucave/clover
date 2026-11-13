@@ -11,6 +11,22 @@ host: tools, hooks, commands, triggers, a model adapter) and a **client half** (
 draws in the plugin's own layer: pages, sections, buttons). Clover checks the folder, the user OKs it on a card, and
 from then on it runs.
 
+## Two kinds of plugin: a bot's, or the app's
+
+Decide this first: it sets where the plugin's UI may go. Clover reads the kind from the manifest. A plugin with a
+`bot` entry is a **bot plugin**; every other plugin is an **app plugin**.
+
+| | bot plugin | app plugin |
+| :- | :- | :- |
+| what it is | one bot (its instructions, model, avatar, voice) and that bot's own tab | anything for the whole app: a tool, an app with its own page, a theme, a part of the window, an island tab, a model provider, a trigger |
+| where its UI goes | only inside its own bot's tab: a theme, a layout, components for the spots inside the tab, the look of approval cards there | any spot: the window's parts, Settings sections, the island, every bot's tab, or only some bots' tabs with `when.bot` |
+| what it can't dress | Settings, the sidebar, the island, the pill, other bots' tabs. The check refuses such an entry (`bot_spot_outside_tab`, `bot_when_other_bot`) | nothing by kind (a sealed card's inside takes only the `card.*` tokens, from anyone) |
+| its tools, skills, hooks | serve every bot, or only its own with `scope: "own-bot"` | serve every bot |
+
+A bot that also wants something outside its tab (a look for the whole app, an island tab, a Settings section) puts it
+in a **child plugin** in its folder (`plugins/<name>/clover.json`). The child is an app plugin of its own: its own OK
+card, its own switch, so the user can keep the bot and turn the rest off. One folder, one install, both kinds.
+
 ## The tools (the only place the skills name them)
 
 | step | tool | what it does |
