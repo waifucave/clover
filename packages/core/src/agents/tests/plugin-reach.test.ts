@@ -17,7 +17,9 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { botApprovalCheck } from "../../approvals/bot-check";
 import type { BotSessionContext } from "../../bots/service";
+import { thisPlatform } from "../../registry/core";
 import { openPluginRegistry } from "../../registry/open";
+import type { TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
 import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
 import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, type AgentPluginReachDeps } from "../plugin-reach";
@@ -28,6 +30,8 @@ import { waitFor, World, type WorldOptions } from "./world";
 setDefaultTimeout(60_000);
 const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
 const TOOL = "toolbox-tools__toolbox";
+/** A platform that isn't this computer's, for a plugin not for this computer. */
+const ELSEWHERE = thisPlatform() === "windows-x64" ? "linux-x64" : "windows-x64";
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 let world: World | undefined;
@@ -76,9 +80,10 @@ async function plugins(broker: FakeApprovalBroker) {
     "botsonly/skills/limerick/SKILL.md": "---\nname: limerick\ndescription: Write a limerick.\n---\nFive lines.\n",
     "cconly/clover.json": plugin("cconly", { onlyBackends: ["claude-code"] }), "cconly/host/index.js": "export {};\n",
     "cloveronly/clover.json": plugin("cloveronly", { onlyBackends: ["clover"] }), "cloveronly/host/index.js": "export {};\n",
-    "kit/clover.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, scope: "agents", contributes: { skills: ["skills/*/SKILL.md"], agents: ["agents/reviewer.md"] } },
+    "elsewhere/clover.json": plugin("elsewhere", { platforms: [ELSEWHERE] }), "elsewhere/host/index.js": "export {};\n",
+    "kit/clover.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, scope: "agents", contributes: { skills: ["skills/*/SKILL.md"], agents: ["agents/review.md"] } },
     "kit/skills/haiku/SKILL.md": "---\nname: haiku\ndescription: Write a haiku about the code.\n---\nCount five, seven, five.\n",
-    "kit/agents/reviewer.md": "---\nname: reviewer\ndescription: Reviews a diff.\n---\nRead the diff and list the bugs.\n",
+    "kit/agents/review.md": "---\nname: reviewer\ndescription: Reviews a diff.\n---\nRead the diff and list the bugs.\n",
   };
   for (const [path, value] of Object.entries(files)) {
     mkdirSync(dirname(join(home, "plugins", path)), { recursive: true });
@@ -86,7 +91,7 @@ async function plugins(broker: FakeApprovalBroker) {
   }
   const okBroker = new FakeApprovalBroker({ clock: new FakeClock() });
   const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
-  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "kit"]) {
+  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit"]) {
     for (let i = 0; i < 250 && opened.registry.get(id) === undefined; i++) await Bun.sleep(20);
     const { card } = await opened.registry.installed(id, "app");
     if (card !== undefined) {
@@ -147,8 +152,9 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(listed.tools[1]!.description).toBe("The toolbox tool. (from the plugin toolbox)");
   });
 
-  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, Clover's own runtime (clover-code, clover) the Clover-only one, a bot's agent the agents' plugins", async () => {
+  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, Clover's own runtime (clover-code, clover) the Clover-only one, a bot's agent the agents' plugins; one not for this computer, none", async () => {
     const { p } = await setup();
+    expect(p.registry.get("elsewhere")?.state).toBe("off");
     const tools = agentPluginTools(p.deps);
     const names = async (f: Partial<AgentSessionFacts>) => (await tools.tools("s", facts(f))).map((t) => t.name).sort();
     expect(await names({})).toEqual([TOOL]);
@@ -211,6 +217,23 @@ describe("a plugin's tools on an agent's bridge", () => {
     await waitFor(() => w.report("mcp-result").find((x) => x["isError"] === false), "the second agent's answer");
     expect(w.approvals.cards().filter((c) => c.session === second.sessionId && c.kind === "tool")).toEqual([]);
     expect(w.approvals.cards().length).toBe(cardsBefore);
+  });
+
+  test("the plugins' tool hooks see the call under the tool's own name, on every backend; a deny refuses it", async () => {
+    const { p } = await setup();
+    const seen: string[] = [];
+    const hooks = {
+      toolBefore: async (s: { backend?: string }, t: { name: string }, input: unknown) => { seen.push(`${s.backend}:${t.name}`); return (input as { stop?: boolean }).stop ? { deny: "not today", input } : { input }; },
+      toolAfter: async (_s: unknown, _t: unknown, _i: unknown, result: unknown) => result,
+    } as unknown as TurnHooks;
+    const tools = agentPluginTools({ ...p.deps, hooks: () => hooks });
+    for (const backend of ["fake", "clover", "clover-code"]) {
+      const r = await tools.call("s_code", { callId: `c-${backend}`, tool: TOOL, input: {} }, { computer: "Studio", origin: "user", session: facts({ backend }) });
+      expect(r.isError).toBe(false);
+    }
+    expect(seen).toEqual([`fake:mcp__${TOOL}`, `clover:mcp__${TOOL}`, `clover-code:mcp__${TOOL}`]);
+    const denied = await tools.call("s_code", { callId: "c-deny", tool: TOOL, input: { stop: true } }, { computer: "Studio", origin: "user", session: facts() });
+    expect(denied).toEqual({ content: [{ type: "text", text: `${TOOL} was refused by a plugin's hook: not today` }], isError: true });
   });
 
   test("a plugin switched off since the session started: its tool answers 'no tool named'", async () => {

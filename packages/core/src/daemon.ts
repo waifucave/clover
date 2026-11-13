@@ -4341,6 +4341,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,
           judge: agentToolJudge(check),
+          log: (line) => console.error(`[agents] ${line}`),
         };
         return botDriverFactory({
         home: cloverHome,

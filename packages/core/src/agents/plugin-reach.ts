@@ -6,8 +6,8 @@
 //   listed by this computer's PluginMcp as a bot's are. Each is named `<server>__<tool>` on the bridge (so two servers'
 //   tools never share a name), and a name that would be ambiguous or too long is left out. A call is resolved against
 //   the live listing at the moment it is made, so a plugin turned off, stopped, refused or not for this computer since
-//   the session started answers "no tool named …". It meets the plugins' `tool.before` and `tool.after` hooks (unless
-//   its backend runs them itself), then it is judged exactly as the same call would be in the session that owns it
+//   the session started answers "no tool named …". It meets the plugins' `tool.before` and `tool.after` hooks under
+//   its own name (`mcp__<server>__<tool>`, as a bot's call), then it is judged exactly as the same call would be in the session that owns it
 //   (`judge`, the daemon's bot approval check: the user's coding session by its own level and saved rules, a bot's
 //   agent by that bot's level and rules, never more than its parent), and runs where its server runs (J's router), as
 //   the agent's own session.
@@ -21,22 +21,20 @@ import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { Caller, TurnOrigin } from "@waifucave/clover-protocol";
 import type { BotSessionContext } from "../bots/service";
 import type { PluginRegistry } from "../contracts/plugin-registry";
-import { glossaryIndex, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
+import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
 import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
 import { scopeServes, servesBackend } from "../runtime-sdk/turn-loop/only-backends";
 import type { BotMcpServer, McpRunner } from "../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeCallContext, BridgeToolDef, BridgeToolSource } from "./bridge/tools";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 
-/** The longest bridge tool name: the agent sees `mcp__<bridge server>__<name>`, and many clients refuse a full name
- *  past 64 characters (the bridge server's name is `clover_` and eight more). */
-export const BRIDGE_TOOL_NAME_MAX = 44;
+/** The longest bridge tool name: the agent sees `mcp__<bridge server>__<name>`, many clients refuse a full name past
+ *  64 characters, and the bridge server's name is `clover_` and 16 hex digits (`BRIDGE_SERVER_PREFIX`): 64 − 30. */
+export const BRIDGE_TOOL_NAME_MAX = 34;
 /** The largest agent file placed (a definition's words are cut at 20,000 characters anyway). */
 const AGENT_FILE_MAX = 256 * 1024;
 /** The characters MCP clients take in a tool name. */
 const TOOL_NAME = /^[A-Za-z0-9_-]+$/;
-/** The backend whose runtime runs the plugins' tool hooks on every call itself (the in-process `clover`). */
-const HOOKS_IN_RUNTIME = "clover";
 
 /** What judging a plugin tool's call gives: run it with this input, or the refusal the agent is told. */
 export type AgentToolVerdict = { allowed: true; input: Record<string, unknown> } | { allowed: false; message: string };
@@ -56,6 +54,8 @@ export interface AgentPluginReachDeps {
   registry: Pick<PluginRegistry, "entries" | "get" | "list" | "points">;
   /** Tells `fn` when the plugins changed (`registry.watch`), for the parts placed in running sessions. */
   watch?(fn: () => void): () => void;
+  /** Where a tool left off the bridge is said (its name too long, or shared), so its author can find out why. */
+  log?: (line: string) => void;
 }
 
 /** The session's caller: the agent's own session, its bot named. */
@@ -96,18 +96,22 @@ interface BridgeTool { server: BotMcpServer; tool: BotMcpServer["tools"][number]
 
 /** The bridge's names for the servers' tools: `<server>__<tool>`, each once; a name two tools would share, one past
  *  `BRIDGE_TOOL_NAME_MAX` or with other characters is left out. */
-export function bridgeToolsOf(servers: readonly BotMcpServer[]): Map<string, BridgeTool> {
+export function bridgeToolsOf(servers: readonly BotMcpServer[], left?: (name: string, why: string) => void): Map<string, BridgeTool> {
   const out = new Map<string, BridgeTool>();
   const twice = new Set<string>();
   for (const server of servers) {
     for (const tool of server.tools) {
       const name = `${server.server}__${tool.name}`;
-      if (name.length > BRIDGE_TOOL_NAME_MAX || !TOOL_NAME.test(name)) continue;
+      if (name.length > BRIDGE_TOOL_NAME_MAX) { left?.(name, `longer than ${BRIDGE_TOOL_NAME_MAX} characters`); continue; }
+      if (!TOOL_NAME.test(name)) { left?.(name, "a character MCP clients refuse"); continue; }
       if (out.has(name)) twice.add(name);
       else out.set(name, { server, tool, name });
     }
   }
-  for (const n of twice) out.delete(n);
+  for (const n of twice) {
+    out.delete(n);
+    left?.(n, "two tools would share the name");
+  }
   return out;
 }
 
@@ -117,8 +121,11 @@ const text = (t: string) => ({ content: [{ type: "text", text: t }], isError: tr
 export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
   const listing = (s: AgentSessionFacts | undefined) => (s === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(s.kind, s.backend)));
   return {
-    async tools(_sessionId, session): Promise<BridgeToolDef[]> {
-      return [...listing(session).values()].map(({ server, tool, name }) => ({
+    async tools(sessionId, session): Promise<BridgeToolDef[]> {
+      const left: string[] = [];
+      const tools = session === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(session.kind, session.backend), (name, why) => left.push(`${name} (${why})`));
+      if (left.length > 0) d.log?.(`${sessionId}: plugin tools left off its bridge: ${left.join(", ")}`);
+      return [...tools.values()].map(({ server, tool, name }) => ({
         name,
         // A description stands on its own (some agents never show a server's instructions): it names its plugin.
         description: `${tool.description ?? tool.title ?? tool.name} (from the plugin ${server.plugin})`,
@@ -147,8 +154,9 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
       const served = `mcp__${found.server.server}__${found.tool.name}`;
       let input = (c.input ?? {}) as Record<string, unknown>;
       const hookSession: HookSession = { id: s.id, kind: s.kind, caller: agentCallerOf(s), ...(s.bot === undefined ? {} : { bot: s.bot }), computer: s.computer, backend: s.backend };
-      // The plugins' tool hooks, as a bot's call meets them (the in-process backend runs them itself, on every call).
-      const hooks = s.backend === HOOKS_IN_RUNTIME ? "none" : d.hooks?.() ?? (d.hooks === undefined ? "none" : undefined);
+      // The plugins' tool hooks, as a bot's call meets them, under the tool's own name, on every backend (the in-process
+      // one leaves its bridge's plugin tools to this; the manager doesn't run them at the permission request either).
+      const hooks = d.hooks?.() ?? (d.hooks === undefined ? "none" : undefined);
       if (hooks === undefined) return text(`${c.tool} was refused: Clover's plugin hooks aren't running yet, so plugin tools are refused until they are; try again in a moment.`);
       if (hooks !== "none") {
         const before = await hooks.toolBefore(hookSession, { name: served, callId: c.callId }, input, ctx.signal);
@@ -252,8 +260,7 @@ function agentMarkdown(registry: Pick<PluginRegistry, "entries" | "get">, plugin
     if (raw === "") continue;
     if (typeof c.value === "string") {
       const base = file.split("/").pop()!.replace(/\.md$/i, "");
-      const named = /^---\s*\n[\s\S]*?\nname:\s*(.+)\n/.exec(raw)?.[1]?.trim();
-      if ((named ?? base) !== id) continue;
+      if ((parseFrontmatter(raw).name ?? base) !== id) continue;
       return raw;
     }
     // An object entry: Claude Code wants a name and a description in the front matter.

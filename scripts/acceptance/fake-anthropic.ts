@@ -11,7 +11,7 @@
 //   ACCEPTANCE-AGENT-ECHO <root> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
 //                       `ACCEPTANCE-CHILD-ECHO …`
 //   ACCEPTANCE-CHILD-ECHO → an agent's turn (a bot's or the user's coding session): a `tool_use` of the echo plugin's
-//                       tool on its bridge (named `…__acceptance-echo-echo__Echo`) with `acceptance-child-ping`; its
+//                       tool on its bridge (`BRIDGE_ECHO`: never a bot's own Echo) with `acceptance-child-ping`; its
 //                       result is then said back (`ACCEPTANCE-DONE: …`), or `ACCEPTANCE-CHILD-NO-ECHO <its tools>`
 //   ACCEPTANCE-STAGE-STATUS → a `tool_use` of the tool whose name ends in `__stage_status` (Alpha's read-only tool)
 //   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
@@ -193,6 +193,9 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
 /** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
 const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|STREAM|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
+
+/** The echo plugin's tool on an agent's bridge: `mcp__<the session's bridge, clover_ and 16 hex>__<its server's key>__Echo`. */
+export const BRIDGE_ECHO = /^mcp__clover_[0-9a-f]{16}__acceptance-echo-echo__Echo$/;
 
 /** The command that needs the network (the outside-the-sandbox step's): one request to <url>, its body printed. The
  *  run's own loopback server is the target, never the real network. */
@@ -401,7 +404,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           record.toolUse = tool;
         }
       } else if (said.includes("ACCEPTANCE-CHILD-ECHO")) {
-        const tool = record.tools.find((t) => t.endsWith("__acceptance-echo-echo__Echo"));
+        const tool = record.tools.find((t) => BRIDGE_ECHO.test(t));
         if (tool === undefined) {
           content = [{ type: "text", text: `ACCEPTANCE-CHILD-NO-ECHO ${record.tools.filter((t) => t.startsWith("mcp__")).join(", ") || "no MCP tools"}` }];
           stop = "end_turn";
