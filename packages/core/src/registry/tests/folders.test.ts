@@ -1,7 +1,7 @@
 // Plugins from folders: found ones wait for their OK, a change since the OK asks again or applies (§5.6), a manifest
 // mid-write is left alone, bundled plugins and development folders need none, and the watcher reads a folder once it
 // settles.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,10 +10,13 @@ import { RegistryCore } from "../core";
 import { DEV_FOLDER_MS, PluginFolders } from "../folders";
 import { fileRegistryStore } from "../state";
 
+// The watched-folder cases wait on outcomes, bounded at 30 s for a loaded machine.
+setDefaultTimeout(90_000);
+
 const manifest = (id: string, over: Record<string, unknown> = {}) =>
   JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, ...over });
 
-function world(opts: { settleMs?: number; now?: () => number } = {}) {
+function world(opts: { settleMs?: number; catchUpMs?: number; now?: () => number } = {}) {
   const home = mkdtempSync(join(tmpdir(), "clover-b-folders-"));
   const pluginsDir = join(home, "plugins");
   const bundledDir = join(home, "app", "plugins");
@@ -22,7 +25,7 @@ function world(opts: { settleMs?: number; now?: () => number } = {}) {
   const store = fileRegistryStore(join(home, "plugins-state"));
   let folders: PluginFolders;
   const core = new RegistryCore({ catalog: catalogPointDecl, store, onOk: (id, hash) => folders.okGiven(id, hash) });
-  folders = new PluginFolders({ core, store, pluginsDir, bundledDirs: [bundledDir], settleMs: opts.settleMs ?? 2_000, ...(opts.now ? { now: opts.now } : {}) });
+  folders = new PluginFolders({ core, store, pluginsDir, bundledDirs: [bundledDir], settleMs: opts.settleMs ?? 2_000, ...(opts.catchUpMs !== undefined ? { catchUpMs: opts.catchUpMs } : {}), ...(opts.now ? { now: opts.now } : {}) });
   const write = (dir: string, files: Record<string, string>) => {
     for (const [path, text] of Object.entries(files)) {
       mkdirSync(join(dir, path, ".."), { recursive: true });
@@ -326,7 +329,7 @@ describe("PluginFolders", () => {
 
   test("a save in a development folder that changes its plugin loads it again, and the folder says when (lastReloadAt)", async () => {
     let now = 1_000_000;
-    const w = world({ now: () => now, settleMs: 100 });
+    const w = world({ now: () => now, settleMs: 100, catchUpMs: 300 });
     const dev = join(w.home, "dev", "tarot");
     w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }), "client/index.tsx": "export {}" });
     w.folders.start();
@@ -339,10 +342,10 @@ describe("PluginFolders", () => {
       expect(reloadAt()).toBeUndefined();
       let told = 0;
       const off = w.folders.onDevFoldersChanged(() => { told++; });
-      await Bun.sleep(200); // the OS's watch stream starts a moment after the call
+      // No wait for the watch to start: a save it misses is read by the catch-up look.
       now += 5_000;
       w.write(dev, { "client/index.tsx": "export const B = 2;" });
-      const deadline = Date.now() + 5_000;
+      const deadline = Date.now() + 30_000;
       while (reloadAt() === undefined && Date.now() < deadline) await Bun.sleep(50);
       expect(reloadAt()).toBe(now);
       expect(told).toBeGreaterThan(0);
@@ -352,14 +355,52 @@ describe("PluginFolders", () => {
     }
   });
 
+  test("the catch-up look reads what no watch delivered: a new folder, and a change in one still waiting for its OK", async () => {
+    const w = world({ settleMs: 50, catchUpMs: 100 });
+    await w.folders.scan();
+    // The plugins folder isn't there when the watch starts, so no watch holds it: only the catch-up look can see it.
+    rmSync(w.pluginsDir, { recursive: true, force: true });
+    w.folders.start();
+    try {
+      w.write(join(w.pluginsDir, "lyra"), { "clover.json": manifest("lyra") });
+      for (const end = Date.now() + 30_000; !w.core.get("lyra") && Date.now() < end;) await Bun.sleep(20);
+      expect(w.core.get("lyra")?.state).toBe("found");
+      const before = w.core.get("lyra")!.treeHash;
+      w.write(join(w.pluginsDir, "lyra"), { "a.txt": "changed" });
+      for (const end = Date.now() + 30_000; w.core.get("lyra")!.treeHash === before && Date.now() < end;) await Bun.sleep(20);
+      expect(w.core.get("lyra")!.treeHash).not.toBe(before);
+    } finally {
+      w.folders.stop();
+    }
+  });
+
+  test("a write Clover's own tools made in the plugins folder is read at once, with no watch and no catch-up look; any other path is ignored", async () => {
+    const w = world({ settleMs: 50, catchUpMs: 0 });
+    await w.folders.scan();
+    rmSync(w.pluginsDir, { recursive: true, force: true });
+    w.folders.start();
+    try {
+      w.write(join(w.pluginsDir, "vega"), { "clover.json": manifest("vega") });
+      w.folders.touched(join(w.home, "elsewhere", "file.txt"));
+      w.folders.touched(join(w.pluginsDir, ".staging", "x"));
+      await Bun.sleep(300);
+      expect(w.core.get("vega")).toBeUndefined();
+      w.folders.touched(join(w.pluginsDir, "vega", "clover.json"));
+      for (const end = Date.now() + 30_000; !w.core.get("vega") && Date.now() < end;) await Bun.sleep(20);
+      expect(w.core.get("vega")?.state).toBe("found");
+    } finally {
+      w.folders.stop();
+    }
+   });
+
   test("the watcher reads a folder once it has settled", async () => {
-    const w = world({ settleMs: 100 });
+    const w = world({ settleMs: 100, catchUpMs: 300 });
     w.folders.start();
     await w.folders.scan();
     try {
-      await Bun.sleep(200); // the OS's watch stream starts a moment after the call
+      // No wait for the watch to start: a folder it misses is read by the catch-up look.
       w.write(join(w.pluginsDir, "tarot"), { "clover.json": manifest("tarot") });
-      const deadline = Date.now() + 5_000;
+      const deadline = Date.now() + 30_000;
       while (!w.core.get("tarot") && Date.now() < deadline) await Bun.sleep(50);
       expect(w.core.get("tarot")?.state).toBe("found");
     } finally {
