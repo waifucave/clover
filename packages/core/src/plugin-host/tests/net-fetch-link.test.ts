@@ -321,7 +321,7 @@ describe("net.fetch over a real plugin-host link", () => {
     }
   }, 120_000);
 
-  test("C. over a real process: an oversized body fails that call and the link stays up; 33 unread responses and the 33rd still goes out; a third-party plugin is refused", async () => {
+  test("C. over a real process: an oversized body fails that call and the link stays up; 33 unread responses and the 33rd still goes out; a third-party plugin reaches its own granted host only", async () => {
     const w = world();
     const processes: { kill(): void }[] = [];
     const links = new Map<string, RpcPeer>();
@@ -355,9 +355,11 @@ describe("net.fetch over a real plugin-host link", () => {
       const statuses = await call<(number | string)[]>("clover/netprobe", "unread", { url: `${base}/busy`, waitMs: 600 });
       expect(statuses).toHaveLength(33);
       expect(statuses.every((s) => s === 429)).toBe(true);
-      // A third-party plugin with a granted network: entry: its keyed fetch is refused, bundled plugins only.
-      const acme = await call<{ error?: { name: string; code: string; message: string } }>("acme-net", "get", { url: `${base}/echo` });
-      expect(acme.error).toMatchObject({ name: "ContractError", code: "refused", message: expect.stringContaining("bundled plugins only") });
+      // A third-party plugin with a granted network: entry: its keyed fetch reaches it from its own process (row 1.91),
+      // and a host its OK doesn't list is refused.
+      expect((await call<{ status: number }>("acme-net", "get", { url: `${base}/echo` })).status).toBe(200);
+      const off = await call<{ error?: { name: string; code: string; message: string } }>("acme-net", "get", { url: `http://127.0.0.2:${backend.port}/echo` });
+      expect(off.error).toMatchObject({ name: "ContractError", code: "refused" });
     } finally {
       for (const p of processes) p.kill();
     }

@@ -178,13 +178,8 @@ export class ModelPlugins {
     const served = new Map<string, ServedModelAdapter>();
     for (const [provider, a] of set.adapters) {
       if (a.handler === undefined || this.#o.serveCodeAdapters === false) continue;
-      const trusted = set.byProvider.get(provider)?.input.trusted === true;
-      // A third party's code adapter is not even described until the plugin API's fence and network rules (lane B's
-      // 2f and 2g) land: its keyed fetch would be refused, so it gets no rows rather than rows that error.
-      if (!trusted) {
-        refused.push({ pluginId: a.pluginId, provider, code: "adapter-unavailable", message: "a third party's code model adapter waits for the plugin API's fence and network rules" });
-        continue;
-      }
+      // A third party's code adapter is served as a bundled one's: its keyed fetch reaches only its own declared hosts
+      // with only its own stored keys (plugin-api.ts), and its processes are fenced to those hosts (B's 2f, 2g).
       try {
         const description = await describeModelAdapter(this.#o.host, { pluginId: a.pluginId, handler: a.handler });
         if (description.id !== a.adapterId) throw new Error(`its adapter says it is ${description.id}, and its catalog file names ${a.adapterId}`);

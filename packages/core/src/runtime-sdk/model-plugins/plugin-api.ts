@@ -123,8 +123,11 @@ function keyedInit(init: RequestInit | undefined): KeyedFetchInit {
  * The model plugins' two calls of the plugin API, `net.fetch` (keyed) and `secrets.get`, as handlers in B's router
  * (`DaemonPluginHost.addApiHandlers`, #302's review B1): B's gate runs first (the call exists where it was made, the
  * plugin is on and running, the capability is granted, and `net.fetch`'s host is in its GRANTED `network:` entries).
- * Until B's fence and network rules land (2f, 2g), a third-party plugin is refused here with the reason: only the
- * bundled tree's plugins get a keyed fetch or a secret.
+ * They serve every plugin, a third party's as a bundled one's (spec §5.4; B's fence and network rules, 2f and 2g,
+ * hold its processes to its own hosts too): a plugin's fetch reaches only its declared hosts, with only its own keys
+ * (a third party's are its own items, which the user stored for it; never a provider slot, `keychain-tokens.ts`), and
+ * `secrets.get` reads only its own `auth` entries' secrets, in a process of its own. The keyless `network:public` path
+ * is the bundled tree's alone (the capability is `bundledOnly`, and is checked here again).
  */
 export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers {
   const fetches = new Map<string, { key: string; fetch: KeyedFetch }>();
@@ -161,12 +164,8 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     return fetch;
   };
   const publicOf = publicFetch({ fetch: opts.fetch ?? pinnedFetch(), ...(opts.log !== undefined ? { log: opts.log } : {}), ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}) });
-  const bundledOnly = (record: PluginRecord, what: string): void => {
-    if (!isBundledClover(record)) throw new ContractError("refused", `${what} is served to Clover's own bundled plugins only until the plugin API's fence and network rules land; ${record.id} is a third-party plugin`);
-  };
   return {
     "net.fetch": async (ctx, args) => {
-      bundledOnly(ctx.record, "a keyed net.fetch");
       const [url, init, fetchOpts] = args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
       const keys = keysOf(ctx.record.id);
       // The user pointed this plugin's provider at an endpoint of their own: a request to that origin (the provider's API
@@ -187,7 +186,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       try {
         // A host on the plugin's declared network: list goes through its keyed fetch; any other only with
         // `network:public` granted (B's gate checked it too), keyless, through Clover's web safeguards.
-        if (!declaredHost(ctx.record, url) && reachesPublicNetwork(ctx.record.granted)) {
+        if (!declaredHost(ctx.record, url) && isBundledClover(ctx.record) && reachesPublicNetwork(ctx.record.granted)) {
           return maskResponse(await publicOf(ctx.record.id, url, init ?? {}, fetchOpts as Record<string, unknown> | undefined), keys);
         }
         return maskResponse(await fetchFor(ctx.record)(url, keyedInit(init), fetchOpts), keys);
@@ -196,7 +195,6 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       }
     },
     "secrets.get": async (ctx, args) => {
-      bundledOnly(ctx.record, "secrets.get");
       // B's gate already holds it to a process of the plugin's own; said again here, where the secret is read.
       if (ctx.process !== "own") throw new ContractError("refused", "secrets.get exists only in a process of the plugin's own (spec §5.2)");
       const [name] = args as [string];
