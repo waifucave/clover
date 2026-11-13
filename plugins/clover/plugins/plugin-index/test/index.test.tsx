@@ -5,7 +5,7 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
-import { Detail, PluginIcon, stateText } from "../client/Installed";
+import { Detail, Installed, PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
@@ -366,6 +366,12 @@ describe("the Plugins page: what is installed", () => {
     act(() => core.emit("plugin_card_note", { type: "plugin_card_note", card: "card_9", change: "dev-folder", note: "This folder's 24 hours had already ended; add it again from Plugins › Add." }));
     await act(() => settle());
     expect(screen.getByText("This folder's 24 hours had already ended; add it again from Plugins › Add.")).toBeTruthy();
+  });
+
+  test("a plugin not for this computer says so in its row, with the platforms it supports", () => {
+    const notHere = { ...INSTALLED[0]!, state: "off", enabled: false, reason: "Not for this computer: it supports windows-x64" } as never;
+    render(<Installed plugins={[notHere]} query="" onQuery={() => undefined} onOpen={() => undefined} />);
+    expect(document.querySelector("[data-not-here]")?.textContent).toBe("Not for this computer: it supports windows-x64");
   });
 
   test("a plugin without notify has no mute switch", async () => {

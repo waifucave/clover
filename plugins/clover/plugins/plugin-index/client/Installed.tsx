@@ -13,6 +13,9 @@ const GROUP_OF: Record<InstalledPlugin["state"], InstalledGroup> = {
 };
 const GROUPS: InstalledGroup[] = ["attention", "on", "off"];
 
+/** The registry's reason for a plugin whose `platforms` leave this computer out ("Not for this computer: it supports …"). */
+const NOT_HERE = "Not for this computer";
+
 /** A state in words, with its reason when the reason says more ("Waiting for your OK: waiting for your OK" doesn't). */
 export function stateText(state: InstalledPlugin["state"], reason: string | undefined): string {
   const words = S.stateWords[state];
@@ -67,6 +70,9 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         {p.description && <span className="cl-plugin-index__line" title={p.description}>{p.description}</span>}
         {p.notYet && <span className="cl-plugin-index__description" data-not-yet="">{S.notYet}</span>}
         {!p.notYet && p.notYetParts !== undefined && p.notYetParts.length > 0 && <span className="cl-plugin-index__line" data-not-yet-parts="">{S.notYetPartsLine(p.notYetParts.length)}</span>}
+        {p.state === "off" && !p.notYet && p.reason !== undefined && p.reason.startsWith(NOT_HERE) && (
+          <span className="cl-plugin-index__description" data-tone="attention" data-not-here="">{p.reason}</span>
+        )}
         {(GROUP_OF[p.state] !== "on" && GROUP_OF[p.state] !== "off" || p.state === "waiting") && (
           <span className="cl-plugin-index__description" data-tone={p.state === "invalid" ? "danger" : "attention"}>
             {stateText(p.state, p.reason)}

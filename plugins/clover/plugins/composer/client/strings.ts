@@ -13,6 +13,7 @@ export const S = {
   listening: "Listening… release to stop",
   model: (label: string) => `Model: ${label}`,
   modelMenu: "Model and effort",
+  modelFrom: (plugin: string) => `from ${plugin}`,
   modelSection: "Model",
   allModels: (n: number) => `Show all models (${n} more)`,
   level: (computer: string, label: string, requested?: string) =>
