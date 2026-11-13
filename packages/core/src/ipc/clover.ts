@@ -148,6 +148,12 @@ export interface CloverServerDeps {
   readonly appToken?: string;
   /** Other lanes' Clover methods, by wire name. */
   readonly handlers?: Readonly<Record<string, CloverHandler>>;
+  /** Settles once the daemon's late doors are in: the parts that start after the socket listens (the plugin registry's
+   *  `plugin.auth.*`, the links' `devices.*`, the computer node's and the bot side's methods) have each finished their
+   *  first start or are waiting on something only the user can give (a locked secret store). A call to a method with no
+   *  handler yet waits for it, so a client that connects the moment the socket answers is answered when its door is
+   *  in, never "not served yet" in between; after it, a method with no handler is one this daemon doesn't serve. */
+  readonly lateDoors?: () => Promise<void>;
   /** M-M2: whether the app may leave for an update now (`pair.exiting{update}`): the update gate closed and idle, and
    *  then committed to the restart. */
   acceptUpdateExit?(): boolean;
@@ -362,7 +368,12 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     if (refused) throw new CloverRpcError(refused.code, refused.message);
     const p = spec.params.safeParse(params ?? {});
     if (!p.success) throw new CloverRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
-    const handler = own[method] ?? deps.handlers?.[method];
+    let handler = own[method] ?? deps.handlers?.[method];
+    if (handler === undefined && deps.lateDoors !== undefined) {
+      // A door that comes up after the socket listens: this call waits for it rather than racing the daemon's start.
+      await deps.lateDoors();
+      handler = own[method] ?? deps.handlers?.[method];
+    }
     if (handler === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);
     return handler(conn, p.data);
   };
