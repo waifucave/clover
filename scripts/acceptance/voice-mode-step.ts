@@ -28,6 +28,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
   const { cdp, rpc } = ctx;
   const done: string[] = [];
   let chosen = false;
+  let long = false;
   const counters = async (): Promise<Counters | undefined> => {
     for (const d of await treeDocs(cdp)) {
       const v = await cdp.evaluate(d.session, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, speaking: (d.voiceSpeaking || '').split(',').filter(Boolean), overlap: +(d.voiceOverlap || 0), cut: +(d.voiceCut || 0) }); })()").catch(() => null);
@@ -79,6 +80,21 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     await sleep(300);
     return picked;
   };
+  /** A record of the player's counters as they change (the tree document's root), for a failure's dump. */
+  const record = async () => {
+    for (const d of await treeDocs(cdp)) {
+      await cdp.evaluate(d.session, "(() => { const e = document.documentElement; if (e.dataset.voicePieces === undefined || window.__vq) return false; const t0 = Date.now(); window.__vq = []; const note = () => { const d = e.dataset; window.__vq.push([Date.now() - t0, +d.voicePieces, d.voiceSpeaking || '-', +(d.voiceCut || 0)].join(' ')); if (window.__vq.length > 200) window.__vq.shift(); }; note(); new MutationObserver(note).observe(e, { attributes: true }); return true; })()").catch(() => undefined);
+    }
+  };
+  const dump = async () => {
+    let seen = "";
+    for (const d of await treeDocs(cdp)) {
+      const v = await cdp.evaluate(d.session, "window.__vq ? window.__vq.join(' | ') : null").catch(() => null);
+      if (typeof v === "string") seen = v;
+    }
+    const logs = (await rpc.request<{ lines: string[] }>("plugin.logs", { id: "clover/voice", lines: 20 }).catch(() => ({ lines: [] as string[] }))).lines.join(" | ");
+    return `${JSON.stringify(await counters())}; player (ms pieces speaking cut): ${seen.slice(-1200)}; Clover Voice's log: ${logs.slice(-1200)}; app: ${ctx.appLog().split("\n").filter((l) => /voice/i.test(l)).slice(-8).join(" | ").slice(-1500)}`;
+  };
   const active = async () => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "clover/voice" })).settings.find((s) => s.key === "active")?.value;
   try {
     // The third party's voice mode, its OK card saying what it can do.
@@ -89,7 +105,11 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     if (sink.refused === undefined || !sink.refused.includes("isn't the active voice")) fail(`not chosen, ${MODE_ID} reached the player itself: ${JSON.stringify(sink)}`);
     done.push(`not chosen, it was refused the player ("${sink.refused}")`);
 
-    // A plugin's sound offered while Alpha's reply sounds: Clover Voice plays it after, and her reply is never cut.
+    // A plugin's sound offered while Alpha's reply sounds: Clover Voice plays it after, and her reply is never cut. Her
+    // voice is the tone's long one for this (2.5 s), so the sound is offered well inside her reply.
+    await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: "acceptance-voice", voice: "long" } } });
+    long = true;
+    await record();
     const before = await until("the shell's voice counters", 20_000, counters);
     const replied = say("Say something for the queue.");
     let offered: Counters | undefined;
@@ -105,7 +125,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
         }
         await sleep(25);
       }
-      if (!sounding) fail(`Alpha's reply never sounded: ${JSON.stringify(await counters())}; ${ctx.appLog().split("\n").filter((l) => /voice/i.test(l)).slice(-5).join(" | ")}`);
+      if (!sounding) fail(`Alpha's reply never sounded: ${await dump()}`);
       await run(`${MODE_ID}.chime`);
       const now = (await counters())!;
       // The sound must have been offered while she still spoke, or the order proves nothing: again, with a new reply.
@@ -117,8 +137,10 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     const after = await until("the sound played after her reply", 30_000, async () => {
       const c = await counters();
       return c !== undefined && c.pieces > offeredAt.pieces && c.speaking.length === 0 ? c : undefined;
-    }, async () => JSON.stringify(await counters()));
-    if (after.cut !== before.cut) fail(`the sound cut Alpha's reply off (data-voice-cut ${before.cut} → ${after.cut}): it didn't wait its turn`);
+    }, dump);
+    await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: "acceptance-voice", voice: "tone" } } });
+    long = false;
+    if (after.cut !== before.cut) fail(`the sound cut Alpha's reply off (data-voice-cut ${before.cut} → ${after.cut}): it didn't wait its turn; ${await dump()}`);
     if (after.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${after.overlap})`);
     done.push(`a chime offered while Alpha's reply sounded played after it (${after.pieces - offeredAt.pieces} more piece(s)), her reply never cut (data-voice-cut ${after.cut}), and no two bots sounded at once (data-voice-overlap ${after.overlap})`);
 
@@ -162,6 +184,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     return done;
   } finally {
     if (chosen) await rpc.request("plugin.settings.set", { id: "clover/voice", key: "active", value: null }).catch(() => undefined);
+    if (long) await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: "acceptance-voice", voice: "tone" } } }).catch(() => undefined);
     await leave(ctx, NARRATOR_ID);
     await leave(ctx, MODE_ID);
   }
