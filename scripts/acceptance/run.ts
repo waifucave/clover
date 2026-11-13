@@ -73,8 +73,9 @@ import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
-import { FAKE_LINKED_PATH, FAKE_LINKS_PATH, FAKE_MODELS_KEY } from "./fake-exa";
-import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN, THIRD_PARTY_MODEL, THIRD_PARTY_MODEL_STEP, THIRD_PARTY_PLUGIN } from "./code-adapter-step";
+import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
+import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN, THIRD_PARTY_KEY, THIRD_PARTY_MODEL, THIRD_PARTY_MODEL_STEP, THIRD_PARTY_PLUGIN, THIRD_PARTY_REPLY } from "./code-adapter-step";
+import { placeModelsFixture, startFakeModels, type FakeModels } from "./fake-models";
 import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { holdMachine } from "./exclusive";
 
@@ -247,6 +248,8 @@ const children: { name: string; proc: ChildProcess }[] = [];
 let fake: FakeProvider | undefined;
 /** The user's own Google endpoint (`providers.google.baseUrl`): the code-adapter clause's provider. */
 let gemini: FakeGemini | undefined;
+/** The third-party model plugin's provider, on this computer (the third-party clause). */
+let models: FakeModels | undefined;
 /** The Google key the clause signs the bundled Google plugin in with (a dummy; the fake checks it). */
 const googleKey = `AIza-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 const clients: CloverClient[] = [];
@@ -321,6 +324,7 @@ async function cleanup(): Promise<void> {
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
   gemini?.stop();
+  models?.stop();
   hookTarget?.stop();
   netSite?.stop(true);
   outsideWorld?.stop();
@@ -1482,6 +1486,7 @@ async function main(): Promise<void> {
   makeKeychain();
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl, hitFetchUrl });
   gemini = startFakeGemini({ key: googleKey, reply: GEMINI_REPLY });
+  models = startFakeModels({ key: THIRD_PARTY_KEY, reply: THIRD_PARTY_REPLY });
   if (target === "packaged" && packagedCoreSays("CLOVER_TEST_OUTSIDE_WORLD")) startOutsideWorld();
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
@@ -2151,18 +2156,21 @@ async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ stat
 
 /** The third-party model clause on a running daemon (row 1.91): the acceptance-models fixture installed from a folder
  *  and its OK approved, its key stored through its own sign-in, Alpha moved to its model, one turn, then Alpha's model
- *  and the sign-in put back. Its provider is the run's outside world (`api.acceptance-models.com`, fake-exa.ts), which
- *  answers only with the key the core placed: the reply in the conversation shows the key arrived. */
+ *  and the sign-in put back. Its provider is the run's own server on this computer (fake-models.ts), which its OK names
+ *  by address and port and which answers only with the key the core placed: the reply in the conversation shows the
+ *  key arrived. No test seam: it runs the same on a packaged app. */
 async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
-  if (target !== "source" && outsideWorld === undefined) return { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build): the plugin's provider can't be reached" };
+  if (models === undefined) return { status: "BLOCKED", detail: "the run's model server didn't start" };
   let moved = false;
   let signedIn: number | undefined;
   let before: string | null = null;
   try {
     const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", THIRD_PARTY_PLUGIN);
-    cpSync(join(import.meta.dir, "fixtures", THIRD_PARTY_PLUGIN), folder, { recursive: true });
+    placeModelsFixture(join(import.meta.dir, "fixtures", THIRD_PARTY_PLUGIN), folder, models.port);
     const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+    const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+    if (!cardText.includes(`127.0.0.1:${models.port}`)) fail(`its OK card doesn't name the address on this computer it reaches (127.0.0.1:${models.port})`);
     await approve(c, card);
     await until(`${installed.id} to run after its OK`, 60_000, async () => {
       const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
@@ -2171,7 +2179,7 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: installed.id });
     const entry = auth.auth.find((a) => a.method === "api-key");
     if (entry === undefined) fail(`plugin.auth.list ${installed.id} has no api-key entry`);
-    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: installed.id, index: entry!.index, key: FAKE_MODELS_KEY });
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: installed.id, index: entry!.index, key: THIRD_PARTY_KEY });
     if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${installed.id} ${signed.state}`);
     signedIn = entry!.index;
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
@@ -2184,10 +2192,14 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
       const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
       return b?.model === THIRD_PARTY_MODEL ? true : undefined;
     }, 500);
+    const seen = models.requests.length;
     const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-THIRDPARTY: say hello", 150_000);
+    const mine = models.requests.slice(seen);
     const said = JSON.stringify(events);
-    if (!said.includes("ACCEPTANCE-THIRDPARTY-OK")) fail(`the reply didn't come from the plugin's adapter: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
-    return { status: "PASS", detail: `Alpha on ${THIRD_PARTY_MODEL}: ${installed.id}'s own adapter answered through the plugin host, its provider reached with the key stored through its sign-in (the provider answers only with it)${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
+    if (mine.length === 0) fail(`the turn never reached the plugin's provider on this computer: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    if (!mine.some((r) => r.keyMatched)) fail("the plugin's provider got the turn without the key stored through its sign-in");
+    if (!said.includes("ACCEPTANCE-THIRDPARTY-OK")) fail(`the provider answered, but its reply isn't in the conversation: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    return { status: "PASS", detail: `Alpha on ${THIRD_PARTY_MODEL}: ${installed.id}'s own adapter answered through the plugin host, its provider on this computer (127.0.0.1:${models.port}, named on its OK) reached with the key stored through its sign-in (${mine.length} request(s), key matched)${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   } finally {
@@ -2196,8 +2208,7 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
   }
 }
 
-/** The third-party model row alone (--only-third-party-model): the daemon (and, for a packaged core, the outside world),
- *  then the clause over the app's methods. */
+/** The third-party model row alone (--only-third-party-model): the daemon, then the clause over the app's methods. */
 async function thirdPartyOnlyRun(): Promise<void> {
   const n = stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP);
   let c: CloverClient | undefined;

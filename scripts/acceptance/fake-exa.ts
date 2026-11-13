@@ -22,12 +22,6 @@ export const FAKE_HIT_PATH = "/from-search";
 export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
 /** The private address the fake private site resolves to. */
 export const FAKE_PRIVATE_ADDRESS = "10.0.0.5";
-/** The third-party model plugin's provider (fixtures/acceptance-models, row 1.91): it answers a turn with
- *  FAKE_MODELS_REPLY only when the key the core placed is FAKE_MODELS_KEY, the run's dummy, and 401 otherwise, so the
- *  reply in the conversation shows the key arrived. */
-export const FAKE_MODELS_HOST = "api.acceptance-models.com";
-export const FAKE_MODELS_KEY = "acceptance-models-dummy-key-not-a-secret";
-export const FAKE_MODELS_REPLY = "ACCEPTANCE-THIRDPARTY-OK from the plugin's own adapter";
 
 export interface FakeExa {
   /** The tool calls it answered, by tool name. */
@@ -85,10 +79,6 @@ export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): P
           ? new Response(`<html><head><title>Acceptance article</title></head><body><p>${FAKE_ARTICLE_TEXT}</p></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } })
           : new Response("not here", { status: 404 });
       }
-      if (host === FAKE_MODELS_HOST) {
-        if (new URL(url).pathname !== "/v1/turn") return new Response("not here", { status: 404 });
-        return new Headers(init.headers).get("x-api-key") === FAKE_MODELS_KEY ? new Response(FAKE_MODELS_REPLY) : new Response("no key", { status: 401 });
-      }
       if (host !== FAKE_SEARCH_HOST) {
         refused(host);
         throw new Error(`the acceptance run reaches no network: ${host}`);
@@ -126,5 +116,5 @@ export function serveOutsideWorld(): OutsideWorld {
     },
   });
   const at = `127.0.0.1:${server.port}`;
-  return { spec: `${FAKE_SEARCH_HOST}=${at};${FAKE_PUBLIC_SITE}=${at};${FAKE_MODELS_HOST}=${at};${FAKE_PRIVATE_SITE}=${FAKE_PRIVATE_ADDRESS}`, refused, stop: () => server.stop(true) };
+  return { spec: `${FAKE_SEARCH_HOST}=${at};${FAKE_PUBLIC_SITE}=${at};${FAKE_PRIVATE_SITE}=${FAKE_PRIVATE_ADDRESS}`, refused, stop: () => server.stop(true) };
 }

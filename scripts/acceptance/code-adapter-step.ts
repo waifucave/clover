@@ -12,7 +12,9 @@ export const GOOGLE_PLUGIN = "clover/model-google";
 export const GEMINI_MODEL = "google/gemini-2.5-flash";
 export const GEMINI_REPLY = "ACCEPTANCE-GEMINI-OK from the plugin's adapter";
 
-export const THIRD_PARTY_MODEL_STEP = "a turn on a third-party code model plugin: a folder-installed plugin with its own provider and adapter, its OK approved and its key stored through its sign-in, answers Alpha's turn through the plugin host, reaching its one declared host with that key";
+export const THIRD_PARTY_MODEL_STEP = "a turn on a third-party code model plugin: a folder-installed plugin with its own provider on this computer and its own adapter, its OK approved (naming that address) and its key stored through its sign-in, answers Alpha's turn through the plugin host, reaching its one declared host with that key";
+export const THIRD_PARTY_KEY = "acceptance-models-dummy-key-not-a-secret";
+export const THIRD_PARTY_REPLY = "ACCEPTANCE-THIRDPARTY-OK from the plugin's own adapter";
 /** The third-party fixture, its model, and the folder it installs from. */
 export const THIRD_PARTY_PLUGIN = "acceptance-models";
 export const THIRD_PARTY_MODEL = "acceptance-models/acceptance-fast";

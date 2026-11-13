@@ -4,7 +4,7 @@
 // and the core places the key the user stored for it (its own item, never a provider slot or another plugin's). Temp
 // home, the fake approval broker, in-memory secret stores, a loopback provider; nothing opens a window.
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -126,15 +126,18 @@ describe("a third-party code model plugin through a real plugin host", () => {
     }
   }, 90_000);
 
-  test("the acceptance run's fixture (scripts/acceptance/fixtures/acceptance-models) is described, served and answers a turn with its stored key", async () => {
+  test("the acceptance run's fixture (scripts/acceptance/fixtures/acceptance-models), its provider on this computer: its OK names the address, and with the production fetch (no seam) it answers a turn with its stored key", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-thirdparty-fixture-")));
     temps.push(home);
-    cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-models"), join(home, "plugins", "acceptance-models"), { recursive: true });
     const keys: (string | null)[] = [];
-    const wire = async (url: string, init: RequestInit): Promise<Response> => {
-      keys.push(new Headers(init.headers).get("x-api-key"));
-      return new URL(url).hostname === "api.acceptance-models.com" ? new Response("ACCEPTANCE-THIRDPARTY-OK") : new Response("no", { status: 599 });
-    };
+    const local = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => { keys.push(req.headers.get("x-api-key")); return new Response("ACCEPTANCE-THIRDPARTY-OK"); } });
+    // As the run places it (scripts/acceptance/fake-models.ts placeModelsFixture): its provider at this server's port.
+    const dest = join(home, "plugins", "acceptance-models");
+    cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-models"), dest, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8")) as { capabilities: string[] };
+    manifest.capabilities = [`network:127.0.0.1:${local.port}`];
+    writeFileSync(join(dest, "clover.json"), JSON.stringify(manifest));
+    writeFileSync(join(dest, "host", "endpoint.json"), JSON.stringify({ url: `http://127.0.0.1:${local.port}/v1/turn` }));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     await secrets.set({ owner: { kind: "plugin", pluginId: "acceptance-models" }, name: "api-key" }, "FIXTURE-KEY");
@@ -142,11 +145,13 @@ describe("a third-party code model plugin through a real plugin host", () => {
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
     let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
     try {
+      expect(opened.folders.okText("acceptance-models", "macos").lines).toContain(`It can reach services on this computer or your local network: 127.0.0.1:${local.port}.`);
       const { card } = await opened.registry.installed("acceptance-models", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
       for (let i = 0; i < 200 && opened.registry.get("acceptance-models")?.state === "found"; i++) await Bun.sleep(20);
-      started = await startModelPlugins({ registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: new DaemonStore(), fetch: wire, addApiHandlers: (h) => ph.addApiHandlers(h) });
+      // No `fetch`: the production pinned fetch, which reaches this computer only for a host the OK names with its port.
+      started = await startModelPlugins({ registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: new DaemonStore(), addApiHandlers: (h) => ph.addApiHandlers(h) });
       expect(started.plugins.snapshot!.refused.filter((r) => r.pluginId === "acceptance-models")).toEqual([]);
       expect(started.plugins.snapshot!.set.catalog.models.some((m) => m.key === "acceptance-models/acceptance-fast")).toBe(true);
       const adapter = started.plugins.providerAdapterFor("acceptance-models", { caller: { kind: "core" } })!;
@@ -157,6 +162,7 @@ describe("a third-party code model plugin through a real plugin host", () => {
       started?.stop();
       await ph.close();
       opened.close();
+      void local.stop(true);
     }
   }, 90_000);
 });

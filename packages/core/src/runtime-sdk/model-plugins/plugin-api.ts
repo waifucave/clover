@@ -14,6 +14,7 @@
 import type { ApiHandlers } from "../../plugin-host/api/router";
 import { isBundledClover } from "./load";
 import { pinnedFetch, PinnedFetchRefused } from "../../plugin-host/pinned-fetch";
+import { ipAddressClass } from "../../agent/tools/web";
 import { originOf } from "./user-endpoint";
 import { maskError, maskResponse, noteKeys } from "./key-redaction";
 import { publicFetch } from "./public-fetch";
@@ -57,6 +58,9 @@ export interface ModelPluginApiOptions {
   /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, `user-endpoint.ts`), read at each
    *  call: the plugin's fetch reaches that origin (with its key: the provider's API calls) beside its declared hosts. */
   userEndpoint?: (pluginId: string) => string | undefined;
+  /** The platform fetch to a host on this computer a plugin declared (`withThisComputer`): by default the pinned fetch
+   *  reaching loopback addresses only. A test passes its own. */
+  loopbackFetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** The platform fetch to a user's own endpoint: by default the pinned fetch, reaching that one host even at a
    *  loopback or private address. A test passes its own. */
   userFetch?: (origin: string) => (url: string, init: RequestInit) => Promise<Response>;
@@ -68,6 +72,37 @@ function userOriginFetch(origin: string, platform: (url: string, init: RequestIn
   return (url, init) => {
     if (originOf(url) !== origin) return Promise.reject(new PinnedFetchRefused(`the user's endpoint for this provider is ${origin}; ${originOf(url) ?? "that URL"} is another`));
     return platform(url, init);
+  };
+}
+
+/** A `network:` entry naming a host on this computer with its port (`localhost:11434`, `127.0.0.1:1234`, `[::1]:8080`):
+ *  the one kind of local host a plugin may declare for its keyed fetch (a model server on this computer). A LAN or other
+ *  private address stays refused, and so does a loopback entry without a port. */
+const THIS_COMPUTER_ENTRY = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\]):(\d{1,5})$/i;
+
+/** The host and port of each of a plugin's declared hosts on this computer. */
+function thisComputerHosts(record: Pick<PluginRecord, "capabilities">): { host: string; port: number }[] {
+  return networkHostsOf(record).flatMap((e) => {
+    const m = THIS_COMPUTER_ENTRY.exec(e.trim());
+    return m === null ? [] : [{ host: m[1]!.toLowerCase().replace(/^\[|\]$/g, ""), port: Number(m[2]) }];
+  });
+}
+
+/** The pinned fetch reaching loopback addresses only (a name that resolves elsewhere is still refused). */
+const LOOPBACK_FETCH = pinnedFetch({ reach: (_host, address) => ipAddressClass(address) === "loopback" });
+
+/** A plugin's platform fetch: a request to a host on this computer its OK names (with its port) goes through
+ *  `loopback`, which reaches only loopback addresses; every other request through `platform`, which refuses them.
+ *  Every hop of a redirect comes through here and is held to the same rule. */
+function withThisComputer(record: Pick<PluginRecord, "capabilities">, platform: (url: string, init: RequestInit) => Promise<Response>, loopback: (url: string, init: RequestInit) => Promise<Response>): (url: string, init: RequestInit) => Promise<Response> {
+  const local = thisComputerHosts(record);
+  if (local.length === 0) return platform;
+  return (url, init) => {
+    let u: URL;
+    try { u = new URL(url); } catch { return platform(url, init); }
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    const port = u.port !== "" ? Number(u.port) : u.protocol === "https:" ? 443 : 80;
+    return local.some((l) => l.host === host && l.port === port) ? loopback(url, init) : platform(url, init);
   };
 }
 
@@ -146,7 +181,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     if (held !== undefined && held.key === key) return held.fetch;
     const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
     for (const [name, a] of authEntriesOf(record)) auth[name] = { source: noteKeys(opts.tokens(record.id, name), keysOf(record.id)), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
-    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: opts.fetch ?? pinnedFetch(), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: withThisComputer(record, opts.fetch ?? pinnedFetch(), opts.loopbackFetch ?? LOOPBACK_FETCH), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
     fetches.set(record.id, { key, fetch });
     return fetch;
   };

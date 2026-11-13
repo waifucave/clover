@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-models",
   "name": "Acceptance Models",
-  "description": "The acceptance run's third-party model plugin (row 1.91): a provider of its own and a hand-written code adapter in its host code, which reaches its one declared host through the core's keyed fetch with the key the user stored for it.",
+  "description": "The acceptance run's third-party model plugin (row 1.91): a provider of its own on this computer (the run writes its loopback server's port into `capabilities` and `host/endpoint.json`) and a hand-written code adapter in its host code, which reaches that one declared host through the core's keyed fetch with the key the user stored for it.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -10,7 +10,9 @@
   "host": {
     "entry": "host/index.ts"
   },
-  "capabilities": ["network:api.acceptance-models.com"],
+  "capabilities": [
+    "network:127.0.0.1:9"
+  ],
   "contributes": {
     "models": [
       {
@@ -22,7 +24,9 @@
             "method": "api-key",
             "secret": "api-key",
             "help": "The acceptance run's dummy key.",
-            "placement": { "header": "x-api-key" }
+            "placement": {
+              "header": "x-api-key"
+            }
           }
         ],
         "adapter": "adapter"
