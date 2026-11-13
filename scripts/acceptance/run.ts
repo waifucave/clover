@@ -2179,9 +2179,14 @@ async function main(): Promise<void> {
           for (const card of await cards(c).catch(() => [])) {
             if (card.session !== coding || answered.has(card.id)) continue;
             answered.add(card.id);
-            if (!JSON.stringify(card).includes(AGENTS_ONLY_REAL)) wrong.push(`the card for ${AGENTS_ONLY_SHORT} doesn't name its real name ${AGENTS_ONLY_REAL}`);
+            const shown = JSON.stringify(card.fields ?? {});
+            // The call judged (plugin-reach's judge, the bots' approval check): its tool card names the real tool, never
+            // the short form. clover-code gives no structured server and tool (`mcpNames: null`), so its own ACP request
+            // also comes to an agent-permission card at the session's level, as for every bridge call there; that card
+            // shows the agent's own title for the call (the name it called).
+            if (card.kind === "tool" && (!shown.includes(AGENTS_ONLY_REAL) || shown.includes(AGENTS_ONLY_SHORT))) wrong.push(`the tool card for ${AGENTS_ONLY_SHORT} doesn't name its real name ${AGENTS_ONLY_REAL}: ${shown.slice(0, 300)}`);
             await approve(c, card);
-            carded.push(`its ${card.kind} card named ${AGENTS_ONLY_REAL}, approved`);
+            carded.push(card.kind === "tool" ? `its tool card named ${AGENTS_ONLY_REAL}, approved` : `a ${card.kind} card with the agent's own title, approved`);
           }
           const evs = await history(c, coding).catch(() => []);
           return evs.find((e) => JSON.stringify(e).includes("AgentsOnly-pong") || JSON.stringify(e).includes("ACCEPTANCE-NO-CALL-TOOL"));
