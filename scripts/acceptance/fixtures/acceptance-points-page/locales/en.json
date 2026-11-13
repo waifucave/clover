@@ -1,0 +1,7 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "acceptance-points-page.greeting": "Hello {who}, from the page's own locale"
+  }
+}

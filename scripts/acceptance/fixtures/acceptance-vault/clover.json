@@ -1,0 +1,15 @@
+{
+  "manifest": 1,
+  "id": "acceptance-vault",
+  "name": "Acceptance vault",
+  "description": "The acceptance run's own-process plugin: its host half runs in a process of its own, and its `read` command reads the key the user stored for its own `auth` entry with `secrets.get` (answering only the key's SHA-256, never the key), and is refused a name it doesn't list.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.js", "process": "own" },
+  "auth": [{ "method": "api-key", "secret": "api-key", "help": "Any text: the acceptance run's dummy key." }],
+  "contributes": {
+    "commands": [
+      { "name": "read", "description": "Reads its stored key (its digest only) and a name it doesn't list.", "handler": "read", "args": { "type": "object", "additionalProperties": false } }
+    ]
+  }
+}

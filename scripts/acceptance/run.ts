@@ -64,7 +64,7 @@
 // had hidden (a bot's Write into its scratch refused as a project's `.clover`; a pasted `bun -e` server refused by the
 // load guard under a dot-folder; a wrapped skill folder missing from Glossary), the last two in a shipped build.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync, lstatSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -721,6 +721,36 @@ let stdioOutcome: { status: Status; detail: string } | undefined;
 /** The plugin network step's outcome, from its turns on the first daemon, and the run's site it reaches. */
 let netOutcome: { status: Status; detail: string } | undefined;
 let apiOutcome: { status: Status; detail: string } | undefined;
+
+/** Row 2.14: an own-process plugin (fixtures/acceptance-vault) reads the key the run stored for its `auth` entry with
+ *  `secrets.get` (it answers the key's digest, never the key), and a name it doesn't list is refused. Removed after. */
+async function vaultRead(c: CloverClient): Promise<string> {
+  const id = "acceptance-vault";
+  const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", id);
+  cpSync(join(import.meta.dir, "fixtures", id), folder, { recursive: true });
+  try {
+    const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    const card = await until(`${id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === id));
+    await approve(c, card);
+    await until(`${id} to run after its OK`, 60_000, async () => {
+      const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin?.state;
+      return st === "enabled" || st === "running" ? st : undefined;
+    });
+    const key = `acceptance-vault-dummy-${randomBytes(6).toString("hex")}`;
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id });
+    const entry = auth.auth.find((a) => a.method === "api-key") ?? fail(`plugin.auth.list ${id} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id, index: entry.index, key });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${id} ${signed.state}`);
+    const got = (await c.request<{ result: { own?: string; other?: string } }>("command.run", { name: `${id}.read`, args: {} }, 30_000)).result;
+    const want = createHash("sha256").update(key).digest("hex");
+    if (got.own !== want) fail(`${id}'s secrets.get in its own process gave ${JSON.stringify(got.own).slice(0, 200)}, not the stored key (its digest)`);
+    if (!String(got.other).startsWith("refused:")) fail(`${id}'s secrets.get of a name it doesn't list gave ${JSON.stringify(got.other)}, not a refusal`);
+    return `${id} (a process of its own) read its stored key with secrets.get (its digest matched) and was refused a name it doesn't list`;
+  } finally {
+    const rm = await c.request<{ card?: string }>("plugin.remove", { id }).catch(() => undefined);
+    if (rm?.card !== undefined) { const k = (await cards(c)).find((x) => x.id === rm.card); if (k !== undefined) await approve(c, k).catch(() => undefined); }
+  }
+}
 let codeAdapterOutcome: { status: Status; detail: string } | undefined;
 let thirdPartyOutcome: { status: Status; detail: string } | undefined;
 let oauthOutcome: { status: Status; detail: string } | undefined;
@@ -2116,6 +2146,28 @@ async function main(): Promise<void> {
       }, 1_000).catch((err: unknown) => fail(`${why(err)}; the app log's lines about it: ${readLog(join(logs, "app.log")).split("\n").filter((l) => l.includes(pageId)).slice(-6).join(" | ").slice(0, 600) || "none"}`));
       const checked = checkPageReport(page, { siteBody: PAGE_SITE_BODY });
       wrong.push(...checked.wrong.map((w) => `its page: ${w}`));
+      // `conversation.answer` from the page: the bot asks a question in Alpha's conversation, the run names it in the
+      // page's `pageQuestion` setting, and the page answers it through the member (its `conversation.post`); the
+      // question resolves with that answer and the turn goes on with it as the tool's result.
+      const qTag = `ACCEPTANCE-PAGEQ-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const question = `Which tide for ${qTag}?`;
+      const answerLabel = "High tide";
+      const qInput = JSON.stringify({ questions: [{ question, header: "Tide", multiSelect: false, options: [{ label: answerLabel, description: "the first" }, { label: "Low tide", description: "the second" }] }] });
+      const qSeen = fake?.requests.length ?? 0;
+      await c.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL AskUserQuestion ${qInput}`, clientMessageId: `pageq-${qTag}` } }, 30_000);
+      const asked = await until("the bot's question in Alpha's conversation", 90_000, async () => (await history(c, session)).find((e) => e.type === "question_asked" && JSON.stringify(e.questions ?? "").includes(qTag)));
+      await c.request("plugin.settings.set", { id: pageId, key: "pageQuestion", value: JSON.stringify({ session, callId: asked.callId, question, answer: answerLabel }) });
+      const resolved = await until("the question answered by the page", 60_000, async () => (await history(c, session)).find((e) => e.type === "question_resolved" && e.callId === asked.callId)).catch(async (err: unknown) => {
+        const r = (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} }).catch(() => ({ result: {} as { answer?: string } }))).result;
+        return fail(`${why(err)} (the page said ${JSON.stringify(r.answer ?? "nothing")})`);
+      });
+      const pageAnswer = (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} })).result.answer ?? "";
+      const resolvedAnswers = (resolved.answers ?? {}) as Record<string, string>;
+      if (!pageAnswer.startsWith("answered ") || resolvedAnswers[question] !== answerLabel) wrong.push(`its page's conversation.answer: the page said ${JSON.stringify(pageAnswer)}, the question resolved with ${JSON.stringify(resolvedAnswers)}`);
+      else {
+        await until("the turn gone on with the page's answer", 90_000, async () => ((fake?.requests ?? []).slice(qSeen).some((r) => r.toolResult?.text.includes(answerLabel)) ? true : undefined));
+        checked.said.push("conversation.answer (a question answered, the turn went on with it)");
+      }
       const pageSaid = `${pageId}'s page reached ${checked.said.join(", ")}`;
       await c.request("plugin.remove", { id: pageId, deleteData: true }).catch((err: unknown) => wrong.push(`${pageId} wasn't removed: ${why(err)}`));
       if (wrong.length > 0) fail(wrong.join("; "));
@@ -2447,8 +2499,13 @@ async function main(): Promise<void> {
         const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
         return st === "enabled" || st === "running" ? st : undefined;
       });
+      // A routine of Alpha's for the probe's routines.runs (hourly: it never fires during the run), gone after the probe.
+      const routineFile = join(home, "routines", "alpha", "acceptance-api.md");
+      mkdirSync(dirname(routineFile), { recursive: true });
+      writeFileSync(routineFile, "---\ntriggers:\n  - schedule: every 1h\n---\nSay hello (the acceptance run's routine for the API probe).\n");
+      await until("the run's routine in routine.list", 30_000, async () => ((await c.request<{ routines: { name: string }[] }>("routine.list", {}).catch(() => ({ routines: [] }))).routines.some((r) => r.name === "acceptance-api") ? true : undefined));
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-CALL ApiProbe {}", 150_000);
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-CALL ApiProbe {}", 150_000).finally(() => rmSync(routineFile, { force: true }));
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
       const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-api-pong"));
@@ -2457,8 +2514,11 @@ async function main(): Promise<void> {
       const said = apiProbePairs(result!.text);
       const wrong = apiProbeWrong(said);
       if (!cardText.includes("hears what you say to your bots with push-to-talk")) wrong.push("its OK card doesn't say what audio gives");
-      if (wrong.length > 0) fail(`${wrong.join("; ")} (${result!.text.slice(0, 400)})`);
-      apiOutcome = { status: "PASS", detail: `${installed.id}'s ${called} (card approved, audio's line on it): ${Object.entries(said).map(([k, v]) => `${k}=${v}`).join(" ")}${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
+      if (!cardText.includes("controls the screen and input of your computers")) wrong.push("its OK card doesn't say what computers.control gives");
+      if (wrong.length > 0) fail(`${wrong.join("; ")} (${result!.text.slice(0, 600)})`);
+      // `secrets.get` in a process of the plugin's own: the vault reads the key the run stored for its `auth` entry.
+      const vault = await vaultRead(c);
+      apiOutcome = { status: "PASS", detail: `${installed.id}'s ${called} (card approved, audio's and computers' lines on it): ${Object.entries(said).map(([k, v]) => `${k}=${v}`).join(" ")}; ${vault}${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
     } catch (err) {
       apiOutcome = { status: statusOf(err), detail: why(err) };
     }
