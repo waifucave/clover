@@ -73,16 +73,38 @@ export async function settingsUsageText(cdp: Cdp): Promise<string> {
 /** The island's Usage tab, chosen on its tab dots while the island is open (a card is pending), and its drawn text. */
 export async function islandUsageText(cdp: Cdp): Promise<string> {
   const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
-  await clickIn(cdp, "the island's Usage tab dot", '[role=tab][aria-label="Usage"]', undefined, 20_000).catch(async (err: unknown) => {
+  // A card on top rests small; the strip at the top opens the island (its tab dots live there).
+  await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 20_000);
+  // The island morphs open first: its dots only take a click once it rests, so the click is repeated until the tab is chosen.
+  const chosen = async (): Promise<boolean> => {
+    for (const d of await here()) {
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.querySelector('[role=tab][aria-label="Usage"]'); return t ? t.getAttribute('aria-selected') === 'true' : null; })()`).catch(() => null);
+      if (typeof v === "boolean") return v;
+    }
+    return false;
+  };
+  await (async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await sleep(700);
+      await clickIn(cdp, "the island's Usage tab dot", '[role=tab][aria-label="Usage"]', undefined, 20_000);
+      await sleep(400);
+      if (await chosen()) return;
+    }
+  })().catch(async (err: unknown) => {
     const seen: string[] = [];
     for (const d of await here()) seen.push(`${d.url.slice(0, 60)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 300) : ''").catch(() => "")).slice(0, 700)}`);
     throw new Error(`${(err as Error).message} (the island's documents: ${seen.join(" | ") || "none"})`);
   });
   return until("the Usage tab's drawn text", 20_000, async () => {
     for (const d of await here()) {
-      const v = await cdp.evaluate(d.session, `(() => { const b = document.querySelector('[role=tabpanel][aria-label="Usage"]'); return b ? b.innerText : null; })()`).catch(() => null);
+      // The tab's entry is its own frame inside the panel: the text is read where it is drawn.
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Today/.test(t) && /Clover/.test(t) && /\\d[\\d.,]*[kKmM]? tokens|No usage yet/.test(t) && !/Waiting to use/.test(t) ? t : null; })()`).catch(() => null);
       if (typeof v === "string" && v.trim() !== "") return v;
     }
     return undefined;
+  }).catch(async (err: unknown) => {
+    const seen: string[] = [];
+    for (const d of await here()) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); const tabs = [...document.querySelectorAll('[role=tab]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-selected')).join(','); return p ? 'PANEL[' + tabs + '] ' + p.outerHTML.replace(/\\s+/g, ' ').slice(0, 600) : ''; })()").catch(() => "")).slice(0, 700)}`);
+    throw new Error(`${(err as Error).message} (documents: ${seen.join(" | ")})`);
   });
 }
