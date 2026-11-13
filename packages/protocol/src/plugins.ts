@@ -435,6 +435,48 @@ export const PLUGINS_METHODS = {
     result: z.object({ grants: z.array(PluginGrantView).max(256) }),
     doc: "The files and folders the user picked for a plugin, for its page in Settings. Kept until the user removes them or the plugin.",
   }),
+  toolPermissions: defineMethod({
+    name: "tool.permissions", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: Empty,
+    result: z.object({
+      plugins: z.array(z.object({
+        pluginId: AnyPluginId,
+        /** The plugin's own name, for the group heading. */
+        name: utf16(200),
+        /** The server's key as a bot sees it in a tool's name (`mcp__<server>__<tool>`). */
+        server: utf16(256, 1),
+        tools: z.array(z.object({
+          /** The tool's own name (`Export`), never `mcp__<server>__Export`. */
+          name: utf16(256, 1),
+          title: utf16(200).optional(),
+          /** This computer's value for every bot: `ask` (the default) is what happens with no value stored. */
+          permission: z.enum(["allow", "ask", "deny"]),
+          /** A tool that was not listed when the user last set a value for this plugin: it starts at `ask`. */
+          isNew: z.boolean().optional(),
+          /** What a card's "Always allow" saved for one bot, on which computers: taken back one bot at a time. */
+          cardRules: z.array(z.object({ bot: BotId, computers: z.array(ComputerName).max(64) })).max(256),
+        })).max(1024),
+      })).max(512),
+    }),
+    doc: "Settings' Tools tab: every installed plugin that gives bots tools, each with its tools, this computer's value for each (Always allow, Ask, Always block) and the card rules saved for single bots. The user's own view: a plugin, a bot or an agent never reads it.",
+  }),
+  toolSetPermission: defineMethod({
+    name: "tool.setPermission", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: z.object({
+      server: utf16(256, 1),
+      /** One tool, or absent for every tool the plugin lists now (a tool added later starts at Ask). */
+      tool: utf16(256, 1).optional(),
+      permission: z.enum(["allow", "ask", "deny"]),
+    }),
+    result: Ok,
+    doc: "Always allow (no card, whatever the call is given), Ask (what the approval level decides) or Always block (refused, with no card, and the bot is told the user blocked it in Settings), for every bot on this computer. Takes effect on the next call. Only the user sets it.",
+  }),
+  toolTakeBackRule: defineMethod({
+    name: "tool.takeBackRule", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ server: utf16(256, 1), tool: utf16(256, 1), bot: BotId }),
+    result: z.object({ removed: z.number().int().nonnegative() }),
+    doc: "Takes back what a card's \"Always allow\" saved for one bot's use of one tool.",
+  }),
   pluginAuthList: defineMethod({
     name: "plugin.auth.list", owner: "A", roles: ["app", "cli"],
     params: IdParams, result: z.object({ auth: z.array(PluginAuthView).max(32) }),

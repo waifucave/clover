@@ -273,7 +273,7 @@ describe("the floor holds where the bridge never looks", () => {
   test("the deny reason names the setting (it is what the model reads)", async () => {
     const session: Session = { label: "bypass", mode: "code", policy: "bypass" };
     const r = await hookDecision(connectorHookOf(session, liveSource({ cf: { workers_list: "deny" } })), TOOL);
-    expect(r.reason).toContain('"Always deny"');
+    expect(r.reason).toContain("blocked this tool in Settings");
     expect(r.reason).toContain("workers_list");
   });
 

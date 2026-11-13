@@ -6,9 +6,9 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
-import type { SettingsModalProps, SettingsSection } from "./types";
+import type { SettingsModalProps, SettingsSection, ToolPermission, ToolsView } from "./types";
 
-export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "levels", "bots"];
+export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "tools", "levels", "bots"];
 
 /** Where the section list breaks into groups, as the dividers show. */
 const GROUP_ENDS: ReadonlySet<SettingsSection> = new Set(["devices", "notifications", "levels"]);
@@ -20,6 +20,7 @@ const INDEX: Record<SettingsSection, string[]> = {
   appearance: [S.theme, S.themePlugin, S.textSize, S.language],
   notifications: [S.notifyNeedsYou, S.notifyAgentDone, S.notifyRoutineFailed, S.notifySounds],
   plugins: [S.plugins, S.pluginManager, S.pluginLogs],
+  tools: [S.toolsTitle, S.toolAllow, S.toolDeny],
   levels: [S.levels],
   bots: [],
 };
@@ -46,6 +47,58 @@ function Row({ label, detail, mark, children }: { label: string; detail?: string
       </div>
       <div className="cl-settings__control">{children}</div>
     </div>
+  );
+}
+
+const TOOL_VALUES = ["allow", "ask", "deny"] as const;
+const TOOL_LABEL: Record<ToolPermission, string> = { allow: S.toolAllow, ask: S.toolAsk, deny: S.toolDeny };
+
+/** The three-way control: one radio group, the value that holds pressed. */
+function ThreeWay({ label, value, mixed, onPick }: { label: string; value: ToolPermission | undefined; mixed?: boolean; onPick?: (v: ToolPermission) => void }) {
+  return (
+    <div className="cl-settings__three" role="radiogroup" aria-label={label} data-mixed={mixed ? "" : undefined}>
+      {TOOL_VALUES.map((v) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} data-value={v} className="cl-settings__three-option" disabled={!onPick} onClick={() => onPick?.(v)}>
+          {TOOL_LABEL[v]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ToolsPage({ tools, onSet, onTakeBack, item }: { tools: ToolsView | undefined; onSet: SettingsModalProps["onSetTool"]; onTakeBack: SettingsModalProps["onTakeBackRule"]; item: string | undefined }) {
+  if (tools === undefined) return <p className="cl-settings__note">{S.toolsLoading}</p>;
+  return (
+    <>
+      <h3 className="cl-settings__subhead">{S.toolsTitle}</h3>
+      <p className="cl-settings__note">{S.toolsDetail}</p>
+      {tools.plugins.length === 0 && <p className="cl-settings__note">{S.toolsNone}</p>}
+      {tools.plugins.map((p) => {
+        const every = p.tools.every((t) => t.permission === p.tools[0]!.permission) ? p.tools[0]!.permission : undefined;
+        return (
+          <section key={p.server} className="cl-settings__tool-group" aria-label={p.name} data-item={p.pluginId} {...(item === p.pluginId ? { "data-marked": true } : {})}>
+            <Row label={p.name} detail={S.toolsAll}>
+              <ThreeWay label={S.toolsAllFor(p.name)} value={every} mixed={every === undefined} {...(onSet ? { onPick: (v: ToolPermission) => onSet(p.server, undefined, v) } : {})} />
+            </Row>
+            {p.tools.map((t) => (
+              <Row key={t.name} label={t.title ?? t.name} detail={t.isNew ? S.toolsNew : undefined}>
+                <ThreeWay label={S.toolFor(t.name)} value={t.permission} {...(onSet ? { onPick: (v: ToolPermission) => onSet(p.server, t.name, v) } : {})} />
+                {t.cardRules.map((r) => (
+                  <span key={r.bot} className="cl-settings__tool-rule">
+                    {S.toolRule(r.botName, r.computers)}
+                    {onTakeBack && (
+                      <button type="button" className="cl-settings__button" aria-label={S.toolTakeBackFor(r.botName, t.name)} onClick={() => onTakeBack(p.server, t.name, r.bot)}>
+                        {S.toolTakeBack}
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </Row>
+            ))}
+          </section>
+        );
+      })}
+    </>
   );
 }
 
@@ -255,6 +308,8 @@ function Page({ props }: { props: SettingsModalProps }) {
           )}
         </>
       );
+    case "tools":
+      return <ToolsPage tools={props.tools} onSet={props.onSetTool} onTakeBack={props.onTakeBackRule} item={props.item} />;
     case "levels":
       return (
         <>

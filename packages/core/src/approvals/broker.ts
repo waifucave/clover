@@ -262,6 +262,25 @@ export class CloverApprovalBroker implements ApprovalBroker {
     return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
   }
 
+  /** The saved rules whose key hashes to `keyHash` (a tool's `tool:<name>` key, as `ruleKeyHash` makes it): who saved each
+   *  and where, for the Tools tab, which survives a restart (a rule read back keeps its hash, not its key). */
+  savedFor(keyHash: string): { bot?: string; computers: string[] }[] {
+    return this.#rules.filter((r) => r.keyHash === keyHash).map((r) => ({ computers: [...r.computers], ...(r.bot === undefined ? {} : { bot: r.bot }) }));
+  }
+
+  /** Takes back the saved rules of one key for one bot (the user's, from the Tools tab); the file is written at once.
+   *  Returns how many went. */
+  forgetSaved(keyHash: string, bot: string): number {
+    const before = this.#rules.length;
+    for (let i = this.#rules.length - 1; i >= 0; i--) if (this.#rules[i]!.keyHash === keyHash && this.#rules[i]!.bot === bot) this.#rules.splice(i, 1);
+    const removed = before - this.#rules.length;
+    if (removed > 0) {
+      const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
+      try { this.#store?.save(stored); } catch { this.#log("[approvals] saving the rules failed; the change holds until the daemon restarts"); }
+    }
+    return removed;
+  }
+
   watch(fn: (e: ApprovalEvent) => void): Unsubscribe { return this.#listeners.add(fn); }
 
   /** Where the broker reads a bot's name (the bot side, which starts after it): a card's headline names the bot as

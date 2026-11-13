@@ -428,6 +428,11 @@ export function botApprovalCheck(
      *  plugin fence here): effect `read`, under the computer's level, after the broker's fence, card-every-time, binding
      *  and unresolved-path rules. */
     readOnlyTool?: (ctx: BotSessionContext, tool: string) => boolean;
+    /** What the user set for a plugin's tool in Settings (Tools): "allow" runs it with no card whatever it is given, "deny"
+     *  refuses it with no card and the message is what the bot is told; undefined is Ask, today's judging. Only a tool
+     *  that is not one of the core's own is asked, and every check above it (fenced places, secrets, the sandbox flag)
+     *  has already had its say. */
+    toolSetting?: (ctx: BotSessionContext, tool: string) => { setting: "allow" } | { setting: "deny"; message: string } | undefined;
     /** Whether the conversation already saw a web address (`SeenUrls`): a fetch of one is contained, while the turn's
      *  budget (`fetchBudget`) holds. */
     seenUrl?: (ctx: BotSessionContext, url: string) => boolean;
@@ -637,6 +642,13 @@ export function botApprovalCheck(
     // What runs is what was shown: the allow carries the canonical judged input the card showed (stable key order),
     // and an input that changed meanwhile is refused instead.
     const shown = escape === "escape" ? canonicalJson(input) : undefined;
+    // The user's own word on this tool in Settings (Tools), for a tool the core doesn't own: Always block refuses it with
+    // no card, Always allow runs it with none. Ask (nothing stored) falls through to the judging below, unchanged.
+    if (!builtin && !hostTools.has(tool)) {
+      const set = opts.toolSetting?.(ctx, tool);
+      if (set?.setting === "deny") return { behavior: "deny", message: set.message };
+      if (set?.setting === "allow") return { behavior: "allow", updatedInput: input };
+    }
     let decision: Awaited<ReturnType<typeof broker.request>> | undefined;
     try {
       decision = await broker.request(req, { signal: call.signal });

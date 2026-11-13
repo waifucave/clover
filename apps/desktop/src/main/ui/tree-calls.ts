@@ -126,6 +126,11 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.setEnabled": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: true },
   // Class 3: the Plugins page.
   "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
+  // Settings' Tools tab: what each plugin tool may do (always allow, ask, always block) and the card rules saved for one bot.
+  // A value decides when a card is raised, so setting one or taking one back is the user's own press, in Settings alone.
+  "tool.permissions": { disposition: READ, part: SETTINGS_PART },
+  "tool.setPermission": { disposition: "settings", part: SETTINGS_PART, gesture: true },
+  "tool.takeBackRule": { disposition: "settings", part: SETTINGS_PART, gesture: true },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
   // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.

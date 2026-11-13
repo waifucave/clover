@@ -16,7 +16,10 @@ import { LanguageChooser } from "./LanguageChooser";
 import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
 import { SettingsModal } from "./SettingsModal";
 import { S } from "./strings";
-import type { ExtraSection, Language, SettingsSection, SettingsValues } from "./types";
+import type { ExtraSection, Language, SettingsSection, SettingsValues, ToolPermission } from "./types";
+
+/** `tool.permissions`' answer. */
+interface ToolsRaw { plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; isNew?: boolean; cardRules: { bot: string; computers: string[] }[] }[] }[] }
 
 const DEFAULT_APPEARANCE: SettingsValues["appearance"] = { theme: "system", textSize: "default" };
 const DEFAULT_NOTIFICATIONS: SettingsValues["notifications"] = { needsYou: true, agentDone: true, routineFailed: true, sounds: false };
@@ -148,6 +151,18 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const [computers, setComputers] = useState<Awaited<ReturnType<NonNullable<NonNullable<typeof api.computers>["list"]>>>>([]);
   const [devices, setDevices] = useState<Awaited<ReturnType<NonNullable<typeof api.devices>["list"]>>>([]);
   const [bots, setBots] = useState<{ id: string; name: string }[]>([]);
+  // Tools: read when the section is open, and again after each change (a card's rule taken back, a value set).
+  const [toolsRaw, setToolsRaw] = useState<ToolsRaw | undefined>(undefined);
+  const [toolsRev, setToolsRev] = useState(0);
+  useEffect(() => {
+    if (section !== "tools" || core === undefined) return;
+    let live = true;
+    void (core.call as (m: string, p: unknown) => Promise<ToolsRaw>)("tool.permissions", {}).then((r) => live && setToolsRaw(r), () => live && setFailure(S.choiceFailed(S.section.tools)));
+    return () => { live = false; };
+  }, [section, core, toolsRev]);
+  const toolsCall = (m: string, p: unknown): void => {
+    void (core!.call as (m: string, p: unknown) => Promise<unknown>)(m, p).then(() => setToolsRev((r) => r + 1), () => setFailure(S.choiceFailed(S.section.tools)));
+  };
   const [own, setOwn] = useState<{ appearance?: SettingsValues["appearance"]; notifications?: SettingsValues["notifications"] }>({});
   // Pairing a device is not offered on this page: it adds a device to what the user's computers trust, which is a sealed
   // card (or the user's own terminal), and the door has no `device.pair.*` call for a part. So the page starts no pairing
@@ -287,6 +302,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
         : {})}
       {...(logs ? { logs: { ...logs, onBack: () => setLogs(undefined) } } : {})}
       extraSections={extra}
+      {...(toolsRaw !== undefined ? { tools: { plugins: toolsRaw.plugins.map((p) => ({ ...p, tools: p.tools.map((t) => ({ ...t, cardRules: t.cardRules.map((r) => ({ ...r, botName: bots.find((b) => b.id === r.bot)?.name ?? r.bot })) })) })) } } : {})}
+      {...(core ? { onSetTool: (server: string, tool: string | undefined, permission: ToolPermission) => toolsCall("tool.setPermission", { server, ...(tool !== undefined ? { tool } : {}), permission }), onTakeBackRule: (server: string, tool: string, bot: string) => toolsCall("tool.takeBackRule", { server, tool, bot }) } : {})}
     />
   );
 }

@@ -48,6 +48,7 @@ import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
 import { CloverFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
+import { dropPluginServers, pruneDroppedTools, toolPermissionMethods, toolSettingFor } from "./approvals/tool-permissions";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
 import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
@@ -119,7 +120,7 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { loadSettings, saveSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -3566,6 +3567,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }));
   // Lane C's cards and lane K's agent.* methods: the broker and the agents come up with the parts (below) and go with
   // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
+  // Settings' Tools tab: always allow / ask / always block per plugin tool (one store with the connector permissions, read live by
+  // the same floor), and the card rules saved for single bots, which the user takes back there.
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(toolPermissionMethods({
+    listing: () => pluginMcp?.toolListing() ?? [],
+    pluginName: (id) => { const n = partsRegistry?.registry.get(id)?.name; return typeof n === "string" ? n : undefined; },
+    loadSettings: () => loadSettings(dirs.settingsPath),
+    saveSettings: (next) => { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); },
+    savedFor: (hash) => daemonParts?.broker?.savedFor(hash) ?? [],
+    forgetSaved: (hash, bot) => daemonParts?.broker?.forgetSaved(hash, bot) ?? 0,
+  })));
   Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
     // A user's call made on this computer (the app or the terminal here) is this computer's device.
     localDevice: () => liveDeviceId,
@@ -4010,7 +4021,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const stopEvents = registryEvents({ registry: opened.registry, okCards: (fn) => opened.registry.watchOkCards(fn), trees: (fn) => opened.registry.watchTrees(fn), emit: (event) => void cloverServer?.coreEvent(event) });
     // A removed plugin's picked files go with it.
     grantRegistry = opened.registry;
-    const stopGrantDrops = opened.registry.watch((change) => { if (change.type === "removed") pluginGrants.dropPlugin(change.id); });
+    const stopGrantDrops = opened.registry.watch((change) => {
+      if (change.type !== "removed") return;
+      pluginGrants.dropPlugin(change.id);
+      // An uninstalled plugin's tool choices (Settings, Tools) go with it; a stop or a switch-off keeps them.
+      try {
+        const next = dropPluginServers(loadSettings(dirs.settingsPath), change.id);
+        if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); }
+      } catch (err) { console.error(`tool permissions: couldn't clear ${change.id}'s choices: ${(err as Error).message}`); }
+    });
     // A bot's own plugin that the crash rules stop tells that bot, once per stop (crash-notice.ts).
     const notices = crashNotices({ host: pluginHost.host, registry: opened.registry, bots: () => daemonParts?.bots?.bots, log: (line) => console.error(line) });
     const grantsHost = pluginHost;
@@ -4130,6 +4149,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({
+      // A listing that no longer names a tool drops the user's value and "seen" mark for it, so the tool, listed again, is new at Ask.
+      onListed: () => {
+        try {
+          const next = pruneDroppedTools(loadSettings(dirs.settingsPath), pluginMcp?.toolListing() ?? []);
+          if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); }
+        } catch (err) { console.error(`tool permissions: couldn't drop values for tools no longer listed: ${(err as Error).message}`); }
+      },
       ...(stdioMcp !== undefined ? { stdio: stdioMcp } : {}),
       http: httpMcp,
       // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
@@ -4402,6 +4428,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
+          // What the user set for this tool in Settings (Tools), read live from the connector store at each call.
+          toolSetting: (_ctx, tool) => toolSettingFor(connectorPermissions, pluginMcp?.toolListing() ?? [], tool),
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),
           // Where a message goes (lane D's one resolution): the bot's own sessions, or a level no wider than its own.

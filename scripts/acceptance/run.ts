@@ -2843,7 +2843,8 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     if (ids.includes("browser") && browserFixture === undefined) browserFixture = startBrowserFixture();
     // Whether Clover's window is in front, for the rows that place a card (CLOVER_TEST_MAIN_FRONT_FILE, test-marked and acceptance builds only): a headless run's windows are never the focused one.
     const frontFile = join(root, "main-front");
-    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    const unitAppearance = join(root, "unit-appearance");
+    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: unitAppearance, CLOVER_TEST_PICK: pickFile, CLOVER_TEST_MAIN_FRONT_FILE: frontFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
     proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
@@ -2853,7 +2854,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     rpc = (await appDriver()).client;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
-    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, undefined, frontFile);
+    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, unitAppearance, frontFile);
     for (const [name, run] of uiRowRunners(ctx, session, launch)) {
       if (!names.includes(name)) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
