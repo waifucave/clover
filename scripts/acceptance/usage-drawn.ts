@@ -16,7 +16,7 @@ export function settingsDrawnProblem(text: string): string | undefined {
   const flat = JSON.stringify(text.replace(/\s+/g, " ").slice(0, 200));
   if (/No usage yet/.test(text)) return `it says it has no usage: ${flat}`;
   if (!/Clover/.test(text)) return `it has no Clover row: ${flat}`;
-  if (!/\d[\d.,]*[kKmM]? tokens/.test(text)) return `it shows no token count: ${flat}`;
+  if (!/\d[\d.,]*[kKmM]? in · \d[\d.,]*[kKmM]? out/.test(text)) return `it shows no "N in · M out" total: ${flat}`;
   return undefined;
 }
 
