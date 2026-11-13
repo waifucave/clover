@@ -64,6 +64,10 @@ describe("the split", () => {
     for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "addons", "archive", "tab-flash", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
     // The appless rows run on the shard's daemon with no app, each its own clause.
     expect(run).toContain('if (ids.includes("models"))');
+    // …answered over RPC only, as under their own --only-* (no app of the shard is up yet: the first 14f table's reds).
+    const models = run.slice(run.indexOf('if (ids.includes("models"))'), run.indexOf('if (ids.includes("models"))') + 2000);
+    expect(models).toContain("appless = true;");
+    expect(models).toContain("appless = wasAppless;");
     expect(run).toContain('if (runs("models"))');
     expect(run).toContain("if (!runs(unitOf(name))) continue;");
   });

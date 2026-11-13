@@ -106,6 +106,8 @@ import { placeOAuthFixture, startFakeOAuth, type FakeOAuth } from "./fake-oauth"
 import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { startFakeOpenAi, type FakeOpenAi } from "./fake-openai";
 import { holdMachine } from "./exclusive";
+import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
+import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
@@ -188,7 +190,8 @@ const browserOnly = argv.includes("--only-browser");
 const routineOnly = argv.includes("--only-scheduled-routine");
 /** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
-const appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
+// (`let`: a shard's `models` unit runs the same rows on its daemon before any app of the shard is up, appless too.)
+let appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
 // --only-kids | --only-listen | --only-web | --only-drag | --only-review: the row(s) of the plugin-app unit (shards.ts) alone: the
 // daemon, the dummy key, Alpha on it, then the app over it and just those rows (the child-plugin and notifier rows together
 // for --only-kids; a web page part drawn sealed; Alpha's own handle dragging the window; the Review on an OK card).
@@ -2708,6 +2711,11 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
       // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
       await c.request("session.attach", { id: session });
+      // No app is up yet in this shard (its window, if any, comes after): their cards are answered over RPC only, as
+      // under their own --only-* (the first 14f table: "the app was never told of the card" for all four).
+      const wasAppless = appless;
+      appless = true;
+      try {
       for (const [step, turnOf] of [[CODE_ADAPTER_STEP, codeAdapterTurn], [THIRD_PARTY_MODEL_STEP, thirdPartyModelTurn], [OAUTH_SIGN_IN_STEP, oauthSignInTurn], [SCHEDULED_ROUTINE_STEP, scheduledRoutineTurn]] as const) {
         try {
           const out = await turnOf(c, session);
@@ -2715,6 +2723,9 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
         } catch (err) {
           record(stepNumber(FULL_STEPS, step), statusOf(err), why(err));
         }
+      }
+      } finally {
+        appless = wasAppless;
       }
     }
   } catch (err) {
@@ -4236,6 +4247,13 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   // The old run's harness token (a test-marked core's, test-only) would be read before the new core writes its own:
   // it goes. Everything else the old build left in run/ stays, as on a real upgrade.
   rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
+  // What an earlier build's home holds once a botless agent ran on it (14e: a Review on an OK card): its transcript in
+  // `agents/`, as the writer makes it. The first 14f table's row 7 refused this home as the "old layout" on its next boot.
+  if (!existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) {
+    const t = new AgentTranscript(home, "acceptance-old-agent");
+    t.writeRecord({ v: 1, sessionId: "acceptance-old-agent", backend: "fake", computer: "this", root: "/", startedAt: Date.now() });
+    t.call({ acceptance: "an earlier build's botless agent" });
+  }
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
   const port = freePort();
@@ -4261,7 +4279,10 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
     const took = Date.now() - at;
     if (/Nothing fills this window/.test(readLog(appLog).slice(logFrom))) fail("the fallback note was drawn");
-    record(1, "PASS", `the app waited, the daemon started on the old home, and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
+    const migC = firstLine(daemon.log, /^migration C:/);
+    if (migC !== undefined) fail(`the old home (an earlier build's, with a botless agent's transcript) was read as Migration C's old layout: ${migC}`);
+    if (oldLayoutMarkers(home).length > 0 || !existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) fail(`the daemon didn't mark the old home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
+    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: marked current), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -4592,9 +4613,12 @@ async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc:
     stoppingDaemon = true;
     await endChild(daemon.proc, 20_000);
     if (existsSync(join(home, "run", "core.sock"))) say("the stopped daemon left its socket file");
+    // A home this run's own daemon made is never the old layout (Migration C would refuse or migrate it): named here.
+    const markers = oldLayoutMarkers(home);
+    if (markers.length > 0) say(`the home the first daemon made reads as the old layout: ${markers.join("; ")}`);
     const again = await startDaemonProc().catch((err: unknown) => {
       const refused = firstLine(join(logs, `daemon-${daemonRun}.log`), /refus|migration/i);
-      return fail(`${why(err)}${refused ? ` (${refused})` : ""}`);
+      return fail(`${why(err)}${refused ? ` (${refused})` : ""}${markers.length > 0 ? ` [old-layout markers: ${markers.join("; ")}]` : ""}`);
     });
     const d = target === "source" ? await appDriver().catch(() => undefined) : undefined;
     if (d !== undefined && session !== undefined) {
