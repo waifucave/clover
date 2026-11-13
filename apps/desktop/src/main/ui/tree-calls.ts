@@ -92,8 +92,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // The speak button under a bot's reply (the conversation view): the user's click asks to hear that one reply. The page
   // names the session and the reply's seq; the core reads the text from the log.
   "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
-  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART], anyId: [PLUGINS_PART] },
-  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: [PLUGINS_PART], anyId: [PLUGINS_PART] },
+  // Settings › Voice (Clover Voice's part) reads and writes its own settings too (which voice is active here), the
+  // write by the user's choice in its list.
+  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART], anyId: [PLUGINS_PART] },
+  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART], gesture: [PLUGINS_PART, VOICE_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card). The avatar's two
   // fields (`avatar`, `avatarCredit`) are the character plugin's section's alone, and the editor writes none of them
   // (`userLayerWhy`).

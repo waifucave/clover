@@ -227,6 +227,16 @@ describe("the voice controls: the character stage's, and the conversation view's
     expect(bad.got).toEqual([]);
     await expect(go("ui.set", { patch: { voice: { speakReplies: false } } }, false, "clover/voice").run).rejects.toThrow("only right after the user's own");
   });
+  test("Settings › Voice reads and writes Clover Voice's own settings only, the write with the user's click", async () => {
+    const ok = go("plugin.settings.set", { id: "clover/voice", key: "active", value: "acme-voice" }, true, "clover/voice");
+    await ok.run;
+    expect(ok.got.map(([m]) => m)).toContain("plugin.settings.set");
+    await expect(go("plugin.settings.set", { id: "fish-audio", key: "k", value: "v" }, true, "clover/voice").run).rejects.toThrow("its own plugin's settings only");
+    await expect(go("plugin.settings.set", { id: "clover/voice", key: "active", value: "x" }, false, "clover/voice").run).rejects.toThrow("only right after the user's own");
+    const read = go("plugin.settings.get", { id: "clover/voice" }, false, "clover/voice");
+    await read.run;
+    expect(read.got.map(([m]) => m)).toContain("plugin.settings.get");
+  });
   test("voice.played: the shell's player names a bot and an utterance, nothing else, with no gesture; from the shell only", async () => {
     const ok = go("voice.played", { bot: "luna", utterance: "clover/voice:cv_1", audio: "AAAA" }, false, SHELL_PART);
     await ok.run;
@@ -342,8 +352,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "voice.listen": { parts: [SHELL_PART], gesture: [] },
   // The shell's player saying an utterance ended: a report with no gesture (it lets the voice mode go on, never starts a sound).
   "voice.played": { parts: [SHELL_PART], gesture: [] },
-  "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART], gesture: [], ownId: ["clover/settings"] },
-  "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART], gesture: [PLUGINS_PART], ownId: ["clover/settings"] },
+  "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART, "clover/voice"], gesture: [], ownId: ["clover/settings", "clover/voice"] },
+  "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART, "clover/voice"], gesture: [PLUGINS_PART, "clover/voice"], ownId: ["clover/settings", "clover/voice"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor", "clover/character"], gesture: ["clover/bot-editor", "clover/character"] },
   "bot.importAvatar": { parts: [CHARACTER_PART], gesture: [CHARACTER_PART] },
   "session.resend": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
