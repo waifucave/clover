@@ -86,6 +86,7 @@ import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { appTabPort } from "./browser/app-port";
+import { browserCallerOf } from "./browser/service";
 import { lateAgentDoors, lateApprovalBroker, pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -4230,6 +4231,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             running: (bot) => agents()?.manager.running(bot) ?? 0,
           }),
           bundledTool,
+          // The site a bot's own browser tab is on, for the one card its acting calls ask per bot and site.
+          browserHost: async (ctx) => {
+            const svc = daemonParts?.browser?.service;
+            if (svc === undefined) return undefined;
+            const tabs = await svc.list(browserCallerOf(ctx.caller), { owner: { kind: "bot", bot: ctx.botId } });
+            const url = tabs[0]?.url;
+            try { return url === undefined ? undefined : new URL(url).hostname || undefined; } catch { return undefined; }
+          },
           // A plugin's display-only tool (`contained` on the tree the user OK'd, which can't reach the network and only
           // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
           // computer, and judged at each call.
