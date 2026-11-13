@@ -86,10 +86,10 @@ export class CloverClient {
 }
 
 /** Connects and says hello in `role`; the client is closed again when the hello is refused. */
-export async function hello(path: string, role: "app" | "cli", token: string, clientName: string, protocolVersion: number): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
+export async function hello(path: string, role: "app" | "cli" | "layer", token: string, clientName: string, protocolVersion: number, extra: Record<string, unknown> = {}): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
   const client = await CloverClient.connect(path);
   try {
-    const result = await client.request("protocol.hello", { protocolVersion, role, token, clientName, features: ["app.quit"] }, 10_000);
+    const result = await client.request("protocol.hello", { protocolVersion, role, token, clientName, features: ["app.quit"], ...extra }, 10_000);
     return { client, result };
   } catch (err) {
     client.close();

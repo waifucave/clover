@@ -88,6 +88,7 @@ import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { appTabPort } from "./browser/app-port";
 import { browserCallerOf } from "./browser/service";
 import { noteCheckedHost } from "./browser/checked-hosts";
+import { hearsTabs } from "./browser/rpc-handlers";
 import { lateAgentDoors, lateApprovalBroker, pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -4586,6 +4587,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         browser: p.browser === false ? false : {
           app: appTabPort(appDoors),
           computer: computerNameFor(defaultDeviceName(hostname())) || "Computer",
+          // The tabs' changes go to the app and to the one layer that is the bundled browser panel: the events are the
+          // panel's way to hear them (a listener can't cross a layer's call), and no other plugin hears a tab.
+          emit: (e) => void cloverServer?.coreEvent(
+            e.type === "tab_changed" ? { type: "tab_changed", tab: e.tab } : { type: "tab_closed", id: e.id, computer: e.computer },
+            { to: hearsTabs },
+          ),
           ...(p.browser ?? {}),
         },
         // The computer node judges another computer's calls at "ask for risky actions" with the daemon's safety

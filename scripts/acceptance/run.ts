@@ -75,7 +75,7 @@ import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { pluginOnce } from "./plugin-once";
-import { BROWSER_STEP, browserStep, startBrowserFixture, type BrowserFixture } from "./browser-step";
+import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -900,6 +900,24 @@ async function coreCli(all: string[], log: string): Promise<{ code: number; stdo
   });
 }
 
+/** The bundled browser panel's layer, opened as its component's plugin opens it (`layer.token` is the app role's): undefined
+ *  on a packaged run, whose own connection is the CLI's. */
+function panelOpener(app: CloverClient): ((pluginId: string) => Promise<PanelLink>) | undefined {
+  if (target !== "source") return undefined;
+  return async (pluginId) => {
+    const minted = await app.request<{ token: string }>("layer.token", { pluginId });
+    const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "clover-acceptance-layer", CLOVER_PROTOCOL_VERSION, { pluginId });
+    clients.push(d.client);
+    const events: { type: string }[] = [];
+    d.client.onNotification((method, params) => { if (method === "core.event") events.push(params as { type: string }); });
+    return {
+      request: (m, p) => d.client.request(m, p),
+      heard: (type) => events.filter((e) => e.type === type) as never,
+      close: () => d.client.close(),
+    };
+  };
+}
+
 /** The run's own connection: the app's role from source (the daemon's test seam takes the run's pid), the CLI's on a
  *  packaged core. */
 async function appDriver(): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
@@ -935,7 +953,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -965,11 +983,11 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
             continue;
           }
           if (o.deny === true) {
-            await deny(c, card);
+            await deny(c, card, o.log);
             seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, denied`);
             continue;
           }
-          const how = await approve(c, card, { always: o.always === true });
+          const how = await approve(c, card, { always: o.always === true, ...(o.log !== undefined ? { log: o.log } : {}) });
           seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, approved${how === "always" ? " (Always allow)" : ""}`);
         } catch (err) {
           seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
@@ -2981,9 +2999,10 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
+      alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
       history: (s2) => history(rpc, s2),
     };
-    record(n, "PASS", await browserStep(ctx, session, browserFixture));
+    record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
@@ -3435,20 +3454,19 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     const onIsland = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), onIsland: true });
     if (onIsland.cards.length === 0) fail("the island clause's tool turn raised no card");
     pressed += `; tool card on the island: ${onIsland.cards.join("; ")}`;
-    // The full table installed acceptance-echo in an earlier row (the hook and stdio rows); alone (`--only-stage`) the
-    // home is fresh. Installed here only when it isn't there: its OK card is pressed on the island, and it is removed
-    // after. Already installed, it is left as it is and the plugin-ok clause has no card to press (said in the row).
-    const echo = await pluginOnce(c, "acceptance-echo", join(import.meta.dir, "fixtures", "acceptance-echo"));
-    if (echo.installedHere) {
-      const installed = echo;
-      try {
-        const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
-        pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
-      } finally {
-        const gone = await c!.request<{ card?: string }>("plugin.remove", { id: installed.id }).catch(() => undefined);
-        if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
-      }
-    } else pressed += `; plugin-ok card on the island: not pressed (${echo.id} was installed by an earlier row, so its install raises no card)`;
+    // A fixture plugin of this clause's own (acceptance-island: a command and nothing else), so its OK card is raised and
+    // pressed on the island in every run, the full table's too: acceptance-echo, which an earlier row installs, would raise
+    // none. Installed here, its card pressed on the island, and removed after (a copy already there, which only an earlier
+    // aborted run could leave, fails the clause with that said).
+    const island = await pluginOnce(c, "acceptance-island", join(import.meta.dir, "fixtures", "acceptance-island"));
+    if (!island.installedHere) fail(`${island.id} was installed before the island clause: its OK card can't be pressed on the island (a leftover to remove)`);
+    try {
+      const ok = await until(`${island.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === island.id), 300);
+      pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
+    } finally {
+      const gone = await c!.request<{ card?: string }>("plugin.remove", { id: island.id }).catch(() => undefined);
+      if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
+    }
     pressedInHer = pressed;
     // Whole, outside the table (which cuts a long row): every reading and its timing.
     console.error(`acceptance: row ${n} readings: ${pressed}`);
@@ -3999,8 +4017,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const mediaDir = join(root, "media-fixture");
   mkdirSync(mediaDir, { recursive: true });
   cpSync(join(import.meta.dir, "media", "generated-testsrc.webm"), join(mediaDir, "generated-testsrc.webm"));
-  const mediaPicks = { answers: join(root, "media.pick"), video: join(mediaDir, "generated-testsrc.webm"), saved: join(mediaDir, "export.bin") };
-  writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nsave=${mediaPicks.saved}\n`);
+  const mediaPicks = { answers: join(root, "media.pick"), video: join(mediaDir, "generated-testsrc.webm"), saved: join(mediaDir, "export.bin"), folder: mediaDir };
+  writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nfolder=${mediaPicks.folder}\nsave=${mediaPicks.saved}\n`);
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
@@ -4069,6 +4087,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       },
       // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
       turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
+      alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true, log: proc.log }),
       history: (s) => history(rpc, s),
       appCli: (words) => appCli(words),
     };
@@ -4084,7 +4103,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
       [TAB_FLASH_STEP, () => tabFlashStep(exampleCtx, session!)],
       // The bots' Browser tool, on the real path, against the run's own fixture site.
-      [BROWSER_STEP, () => browserStep(exampleCtx, session!, browserFixture!)],
+      [BROWSER_STEP, () => browserStep(exampleCtx, session!, browserFixture!, panelOpener(exampleCtx.rpc))],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {

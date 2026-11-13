@@ -17,7 +17,7 @@ import { ContractError } from "../contracts/common";
 import type { TabOwner, TabView, Screenshot } from "./contract";
 import { BrowserError } from "./policy";
 import { takeCheckedHost } from "./checked-hosts";
-import { browserCallerOf, type BrowserService, type ProtocolCaller } from "./service";
+import { browserCallerOf, type BrowserCaller, type BrowserService, type ProtocolCaller } from "./service";
 
 /** The DevTools methods the Browser tool calls, and so the only ones a session's call may pass. */
 export const TOOL_CDP_METHODS: readonly string[] = [
@@ -43,6 +43,36 @@ export interface ToolCaller {
 }
 
 type SessionCaller = Extract<Caller, { kind: "session" }>;
+
+/** The bundled tool's plugin (session callers, in the `clover` host process) and the bundled panel's (the person, in the
+ *  panel's own component): the only two plugins `browser.*` is served to. */
+export const TOOL_PLUGIN = "clover/browser";
+export const PANEL_PLUGIN = "clover/browser-view";
+
+/** Who a call acts for. The tool acts for the session whose tool call it serves, on that session's own tabs. The panel
+ *  acts for the person, who sees any owner's tabs here and chooses which owner a tab opens for. */
+interface Actor {
+  caller: BrowserCaller;
+  /** The tool's: the owner every tab is held to. Absent for the person's panel. */
+  own?: TabOwner;
+  session?: SessionCaller;
+}
+
+function actorOf(ctx: ApiCallContext): Actor {
+  const bundled = ctx.record?.source === "bundled";
+  if (ctx.process === "ui") {
+    // A component's call reaches the router from `plugin.layer.api`/`plugin.layer.call` as its plugin
+    // (`caller: { kind: "plugin", pluginId }`: a component never acts as the user on its own word). The bundled panel is
+    // the one component that drives the browser for the person, so its call, from its own mount, acts as the person to
+    // the service; any other component, bundled or not, has no tabs here.
+    if (ctx.pluginId !== PANEL_PLUGIN || !bundled) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser panel only`);
+    if (ctx.caller.kind !== "plugin" || ctx.caller.pluginId !== ctx.pluginId) throw new ContractError("refused", `${ctx.path} from the panel is the panel's own call; a call made as ${ctx.caller.kind} has no tabs here`);
+    return { caller: { kind: "user" } };
+  }
+  if (ctx.pluginId !== TOOL_PLUGIN || !bundled) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser tool only`);
+  const c = sessionOf(ctx);
+  return { caller: browserCallerOf(c as ProtocolCaller), own: ownerOfSession(c), session: c };
+}
 
 /** The session a call acts for, or the refusal the tool reads: no call without one. */
 function sessionOf(ctx: ApiCallContext): SessionCaller {
@@ -82,63 +112,104 @@ const str = (v: unknown, what: string, max = 8192): string => {
 
 const obj = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
-/** The handlers for the six calls the Browser tool uses, and `browser.toolCaller`, the one that tells the tool whose tool
- *  call it is serving (the tool refuses every call it can't tell). */
+const listener = <T>(v: unknown): ((value: T) => void) => {
+  if (typeof v !== "function") throw new ContractError("invalid", "a watch takes a listener");
+  return v as (value: T) => void;
+};
+
+/** An owner the panel names, as the protocol writes one. */
+function ownerArg(v: unknown): TabOwner {
+  const o = obj(v);
+  if (o.kind === "bot" && typeof o.bot === "string") return { kind: "bot", bot: str(o.bot, "the bot", 128) };
+  if (o.kind === "session" && typeof o.session === "string") return { kind: "session", session: str(o.session, "the session", 128) };
+  if (o.kind === "user") return { kind: "user" };
+  throw new ContractError("invalid", "an owner is { kind: \"bot\", bot }, { kind: \"session\", session } or { kind: \"user\" }");
+}
+
+/** The handlers for the calls the Browser tool uses and `browser.toolCaller` (which tells the tool whose tool call it is
+ *  serving: the tool refuses every call it can't tell), and `show` and `hide`, which the person's panel's own call
+ *  reaches (`plugin.layer.api`'s route; the panel's component calls the core's `browser.*` methods, `rpc-handlers.ts`,
+ *  on its layer connection, and hears the tabs change as core events). */
 export function browserApiHandlers(getService: () => BrowserService | undefined): ApiHandlers {
-  const caller = (ctx: ApiCallContext) => browserCallerOf(sessionOf(ctx) as ProtocolCaller);
   // Read at each call: the browser comes up with the daemon's parts, after the plugin host.
   const svc = (): BrowserService => getService() ?? failNotRunning();
+  const panelOnly = (ctx: ApiCallContext): Actor => {
+    const a = actorOf(ctx);
+    if (a.own !== undefined) throw new ContractError("refused", "where a tab shows is the person's: the Browser tool draws its tab out of sight");
+    return a;
+  };
   return {
     "browser.toolCaller": (ctx) => {
       const c = sessionOf(ctx);
+      if (ctx.pluginId !== TOOL_PLUGIN || ctx.process === "ui" || ctx.record?.source !== "bundled") throw new ContractError("refused", "browser.toolCaller is served to the Clover Browser tool only");
       const checkedHost = takeCheckedHost(c.sessionId);
       const out: ToolCaller = { kind: "session", sessionId: c.sessionId, sessionKind: c.sessionKind, ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(checkedHost !== undefined ? { checkedHost } : {}) };
       return out;
     },
     "browser.tabs": async (ctx, args) => {
-      const c = sessionOf(ctx);
+      const a = actorOf(ctx);
       const filter = obj(args[0]);
-      if (filter.owner !== undefined) assertOwn(c, filter.owner);
-      if (typeof filter.computer === "string" && filter.computer !== svc().computerName) throw new ContractError("refused", "the Browser tool works on this computer's tabs only", { code: "not_yours" });
-      return run(() => svc().list(caller(ctx), { owner: ownerOfSession(c) }));
+      if (a.own !== undefined) {
+        if (filter.owner !== undefined) assertOwn(a.session!, filter.owner);
+        if (typeof filter.computer === "string" && filter.computer !== svc().computerName) throw new ContractError("refused", "the Browser tool works on this computer's tabs only", { code: "not_yours" });
+        return run(() => svc().list(a.caller, { owner: a.own! }));
+      }
+      const computer = typeof filter.computer === "string" ? filter.computer : undefined;
+      return run(() => svc().list(a.caller, { ...(filter.owner !== undefined ? { owner: ownerArg(filter.owner) } : {}), ...(computer !== undefined ? { computer } : {}) }));
     },
     "browser.open": async (ctx, args) => {
-      const c = sessionOf(ctx);
+      const a = actorOf(ctx);
       const o = obj(args[0]);
-      if (o.owner !== undefined) assertOwn(c, o.owner);
+      const url = o.url === undefined ? undefined : str(o.url, "url");
+      if (a.own === undefined) {
+        // The person's panel opens a tab for the owner it shows (a bot's, a session's or the person's), in a view at once or out of sight.
+        const show = o.show === undefined ? undefined : (() => { const sh = obj(o.show); return { view: str(sh.view, "the view", 64), viewport: sh.viewport as { width: number; height: number } }; })();
+        const computer = typeof o.computer === "string" ? o.computer : undefined;
+        const tab: TabView = await run(() => svc().open(a.caller, { owner: ownerArg(o.owner), ...(url !== undefined ? { url } : {}), ...(computer !== undefined ? { computer } : {}), ...(show !== undefined ? { show } : {}) } as Parameters<BrowserService["open"]>[1]));
+        return tab;
+      }
+      if (o.owner !== undefined) assertOwn(a.session!, o.owner);
       // A tab on another computer (no peers are served), or shown at once in a view, is not the tool's to ask for; this
       // computer, named as the tool names it, is the one place it opens.
       if ((o.computer !== undefined && o.computer !== svc().computerName) || o.show !== undefined) throw new ContractError("refused", "the Browser tool opens a tab on this computer, drawn out of sight");
-      const url = o.url === undefined ? undefined : str(o.url, "url");
-      const mine = await run(() => svc().list(caller(ctx), { owner: ownerOfSession(c) }));
-      if (mine.length > 0) throw new ContractError("refused", `${c.bot !== undefined ? `${c.bot} has` : "this session has"} a tab open already (${mine[0]!.id}): navigate it instead of opening another`, { code: "one_tab" });
-      const tab: TabView = await run(() => svc().open(caller(ctx), { owner: ownerOfSession(c), ...(url !== undefined ? { url } : {}) }));
+      const mine = await run(() => svc().list(a.caller, { owner: a.own! }));
+      if (mine.length > 0) throw new ContractError("refused", `${a.session!.bot !== undefined ? `${a.session!.bot} has` : "this session has"} a tab open already (${mine[0]!.id}): navigate it instead of opening another`, { code: "one_tab" });
+      const tab: TabView = await run(() => svc().open(a.caller, { owner: a.own!, ...(url !== undefined ? { url } : {}) }));
       return tab;
     },
     "browser.close": async (ctx, args) => {
-      sessionOf(ctx);
-      await run(() => svc().close(caller(ctx), str(args[0], "the tab id", 128)));
+      const a = actorOf(ctx);
+      await run(() => svc().close(a.caller, str(args[0], "the tab id", 128)));
     },
     "browser.navigate": async (ctx, args) => {
-      sessionOf(ctx);
-      return run(() => svc().navigate(caller(ctx), str(args[0], "the tab id", 128), str(args[1], "url")));
+      const a = actorOf(ctx);
+      return run(() => svc().navigate(a.caller, str(args[0], "the tab id", 128), str(args[1], "url")));
     },
     "browser.screenshot": async (ctx, args) => {
-      sessionOf(ctx);
+      const a = actorOf(ctx);
       const o = obj(args[1]);
       const format = o.format === "png" || o.format === "jpeg" || o.format === "webp" ? o.format : undefined;
       const quality = typeof o.quality === "number" ? o.quality : undefined;
-      const shot: Screenshot = await run(() => svc().screenshot(caller(ctx), str(args[0], "the tab id", 128), { ...(format !== undefined ? { format } : {}), ...(quality !== undefined ? { quality } : {}) }));
+      const shot: Screenshot = await run(() => svc().screenshot(a.caller, str(args[0], "the tab id", 128), { ...(format !== undefined ? { format } : {}), ...(quality !== undefined ? { quality } : {}) }));
       return shot;
     },
     "browser.cdp": async (ctx, args) => {
-      sessionOf(ctx);
+      const a = actorOf(ctx);
       const method = str(args[1], "the DevTools method", 128);
-      if (!TOOL_CDP_METHODS.includes(method)) throw new ContractError("refused", `${method} isn't one the Browser tool uses; the tool passes only: ${TOOL_CDP_METHODS.join(", ")}`, { code: "method_refused" });
+      if (!TOOL_CDP_METHODS.includes(method)) throw new ContractError("refused", `${method} isn't one the Browser uses; it passes only: ${TOOL_CDP_METHODS.join(", ")}`, { code: "method_refused" });
       const params = args[2] === undefined ? undefined : obj(args[2]);
       const opts = obj(args[3]);
       const viewport = opts.viewport as { width: number; height: number } | undefined;
-      return run(() => svc().cdp(caller(ctx), str(args[0], "the tab id", 128), method, params, viewport !== undefined ? { viewport } : {}));
+      return run(() => svc().cdp(a.caller, str(args[0], "the tab id", 128), method, params, viewport !== undefined ? { viewport } : {}));
+    },
+    "browser.show": async (ctx, args) => {
+      const a = panelOnly(ctx);
+      const vp = obj(args[2]);
+      return run(() => svc().show(a.caller, str(args[0], "the tab id", 128), str(args[1], "the view", 64), { width: vp.width as number, height: vp.height as number }));
+    },
+    "browser.hide": async (ctx, args) => {
+      const a = panelOnly(ctx);
+      return run(() => svc().hide(a.caller, str(args[0], "the tab id", 128)));
     },
   };
 }
