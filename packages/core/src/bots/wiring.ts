@@ -185,7 +185,12 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const computerLevel = (): Level => levelOf(o.computer) ?? "ask-risky";
   let ingress: WebhookIngress | undefined;
   const routines: RoutineEngine | undefined = o.routines === undefined ? undefined : new RoutineEngine({
-    home: o.home, computer: o.computer, clock: o.clock, bots, computerLevel,
+    home: o.home, computer: o.computer, clock: o.clock, computerLevel,
+    // A routine Clover paused gets one note of Clover's in its bot's conversation (it starts no turn).
+    bots: {
+      has: (id) => bots.has(id), runSideThread: (id, run) => bots.runSideThread(id, run), onEvent: (fn) => bots.onEvent(fn),
+      note: async (id, label, text) => { await bots.deliverTo(id, { from: "note", label, text, by: { kind: "core" } }); },
+    },
     ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
     ...(o.routines.userTimeZone === undefined ? {} : { userTimeZone: o.routines.userTimeZone }),
     ...(o.routines.secrets === undefined ? {} : { secrets: o.routines.secrets }),

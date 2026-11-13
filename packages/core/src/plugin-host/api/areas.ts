@@ -319,7 +319,9 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       const payload = args[2];
       if (payload !== undefined && (typeof payload !== "string" || payload.length > ROUTINE_FIRE_PAYLOAD_MAX)) throw new ContractError("invalid", `a trigger's payload is a string of at most ${ROUTINE_FIRE_PAYLOAD_MAX} characters`);
       const engine = side().routines ?? notRunning("the routines");
-      await engine.fire(routine, type, { pluginId: ctx.pluginId }, payload, { detach: true });
+      const named = ctx.record.name as string | { en?: string } | undefined;
+      const name = typeof named === "string" ? named : named?.en;
+      await engine.fire(routine, type, { pluginId: ctx.pluginId, ...(name ? { name } : {}) }, payload, { detach: true });
       return null;
     },
     "bots.list": () => side().bots.list(),
