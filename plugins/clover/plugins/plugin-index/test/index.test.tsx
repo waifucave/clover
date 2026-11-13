@@ -231,7 +231,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["computer.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["command.list", "computer.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -566,6 +566,30 @@ describe("the Plugins page: updates and indexes", () => {
     cleanup();
     render(<Detail plugin={view} adultConfirmed computers={["Studio"]} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onConfirmAdult={() => undefined} />);
     expect(screen.queryByRole("button", { name: "I am 18 or older" })).toBeNull();
+  });
+
+  test("a plugin's command keys: each shows its key, and bound or why not (the app's, too bare, shared, or not running)", () => {
+    const base = installedDetail("tarot-panel");
+    const d = { ...base, manifest: { ...base.manifest, contributes: { commands: [
+      { name: "draw", key: "mod+shift+k" }, { name: "quit", key: "mod+q" }, { name: "bare", key: "k" }, { name: "both", key: "mod+j" }, { name: "off", key: "mod+u" }, { name: "plain" },
+    ] } } } as never;
+    const listed = [
+      { name: "tarot.draw", pluginId: base.id, keyState: { state: "bound" } },
+      { name: "tarot.quit", pluginId: base.id, keyState: { state: "app", what: "Quit" } },
+      { name: "tarot.bare", pluginId: base.id, keyState: { state: "bare" } },
+      { name: "tarot.both", pluginId: base.id, keyState: { state: "clash", with: ["other.go"] } },
+    ];
+    const keys = toDetail(d, { commands: listed }).commandKeys!;
+    expect(keys.map((k) => [k.name, k.key, k.bound])).toEqual([["draw", "mod+shift+k", true], ["quit", "mod+q", false], ["bare", "k", false], ["both", "mod+j", false], ["off", "mod+u", false]]);
+    expect(keys[1]!.note).toBe("Not bound: Quit already uses it.");
+    expect(keys[3]!.note).toBe("Not bound: other.go uses it too.");
+    expect(keys[4]!.note).toBe("Not bound: it isn't running.");
+    render(<Detail plugin={toDetail(d, { commands: listed })} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onRunAnyway={() => undefined} />);
+    const list = screen.getByRole("list", { name: "Keys for its commands" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    expect(list.textContent).toContain("mod+shift+k");
+    expect(list.textContent).toContain("Not bound: other.go uses it too.");
+    expect(list.querySelectorAll("[data-key-bound]")).toHaveLength(1);
   });
 });
 

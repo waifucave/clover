@@ -1,0 +1,7 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "acceptance-ui.hello": "Hello from the fixture"
+  }
+}

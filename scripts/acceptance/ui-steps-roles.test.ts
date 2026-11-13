@@ -10,7 +10,7 @@ import { CLOVER_METHODS, allowedMethods } from "../../packages/protocol/src/inde
 const BEST_EFFORT: Readonly<Record<string, string>> = {
   "card.get": "the island row reads the card's resolved path only to name it in its result",
   "ui.settings": "the change-one-thing row reads the user's lists to put them back after it (packaged: they stay, for bots it removes)",
-  "ui.set": "the change-one-thing row puts the user's lists back (packaged: they stay, for bots it removes)",
+  "ui.set": "the change-one-thing row puts the user's lists back (packaged: they stay, for bots it removes); the third-party UI row sets the app's language to read its page's translated line (packaged: the line must be one of its two)",
   "card.list": "the Plugins page row counts pending cards before and after a development folder reloads (packaged: it counts none)",
   "conversation.list": "lane E's chrome row looks for a coding session (no such method: always none)",
 };

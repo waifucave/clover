@@ -314,6 +314,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.grant.list": { parts: [PLUGINS_PART], gesture: [] },
   "computer.list": { parts: [PLUGINS_PART], gesture: [] },
+  "command.list": { parts: [PLUGINS_PART], gesture: [] },
   "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
   ...Object.fromEntries(["ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
@@ -360,6 +361,7 @@ const WORST: Record<string, Worst> = {
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
   "plugin.grant.list": "read", // the files and folders picked for one plugin: paths only the user chose
+  "command.list": "read", // each command's default key and whether it is bound, for the Plugins page's Keys lines
   "computer.list": "read", // the computers' names, to tick which a plugin's server runs on
   "notify.mutes": "read", // which plugins' notifications are muted
   "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves

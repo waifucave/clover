@@ -112,6 +112,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.
   "plugin.grant.list": { disposition: READ, part: PLUGINS_PART },
   "computer.list": { disposition: READ, part: PLUGINS_PART },
+  // Every command with what became of its default key (bound, or the app's, too bare, or shared): the detail's "Keys" lines.
+  "command.list": { disposition: READ, part: PLUGINS_PART },
   // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
   "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   // main's own dialog, for the use the page names: the Plugins page's folders (an install, a development folder) and the
