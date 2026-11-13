@@ -125,6 +125,9 @@ if (headless || typeof __CLOVER_TEST_BUILD__ === "string") {
   app.setPath("userData", join(home, "app-data", identity.profile));
   app.setPath("sessionData", join(home, "app-data", identity.profile, "session"));
 }
+// A headless run, a test-marked build and the acceptance run's build play no sound: the bots' voices still play through
+// the player (its clock and counters run), muted at Chromium's output.
+if (headless || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") app.commandLine.appendSwitch("mute-audio");
 // Every plugin origin in a process of its own (S9).
 app.commandLine.appendSwitch("site-per-process");
 // No proxy at all, from the first request: every session's own direct proxy comes too late for what Chromium does as it
