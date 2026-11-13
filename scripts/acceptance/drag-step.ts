@@ -3,7 +3,7 @@
 // pointer press on that handle, a move and a release, as the frame sees them, must move the window by the cursor's offset.
 // The window is offscreen, so where it went is read from the app's own log, which says the window's own position before
 // and after (`window: moved by its title area, from (x, y) to (x, y)`, index.ts dragEnd). A refused drag logs "a drag was refused".
-import { fail, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 
 export const DRAG_STEP = "Alpha's own controls drag the window: a real press on her drag handle (shell.dragWindow), a move and a release move the window by the cursor's offset, on her own handle in her own layer";
 
@@ -20,6 +20,7 @@ export function moveOf(lines: readonly string[], since: number): { dx: number; d
 }
 
 export async function dragStep(ctx: ExampleCtx, _session: string): Promise<string> {
+  await toAlphasTab(ctx);
   const { cdp } = ctx;
   const handle = await until("Alpha's drag handle (.ac__drag in her controls)", 60_000, async () => {
     for (const d of await treeDocs(cdp)) {

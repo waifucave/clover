@@ -4,9 +4,9 @@
 // the plugin it was given). The row presses the button with a real pointer click (the page ignores a script's), and checks:
 // the note names the model the files go to (before and after), the report shows with its heading, the card is unchanged and
 // still waiting, and the card is then denied (the plugin never installs).
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fail, sleep, until, type ExampleCtx } from "./example-steps";
+import { fail, sleep, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 
 export const REVIEW_STEP = "Review on a plugin's OK card: pressed on the card's own page, the report (the fake model's reading of this plugin's files) shows as text under a heading that says it is a model's reading, the note names the model, and the card is unchanged and still waiting";
 
@@ -32,6 +32,7 @@ export function reviewProblem(v: ReviewView, model: string): string | undefined 
 }
 
 export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<string> {
+  await toAlphasTab(ctx);
   const { cdp, rpc } = ctx;
   let cardId: string | undefined;
   let installed = false;
@@ -54,11 +55,18 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
     const file = join(ctx.home, "settings.json");
     settingsBefore = existsSync(file) ? readFileSync(file, "utf8") : undefined;
     const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
-    writeFileSync(file, `${JSON.stringify({ ...now, provider: { ...(typeof now.provider === "object" && now.provider !== null ? now.provider : {}), model: tag }, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
+    const text = `${JSON.stringify({ ...now, provider: { ...(typeof now.provider === "object" && now.provider !== null ? now.provider : {}), model: tag }, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`;
+    writeFileSync(file, text, { mode: 0o600 });
+    let rewrites = 0;
     roleSet = true;
     await until("the daemon to take the reviewer role", 30_000, async () => {
       const v = await rpc.request<{ state: string; model?: string }>("plugin.review", { card: card.id, peek: true });
-      return v.state !== "unavailable" ? v : undefined;
+      if (v.state !== "unavailable") return v;
+      // A file watch can miss an in-place write (it watches one file): the same content is put in place again, by a rename,
+      // which every watcher of the file hears, every few seconds until the daemon has it.
+      if (++rewrites % 4 === 0) { const tmp = `${file}.${rewrites}.tmp`; writeFileSync(tmp, text, { mode: 0o600 }); renameSync(tmp, file); }
+      await sleep(1_000);
+      return undefined;
     }, async () => `plugin.review (peek) stayed unavailable after the reviewer role was set in settings.json: ${readFileSync(file, "utf8").replace(/\s+/g, " ").slice(0, 600)}`);
     // The card's own page: the fallback window the app draws when no part shows the card.
     const url = `clover-sealed://card/${encodeURIComponent(card.id)}/own`;
