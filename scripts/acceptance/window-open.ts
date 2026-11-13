@@ -4,7 +4,7 @@
 // layer (`clover-plugin://<id>/…`) that must hold the words its component draws.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { SIDEBAR_ITEMS, clickExact, clickTree, escape, fail, frames, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { SIDEBAR_ITEMS, escape, fail, frames, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
 export interface Drawn { session: string; url: string; text: string }
 
@@ -56,6 +56,33 @@ export async function settingsDiagnosis(ctx: ExampleCtx, label: string): Promise
   return `cards waiting: ${cards}; ${out.join(" || ")}`;
 }
 
+/** A trusted click on the first element of the tree's documents that matches `selector` (and, when `text` is given, has a line
+ *  or an accessible name exactly that) AND is on the screen: a size, and its centre inside the document's own viewport. A bot's
+ *  own layout holds a button off its frame's edge, and the stock sidebar's hidden copy has no size: a click there lands nowhere. */
+export async function clickShown(ctx: ExampleCtx, what: string, selector: string, text?: string, ms = 20_000): Promise<void> {
+  const { cdp } = ctx;
+  const at = await until(what, ms, async () => {
+    for (const d of await treeDocs(cdp)) {
+      const c = await cdp.evaluate(d.session, `(() => {
+        const want = ${JSON.stringify(text ?? null)};
+        const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => {
+          const r = e.getBoundingClientRect();
+          const x = r.left + r.width / 2, y = r.top + r.height / 2;
+          if (!(r.width > 0 && r.height > 0 && x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight)) return false;
+          return want === null || (e.innerText || '').split('\\n').some((l) => l.trim() === want) || e.getAttribute('aria-label') === want;
+        });
+        const el = els[0];
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`).catch(() => null) as { x: number; y: number } | null;
+      if (c !== null && c !== undefined) return { session: d.session, c };
+    }
+    return undefined;
+  }, () => frames(cdp));
+  await cdp.click(at.session, at.c.x, at.c.y);
+}
+
 /** Opens Settings (the sidebar's gear, when the dialog isn't open already) and chooses the section titled `title`. */
 export async function openSettingsSection(ctx: ExampleCtx, title: string): Promise<void> {
   const { cdp } = ctx;
@@ -67,13 +94,19 @@ export async function openSettingsSection(ctx: ExampleCtx, title: string): Promi
     await escape(cdp);
     // A layer installed a moment ago loads the window's document again, which closes a dialog opened before it: pressed again.
     for (let attempt = 0; attempt < 3; attempt++) {
-      await clickTree(cdp, "the Settings button", "button[aria-label=Settings]");
+      // The gear where the tab's layout draws it on the screen; on a tab whose layout keeps it off its frame (a bot's own), the
+      // user's other way, `clover-core app open settings` in a terminal (the app's own route to the dialog, as the sidebar's).
+      const pressed = await clickShown(ctx, "the Settings button", "button[aria-label=Settings]", undefined, 4_000).then(() => true, () => false);
+      if (!pressed) {
+        if (ctx.appCli === undefined) fail(`no Settings button is on the screen (${await settingsDiagnosis(ctx, `settings-${title}`)})`);
+        await ctx.appCli!(["open", "settings"]);
+      }
       const up = await until("the Settings dialog", 8_000, async () => ((await open()) ? true : undefined)).catch(() => undefined);
       if (up === true) break;
       if (attempt === 2) fail(`the Settings dialog didn't open from its button (${await settingsDiagnosis(ctx, `settings-${title}`)})`);
     }
   }
-  await clickExact(cdp, `the Settings section "${title}"`, "button.cl-settings__section", title);
+  await clickShown(ctx, `the Settings section "${title}"`, "button.cl-settings__section", title);
   await sleep(500);
 }
 
@@ -97,7 +130,7 @@ export async function drawnInSettings(ctx: ExampleCtx, title: string, id: string
 /** Chooses the sidebar entry `title` (a page's app button, or a bot's row), leaving any dialog first. */
 export async function openSidebarEntry(ctx: ExampleCtx, title: string): Promise<void> {
   await escape(ctx.cdp);
-  await clickExact(ctx.cdp, `the sidebar's ${title} entry`, SIDEBAR_ITEMS, title);
+  await clickShown(ctx, `the sidebar's ${title} entry`, SIDEBAR_ITEMS, title);
   await sleep(500);
 }
 

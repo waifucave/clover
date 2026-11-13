@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readExamples, type Example } from "../../plugins/clover/plugins/plugin-builder/test/examples";
 import { callTurn, fail, leave, until, type ExampleCtx } from "./example-steps";
-import { drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
+import { clickShown, drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
 
 export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) and ex-buddy's header and side panel on its bot's tab are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from Alpha; each removed afterwards";
 
@@ -172,7 +172,11 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const mine = bots.find((b) => b.id === "ex-buddy" || b.id === "ex-buddy/bot");
     if (mine === undefined) fail(`bot.list lists ${bots.map((b) => b.id).join(", ")}`);
     await openSidebarEntry(ctx, "Ex buddy");
-    const side = await drawn(ctx, "ex-buddy", "Today: one page of notes.", "its side panel on its bot's tab");
+    // The bot's column (`bot.side`) opens from the tab's own "Details" button, as the user opens it.
+    const side = await drawn(ctx, "ex-buddy", "Today: one page of notes.", "its side panel on its bot's tab", 6_000).catch(async () => {
+      await clickShown(ctx, "the tab's Details button", "button.cl-panel-toggle[aria-pressed=false]", "Details", 10_000);
+      return drawn(ctx, "ex-buddy", "Today: one page of notes.", "its side panel on its bot's tab, after its Details button");
+    });
     const header = await drawn(ctx, "ex-buddy", "Ex buddy", "its header on its bot's tab");
     return `listed in bot.list as ${mine!.id}; on its tab its header ("${header.text.trim().slice(0, 30)}") and side panel ("${side.text.trim().slice(0, 40)}") drawn`;
   });
