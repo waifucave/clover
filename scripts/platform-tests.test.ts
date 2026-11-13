@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   configProblems, gatesOnDarwin, isClearCrash, isDarwinTest, macosFiles, parseArgs, parseConfig, parseJunit, runProblems, select, shardOf, slowestTests,
-  skipProblems, testFiles, usesDarwinOnly,
+  skipProblems, testFiles, usesDarwinOnly, windowsConfigProblems, windowsSelection,
 } from "./platform-tests";
 
 const repo = join(import.meta.dir, "..");
@@ -52,17 +52,40 @@ describe("platform-tests", () => {
   });
 
   test("its arguments: a root, one side, and Linux's shard and lists", () => {
-    expect(parseArgs(["--root", "scripts", "--darwin"])).toEqual({ root: "scripts", cwd: undefined, darwin: true, shard: undefined, config: undefined, checkKnownFailures: false, list: false, timeoutMs: undefined, slowest: 0 });
+    expect(parseArgs(["--root", "scripts", "--darwin"])).toEqual({ root: "scripts", cwd: undefined, darwin: true, windows: false, shard: undefined, config: undefined, checkKnownFailures: false, list: false, timeoutMs: undefined, slowest: 0 });
     expect(parseArgs(["--root", "scripts", "--darwin", "--timeout", "20000", "--slowest", "10"])).toMatchObject({ timeoutMs: 20000, slowest: 10 });
     expect(() => parseArgs(["--root", "scripts", "--darwin", "--timeout", "20s"])).toThrow(/positive whole number/);
     expect(() => parseArgs(["--root", "scripts", "--darwin", "--slowest", "0"])).toThrow(/positive whole number/);
     expect(parseArgs(["--root", "packages/core", "--cwd", "packages/core", "--not-darwin", "--shard", "2/3", "--config", "c.json", "--check-known-failures", "--list"]))
-      .toEqual({ root: "packages/core", cwd: "packages/core", darwin: false, shard: { k: 2, n: 3 }, config: "c.json", checkKnownFailures: true, list: true, timeoutMs: undefined, slowest: 0 });
+      .toEqual({ root: "packages/core", cwd: "packages/core", darwin: false, windows: false, shard: { k: 2, n: 3 }, config: "c.json", checkKnownFailures: true, list: true, timeoutMs: undefined, slowest: 0 });
     expect(() => parseArgs(["--darwin"])).toThrow(/--root/);
     expect(() => parseArgs(["--root", "scripts"])).toThrow(/exactly one/);
     expect(() => parseArgs(["--root", "scripts", "--darwin", "--not-darwin"])).toThrow(/exactly one/);
     expect(() => parseArgs(["--root", "x", "--not-darwin", "--shard", "4/3"])).toThrow(/K\/N/);
     expect(() => parseArgs(["--root", "x", "--darwin", "--shard", "1/3"])).toThrow(/Linux/);
+    expect(parseArgs(["--root", "x", "--windows"])).toMatchObject({ windows: true, darwin: false });
+    expect(() => parseArgs(["--root", "x", "--windows", "--not-darwin"])).toThrow(/exactly one/);
+    expect(() => parseArgs(["--root", "x", "--windows", "--shard", "1/2"])).toThrow(/Linux/);
+  });
+
+  test("--windows: the windowsFiles patterns over the Linux files; its lists reviewed like Linux's", () => {
+    const linux = ["test/runtime-sdk/turn-loop/units.test.ts", "test/runtime-sdk/turn-loop/driver.e2e.test.ts", "test/sessions/store.test.ts", "test/other.test.ts"];
+    expect(windowsSelection(linux, ["test/runtime-sdk/turn-loop/**", "test/sessions/*.test.ts"])).toEqual(linux.slice(0, 3));
+    const cfg = parseConfig(JSON.stringify({
+      windowsFiles: ["test/runtime-sdk/turn-loop/**", "test/nothing/**"],
+      windowsKnownFailures: { "test/runtime-sdk/turn-loop/driver.e2e.test.ts": { owner: "C", cause: "no Windows sandbox" }, "test/other.test.ts": { owner: "A", cause: "c" } },
+      windowsSkips: { "test/runtime-sdk/turn-loop/units.test.ts": "r" },
+    }));
+    expect(windowsConfigProblems(cfg, linux)).toEqual([
+      "windowsFiles has test/nothing/**, which matches no test file Linux runs",
+      "windowsKnownFailures lists test/other.test.ts, which --windows doesn't run (not matched by windowsFiles, or no longer a test file)",
+    ]);
+    expect(() => parseConfig(JSON.stringify({ windowsKnownFailures: { "x.test.ts": { owner: "C" } } }))).toThrow(/windowsKnownFailures.*owner and a cause/);
+    expect(() => parseConfig(JSON.stringify({ windowsFiles: [""] }))).toThrow(/patterns/);
+    // Skips are reviewed against windowsSkips, not linuxSkips.
+    const ran = new Map([["a.test.ts", { tests: 2, skipped: 1, failures: 0 }]]);
+    const skipCfg = parseConfig(JSON.stringify({ linuxSkips: { "a.test.ts": "r" } }));
+    expect(skipProblems(["a.test.ts"], ran, skipCfg, () => "", true)).toEqual(["a.test.ts skipped 1 of 2 tests on Windows: mark its macOS tests (darwinTest/darwinDescribe or *.darwin.test.ts), or review the skip in windowsSkips"]);
   });
 
   test("Linux's shards deal every file once, in path order", () => {
@@ -188,7 +211,8 @@ describe("platform-tests", () => {
     const linux = select(testFiles(repo, "packages/core"), false).map(rel);
     const cfg = parseConfig(readFileSync(join(root, "test", "platform-ci.json"), "utf8"));
     expect(configProblems(cfg, linux, (f) => readFileSync(join(root, f), "utf8"))).toEqual([]);
-    // Each Linux known failure names its owner lane and its cause.
-    for (const e of Object.values(cfg.linuxKnownFailures)) expect(e.owner).toMatch(/^[A-M]$/);
+    // Each Linux and Windows known failure names its owner lane and its cause.
+    for (const e of [...Object.values(cfg.linuxKnownFailures), ...Object.values(cfg.windowsKnownFailures)]) expect(e.owner).toMatch(/^[A-M]$/);
+    expect(windowsConfigProblems(cfg, linux)).toEqual([]);
   });
 });
