@@ -35,7 +35,7 @@ function declaredHost(record: Pick<PluginRecord, "capabilities">, raw: string): 
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
-import { clampKeyedIdleTimeoutMs, createKeyedFetch, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
+import { clampKeyedIdleTimeoutMs, createKeyedFetch, isLoopbackHost, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
 
 export interface ModelPluginApiOptions {
   registry: Pick<PluginRegistry, "get">;
@@ -55,7 +55,7 @@ export interface ModelPluginApiOptions {
   /** The daemon's log: a public fetch's refusal detail the plugin doesn't get. */
   log?: (line: string) => void;
   /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, `user-endpoint.ts`), read at each
-   *  call: the plugin's fetch reaches that origin, and only it, instead of its declared hosts. */
+   *  call: the plugin's fetch reaches that origin (with its key: the provider's API calls) beside its declared hosts. */
   userEndpoint?: (pluginId: string) => string | undefined;
   /** The platform fetch to a user's own endpoint: by default the pinned fetch, reaching that one host even at a
    *  loopback or private address. A test passes its own. */
@@ -169,10 +169,15 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       bundledOnly(ctx.record, "a keyed net.fetch");
       const [url, init, fetchOpts] = args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
       const keys = keysOf(ctx.record.id);
-      // The user pointed this plugin's provider at an endpoint of their own: that origin, and nothing else.
+      // The user pointed this plugin's provider at an endpoint of their own: a request to that origin (the provider's API
+      // calls, which carry its key) goes there; every other request keeps the plugin's declared hosts (a token
+      // exchange, discovery), below.
       const userOrigin = opts.userEndpoint?.(ctx.record.id);
-      if (userOrigin !== undefined) {
-        if (originOf(url) !== userOrigin) throw new ContractError("refused", `${ctx.record.id}'s provider is set to your own endpoint (${userOrigin}), and it reaches only that`);
+      if (userOrigin !== undefined && originOf(url) === userOrigin) {
+        // Plain http reaches only this computer (the keyed fetch's rule); say so in words, not as `insecure_url`.
+        if (new URL(userOrigin).protocol === "http:" && !isLoopbackHost(new URL(userOrigin))) {
+          throw new ContractError("refused", `your endpoint for this provider (${userOrigin}) is on the local network over plain http: an endpoint on the local network needs https; plain http reaches only this computer (localhost or 127.0.0.1)`);
+        }
         try {
           return maskResponse(await userFetchFor(ctx.record, userOrigin)(url, keyedInit(init), fetchOpts), keys);
         } catch (err) {

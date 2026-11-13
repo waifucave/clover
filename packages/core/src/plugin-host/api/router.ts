@@ -45,7 +45,8 @@ export interface ApiRouterOptions {
   /** Whether `network:` capabilities reach a host (`net.fetch`'s target). Absent: no host is reached. */
   allowNetwork?: (capabilities: readonly string[], host: string, port?: number) => boolean;
   /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, runtime-sdk/model-plugins/
-   *  user-endpoint.ts), read at each call: the plugin's `net.fetch` reaches that origin as if its OK listed it. */
+   *  user-endpoint.ts), read at each call: the plugin's `net.fetch` reaches that origin as if its OK listed it, beside
+   *  the hosts its OK does list. */
   userEndpoint?: (pluginId: string) => string | undefined;
 }
 

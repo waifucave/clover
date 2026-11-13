@@ -1,7 +1,9 @@
 // The user's own endpoint for a bundled model plugin's provider (the coordinator's ruling in plugin-host/
 // pinned-fetch.ts): when the USER's settings set `providers.<id>.baseUrl`, that provider's plugin reaches exactly that
-// origin (scheme, host and port), a loopback or private address included, instead of its declared hosts. Owner: lane
-// A.
+// origin (scheme, host and port), a loopback or private address included, beside its declared hosts (which it still
+// needs: Vertex's token exchange, Bedrock's discovery). The key goes where the plugin sends the provider's API calls:
+// the user's origin. Plain http reaches it only on this computer; an endpoint on the local network needs https.
+// Owner: lane A.
 //
 // * Only a bundled model plugin (`clover/model-<provider>`) and only its own provider's setting: nothing in the
 //   plugin's request, its manifest or a tool result names the endpoint. A third party's plugin has none.

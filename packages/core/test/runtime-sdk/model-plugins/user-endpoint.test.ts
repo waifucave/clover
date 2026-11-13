@@ -1,7 +1,7 @@
 // The user's own endpoint for a bundled model plugin's provider (the coordinator's ruling, plugin-host/pinned-fetch.ts;
 // model-plugins/user-endpoint.ts): with `providers.<id>.baseUrl` set, that provider's plugin reaches exactly that origin
-// (a loopback address included) with its own key, through B's real gate and the real pinned fetch, and nothing else:
-// not another origin, not a redirect off it, not its declared hosts. A provider without the setting is unchanged, and
+// (a loopback address included) with its own key, through B's real gate and the real pinned fetch, beside its declared
+// hosts: not another origin, not a redirect off it, and not plain http to the local network. A provider without the setting is unchanged, and
 // the setting is read at each call. Loopback servers only; nothing leaves this computer.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -66,16 +66,22 @@ describe("a provider pointed at the user's own endpoint", () => {
     expect(user.seen.map((s) => [s.path, s.headers["x-goog-api-key"]])).toEqual([["/v1beta/models", KEY]]);
   });
 
-  test("any other origin is refused: another port, its declared host, and a redirect off the origin", async () => {
+  test("its declared host still goes through; any other origin, and a redirect off the user's origin, is refused", async () => {
     const w = world();
     other.seen.length = 0;
+    expect(await w.fetch(GOOGLE, "https://generativelanguage.googleapis.com/v1beta/models")).toEqual({ status: 200, text: "declared host" });
     expect(await w.fetch(GOOGLE, `${other.origin}/x`)).toEqual({ error: expect.stringMatching(/^refused: /) });
-    expect(await w.fetch(GOOGLE, "https://generativelanguage.googleapis.com/v1beta/models")).toEqual({ error: expect.stringMatching(/reaches only that/) });
     expect(await w.fetch(GOOGLE, `${user.origin.replace("http:", "https:")}/v1beta/models`)).toEqual({ error: expect.stringMatching(/^refused: /) });
     const away = await w.fetch(GOOGLE, `${user.origin}/away`);
     expect("error" in away).toBe(true);
     expect(other.seen).toEqual([]);
-    expect(w.declared).toEqual([]);
+    expect(w.declared).toEqual(["https://generativelanguage.googleapis.com/v1beta/models"]);
+  });
+
+  test("plain http to a local-network address is refused in words: it needs https, or http on this computer only", async () => {
+    const w = world();
+    w.set({ providers: { google: { baseUrl: "http://192.168.77.5:8080/v1beta" } } } as unknown as Settings);
+    expect(await w.fetch(GOOGLE, "http://192.168.77.5:8080/v1beta/models")).toEqual({ error: expect.stringContaining("an endpoint on the local network needs https; plain http reaches only this computer") });
   });
 
   test("another provider's plugin doesn't reach it, and a provider without the setting is unchanged; the setting is read at each call", async () => {
