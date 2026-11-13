@@ -1113,6 +1113,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("the plugin's description loaded again from the saved file", 60_000, async () => {
         const r = await rpc.request<{ plugin: { description?: string } }>("plugin.get", { id: devId }).catch(() => undefined);
         return r?.plugin.description === edited ? true : undefined;
+      }, async () => {
+        const r = await rpc.request<{ plugin: { state: string; reason?: string; description?: string; dev: boolean } }>("plugin.get", { id: devId }).catch((e: Error) => ({ plugin: { state: `gone: ${e.message}`, dev: false } }));
+        return `plugin.get: state ${r.plugin.state}${"reason" in r.plugin && r.plugin.reason ? ` (${r.plugin.reason})` : ""}, dev ${r.plugin.dev}, description ${JSON.stringify(("description" in r.plugin ? r.plugin.description : "")?.slice(0, 60))}; plugin.dev.list ${JSON.stringify(await devList())}; cards ${await cardCount()}`;
       });
       const cardsAfter = await cardCount();
       if (cardsAfter > cardsBefore) fail("a saved file in the development folder raised a card");
