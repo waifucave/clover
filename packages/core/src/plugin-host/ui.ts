@@ -148,12 +148,17 @@ export interface PluginUiOptions {
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second (a watch opened counts as one). */
 export const LAYER_CALL_MAX_BYTES = 64 * 1024;
 export const LAYER_CALLS_PER_SECOND = 20;
-/** The members whose args carry bytes (a clip, a file), and how many serialized bytes they may take. */
+/** The members whose args carry bytes (a clip, a file), and how many serialized bytes they may take: under the app's
+ *  own cap on a layer's call (`LAYER_CALL_MAX` in the app's layer-links.ts, 2,000,000 characters). */
 const BIG_ARGS: ReadonlySet<string> = new Set(["audio.play", "files.write"]);
-export const LAYER_CALL_BIG_MAX_BYTES = 12 * 1024 * 1024;
-/** A `net.fetch` body handed to a component, at most; its fetches open at once, per plugin; a request's header pairs
- *  (the host half's own limits, `FETCH_LIMITS`, scaled to a page's: its body is the call's args, capped above). */
-export const LAYER_FETCH_BODY_MAX = 8 * 1024 * 1024;
+export const LAYER_CALL_BIG_MAX_BYTES = 1_500_000;
+/** An answer handed to a component, serialized, at most: one line well under the connection's 4 MiB send buffer
+ *  (`ConnWriter`), so a big answer is refused with why rather than cutting the page's connection. */
+export const LAYER_RESULT_MAX_BYTES = 3 * 1024 * 1024;
+/** A `net.fetch` body handed to a component, at most (base64 in its answer, under LAYER_RESULT_MAX_BYTES); its fetches
+ *  open at once, per plugin; a request's header pairs (the host half's own limits, `FETCH_LIMITS`, scaled to a page's:
+ *  its body is the call's args, capped above). */
+export const LAYER_FETCH_BODY_MAX = 2 * 1024 * 1024;
 export const LAYER_FETCHES_PER_PLUGIN = 8;
 const LAYER_FETCH_HEADER_PAIRS = 256;
 /** Watches one layer connection, and one plugin's connections together, may hold open. */
@@ -289,7 +294,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     const input = call === "host.call" ? args : (fromLayerWire(args, { responses: false }) as unknown[]);
     if (call !== "net.fetch") {
       const out = await o.router({ pluginId, process: "ui", path: call, args: input, caller: { kind: "plugin", pluginId }, ...(session !== undefined ? { session } : {}) });
-      return call === "host.call" ? out : toLayerWire(out);
+      return call === "host.call" ? out : handed(call, toLayerWire(out));
     }
     const headers = (input[1] as { headers?: unknown } | null | undefined)?.headers;
     if (Array.isArray(headers) && headers.length > LAYER_FETCH_HEADER_PAIRS) throw new ContractError("invalid", `a fetch takes at most ${LAYER_FETCH_HEADER_PAIRS} headers`);
@@ -299,9 +304,9 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     fetchesOpen.set(top, open + 1);
     try {
       const out = await o.router({ pluginId, process: "ui", path: call, args: input, caller: { kind: "plugin", pluginId }, ...(session !== undefined ? { session } : {}) });
-      if (!(out instanceof Response)) return toLayerWire(out);
+      if (!(out instanceof Response)) return handed(call, toLayerWire(out));
       try {
-        return await responseToLayerWire(out, LAYER_FETCH_BODY_MAX);
+        return handed(call, await responseToLayerWire(out, LAYER_FETCH_BODY_MAX));
       } catch (err) {
         throw new ContractError("refused", err instanceof Error ? err.message : String(err), { call });
       }
@@ -311,11 +316,19 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
       else fetchesOpen.set(top, left);
     }
   };
+  /** An answer as handed to a component, refused with why past LAYER_RESULT_MAX_BYTES. */
+  const handed = (call: string, wire: unknown): unknown => {
+    const size = jsonBytes(wire);
+    if (size !== undefined && size > LAYER_RESULT_MAX_BYTES) throw new ContractError("refused", `${call}'s answer is ${size} bytes; a component is handed at most ${LAYER_RESULT_MAX_BYTES}`, { call });
+    return wire;
+  };
   /** A plugin's pages' fetches open now, by top-level plugin. */
   const fetchesOpen = new Map<string, number>();
 
   /** The watches components hold, by id: whose, on which connection, of what, and how to end it. */
-  const watches = new Map<string, { pluginId: string; follows: Map<string, () => void>; call: string; end(reason?: string): void }>();
+  const watches = new Map<string, { pluginId: string; follows: Map<string, () => void>; call: string; granted: string; end(reason?: string): void }>();
+  /** A plugin's grants as one comparable string. */
+  const grantsKey = (r: Pick<PluginRecord, "granted"> | undefined): string => JSON.stringify([...(r?.granted ?? [])].sort());
   function recheckWatches(pluginId: string): void {
     const record = o.registry.get?.(pluginId);
     for (const w of [...watches.values()]) {
@@ -324,6 +337,9 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
       else if (!record.enabled) w.end(`${pluginId} was turned off`);
       else if (!RUNNING_STATES.has(record.state)) w.end(`${pluginId} is ${record.state}`);
       else if (!apiCallAllowed(w.call, "ui", record.granted)) w.end(`${pluginId}'s OK no longer lists what ${w.call} needs`);
+      // Any change to its grants ends its watches too: some are judged per source when they open (`logs.follow` of
+      // another plugin's log needs `logs.read`, a bot's memory `memory.read`), which the catalog's line can't say.
+      else if (grantsKey(record) !== w.granted) w.end(`${pluginId}'s OK changed; watch again`);
     }
   };
   const openWatch = async (pluginId: string, call: string, args: unknown[], follows: Map<string, () => void>): Promise<string> => {
@@ -362,7 +378,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
       if (reason !== undefined) emitTo(follows, { type: PLUGINS_EVENTS.pluginApiEvent.type, pluginId, watch: id, ended: { reason: reason.slice(0, 500) } });
     };
     // Held before the source opens, so the caps count it and a close meanwhile ends it.
-    watches.set(id, { pluginId, follows, call, end });
+    watches.set(id, { pluginId, follows, call, granted: grantsKey(o.registry.get?.(pluginId)), end });
     follows.set(`plugin.layer.watch:${id}`, () => end());
     try {
       processRule(pluginId, call, input);

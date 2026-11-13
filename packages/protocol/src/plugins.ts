@@ -639,7 +639,7 @@ export const PLUGINS_METHODS = {
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
        *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key; `settings.set` the key and the
        *  value (`null` for the default). Bytes cross as `{ $bytes: base64 }`. At most 64 KiB serialized (an
-       *  `audio.play` clip or a `files.write`, 12 MiB). */
+       *  `audio.play` clip or a `files.write`, 1,500,000: under the app's own cap on a layer's call). */
       args: z.array(z.unknown()).max(8),
     }),
     result: z.object({ result: z.unknown() }),
