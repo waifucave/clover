@@ -82,9 +82,9 @@ describe("--only-ui row selection", () => {
     expect(() => parseOnlyUi("x")).toThrow();
   });
   test("its rows are the window steps' own rows, and the table keeps only them", () => {
-    expect(uiRowNumbers([12])).toEqual([20]);
-    expect(FULL_STEPS[19]).toBe(`window: ${UI_STEPS[12]}`);
-    const table = finishTable([{ n: 20, name: "x", status: "PASS", detail: "ok" }], FULL_STEPS, uiRowNumbers([12, 13]));
-    expect(table.map((r) => [r.n, r.status])).toEqual([[20, "PASS"], [21, "BLOCKED"]]);
+    expect(uiRowNumbers([12])).toEqual([21]);
+    expect(FULL_STEPS[20]).toBe(`window: ${UI_STEPS[12]}`);
+    const table = finishTable([{ n: 21, name: "x", status: "PASS", detail: "ok" }], FULL_STEPS, uiRowNumbers([12, 13]));
+    expect(table.map((r) => [r.n, r.status])).toEqual([[21, "PASS"], [22, "BLOCKED"]]);
   });
 });

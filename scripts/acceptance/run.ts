@@ -20,7 +20,7 @@
 //                       row; the table has that row
 //   --only-tab-flash  only the tab-flash row (her tab sampled at every frame as the window starts and as the user
 //                       comes back to it from other pages): the daemon, the dummy key, then the app and the row
-//   --only-ui [n,n]   only those window steps (their place in UI_STEPS, default 12: the Plugins page, table row 20): the
+//   --only-ui [n,n]   only those window steps (their place in UI_STEPS, default 12: the Plugins page, table row 21): the
 //                       daemon, the dummy key, Alpha's keyed bot, then the app and just those rows; the table has them
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
@@ -29,6 +29,8 @@
 //                       other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
+//   --only-install      only the main chain's first rows: first start, the key, a turn, the folder install (step 4) and
+//                       its Review row (step 5); the run ends there
 //   --only-scheduled-routine  only the scheduled routine row (a routine Alpha makes runs from its schedule): the
 //                       daemon, the dummy key, the clause over the app's methods; no app
 //
@@ -90,7 +92,7 @@ import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
-import { parseOnlyUi, uiRowNumbers } from "./steps";
+import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
 import { CHILD_STEP, NOTIFY_STEP, childStep, notifyStep } from "./child-notify-step";
 import { LISTEN_STEP, listenStep } from "./listen-step";
 import { WEB_STEP, webStep } from "./web-step";
@@ -188,6 +190,9 @@ const browserOnly = argv.includes("--only-browser");
 // --only-scheduled-routine: only the scheduled routine row (Alpha's Routine tool makes one that runs every 15 s, its
 // schedule fires it, routine.runs lists the finished run): the daemon, the dummy key, the clause.
 const routineOnly = argv.includes("--only-scheduled-routine");
+// --only-install: the main chain's first rows alone (first start, the key, a turn, the folder install, the Review row),
+// then the run ends: the install and its Review proved apart from everything after them.
+const installOnly = argv.includes("--only-install");
 /** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
 // (`let`: a shard's `models` unit runs the same rows on its daemon before any app of the shard is up, appless too.)
@@ -416,7 +421,7 @@ async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<boolean> 
 }
 
 let cleaned = false;
-/** The run itself is stopping the daemon (step 7, cleanup), so its exit isn't a crash. */
+/** The run itself is stopping the daemon (step 8, cleanup), so its exit isn't a crash. */
 let stoppingDaemon = false;
 async function cleanup(): Promise<void> {
   if (cleaned) return;
@@ -1046,7 +1051,7 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
         if (card.change !== undefined) changes.push(card.change);
         try {
           if (o.inspect !== undefined) await o.inspect(card);
-          // A turn that presses (step 6's write) presses its cards in the window, the real way; the rest are answered
+          // A turn that presses (step 7's write) presses its cards in the window, the real way; the rest are answered
           // over RPC.
           if (o.press !== undefined && o.press !== false) {
             const by = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
@@ -1698,7 +1703,7 @@ async function main(): Promise<void> {
   const smokeOut = join(root, "smoke.json");
   // The first app takes a DevTools port (the source app behind CLOVER_DEV_DEBUG, a test-marked one behind
   // CLOVER_TEST_DEBUG) and draws a card's fallback offscreen (CLOVER_TEST_SEALED_PRESS), so the run presses the real
-  // Approve of step 4's plugin OK card and step 6's write card: the app signs with its registered answer key and the
+  // Approve of step 4's plugin OK card and step 7's write card: the app signs with its registered answer key and the
   // core's broker checks the proof (step 3's turn raises no card: Clover's own bot asks nothing).
   const pressPort = freePort();
   // The renders' scheme for the first app (the new user's Plugins page, before step 4 installs anything).
@@ -1757,7 +1762,7 @@ async function main(): Promise<void> {
     c = (await appDriver()).client;
   } catch (err) {
     const detail = `the run's ${target === "source" ? "app" : "cli"} hello was refused: ${why(err)}`;
-    for (let n = 2; n <= 6; n++) record(n, "BLOCKED", detail);
+    for (let n = 2; n <= 7; n++) record(n, "BLOCKED", detail);
     const up = await restartStep(daemon, appProc.proc, undefined);
     await uiPhase(app, up, undefined, false);
     return;
@@ -1811,7 +1816,7 @@ async function main(): Promise<void> {
     record(3, statusOf(err), why(err));
     // A key added a moment ago can still be unseen by the bots (their view of the stored keys is re-read lazily,
     // packages/core/src/bots/key-presence.ts): once its model is the keyed one, a second turn says whether the rest
-    // of the path works, so steps 5 and 6 still run. Step 3 stays a FAIL: a user's first turn went wrong.
+    // of the path works, so steps 6 and 7 still run. Step 3 stays a FAIL: a user's first turn went wrong.
     if (keyAdded && session !== undefined) {
       try {
         const model = await until("the bot to take the keyed model", 20_000, async () => {
@@ -1863,40 +1868,6 @@ async function main(): Promise<void> {
     });
     const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
     if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
-    // Its Review (the owner's ruling, 2026-11-13), asked over RPC as the app's own card page asks: the internal job
-    // reads this plugin's tree and its report comes back; the card is untouched, and its Approve below still works.
-    let reviewed = "not asked on the upgrade's old half";
-    if (!oldHalf) {
-      // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model chosen for the role: it won't pick
-      // one on that provider by itself (`no-default-model`; lane E's finding on row 55). The reviewer role is set to the
-      // model Alpha runs, as the user would in Settings › Roles, in the home's settings.json (read live), and the file is
-      // put back after, so no other step meets a reviewer it didn't have.
-      const tag = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
-      if (tag === undefined || !tag.startsWith("anthropic/")) fail(`Alpha runs ${tag ?? "no model"}, not an Anthropic one the run's key can drive`);
-      const settingsFile = join(home, "settings.json");
-      const settingsBefore = existsSync(settingsFile) ? readFileSync(settingsFile, "utf8") : undefined;
-      const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
-      writeFileSync(settingsFile, `${JSON.stringify({ ...now, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
-      let r: { state: string; report?: string; why?: string };
-      try {
-        await until("the daemon to take the reviewer role", 30_000, async () => {
-          const v = await c.request<{ state: string }>("plugin.review", { card: card.id, peek: true });
-          return v.state !== "unavailable" ? v : undefined;
-        });
-        r = await until("the plugin's Review", 120_000, async () => {
-          const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
-          return v.state === "running" ? undefined : v;
-        });
-      } finally {
-        if (settingsBefore === undefined) rmSync(settingsFile, { force: true });
-        else writeFileSync(settingsFile, settingsBefore, { mode: 0o600 });
-      }
-      if (r.state !== "done") fail(`its Review is ${r.state}: ${r.why ?? "no reason"} [packages/core/src/registry/plugin-review.ts]`);
-      if (!r.report?.includes(`${REVIEW_MARK} ${installed.id}`) || !r.report.includes("a model's reading of the plugin's files")) fail(`its Review's report isn't the job's for ${installed.id}: ${(r.report ?? "").slice(0, 200)}`);
-      const after = await c.request<{ card: Card }>("card.get", { id: card.id });
-      if (after.card.hash !== card.hash) fail("the Review changed the card");
-      reviewed = "its Review's report came back from the internal job for this plugin, the card unchanged";
-    }
     // Pressed in the window, the real way: the app signs with its registered key, the broker checks the proof.
     if (pressing) {
       if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
@@ -1944,14 +1915,75 @@ async function main(): Promise<void> {
       if (!tLog.includes("acceptance-trigger: armed r_accping1") || tLog.includes("fire failed")) fail(`${t.id}'s log doesn't show the routine armed and fired: ${tLog.slice(-300)}`);
       started += `; ${t.id}'s card says it adds routine triggers, the routine Alpha had was armed through it on its OK, it fired, and the routine ran (${ran.outcome}, ${ran.session})`;
     }
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${reviewed}; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}; ${started}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}; ${started}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
 
-  // Step 5: the bot calls the plugin's tool.
-  if (session === undefined || !turnsWork) record(5, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
-  else if (pluginId === undefined || !pluginOk) record(5, "BLOCKED", "the plugin isn't installed and approved (step 4)");
+  // Step 5: a plugin's Review on its OK card (the owner's ruling, 2026-11-13), a row of its own so a red Review never
+  // stops the install row and the rows that read its plugin (the controller's ruling). A second plugin, found behind its
+  // OK card; its Review asked over RPC as the app's card page asks; the internal job reads that plugin's tree and its
+  // report comes back with the disclaimer; the card is untouched; then the plugin is removed and its card goes with it.
+  if (oldHalf) record(5, "BLOCKED", "not asserted on the upgrade's old half");
+  else if (!keyAdded) record(5, "BLOCKED", "no key for Clover's own jobs to run on (step 2)");
+  else {
+    const settingsFile = join(home, "settings.json");
+    let settingsBefore: string | undefined;
+    let roleSet = false;
+    let reviewId: string | undefined;
+    try {
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-review");
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, "clover.json"), `${JSON.stringify({ manifest: 1, id: "acceptance-review", name: "Acceptance review", version: "1.0.0", engines: { clover: "^1.0.0" } }, null, 2)}\n`);
+      writeFileSync(join(folder, "README.md"), "A plugin the acceptance run asks a Review of. It echoes text back.\n");
+      const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      reviewId = installed.id;
+      const card = await until("acceptance-review's OK card", 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+      // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model the user chose: the reviewer role
+      // and the default model both set to the model Alpha runs, as the user would in Settings › Models, in the home's
+      // settings.json (read live), put back after (lane E's set-up, 824a1dfe6).
+      const tag = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+      if (tag === undefined || !tag.startsWith("anthropic/")) fail(`Alpha runs ${tag ?? "no model"}, not an Anthropic one the run's key can drive`);
+      settingsBefore = existsSync(settingsFile) ? readFileSync(settingsFile, "utf8") : undefined;
+      const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
+      const obj = (v: unknown) => (typeof v === "object" && v !== null && !Array.isArray(v) ? v : {});
+      writeFileSync(settingsFile, `${JSON.stringify({ ...now, provider: { ...obj(now.provider), model: tag }, reviewer: { ...obj(now.reviewer), model: tag } }, null, 2)}\n`, { mode: 0o600 });
+      roleSet = true;
+      const peeked = await until("the daemon to take the reviewer role", 30_000, async () => {
+        const v = await c.request<{ state: string; model?: string }>("plugin.review", { card: card.id, peek: true });
+        return v.state !== "unavailable" ? v : undefined;
+      }).catch((err: unknown) => fail(`${why(err)}: plugin.review (peek) stayed unavailable with the reviewer role and the default model set in settings.json [packages/core/src/settings-watcher.ts, packages/core/src/providers/internal-router.ts]`));
+      const r = await until("the plugin's Review", 120_000, async () => {
+        const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
+        return v.state === "running" ? undefined : v;
+      });
+      if (r.state !== "done") fail(`its Review is ${r.state}: ${r.why ?? "no reason"} [packages/core/src/registry/plugin-review.ts]`);
+      if (!r.report?.includes(`${REVIEW_MARK} ${installed.id}`)) fail(`its Review's report isn't the job's for ${installed.id}: ${(r.report ?? "").slice(0, 200)}`);
+      const report = r.report ?? "";
+      if (!report.includes("a model's reading of the plugin's files")) fail(`its Review's report has no disclaimer: ${report.slice(0, 300)}`);
+      const after = await c.request<{ card: Card }>("card.get", { id: card.id });
+      if (after.card.hash !== card.hash) fail("the Review changed the card");
+      // The card answered: the plugin removed while it waits, and its card goes with it.
+      await c.request("plugin.remove", { id: installed.id }, 60_000);
+      await until("acceptance-review's card to go with it", 30_000, async () => ((await cards(c)).some((k) => k.id === card.id) ? undefined : true));
+      reviewId = undefined;
+      record(5, "PASS", `${installed.id} found behind its ${card.kind} card; the reviewer role taken (${peeked.model ?? tag}); its Review's report came back from the internal job for this plugin with the disclaimer, the card unchanged; removed, its card withdrawn`);
+    } catch (err) {
+      record(5, statusOf(err), why(err));
+    } finally {
+      if (roleSet) {
+        if (settingsBefore === undefined) rmSync(settingsFile, { force: true });
+        else writeFileSync(settingsFile, settingsBefore, { mode: 0o600 });
+      }
+      if (reviewId !== undefined) await c.request("plugin.remove", { id: reviewId }, 60_000).catch(() => undefined);
+    }
+  }
+
+  if (installOnly) return;
+
+  // Step 6: the bot calls the plugin's tool.
+  if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  else if (pluginId === undefined || !pluginOk) record(6, "BLOCKED", "the plugin isn't installed and approved (step 4)");
   else {
     try {
       const seen = fake.requests.length;
@@ -1970,13 +2002,13 @@ async function main(): Promise<void> {
       if (called === undefined) fail(`the bot was offered no Echo tool (${offered.length} tools, plugin tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
       if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
-      record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
+      record(6, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
     } catch (err) {
-      record(5, statusOf(err), why(err));
+      record(6, statusOf(err), why(err));
     }
   }
 
-  // The command hook step (recorded at the end): step 5's turn started with the fixture's `turn.start` command hook,
+  // The command hook step (recorded at the end): step 6's turn started with the fixture's `turn.start` command hook,
   // which runs under its plugin's fence (pluginHookSpawner): it writes what it saw to its own data folder; the run checks
   // that, the disk and its own listener.
   if (session === undefined || !turnsWork) hookOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
@@ -2498,9 +2530,9 @@ async function main(): Promise<void> {
   // Stage 3 (recorded at the end): a command outside the sandbox, behind its own card.
   if (STEPS.includes(OUTSIDE_STEP)) outsideOutcome = session === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await outsideTurns(c, session);
 
-  // Step 6: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
+  // Step 7: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
   // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
-  if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  if (session === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
     try {
       const before = fake.requests.length;
@@ -2538,9 +2570,9 @@ async function main(): Promise<void> {
       const ordResult = fake.requests.slice(ordSeen).find((r) => r.toolResult !== undefined)?.toolResult;
       if (ord.cards.length > 0) fail(`a Read of an ordinary file raised ${ord.cards.join("; ")}`);
       if (ordResult?.text.includes(ordinaryReadValue) !== true) fail(`the Read of an ordinary file didn't read it: ${(ordResult?.text ?? "none").slice(0, 200)}`);
-      record(6, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed; a Read of ~/.aws/credentials was refused with no card ("${secretResult!.text.slice(0, 120)}"); an ordinary file read`);
+      record(7, "PASS", `a write to Downloads landed with no card; ${called} to a dot-folder raised ${answered}; the file landed; a Read of ~/.aws/credentials was refused with no card ("${secretResult!.text.slice(0, 120)}"); an ordinary file read`);
     } catch (err) {
-      record(6, statusOf(err), why(err));
+      record(7, statusOf(err), why(err));
     }
   }
 
@@ -4507,12 +4539,12 @@ async function keepFacts(session: string | undefined, pluginId: string | undefin
   }
 }
 
-/** Steps 8 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 7 restarted. */
+/** Steps 9 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 8 restarted. */
 async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean): Promise<void> {
-  const first = 8;
+  const first = UI_FIRST_ROW;
   const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
-  if (!daemonUp) return blockAll("the daemon didn't come back (step 7)");
+  if (!daemonUp) return blockAll("the daemon didn't come back (step 8)");
   const port = freePort();
   // The Plugins page step's folder: main's picker, in a test-marked or acceptance build, answers with it (CLOVER_TEST_PICK).
   const pickFolder = { path: join(import.meta.dir, "fixtures", "acceptance-page"), id: "acceptance-page", name: "Acceptance page plugin", tool: "PageProbe" };
@@ -4606,7 +4638,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   }
 }
 
-/** Step 7: the app and the daemon stop; the daemon starts again on the same home, and answers. */
+/** Step 8: the app and the daemon stop; the daemon starts again on the same home, and answers. */
 async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc: ChildProcess, session: string | undefined): Promise<boolean> {
   try {
     await endChild(appProc);
@@ -4628,14 +4660,14 @@ async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc:
         throw err;
       }), 1_000);
       const kept = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
-      record(7, "PASS", `the daemon booted again on the same home${kept ? "; the earlier reply is still in the session" : ""}`);
+      record(8, "PASS", `the daemon booted again on the same home${kept ? "; the earlier reply is still in the session" : ""}`);
     } else {
-      record(7, "PASS", "the daemon booted again on the same home and serves its socket");
+      record(8, "PASS", "the daemon booted again on the same home and serves its socket");
     }
     void again;
     return true;
   } catch (err) {
-    record(7, statusOf(err), why(err));
+    record(8, statusOf(err), why(err));
     return false;
   }
 }
@@ -4662,7 +4694,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : installOnly ? [1, 2, 3, 4, 5] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
 // A shard's table: its own units' rows alone (the sharded run merges them, and the others are another shard's).
 if (shardUnits !== undefined) rows.splice(0, rows.length, ...rows.filter((r) => runs(unitOf(r.name))));
 if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));

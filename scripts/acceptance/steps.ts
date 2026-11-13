@@ -48,11 +48,16 @@ export const COLD_START_STEP = "cold start: the app opens first, the daemon afte
 /** The idle step's name (`idleStep`). */
 export const IDLE_STEP = "idle: with the app up and quiet for 15 s, the supervisor and the daemon each use under 2% of a core";
 
+/** A plugin's Review on its OK card, a row of its own after the install (the controller's ruling, 2026-11-13: a red
+ *  Review never again stops the install row and the rows that read its plugin). */
+export const PLUGIN_REVIEW_STEP = "a plugin's Review on its OK card: with the reviewer role set, the report comes back from the internal job for that plugin, with its disclaimer, the card unchanged; the card then answered";
+
 export const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
-  "a plugin installs from a folder, its Review reports on its card, its OK card approved; a plugin whose host.start says each starts at once with no call; a plugin trigger arms a routine and fires it",
+  "a plugin installs from a folder, its OK card approved; a plugin whose host.start says each starts at once with no call; a plugin trigger arms a routine and fires it",
+  PLUGIN_REVIEW_STEP,
   "the bot calls the plugin's MCP tool",
   "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands; a Read of ~/.aws/credentials is refused with no card, an ordinary file reads",
   "the daemon restarts on the same home and boots",
@@ -138,7 +143,7 @@ export function finishTable(recorded: readonly Row[], steps: readonly string[], 
 }
 
 /** The first table row of the window steps (UI_STEPS[0]); the full run's UI phase records them from here. */
-export const UI_FIRST_ROW = 8;
+export const UI_FIRST_ROW: number = FULL_STEPS.findIndex((s) => s === `window: ${UI_STEPS[0]}`) + 1;
 /** `--only-ui [indexes]`: which window steps run, by their place in UI_STEPS (comma-separated; default the Plugins page's, 12).
  *  Throws on a number outside the list. */
 export function parseOnlyUi(arg: string | undefined): number[] {
