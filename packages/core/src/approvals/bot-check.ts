@@ -89,7 +89,15 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
 
 /** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's
  *  search and fetch, or a read (`BUNDLED_READ_TOOLS`). */
-export type BundledToolKind = "web-search" | "web-fetch" | "read";
+export type BundledToolKind = "web-search" | "web-fetch" | "read" | "browser";
+
+/** The bundled Browser tool (`plugins/clover/plugins/browser`): a bot's hands on its own tab of the Clover Browser. */
+export const BROWSER_PLUGIN_ID = "clover/browser";
+
+/** The Browser tool's verbs that only look (or move the bot's own tab by address, which the network filter judges): a read,
+ *  no card at any level. `click`, `type`, `key` and `select` act on a page and are the other class. */
+export const BROWSER_LOOKING_VERBS: ReadonlySet<string> = new Set(["tabs", "open", "close", "navigate", "back", "forward", "reload", "screenshot", "read", "scroll", "wait"]);
+export const BROWSER_ACTING_VERBS: ReadonlySet<string> = new Set(["click", "type", "key", "select"]);
 
 /** The bundled web plugin (`plugins/clover/plugins/web`): its `WebSearch` and `WebFetch`. */
 export const WEB_PLUGIN_ID = "clover/web";
@@ -406,6 +414,8 @@ export function botApprovalCheck(
     /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
      *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
+    /** The site the bot's own browser tab is on (the host of its address), or undefined: it has no tab. */
+    browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>;
     /** Whether a plugin's MCP tool is one its OK'd manifest declares display-only (the daemon's: the router's binding,
      *  then `pluginToolContained`, asked at each call): a contained call, which the broker judges after its fence,
      *  card-every-time and unresolved-path rules. */
@@ -456,7 +466,7 @@ export function botApprovalCheck(
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
-    let known = knownEffect(ctx, tool, input, hostTools, opts);
+    let known = await knownEffect(ctx, tool, input, hostTools, opts);
     // The turn's origin, read once: it is fixed when the turn starts (the driver sets it from the input that starts
     // the turn), so text folded in mid-turn from a plugin or another bot never changes it — and that is accepted,
     // because the card still goes to the user who started the turn. Unknown is not the user's.
@@ -688,8 +698,9 @@ function knownEffect(
     fetchBudget?: (ctx: BotSessionContext, url: string) => FetchBudget | undefined;
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
     levelOf?: (computer: string) => Level | undefined;
+    browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>;
   },
-): Known {
+): Known | Promise<Known> {
   if (hostTools.has(tool)) {
     if (tool === "SendMessage") return messageKnown(ctx, input, opts);
     const rule = CORE_TOOL_RULES.get(tool);
@@ -697,6 +708,7 @@ function knownEffect(
   }
   const bundled = opts.bundledTool?.(ctx, tool);
   if (bundled === "read") return { effect: "read" };
+  if (bundled === "browser") return browserKnown(ctx, tool, input, opts);
   if (bundled === "web-search") return { effect: "search" };
   if (bundled === "web-fetch") {
     const url = typeof input.url === "string" ? input.url : undefined;
@@ -718,6 +730,25 @@ function knownEffect(
   // A plugin's display-only tool (`contained` in its OK'd manifest): effect `other`, contained.
   if (opts.containedTool?.(ctx, tool) === true) return { contained: true };
   return {};
+}
+
+/** A Browser call. Looking (tabs, open, navigate, read, a picture, scroll, wait, close, and the tab's own history) is a read:
+ *  no card, though the browser's own rules still refuse what they refuse. Acting (click, type, key, select) is screen
+ *  control outside a tab the user opened: at read-only it is refused, at automatic it runs, and at the levels between it
+ *  asks once for the bot and the site its tab is on ("Always allow" is kept for that bot and site, and listed with its
+ *  other kept answers); at "ask" every acting call is a card. With no tab to name the site, a card every time. */
+async function browserKnown(
+  ctx: BotSessionContext, tool: string, input: Record<string, unknown>,
+  opts: { levelOf?: (computer: string) => Level | undefined; browserHost?: (ctx: BotSessionContext) => Promise<string | undefined> },
+): Promise<Known> {
+  const verb = typeof input.verb === "string" ? input.verb : "";
+  if (!BROWSER_ACTING_VERBS.has(verb)) return { effect: "read" }; // looking, or a verb the tool refuses itself
+  const host = await opts.browserHost?.(ctx).catch(() => undefined);
+  const name = ctx.botId.charAt(0).toUpperCase() + ctx.botId.slice(1);
+  const what = host === undefined ? `Let ${name} click and type in its browser tab` : `Let ${name} click and type on ${host}`;
+  const level = ctx.level ?? opts.levelOf?.(ctx.computer);
+  if (host === undefined || level === "ask") return { effect: "screen", what, cardAlways: true };
+  return { effect: "screen", what, ruleKey: `${OTHER_TOOL_KEY}${tool}(${host})` };
 }
 
 /** A `SendMessage`: contained to the bot's own sessions and to a session at a level no wider than the bot's; to any

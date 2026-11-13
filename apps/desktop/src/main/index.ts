@@ -22,6 +22,7 @@ import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
+import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { testBuildAppRefusal } from "./test-build";
@@ -1889,9 +1890,12 @@ function startBrowser(): void {
     const c = pair?.client;
     if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${why(err)}`));
   };
+  // The acceptance run's fixture site, by name (a test or acceptance build only: a release build has none of this).
+  const testNames = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? testBrowserNames(process.env.CLOVER_TEST_BROWSER_NAMES) : undefined;
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
     headless,
+    ...(testNames !== undefined ? { network: { lookup: testNames.lookup, dial: testNames.dial } } : {}),
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },

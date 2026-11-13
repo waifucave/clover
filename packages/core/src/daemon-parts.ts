@@ -27,6 +27,10 @@
 import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
+import { browserAppHandlers } from "./browser/app-port";
+import { startBrowser, type DaemonBrowser, type StartBrowserOptions } from "./browser/daemon";
+import { DEFAULT_PROXY_SETTING } from "./browser/proxy";
+import type { AppTabPort, BrowserEvent } from "./browser/service";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
@@ -158,11 +162,29 @@ export interface DaemonPartsInput {
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
   agents?: false | DaemonAgentsInput;
+  /** The Clover Browser on this computer (its tabs live in the app; the headless shell where no display is); false for none. */
+  browser?: false | DaemonBrowserInput;
   log?(line: string): void;
+}
+
+/** What the browser needs that the daemon decides. */
+export interface DaemonBrowserInput {
+  /** This computer's name, as the tabs name it. */
+  computer?: string;
+  /** The app's port while the app is connected (`appTabPort` over the Clover server's connections). */
+  app?: () => AppTabPort | undefined;
+  /** No app runs on this computer at all; by default, never (a desktop's tabs live in its app). */
+  headless?: boolean;
+  /** The browser's events (`tab_changed`, `tab_closed`), for the Clover server's core events. */
+  emit?: (event: BrowserEvent) => void;
+  /** For tests: the headless shell's own options. */
+  headlessOptions?: StartBrowserOptions["headlessOptions"];
 }
 
 export interface DaemonParts {
   node?: ComputerNode;
+  /** The Clover Browser, when it runs here. */
+  browser?: DaemonBrowser;
   bots?: BotSide;
   /** Lane K's agents, when they run here. */
   agents?: DaemonAgents;
@@ -490,6 +512,28 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
       usageLedger = ledger;
     }
+    // The Clover Browser (lane L), started after the bot side and stopped before it. Its tabs live in the app; the app
+    // reports back with `browser.report` and `browser.hold` (its own connection only). The bundled tree's Browser tool
+    // drives it through the plugin API's `browser.*` (`browserApiHandlers`, served by the plugin host's areas off `parts.browser`): the session whose tool call it serves, its own
+    // tabs only, the tool's own nine DevTools methods only. Peers (other computers' browsers) are not served.
+    let browser: DaemonBrowser | undefined;
+    if (input.browser !== false && input.browser !== undefined) {
+      const o = input.browser;
+      const here = o.computer ?? computer ?? "this-computer";
+      const br = startBrowser({
+        computer: here,
+        home: input.cloverHome,
+        headless: o.headless ?? false,
+        ...(o.app ? { app: o.app } : {}),
+        network: { proxy: DEFAULT_PROXY_SETTING, lanBots: [] },
+        ...(o.emit ? { emit: o.emit } : {}),
+        ...(o.headlessOptions ? { headlessOptions: o.headlessOptions } : {}),
+        log: (line) => log(`[browser] ${line}`),
+      });
+      closers.push(() => br.shutdown());
+      browser = br;
+      Object.assign(input.handlers, browserAppHandlers(() => br.service));
+    }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
     if (broker) {
@@ -497,7 +541,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => b.close());
     }
     const registry = input.bots ? input.bots.registry : undefined;
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
+    return { ...(node ? { node } : {}), ...(browser ? { browser } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
   } catch (err) {
     await close();
     throw err;

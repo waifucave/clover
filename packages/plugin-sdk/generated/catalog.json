@@ -4230,25 +4230,25 @@
       "capability": "files",
       "where": "ui"
     },
+    "browser.toolCaller": {
+      "capability": "browser",
+      "where": "clover"
+    },
     "browser.tabs": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "clover"
     },
     "browser.open": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "clover"
     },
     "browser.close": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "clover"
     },
     "browser.navigate": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "clover"
     },
     "browser.show": {
       "capability": "browser",
@@ -4262,13 +4262,11 @@
     },
     "browser.screenshot": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "clover"
     },
     "browser.cdp": {
       "capability": "browser",
-      "where": "clover",
-      "notYet": "this build's core runs no Clover Browser for plugins yet"
+      "where": "clover"
     },
     "browser.onCdpEvent": {
       "capability": "browser",
