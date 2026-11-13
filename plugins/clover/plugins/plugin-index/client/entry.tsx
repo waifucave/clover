@@ -87,6 +87,7 @@ const PROVENANCE: Record<PluginDetail["provenance"]["by"], string> = {
   migration: "It came over from the old app.",
   found: "It was found on disk.",
   bundled: "It ships with Clover.",
+  plugin: "Another plugin installed it.",
 };
 
 /** Clover's own tree, whose notices are the app's: never muted (a bundled bot such as `alpha` is, like any plugin). */
