@@ -4201,6 +4201,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         catalog: activeCatalog(),
         settling: installedModelPlugins() === undefined || installedModelPlugins()!.rebuilding,
         contributed: () => contributedProviders(registry.list()),
+        userEndpoint: (provider) => providerBaseUrlFor(settings, provider) !== undefined,
       }),
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence, agents }) => {

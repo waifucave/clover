@@ -444,7 +444,7 @@ export class BotService {
     const parsed = parseUserLayerPatch(patch);
     const model = (patch as { model?: unknown } | null)?.model;
     if (typeof model === "string" && this.#o.modelOffer?.(model) === "absent") {
-      throw new ContractError("invalid", `${model} isn't offered by any plugin that is on`);
+      throw new ContractError("invalid", `${model} isn't offered by any plugin that is on: turn on its plugin in Settings › Plugins, or pick another model`);
     }
     this.#layers.set(id, parsed);
     this.#syncMainSession(live);

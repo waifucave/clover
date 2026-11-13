@@ -337,7 +337,7 @@ describe("the user layer", () => {
     const { b } = await luna({ modelOffer: (m) => { asked.push(m); return offers[m] ?? "absent"; } });
     const refused = await b.bots.setUserLayer("luna", { model: "gone/model" }, theUser).catch((e: unknown) => e);
     expect(isContractError(refused, "invalid")).toBe(true);
-    expect((refused as Error).message).toBe("gone/model isn't offered by any plugin that is on");
+    expect((refused as Error).message).toBe("gone/model isn't offered by any plugin that is on: turn on its plugin in Settings › Plugins, or pick another model");
     expect(b.bots.get("luna")?.userLayer).toEqual([]);
     expect(await b.bots.setUserLayer("luna", { model: "acme/fast" }, theUser)).toEqual({ applied: true });
     expect(b.bots.get("luna")?.model).toBe("acme/fast");
