@@ -8,6 +8,8 @@
 //    Alpha can change its code later without asking, within what this card lists."; the row presses it in the window,
 //    and the plugin runs: its tool answers a call.
 // 3. `PluginStatus` reports it running.
+// 3c. `Glossary` with `load: "<id>"` answers her plugin's state and its tool; while step 5's OK card waits, her
+//    Glossary search lists it as waiting for the OK, with where its log is.
 // 3b. `AppScreenshot` shows her the Plugins page (where her plugin is listed), wide and narrow: drawn in a render window
 //    the user never sees, saved in her scratch's shots/ at the size asked, the picture reaching the model as an image,
 //    the page's frames listed, no card; no window is shown, and the user's own window stays where it was.
@@ -39,7 +41,7 @@ import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -257,6 +259,15 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     done.push("3 PluginStatus: running");
   });
 
+  // 3c. Glossary is the way into what a plugin offers a bot (checklist 5.1): loading hers by id answers its state and its
+  // tool's index, and makes the tool callable.
+  await stepOf("3c. Glossary loads her plugin by id: its state and its tool", async () => {
+    const g = await ok(ctx, session, "Glossary", { load: WORKSHOP_ID });
+    if (!g.result.text.includes(`Plugin ${WORKSHOP_ID} (${WORKSHOP_NAME}), running.`)) fail(`Glossary's load of ${WORKSHOP_ID} answered "${g.result.text.slice(0, 300)}"`);
+    if (!new RegExp(`mcp__[\\w-]+__${WORKSHOP_TOOL}\\b`).test(g.result.text)) fail(`Glossary's load of ${WORKSHOP_ID} named no ${WORKSHOP_TOOL} tool ("${g.result.text.slice(0, 300)}")`);
+    done.push(`3c Glossary load ${WORKSHOP_ID}: running, its ${WORKSHOP_TOOL} indexed`);
+  });
+
   // 3b. A look at the app, as she would after building a page.
   await stepOf("3b. AppScreenshot draws the Plugins page wide and narrow, with no card and no window shown", async () => {
     const whereOf = async () => {
@@ -327,6 +338,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await ok(ctx, session, "Read", { file_path: manifest });
     await ok(ctx, session, "Edit", { file_path: manifest, old_string: ADD_CAPABILITY.old, new_string: ADD_CAPABILITY.new });
     const card = await askedCard(ctx, "notify", NOTIFY_LINE);
+    // While it waits for the OK, her Glossary search lists it to her with its state and where its log is (5.1).
+    const found = await ok(ctx, session, "Glossary", { query: WORKSHOP_ID });
+    if (!found.result.text.includes("waiting for the user's OK") || !found.result.text.includes(`PluginStatus ${WORKSHOP_ID} has the log`)) fail(`with its OK card waiting, Glossary's search for ${WORKSHOP_ID} answered "${found.result.text.slice(0, 300)}"`);
     await ctx.pressCard("its OK card for notify", (c) => c.id === card.id);
     await until(`${WORKSHOP_ID} running after the OK`, 30_000, async () => ((await pluginOf(ctx, WORKSHOP_ID))?.state === "running" ? true : undefined));
     const p = await pluginOf(ctx, WORKSHOP_ID);
@@ -335,7 +349,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`after the OK PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
     const g = await greet(ctx, session);
     if (!g.result.text.includes(answerFor(GREETING.second))) fail(`after the OK its tool answered "${g.result.text.slice(0, 200)}"`);
-    done.push("5 +notify paused it behind its OK card (line named, not granted); OK'd: running, granted, PluginStatus running, tool answered");
+    done.push("5 +notify paused it behind its OK card (line named, not granted; Glossary lists it to her as waiting, with where its log is); OK'd: running, granted, PluginStatus running, tool answered");
   }));
 
   // 5b. A second request answered No: it stays off; the bot takes the request back out and it runs again with no card.
