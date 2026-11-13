@@ -66,11 +66,17 @@ test("the OAuth fake: a PKCE authorize redirects with a code; the code buys the 
     expect(new URL(a.headers.get("location")!).searchParams.get("state")).toBe("s1");
     const exchange = (v: string) => fetch(`${fake.url}/token`, { method: "POST", body: new URLSearchParams({ grant_type: "authorization_code", client_id: "c", code, redirect_uri: redirect, code_verifier: v }) });
     expect((await exchange("not-the-verifier")).status).toBe(400);
-    const t = (await (await exchange(verifier)).json()) as { access_token: string };
+    const t = (await (await exchange(verifier)).json()) as { access_token: string; refresh_token: string; expires_in: number };
+    expect(t.expires_in).toBeLessThan(60);
     expect((await exchange(verifier)).status).toBe(400); // a code buys one token
     expect(await (await fetch(`${fake.url}/v1/turn`, { method: "POST", headers: { authorization: `Bearer ${t.access_token}` } })).text()).toBe("R");
     expect((await fetch(`${fake.url}/v1/turn`, { method: "POST", headers: { authorization: "Bearer other" } })).status).toBe(401);
-    expect(fake.seen).toEqual({ authorized: 1, exchanged: 1, refusedExchanges: 2, turns: [{ bearerMatched: true }, { bearerMatched: false }] });
+    // A refresh token buys a new token, once; a revoked token is refused.
+    const refreshed = (await (await fetch(`${fake.url}/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", client_id: "acceptance-oauth-client", refresh_token: t.refresh_token }) })).json()) as { access_token: string };
+    expect((await fetch(`${fake.url}/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", client_id: "acceptance-oauth-client", refresh_token: t.refresh_token }) })).status).toBe(400);
+    fake.revoke();
+    expect((await fetch(`${fake.url}/v1/turn`, { method: "POST", headers: { authorization: `Bearer ${refreshed.access_token}` } })).status).toBe(401);
+    expect(fake.seen).toEqual({ authorized: 1, exchanged: 1, refusedExchanges: 3, refreshed: 1, turns: [{ bearerMatched: true }, { bearerMatched: false }, { bearerMatched: false }] });
     expect((await fetch(`${fake.url}/authorize?${new URLSearchParams({ response_type: "code", redirect_uri: "https://evil.example/cb", state: "s", code_challenge: challenge, code_challenge_method: "S256" })}`, { redirect: "manual" })).status).toBe(400);
   } finally {
     fake.stop();

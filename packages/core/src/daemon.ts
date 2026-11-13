@@ -197,6 +197,7 @@ import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
 import { userEndpointOf } from "./runtime-sdk/model-plugins/user-endpoint";
+import { createOAuthRenewal } from "./runtime-sdk/model-plugins/oauth-renewal";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
@@ -3950,10 +3951,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // With no model plugin in the registry (a test daemon's own store, a home with them all off) nothing is overridden:
     // the sessions keep the SDK's own catalog and routing, and move onto the plugins live as the registry gains one
     // (`ModelPlugins.active`), with no restart.
+    // A third party's oauth-pkce sign-ins renewed at their own token endpoints (oauth-renewal.ts): the keyed fetch's
+    // token source renews near expiry and after a 401; a refused renewal signs the plugin out and says so.
+    const oauthRenewal = createOAuthRenewal({
+      store: contractSecrets, registry: opened.registry,
+      onSignedOut: async (id) => { await pluginAuth?.announceAll(id).catch(() => undefined); },
+      log: (line) => console.error(line),
+    });
     if (opts.modelPluginHost === undefined && modelPlugins === undefined) {
       // The model plugins' keyed fetch and secrets ride B's router as handlers (`addApiHandlers`), behind B's gate.
       void startModelPlugins({
-        registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers,
+        registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers, oauth: oauthRenewal,
         addApiHandlers: (h) => host.addApiHandlers(h),
         // A test build only (compiled out of a real one): the acceptance run's own outside world, its fake search
         // backend and public site on loopback, by name; every other name keeps every rule (pinned-fetch.ts).
@@ -3976,7 +3984,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // provider's slot, another plugin's as its own secret. A change replaces the live sessions on that provider and
     // re-reads the internal jobs' view, as `credential.set` does.
     Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
-      registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
+      registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets, oauthRenewal,
       changed: async (id, auth) => {
         // The bots' view first, as `credentialChanged` does: a turn started on the event, or once the sign-in's call
         // returns, already sees it.

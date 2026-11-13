@@ -2258,8 +2258,8 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
  *  core's own PKCE flow (`runLoginFlow`: its loopback callback on OAUTH_CALLBACK_PORT, the code exchanged with the
  *  verifier). The run is the browser: it fetches the authorize URL the sign-in answers with and delivers the server's
  *  redirect to the core's callback; it opens no window. Then Alpha's turn on the plugin's model, whose keyed fetch must
- *  carry the stored access token. What it can't cover: a real provider's consent page and its account, the app
- *  opening the URL in the person's browser, and a token refresh (a third party's token is renewed by no core flow). */
+ *  carry a live token: near its expiry (renewed first) and after a 401 (renewed once, the call retried). What it can't
+ *  cover: a real provider's consent page and its account, and the app opening the URL in the person's browser. */
 async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
   if (oauthServer === undefined) return { status: "BLOCKED", detail: "the run's OAuth server didn't start" };
   const o = oauthServer;
@@ -2296,6 +2296,7 @@ async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ stat
       return v?.state === "signed-in" ? true : undefined;
     }, 300);
     if (o.seen.exchanged !== 1) fail(`the code was exchanged ${o.seen.exchanged} time(s) (refused: ${o.seen.refusedExchanges})`);
+    if (o.seen.refusedExchanges > 0) fail(`the OAuth server refused ${o.seen.refusedExchanges} exchange(s)`);
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
     await until(`${OAUTH_MODEL} to be a model Alpha can run`, 60_000, async () => {
@@ -2305,13 +2306,25 @@ async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ stat
       const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
       return b?.model === OAUTH_MODEL ? true : undefined;
     }, 500);
-    const from = o.seen.turns.length;
-    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-OAUTH: say hello", 150_000);
-    const mine = o.seen.turns.slice(from);
-    if (mine.length === 0) fail(`the turn never reached the plugin's provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
-    if (!mine.some((t) => t.bearerMatched)) fail("the plugin's provider got the turn without the access token the sign-in stored");
-    if (!JSON.stringify(events).includes("ACCEPTANCE-OAUTH-OK")) fail(`the provider answered, but its reply isn't in the conversation: stop ${stopOf(events)}`);
-    return { status: "PASS", detail: `${installed.id} signed in through the core's PKCE flow (authorize, the redirect delivered to the core's callback, the code exchanged once with its verifier), and Alpha's turn on ${OAUTH_MODEL} carried the stored token (${mine.length} request(s))${carded.length ? `; cards: ${carded.join("; ")}` : ""}; not covered: a real provider's consent page and account, the app opening the URL in a browser, a token refresh` };
+    // Two turns: the first with the token near its expiry (the server's tokens live 30 s, inside the core's renewal
+    // window: renewed before the call), the second after the server revoked every token (a 401: renewed once, the call
+    // retried once).
+    const oneTurn = async (label: string, prompt: string): Promise<{ carded: string[]; requests: number }> => {
+      const from = o.seen.turns.length;
+      const refreshedBefore = o.seen.refreshed;
+      const { events, cards: carded } = await turn(c, session, prompt, 150_000);
+      const mine = o.seen.turns.slice(from);
+      if (mine.length === 0) fail(`${label}: the turn never reached the plugin's provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+      if (!mine.some((t) => t.bearerMatched)) fail(`${label}: the plugin's provider got the turn without a live token`);
+      if (o.seen.refreshed <= refreshedBefore) fail(`${label}: the core didn't renew the token at the plugin's token endpoint`);
+      if (!JSON.stringify(events).includes("ACCEPTANCE-OAUTH-OK")) fail(`${label}: the provider answered, but its reply isn't in the conversation: stop ${stopOf(events)}`);
+      return { carded, requests: mine.length };
+    };
+    const near = await oneTurn("near expiry", "ACCEPTANCE-OAUTH: say hello");
+    o.revoke();
+    const after401 = await oneTurn("after a 401", "ACCEPTANCE-OAUTH: say hello again");
+    const carded = [...near.carded, ...after401.carded];
+    return { status: "PASS", detail: `${installed.id} signed in through the core's PKCE flow (authorize, the redirect delivered to the core's callback, the code exchanged once with its verifier); Alpha's turns on ${OAUTH_MODEL} carried a renewed token, near expiry (renewed before the call) and after a 401 (renewed once, retried), ${o.seen.refreshed} renewal(s) at the plugin's token endpoint${carded.length ? `; cards: ${carded.join("; ")}` : ""}; not covered: a real provider's consent page and account, the app opening the URL in a browser` };
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   } finally {

@@ -19,6 +19,7 @@ import { installModelPlugins } from "./index";
 import { keychainModelPluginCredentials } from "./keychain-tokens";
 import { modelPluginApiHandlers, secretStoreCredentials } from "./plugin-api";
 import { ModelPlugins } from "./service";
+import type { OAuthRenewal } from "./oauth-renewal";
 
 export interface StartModelPluginsOptions {
   registry: PluginRegistry;
@@ -41,6 +42,9 @@ export interface StartModelPluginsOptions {
   /** A `network:public` fetch's audit sink and the user's dangerous-domain additions (public-fetch.ts). */
   audit?: (line: Record<string, unknown>) => void;
   dangerousAdded?: () => readonly string[];
+  /** Renews a third party's oauth-pkce sign-ins (`oauth-renewal.ts`): its keyed fetch's token source for such an entry
+   *  renews near expiry and after a 401. Absent: the stored token as it is. */
+  oauth?: OAuthRenewal;
   /** The origin the USER set for a plugin's provider (`user-endpoint.ts`), read at each call: its fetch reaches that
    *  origin alone. The daemon passes the same function to the plugin host's gate. */
   userEndpoint?: (pluginId: string) => string | undefined;
@@ -67,12 +71,18 @@ function ownItemsStore(secrets: PluginSecrets): Pick<ContractSecretStore, "get">
   };
 }
 
+/** A third party's own items, with its oauth-pkce entries' tokens renewed (`oauth-renewal.ts`). */
+function withOAuthRenewal(base: ReturnType<typeof secretStoreCredentials>, oauth: OAuthRenewal | undefined): ReturnType<typeof secretStoreCredentials> {
+  if (oauth === undefined) return base;
+  return { ...base, tokens: (pluginId, name) => (oauth.handles(pluginId, name) ? oauth.tokens(pluginId, name) : base.tokens(pluginId, name)) };
+}
+
 export async function startModelPlugins(opts: StartModelPluginsOptions): Promise<StartedModelPlugins> {
   const credentials = keychainModelPluginCredentials({
     registry: opts.registry,
     secrets: opts.secrets,
     ...(opts.refreshers !== undefined ? { refreshers: opts.refreshers } : {}),
-    ...(opts.pluginSecrets !== undefined ? { fallback: secretStoreCredentials(ownItemsStore(opts.pluginSecrets)) } : {}),
+    ...(opts.pluginSecrets !== undefined ? { fallback: withOAuthRenewal(secretStoreCredentials(ownItemsStore(opts.pluginSecrets)), opts.oauth) } : {}),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });
   await credentials.prime();
