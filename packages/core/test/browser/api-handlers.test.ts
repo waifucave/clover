@@ -4,6 +4,7 @@ import { BrowserService } from "../../src/browser";
 import { browserApiHandlers, TOOL_CDP_METHODS } from "../../src/browser/api-handlers";
 import type { ApiCallContext, ApiHandler } from "../../src/plugin-host/api/router";
 import { noteCheckedHost } from "../../src/browser/checked-hosts";
+import { createApiRouter } from "../../src/plugin-host/api/router";
 import { FakeApp } from "./fakes";
 
 const alpha: Caller = { kind: "session", sessionId: "s-alpha", sessionKind: "bot", bot: "alpha" };
@@ -14,10 +15,15 @@ function setup() {
   const service = new BrowserService({ computer: "Studio", app: () => app });
   const h = browserApiHandlers(() => service);
   const call = (path: keyof typeof h, caller: Caller, ...args: unknown[]) => {
-    const ctx = { pluginId: "clover/browser", process: "clover", caller, record: {}, path } as unknown as ApiCallContext;
+    const ctx = { pluginId: "clover/browser", process: "clover", caller, record: { source: "bundled" }, path } as unknown as ApiCallContext;
     return Promise.resolve().then(() => (h[path] as ApiHandler)(ctx, args)) as Promise<any>;
   };
-  return { app, service, call };
+  /** A call from the panel's own component: it reaches the api as its plugin's caller, and acts for the person. */
+  const panel = (path: keyof typeof h, args: unknown[] = [], over: Partial<{ pluginId: string; process: string; caller: Caller; record: unknown }> = {}) => {
+    const ctx = { pluginId: "clover/browser-view", process: "ui", caller: { kind: "plugin", pluginId: "clover/browser-view" }, record: { source: "bundled" }, path, ...over } as unknown as ApiCallContext;
+    return Promise.resolve().then(() => (h[path] as ApiHandler)(ctx, args)) as Promise<any>;
+  };
+  return { app, service, call, panel };
 }
 
 describe("the Browser tool's browser.* calls", () => {
@@ -73,7 +79,7 @@ describe("the Browser tool's browser.* calls", () => {
     const { call, app } = setup();
     const tab = await call("browser.open", alpha, { url: "https://example.com/" });
     for (const method of ["Network.getAllCookies", "Network.getCookies", "Network.setCookie", "Network.deleteCookies", "Network.getResponseBody", "Network.setExtraHTTPHeaders", "Fetch.enable", "IO.read", "Page.addScriptToEvaluateOnNewDocument", "Page.setBypassCSP", "Page.navigate", "DOM.getDocument"]) {
-      await expect(call("browser.cdp", alpha, tab.id, method, {})).rejects.toThrow(/isn't one the Browser tool uses/);
+      await expect(call("browser.cdp", alpha, tab.id, method, {})).rejects.toThrow(/isn't one the Browser uses/);
     }
     expect(app.commands.filter((c) => c.command.kind === "cdp")).toEqual([]);
     for (const method of TOOL_CDP_METHODS) await call("browser.cdp", alpha, tab.id, method, {});
@@ -87,5 +93,61 @@ describe("the Browser tool's browser.* calls", () => {
     const tab = await call("browser.open", coding, {});
     expect(tab.owner).toEqual({ kind: "session", session: "s-code" });
     await expect(call("browser.navigate", coding, tab.id, "file:///etc/passwd")).rejects.toMatchObject({ detail: { code: "url_refused" } });
+  });
+});
+
+describe("the Clover Browser panel's browser.* calls (the person, in the panel's component)", () => {
+  test("the panel lists any owner's tabs, places one in its view and takes it back, and opens one for the owner it shows", async () => {
+    const { call, panel } = setup();
+    const botTab = await call("browser.open", alpha, { url: "https://example.com/" });
+    expect((await panel("browser.tabs", [{ owner: { kind: "bot", bot: "alpha" } }])).map((t: { id: string }) => t.id)).toEqual([botTab.id]);
+    const shown = await panel("browser.show", [botTab.id, "browser", { width: 800, height: 600 }]);
+    expect(shown).toMatchObject({ place: "shown", view: "browser", viewport: { width: 800, height: 600 } });
+    expect(await panel("browser.hide", [botTab.id])).toMatchObject({ place: "headless" });
+    // A second tab for the same bot is the person's to open (the one-tab rule is the bot's own tool's).
+    const opened = await panel("browser.open", [{ owner: { kind: "bot", bot: "alpha" }, url: "https://example.org/", show: { view: "browser", viewport: { width: 700, height: 500 } } }]);
+    expect(opened).toMatchObject({ owner: { kind: "bot", bot: "alpha" }, place: "shown" });
+  });
+
+  test("only the bundled panel's component, for the person: not the tool, another plugin, a host half or another caller", async () => {
+    const { call, panel } = setup();
+    const tab = await call("browser.open", alpha, {});
+    // The tool draws out of sight: where a tab shows is the person's.
+    await expect(call("browser.show", alpha, tab.id, "browser", { width: 800, height: 600 })).rejects.toThrow(/the person's/);
+    await expect(panel("browser.show", [tab.id, "browser", { width: 800, height: 600 }], { pluginId: "acme/panel" })).rejects.toThrow(/panel only/);
+    await expect(panel("browser.tabs", [{}], { pluginId: "acme/panel" })).rejects.toThrow(/panel only/);
+    await expect(panel("browser.tabs", [{}], { process: "clover" })).rejects.toThrow(/Browser tool only/);
+    // A third-party component that claims the panel's id, a core caller, a session: refused. So is the panel's id from a non-bundled record.
+    await expect(panel("browser.tabs", [{}], { record: { source: "user" } })).rejects.toThrow(/panel only/);
+    for (const caller of [alpha, { kind: "plugin", pluginId: "acme/panel" }, { kind: "core" }, { kind: "user", client: "app" }] as Caller[]) await expect(panel("browser.tabs", [{}], { caller })).rejects.toThrow(/panel's own call/);
+    // The tool's own call from a plugin that isn't the tool is refused too.
+    const ctx = { pluginId: "acme/tool", process: "clover", caller: alpha, record: { source: "bundled" }, path: "browser.tabs" } as unknown as ApiCallContext;
+    await expect(Promise.resolve().then(() => (browserApiHandlers(() => undefined)["browser.tabs"] as ApiHandler)(ctx, [{}]))).rejects.toThrow(/Browser tool only/);
+  });
+
+  test("DevTools from the panel passes the same nine methods", async () => {
+    const { call, panel } = setup();
+    const tab = await call("browser.open", alpha, {});
+    await expect(panel("browser.cdp", [tab.id, "Network.getAllCookies"])).rejects.toMatchObject({ detail: { code: "method_refused" } });
+  });
+});
+
+describe("through the plugin API's router (the component's `plugin.layer.api` entry)", () => {
+  const records: Record<string, unknown> = {
+    "clover/browser-view": { id: "clover/browser-view", enabled: true, state: "running", source: "bundled", granted: ["browser"] },
+    "acme/panel": { id: "acme/panel", enabled: true, state: "running", source: "user", granted: ["browser"] },
+  };
+  const route = () => {
+    const app = new FakeApp();
+    const service = new BrowserService({ computer: "Studio", app: () => app });
+    return createApiRouter({ registry: { get: (id: string) => records[id] as never }, handlers: [browserApiHandlers(() => service)] });
+  };
+
+  test("the bundled panel's component, which arrives as its plugin's caller, lists and shows; a third-party component with the same grant does not", async () => {
+    const router = route();
+    const ask = (pluginId: string, path: string, args: unknown[]) => router({ pluginId, process: "ui", caller: { kind: "plugin", pluginId }, path, args } as never) as Promise<any>;
+    expect(await ask("clover/browser-view", "browser.tabs", [{}])).toEqual([]);
+    await expect(ask("acme/panel", "browser.tabs", [{}])).rejects.toThrow(/panel only/);
+    await expect(ask("clover/browser-view", "browser.watch", [() => {}])).rejects.toThrow(/events|isn't available|not served/);
   });
 });

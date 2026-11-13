@@ -20,9 +20,6 @@ const SKIPPED: Record<string, string> = {
   "clover/push": "parked: PARKED.md",
   "clover/companion-web": "parked: PARKED.md",
   "clover/relay-cloudflare": "parked: PARKED.md",
-  // Its Browser tool calls `browser.*`, which this build serves to no plugin (no browser in the core, no tool-call
-  // caller for a host MCP server); the plugin is listed as not available.
-  "clover/browser": "parked: PARKED.md",
 };
 
 /** What `api.plugin` is: data, the plugin's own `PluginSelf`. */
@@ -158,7 +155,6 @@ describe("bundled host halves reach only the plugin API's host members", () => {
     expect(memberProblem(["browser", "open"])).toStartWith("api.browser.open isn't served yet");
     expect(memberProblem(["settings", "get", "x"])).toBe("api.settings.get.x reaches past the call settings.get");
     expect(memberProblem(["device", "id"])).toBeDefined();
-    expect(memberProblem(["browser"])).toBe("api.browser has no call served to a host half yet");
     for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"], ["memory"], ["keys", "publicKey"]]) expect(memberProblem(ok)).toBeUndefined();
     expect(opaque("const v = api[\"env\"]; ctx.api.settings?.[k]; function f(api: any) {} const g = (api?: any) => api as any;")).toEqual([
       "api[…] is a computed member", "api.settings[…] is a computed member", "api: any: the plugin API typed any", "api?: any: the plugin API typed any", "api as any: the plugin API typed any",

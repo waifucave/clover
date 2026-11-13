@@ -987,6 +987,29 @@ export function usePluginApi(): PluginApi {
           return () => { live = false; off(); };
         },
       } as unknown as PluginApi["approvals"],
+      // The Clover Browser, for the bundled browser panel (the core's `browser.*` methods on this plugin's own connection,
+      // which serve that one plugin and the capability gate checks): the person's tabs, placed in a view and navigated. A
+      // listener can't cross a call, so `watch` hears the core's `tab_changed` and `tab_closed` events instead.
+      browser: {
+        tabs: (filter?: unknown) => call<{ tabs: unknown[] }>("browser.tabs", filter ?? {}).then((r) => r.tabs),
+        open: (opts: unknown) => call<{ tab: unknown }>("browser.open", opts).then((r) => r.tab),
+        close: (tab: string) => call<unknown>("browser.close", { id: tab }).then(() => undefined),
+        navigate: (tab: string, url: string) => call<{ tab: unknown }>("browser.navigate", { id: tab, url }).then((r) => r.tab),
+        show: (tab: string, view: string, viewport: unknown) => call<{ tab: unknown }>("browser.show", { id: tab, view, viewport }).then((r) => r.tab),
+        hide: (tab: string) => call<{ tab: unknown }>("browser.hide", { id: tab }).then((r) => r.tab),
+        screenshot: (tab: string, opts?: { format?: string; quality?: number }) => call<unknown>("browser.screenshot", { id: tab, ...(opts ?? {}) }),
+        cdp: (tab: string, method: string, params?: unknown, opts?: { viewport?: unknown }) =>
+          call<{ result: unknown }>("browser.cdp", { id: tab, method, ...(params !== undefined ? { params } : {}), ...(opts?.viewport !== undefined ? { viewport: opts.viewport } : {}) }).then((r) => r.result),
+        watch: (listener: (change: unknown) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "browser");
+          return onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as { type?: unknown; tab?: unknown; id?: unknown; computer?: unknown } | undefined;
+            if (method !== "core.event") return;
+            if (e?.type === "tab_changed" && e.tab !== undefined) listener({ type: "changed", tab: e.tab });
+            else if (e?.type === "tab_closed" && typeof e.id === "string") listener({ type: "closed", id: e.id, computer: e.computer, by: "api" });
+          });
+        },
+      } as unknown as PluginApi["browser"],
       // The plugin's own bot's figure (`avatar.read`, `avatar.control`), through the core, which judges each cue; the stage's
       // own `report` (bundled `clover` tree only). The watch hears the core's `clover.avatar.changed` message for this plugin.
       avatar: {

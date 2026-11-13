@@ -49,6 +49,9 @@ export interface Screenshot {
 
 /** The `browser` member of the plugin API (the plugin needs the `browser` capability). The call the view does not
  *  make (`onCdpEvent`) is left out of this copy. */
+/** A report of the browser's `watch`. */
+export type BrowserChange = { type: "changed"; tab: TabView } | { type: "closed"; id: string; computer?: string; by?: string };
+
 export interface BrowserApi {
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
   /** `show` puts it in that view at that size at once (lane B's B-M1 shape); headless otherwise. */
@@ -59,7 +62,8 @@ export interface BrowserApi {
   hide(tab: string): Promise<TabView>;
   cdp<R = unknown>(tab: string, method: string, params?: Record<string, unknown>, opts?: { viewport?: Viewport }): Promise<R>;
   screenshot(tab: string, opts?: { format?: "png" | "jpeg" | "webp"; quality?: number }): Promise<Screenshot>;
-  watch(listener: (tab: TabView) => void): Unsubscribe;
+  /** What the browser reports: a tab changed (or is new), or one is gone. */
+  watch(listener: (change: BrowserChange) => void): Unsubscribe;
 }
 
 /** What the plugin API hands a component, as far as this view uses it. */

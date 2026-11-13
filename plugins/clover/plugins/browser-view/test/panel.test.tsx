@@ -99,6 +99,16 @@ describe("watching", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(2);
   });
 
+  test("a tab the browser says is gone leaves the row", async () => {
+    const api = fakeBrowser([A]);
+    await mount(api);
+    await act(async () => api.emit(B));
+    expect(screen.getAllByRole("tab").length).toBeGreaterThan(1);
+    const before = screen.getAllByRole("tab").length;
+    await act(async () => api.emitClosed(B.id));
+    expect(screen.getAllByRole("tab").length).toBe(before - 1);
+  });
+
   test("another owner's tab never joins the row, and unmounting stops watching", async () => {
     const api = fakeBrowser([A]);
     const view = await mount(api);
@@ -114,7 +124,7 @@ describe("watching", () => {
     await mount(api);
     expect(tab("Docs preview").getAttribute("aria-busy")).toBe("true");
     expect(frame().getAttribute("aria-busy")).toBe("true");
-    expect(tab("Plugin index").getAttribute("title")).toContain("You are using this tab. The bot waits until you let go.");
+    expect(tab("Plugin index").getAttribute("title")).toContain("You are using this tab. The bot can see this page, and is paused from clicking and typing in it until you let go.");
     expect(tab("Plugin index").parentElement?.hasAttribute("data-held")).toBe(true);
     expect(tab("Docs preview").parentElement?.hasAttribute("data-held")).toBe(false);
   });

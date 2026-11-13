@@ -104,7 +104,7 @@ describe("the dev stage from the repository's plugins/", () => {
       const notYet = (p: { manifest?: unknown }) => (p.manifest as { availability?: { status?: string } } | undefined)?.availability?.status === "not-yet";
       expect(all.filter(notYet).map((p) => `${p.id}: ${p.state} (${p.reason ?? ""})`)).toEqual(
         [
-          "clover/browser", "clover/browser-view", "clover/companion-ios", "clover/companion-web", "clover/forwarder", "clover/provider-gcp",
+          "clover/companion-ios", "clover/companion-web", "clover/forwarder", "clover/provider-gcp",
           "clover/provider-hetzner", "clover/push", "clover/relay-cloudflare", "clover/trigger-webhook",
         ].map((id) => `${id}: off (${NOT_AVAILABLE_YET})`),
       );
@@ -115,7 +115,8 @@ describe("the dev stage from the repository's plugins/", () => {
       for (const point of ["mcpServers", "ui", "triggers", "companions", "computerProviders", "webhook.ingress", "relays", "notifiers"]) {
         expect([point, opened.registry.entries(point).filter(parked)]).toEqual([point, []]);
       }
-      expect(opened.registry.entries("ui").some((e) => e.pluginId === "clover/browser-view")).toBe(false);
+      // The browser is composed now: its panel is offered like any other.
+      expect(opened.registry.entries("ui").some((e) => e.pluginId === "clover/browser-view")).toBe(true);
       for (const p of all.filter(notYet)) expect([p.id, grantsInForce(p)]).toEqual([p.id, []]);
       const notLoaded = all.filter((p) => !["running", "waiting"].includes(p.state) && !(p.state === "off" && p.manifest?.enabledByDefault === false) && !notYet(p))
         .map((p) => `${p.id}: ${p.state}${p.reason ? ` (${p.reason})` : ""}`);

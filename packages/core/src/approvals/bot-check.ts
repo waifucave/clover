@@ -452,6 +452,9 @@ export function botApprovalCheck(
      *  the fence just allowed it, is recorded for that bot (`PluginFolders.dropped`), so the registry's read names it
      *  as the plugin's builder. */
     dropped?: (name: string, bot: string) => void;
+    /** A write the fence let through into the plugins folder (a bot editing its plugin): the registry reads that folder
+     *  once it settles, without waiting for the OS's file watch (`PluginFolders.touched`). */
+    touched?: (path: string) => void;
     /** The folder this computer's privacy settings keep Clover out of on the way to a path (`unreachableFolder`), or
      *  undefined. Default: looked up on this computer's disk. */
     unreachable?: (path: string) => string | undefined;
@@ -564,6 +567,7 @@ export function botApprovalCheck(
             if (!there) opts.dropped(name, ctx.botId);
           }
         }
+        if (opts.touched !== undefined) for (const p of req.paths) if (insideFolder(p, join(home!, "plugins"))) opts.touched(p);
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }
@@ -747,7 +751,9 @@ async function browserKnown(
   const verb = typeof input.verb === "string" ? input.verb : "";
   if (!BROWSER_ACTING_VERBS.has(verb)) return { effect: "read" }; // looking, or a verb the tool refuses itself
   const host = await opts.browserHost?.(ctx).catch(() => undefined);
-  const name = ctx.botId.charAt(0).toUpperCase() + ctx.botId.slice(1);
+  // A user's coding session has no bot (`botId` undefined): the card and the kept rule are that session's own.
+  const botId = typeof ctx.botId === "string" && ctx.botId !== "" ? ctx.botId : undefined;
+  const name = botId === undefined ? "this coding session" : botId.charAt(0).toUpperCase() + botId.slice(1);
   const what = host === undefined ? `Let ${name} click and type in its browser tab` : `Let ${name} click and type on ${host}`;
   const level = ctx.level ?? opts.levelOf?.(ctx.computer);
   if (host === undefined || level === "ask") return { effect: "screen", what, cardAlways: true };

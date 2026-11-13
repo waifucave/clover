@@ -42,7 +42,7 @@ describe("the tab row", () => {
     expect(container.querySelectorAll("[data-spin]")).toHaveLength(1);
     expect(screen.getByRole("tab", { name: /^One$/ }).getAttribute("aria-busy")).toBe("true");
     const held = screen.getByRole("tab", { name: "Two" });
-    expect(held.getAttribute("title")).toContain("You are using this tab. The bot waits until you let go.");
+    expect(held.getAttribute("title")).toContain("You are using this tab. The bot can see this page, and is paused from clicking and typing in it until you let go.");
     expect(held.parentElement?.hasAttribute("data-held")).toBe(true);
   });
 });
