@@ -247,6 +247,8 @@ export class PluginFolders {
   #bootNames: Set<string> | undefined;
   /** An update being applied (`updated`): the tree it brings and its new provenance, until its record keeps them. */
   readonly #updating = new Map<string, { treeHash: string; provenance: PluginProvenance }>();
+  /** An update's files line for its OK card, by the tree it put in place (`updated`). */
+  readonly #updateLines = new Map<string, { treeHash: string; line: string }>();
   readonly #watchers = new Map<string, FSWatcher>();
   /** The catch-up look's timer, and what it saw last: the plugins folder's names, each development folder's and each
    *  waiting plugin folder's fingerprint. */
@@ -426,8 +428,11 @@ export class PluginFolders {
 
   /** An update from an index or npm was put in place (`indexes/update.ts`): read it with its new provenance; the OK
    *  given carries over to this exact tree unless it adds a trigger (`updateAddsTrigger`), when it asks again. */
-  async updated(id: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+  async updated(id: string, treeHash: string, provenance: PluginProvenance, changed?: string): Promise<void> {
     this.#updating.set(id, { treeHash, provenance });
+    // What changed in its files, for the OK card an update that asks again raises (the user's click was an informed one).
+    if (changed !== undefined) this.#updateLines.set(id, { treeHash, line: changed });
+    else this.#updateLines.delete(id);
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -568,11 +573,20 @@ export class PluginFolders {
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
         ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
+        ...this.#updateLineOf(id),
       ],
       source: r.provenance.by === "bot" && r.provenance.bot !== undefined ? builtByText(this.#botName?.(r.provenance.bot) ?? r.provenance.bot)
         : r.provenance.by === "plugin" && r.provenance.plugin !== undefined ? askedByPluginText(this.#pluginName(r.provenance.plugin), title)
         : PROVENANCE_TEXT[r.provenance.by],
     };
+  }
+
+  /** The files line of the update that put this tree in place, while the record is on that tree. */
+  #updateLineOf(id: string): string[] {
+    const u = this.#updateLines.get(id);
+    if (u === undefined) return [];
+    const now = this.#o.core.get(id)?.treeHash;
+    return now === undefined || now === u.treeHash ? [u.line] : [];
   }
 
   /** A plugin's name as its record has it (its id when it has none, or isn't installed). */

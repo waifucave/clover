@@ -437,6 +437,11 @@ describe("updating from an index or npm", () => {
       expect(w.opened.registry.get("luna")).toMatchObject({ state: "found", treeHash: hash2, okHash: hash1 });
       expect(plugins(w).filter((n) => n.startsWith(".luna.previous-")).length).toBe(1);
       expect(w.broker.cards().length).toBeGreaterThan(1);
+      // Its OK card says what changed in the files (the user's click on Update was an informed one), and not that it
+      // asks for the same things: it asks for more, which the card's other lines list.
+      const okCard = JSON.stringify(w.broker.cards().filter((c) => c.kind === "plugin-ok" && (c as { pluginId?: string }).pluginId === "luna").at(-1));
+      expect(okCard).toMatch(/Its files: \d+ changed, \d+ added, \d+ removed\./);
+      expect(okCard).not.toContain("It asks for the same things as before.");
       await w.opened.registry.refuse("luna");
       for (let i = 0; i < 50 && w.opened.registry.get("luna")?.treeHash !== hash1; i++) await Bun.sleep(20);
       expect(w.opened.registry.get("luna")).toMatchObject({ state: "running", treeHash: hash1, version: "1.0.0", provenance: { index: { url: OFFICIAL, version: "1.0.0" } } });
