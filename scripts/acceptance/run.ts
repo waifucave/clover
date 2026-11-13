@@ -20,6 +20,8 @@
 //                       row; the table has that row
 //   --only-tab-flash  only the tab-flash row (her tab sampled at every frame as the window starts and as the user
 //                       comes back to it from other pages): the daemon, the dummy key, then the app and the row
+//   --only-ui [n,n]   only those window steps (their place in UI_STEPS, default 12: the Plugins page, table row 20): the
+//                       daemon, the dummy key, Alpha's keyed bot, then the app and just those rows; the table has them
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
@@ -70,11 +72,14 @@ import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { pluginOnce } from "./plugin-once";
+import { parseOnlyUi, uiRowNumbers } from "./steps";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
 import { holdMachine } from "./exclusive";
+import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
+import { loadavg } from "node:os";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -114,6 +119,26 @@ const workshopOnly = argv.includes("--only-workshop");
 // --only-tab-flash: only the tab-flash row (her tab sampled at every frame as the window starts and as the user comes back
 // to it from other pages): the daemon, the dummy key, then the app and the row.
 const tabFlashOnly = argv.includes("--only-tab-flash");
+// --shards N: the rows in N shards at once, each in a home, daemon and app of its own, then the rows that measure alone
+// (shards.ts). 1, the default, is one run in order as before.
+const shards = Number(flag("--shards") ?? 1);
+if (!Number.isInteger(shards) || shards < 1 || shards > 8) { console.error("acceptance: --shards takes a number of shards, 1 to 8"); process.exit(2); }
+// --units <ids>: one shard's own run (run.ts --shards starts each): only these units' rows (shards.ts), in its own home.
+const shardUnits = flag("--units")?.split(",").filter((u) => u !== "") as UnitId[] | undefined;
+{
+  const known = allUnits().map((u) => u.id as string);
+  const bad = (shardUnits ?? []).filter((u) => !known.includes(u));
+  if (shardUnits !== undefined && (shardUnits.length === 0 || bad.length > 0)) { console.error(`acceptance: --units takes unit ids (${known.join(", ")})${bad.length > 0 ? `, not ${bad.join(", ")}` : ""}`); process.exit(2); }
+}
+/** Whether this run runs a unit's rows: every unit, unless it is a shard. */
+const runs = (u: UnitId | undefined): boolean => shardUnits === undefined || (u !== undefined && shardUnits.includes(u));
+// --no-build: the desktop app is the one apps/desktop/out already holds (the sharded run built it once for its shards).
+const noBuild = argv.includes("--no-build");
+// --rows-out <file>: the run's rows, with their seconds, as JSON (the sharded run merges its shards' files).
+const rowsOut = flag("--rows-out");
+// --only-ui [n,n]: the window steps given (default 12, the Plugins page), with only the setup they need.
+const onlyUi = argv.includes("--only-ui") ? (() => { try { return parseOnlyUi(argv[argv.indexOf("--only-ui") + 1]); } catch (e) { console.error(`acceptance: ${(e as Error).message}`); process.exit(2); } })() : undefined;
+if (onlyUi !== undefined && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-ui runs window steps alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -125,6 +150,8 @@ if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance
 if (tabFlashOnly && (workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-tab-flash runs the tab-flash row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (workshopOnly && (stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-workshop runs the workshop row alone; it takes no --only-stage, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (stageOnly && (coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-stage runs the stage row alone; it takes no --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if ((shards > 1 || shardUnits !== undefined) && (workshopOnly || stageOnly || tabFlashOnly || onlyUi !== undefined || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --shards and --units run the full table; they take no --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if (shards > 1 && shardUnits !== undefined) { console.error("acceptance: --units is a shard's own run; it takes no --shards"); process.exit(2); }
 if (keepState !== undefined && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --keep-state keeps a full run's state; it takes no --cold-start or --cold-home"); process.exit(2); }
 if (process.platform !== "darwin") {
   console.error("acceptance: this run is macOS only for now");
@@ -162,10 +189,14 @@ const stepNo = (prefix: string): number => {
   if (i < 0) throw new Error(`no step named "${prefix}…"`);
   return i + 1;
 };
-const rows: Row[] = [];
+const rows: TimedRow[] = [];
 const say = (line: string): void => { if (verbose) console.error(`acceptance: ${line}`); };
+/** When the run's previous result came: a row's seconds are the time since it (or since the run's start). */
+let lastRecordAt = Date.now();
 const record = (n: number, status: Status, detail: string): void => {
-  rows.push({ n, name: STEPS[n - 1]!, status, detail: detail.replace(/\s+/g, " ").trim().slice(0, 600) });
+  const now = Date.now();
+  rows.push({ n, name: STEPS[n - 1]!, status, detail: detail.replace(/\s+/g, " ").trim().slice(0, 600), seconds: Math.round((now - lastRecordAt) / 100) / 10 });
+  lastRecordAt = now;
   say(`step ${n}: ${status}: ${detail}`);
 };
 class StepFail extends Error {}
@@ -389,7 +420,7 @@ async function buildBundledPlugins(): Promise<void> {
 /** The desktop app built from this checkout, and its Electron binary. Always rebuilt: an apps/desktop/out left from an
  *  earlier build would test stale code (a run after a source change once "passed" on the old app). */
 function sourceApp(): { exe: string; args: string[] } {
-  {
+  if (!noBuild) {
     console.error(`acceptance: building apps/desktop from this checkout (always, for the source target)${existsSync(join(DESKTOP, "out", "main", "index.js")) ? "; the earlier build in apps/desktop/out is replaced" : ""}`);
     const heavy = join(REPO, "scripts", "heavy");
     // The source acceptance's own build (--acceptance: what only this run uses is compiled in); an older tree's build
@@ -1454,7 +1485,8 @@ async function cards(c: CloverClient): Promise<Card[]> {
 
 // ── the run ──────────────────────────────────────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}`);
+  if (shards > 1) return orchestrate();
+  console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}${shardUnits !== undefined ? `; units ${shardUnits.join(", ")}` : ""}`);
   if (target === "packaged") {
     const refused = checkTestBuild();
     if (refused !== "") {
@@ -1483,6 +1515,9 @@ async function main(): Promise<void> {
   if (stageOnly) { await stageOnlyRun(app); return; }
   if (workshopOnly) { await workshopOnlyRun(app); return; }
   if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
+  // A shard with no part of the main chain: its units on a keyed daemon of its own.
+  if (shardUnits !== undefined && !shardUnits.includes("main")) { await unitsRun(app, shardUnits); return; }
+  if (onlyUi !== undefined) { await onlyUiRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -1982,7 +2017,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await stageStep(c, session, turnsWork);
+  if (runs("stage")) await stageStep(c, session, turnsWork);
   await agentStep(c, session, turnsWork);
 
   c.close();
@@ -1997,10 +2032,245 @@ async function main(): Promise<void> {
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
-  await coldStartStep(app, 1);
-  await reopenSteps(app);
-  await stageLevelsStep(app);
-  await idleStep(app);
+  if (runs("cold")) await coldStartStep(app, 1);
+  if (runs("reopen")) await reopenSteps(app);
+  if (runs("stage")) await stageLevelsStep(app);
+  if (runs("idle")) await idleStep(app);
+}
+
+/** The sharded run (--shards N): the desktop app built once, then the parallel phase's shards at once (shards.ts
+ *  planShards), each a run of its own (`--units`, its own temp home, keychain file, fake provider, daemon and app),
+ *  then each measuring unit alone; their rows merged into the one table, each with its shard and seconds. The shards
+ *  run under this run's hold of the machine (CLOVER_HEAVY_EXCLUSIVE is inherited, so none queues for it again). */
+async function orchestrate(): Promise<void> {
+  const plan = planShards(shards);
+  const serial = serialUnits();
+  const t0 = Date.now();
+  console.error(`acceptance: ${shards} shards (${plan.map((ids, i) => `s${i + 1}: ${ids.join(", ")}`).join("; ")}), then alone: ${serial.join(", ")}`);
+  if (target === "source") {
+    try { sourceApp(); } catch (err) { for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed"); return; }
+  }
+  const builtAt = Date.now();
+  const base = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"])];
+  const loads: number[] = [];
+  const sampler = setInterval(() => loads.push(loadavg()[0]!), 5_000);
+  const shard = (label: string, ids: readonly UnitId[]): Promise<{ shard: string; rows: TimedRow[]; code: number; seconds: number }> => new Promise((done) => {
+    // Its files by its label and units (each measuring unit runs alone under the one label "serial").
+    const name = label === "serial" ? `serial-${ids.join("-")}` : label;
+    const out = join(root, `rows-${name}.json`);
+    const log = join(logs, `shard-${name}.log`);
+    const fd = openSync(log, "a");
+    const started = Date.now();
+    const child = spawn(process.execPath, [...base, "--units", ids.join(","), "--rows-out", out, ...(keepLogs !== undefined ? ["--keep-logs", join(keepLogs, name)] : [])], { cwd: REPO, env: process.env, stdio: ["ignore", fd, fd], detached: true });
+    children.push({ name: `shard-${name}`, proc: child });
+    if (verbose) {
+      // Its progress lines, as they come, with its label.
+      let seen = 0;
+      const tail = setInterval(() => {
+        const text = readLog(log);
+        for (const line of text.slice(seen).split("\n").filter((l) => /^acceptance: step \d+:/.test(l))) console.error(`[${label}] ${line.slice(0, 300)}`);
+        seen = text.lastIndexOf("\n") + 1;
+      }, 2_000);
+      child.on("exit", () => clearInterval(tail));
+    }
+    child.on("exit", (code, signal) => {
+      closeSync(fd);
+      let got: TimedRow[] = [];
+      try { got = JSON.parse(readFileSync(out, "utf8")) as TimedRow[]; } catch { /* a shard that never wrote its rows: its rows read "not reached" */ }
+      const seconds = Math.round((Date.now() - started) / 1000);
+      console.error(`acceptance: shard ${label} (${ids.join(", ")}) ended ${signal ?? code} after ${seconds} s: ${got.filter((r) => r.status === "PASS").length}/${got.length} passed`);
+      done({ shard: label, rows: got, code: code ?? 1, seconds });
+    });
+  });
+  const parallel = await Promise.all(plan.map((ids, i) => shard(`s${i + 1}`, ids)));
+  const parallelAt = Date.now();
+  const parallelLoad = loads.splice(0);
+  const alone: Awaited<ReturnType<typeof shard>>[] = [];
+  for (const id of serial) alone.push(await shard("serial", [id]));
+  clearInterval(sampler);
+  const merged = mergeShards([...parallel, ...alone], STEPS);
+  rows.push(...merged);
+  const avg = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length);
+  shardSummary = [
+    `wall ${Math.round((Date.now() - t0) / 1000)} s: build ${Math.round((builtAt - t0) / 1000)} s, ${shards} shards at once ${Math.round((parallelAt - builtAt) / 1000)} s (${parallel.map((p) => `${p.shard} ${p.seconds} s`).join(", ")}; load average ${avg(parallelLoad).toFixed(1)} mean, ${Math.max(0, ...parallelLoad).toFixed(1)} peak), then alone ${Math.round((Date.now() - parallelAt) / 1000)} s (${alone.map((p, i) => `${serial[i]} ${p.seconds} s`).join(", ")}; load average ${avg(loads).toFixed(1)} mean)`,
+  ];
+}
+/** The sharded run's timing lines, printed under the table. */
+let shardSummary: string[] = [];
+
+/** The model key through the app's own methods (step 2's calls), asked again while the daemon still says
+ *  `plugin.auth.list` "is not served yet" (its registry is still opening: the `--only-*` runs' start flake). */
+async function signInKey(c: CloverClient): Promise<void> {
+  const plugin = "clover/model-anthropic";
+  const auth = await until("plugin.auth.list served", 60_000, async () => {
+    try {
+      return await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    } catch (err) {
+      if (err instanceof RpcError && /is not served yet/.test(err.message)) return undefined;
+      throw err;
+    }
+  }, 500);
+  const entry = auth.auth.find((a) => a.method === "api-key");
+  if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+  const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+  if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+}
+
+/** Step 4's fixture plugin (acceptance-echo) installed from its folder and OK'd over RPC, for a shard whose rows call it. */
+async function installEcho(c: CloverClient): Promise<void> {
+  const folder = join(root, "plugin-src", "acceptance-echo");
+  cpSync(join(import.meta.dir, "fixtures", "acceptance-echo"), folder, { recursive: true });
+  // Its hook's and stdio server's targets (nothing listens on port 9; the paths are the run's own), as step 4 writes them.
+  writeFileSync(join(folder, "hooks", "targets"), `9\n${hookEscape()}\n`);
+  writeFileSync(join(folder, "stdio", "targets"), `9\n${stdioEscape()}\n`);
+  const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+  const card = await until("the plugin's OK card", 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+  // Answered as `approve` answers, without its check that an app was told of the card: no app runs yet in this shard,
+  // and this is the shard's setup, not a row (step 4 asserts the card's way to the app).
+  const option = card.options.find((x) => x.kind === "approve");
+  if (option === undefined) fail("the fixture plugin's OK card has no approve option");
+  const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
+  const r = await c.request<{ accepted: boolean; reason?: string }>("card.answer", { id: card.id, hash: card.hash, option: option!.id, proof: { via: "sealed-frame", frame: frame.channel, input: "click", at: Date.now() } });
+  if (!r.accepted) fail(`card.answer refused the fixture plugin's OK: ${r.reason ?? "no reason"}`);
+  const state = await until("the plugin to be enabled after its OK", 60_000, async () => {
+    const s = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+    return s !== undefined && s !== "found" && s !== "installing" ? s : undefined;
+  });
+  if (state !== "enabled" && state !== "running") fail(`after its OK the fixture plugin is ${state}`);
+}
+
+/** Alpha's main conversation once she is on the keyed model. */
+async function keyedSession(c: CloverClient): Promise<string> {
+  return until("the bot on the keyed model", 60_000, async () => {
+    const b = (await c.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+    return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+  }, 500);
+}
+
+/** A shard's units that aren't the main chain (shards.ts): a daemon of its own, the key, Alpha on it; then the rows an
+ *  app over it drives (the examples, the bundled tools, the cards, the workshop, the tab flash), then the ones that run
+ *  their own daemons and apps, in the full run's order (the cold start, the reopen steps, the stage's levels, idle). The
+ *  reopen steps get step 4's fixture plugin first, installed and OK'd over RPC (the mid-tool-call one calls its tool). */
+async function unitsRun(app: { exe: string; args: string[] }, ids: readonly UnitId[]): Promise<void> {
+  const mine = allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
+  let echoMissing = false;
+  let session: string | undefined;
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    await signInKey(c);
+    session = await keyedSession(c);
+    if (ids.includes("reopen")) {
+      // Its own setup: a failure here is the reopen rows' alone, never the shard's other units'.
+      try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
+    }
+    if (ids.includes("stage")) {
+      await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+      await c.request("session.attach", { id: session });
+      await stageStep(c, session, true);
+    }
+  } catch (err) {
+    for (const name of mine) if (!rows.some((r) => r.name === name)) record(stepNumber(FULL_STEPS, name), statusOf(err), `shard setup (${ids.join(", ")}): ${why(err)}`);
+    return;
+  } finally {
+    c?.close();
+  }
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "tab-flash");
+  if (windowed.length > 0) await unitWindow(app, windowed, session);
+  if (ids.includes("cold")) await coldStartStep(app, 1);
+  if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
+  if (ids.includes("stage")) await stageLevelsStep(app);
+  if (ids.includes("idle")) await idleStep(app);
+}
+
+/** An app over the shard's daemon (headless, its DevTools port, cards pressed in its window, main's picker), as the full
+ *  run's UI phase gives one, and the units' rows in it. The tab flash, when it is this app's first unit, samples the
+ *  window's start as its own run does. */
+async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string): Promise<void> {
+  const names = allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
+  let proc: { proc: ChildProcess; log: string } | undefined;
+  let cdp: Cdp | undefined;
+  let rpc: CloverClient | undefined;
+  try {
+    // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
+    const welcomeDone = join(home, "app-data", profile, "welcome-done");
+    mkdirSync(dirname(welcomeDone), { recursive: true });
+    if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
+    const pickFile = join(root, "folder.pick");
+    writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
+    const port = freePort();
+    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, ids[0] === "tab-flash" ? 100 : 500);
+    const launch = ids[0] === "tab-flash" ? await launchSamples(cdp!) : undefined;
+    rpc = (await appDriver()).client;
+    await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await rpc.request("session.attach", { id: session });
+    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile);
+    for (const [name, run] of uiRowRunners(ctx, session, launch)) {
+      if (!names.includes(name)) continue;
+      const n = FULL_STEPS.indexOf(name) + 1;
+      try {
+        record(n, "PASS", await run());
+      } catch (err) {
+        record(n, statusOf(err), why(err));
+      }
+    }
+  } catch (err) {
+    for (const name of names) if (!rows.some((r) => r.name === name)) record(stepNumber(FULL_STEPS, name), statusOf(err), `the shard's window couldn't be driven: ${why(err)}`);
+  } finally {
+    rpc?.close();
+    cdp?.close();
+    if (proc !== undefined) await endChild(proc.proc);
+  }
+}
+
+/** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
+function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string): ExampleCtx {
+  return {
+    cdp, rpc, home, root, userHome, childReport: CHILD_REPORT,
+    // This app's own output and the home's app log, whichever it wrote to.
+    appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
+    requests: () => fake?.requests ?? [],
+    pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
+    pressCard: async (what, match) => {
+      const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
+      await pressApprove(cdp, card, log);
+      return card.id;
+    },
+    approveCard: async (id) => {
+      const card = (await cards(rpc)).find((x) => x.id === id);
+      if (card !== undefined) await approve(rpc, card, { log });
+    },
+    denyCard: async (id) => {
+      const card = (await cards(rpc)).find((x) => x.id === id);
+      if (card !== undefined) await deny(rpc, card, log);
+    },
+    // Its cards pressed in this app's window (the app that drew them logs to its own log, not the first app's).
+    turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp, log } }),
+    history: (s) => history(rpc, s),
+    appCli: (words) => appCli(words),
+  };
+}
+
+/** The rows an app over Alpha's conversation drives after the window's steps, in the full run's order. */
+function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnType<typeof launchSamples>>): readonly (readonly [string, () => Promise<string>])[] {
+  return [
+    [EXAMPLE_NOTES_STEP, () => exampleNotesStep(ctx, session)],
+    [EXAMPLE_WEATHER_STEP, () => exampleWeatherStep(ctx, session)],
+    // The web tools only where the run's fake search backend answers them (as steps 14 and 15): never the real web.
+    [BUNDLED_TOOLS_STEP, () => bundledToolsStep(ctx, session, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
+      : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
+    [CARDS_STEP, () => cardsStep(ctx)],
+    // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
+    [WORKSHOP_STEP, () => workshopStep(ctx, session)],
+    // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
+    [TAB_FLASH_STEP, () => (launch !== undefined ? tabFlashStep(ctx, session, launch) : tabFlashStep(ctx, session))],
+  ] as const;
 }
 
 /** The stage row alone (--only-stage): the daemon, the dummy key through the app's own methods, the bot on the keyed model,
@@ -2113,6 +2383,38 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
 
 /** The tab-flash row alone (--only-tab-flash): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
+/** --only-ui: the daemon, the dummy key, Alpha on the keyed model, then the app over it and just the window steps asked for
+ *  (uiPhase with `onlyUi`: no quit and reopen, no example steps). */
+async function onlyUiRun(app: { exe: string; args: string[] }): Promise<void> {
+  const rowsWanted = uiRowNumbers(onlyUi!);
+  let c: CloverClient | undefined;
+  let session: string | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    // Her tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
+    const welcomeDone = join(home, "app-data", profile, "welcome-done");
+    mkdirSync(dirname(welcomeDone), { recursive: true });
+    if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
+  } catch (err) {
+    for (const n of rowsWanted) record(n, statusOf(err), `--only-ui setup: ${why(err)}`);
+    return;
+  } finally {
+    c?.close();
+  }
+  await uiPhase(app, true, session, pressing);
+}
+
 async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, TAB_FLASH_STEP);
   let c: CloverClient | undefined;
@@ -3135,6 +3437,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
+      ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : {}),
       pickFolder,
       avatarFolder,
       mediaPicks,
@@ -3151,6 +3454,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         },
       } : {}),
     }, (i, status, detail) => record(first + i, status, detail));
+    if (onlyUi !== undefined) return;
     // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's
     // kept key file), and a card's Approve is pressed in its window, the real way.
     try {
@@ -3166,43 +3470,11 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     } catch (err) {
       record(reopened, statusOf(err), why(err));
     }
-    // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts).
-    const exampleCtx: ExampleCtx = {
-      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
-      // This app's own output and the home's app log, whichever it wrote to.
-      appLog: () => `${readLog(proc.log)}\n${readLog(join(home, "logs", "app.log"))}`,
-      requests: () => fake?.requests ?? [],
-      pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
-      pressCard: async (what, match) => {
-        const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
-        await pressApprove(cdp!, card, proc.log);
-        return card.id;
-      },
-      approveCard: async (id) => {
-        const card = (await cards(rpc)).find((x) => x.id === id);
-        if (card !== undefined) await approve(rpc, card, { log: proc.log });
-      },
-      denyCard: async (id) => {
-        const card = (await cards(rpc)).find((x) => x.id === id);
-        if (card !== undefined) await deny(rpc, card, proc.log);
-      },
-      // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
-      turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
-      history: (s) => history(rpc, s),
-      appCli: (words) => appCli(words),
-    };
-    for (const [name, run] of [
-      [EXAMPLE_NOTES_STEP, () => exampleNotesStep(exampleCtx, session!)],
-      [EXAMPLE_WEATHER_STEP, () => exampleWeatherStep(exampleCtx, session!)],
-      // The web tools only where the run's fake search backend answers them (as steps 14 and 15): never the real web.
-      [BUNDLED_TOOLS_STEP, () => bundledToolsStep(exampleCtx, session!, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
-        : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
-      [CARDS_STEP, () => cardsStep(exampleCtx)],
-      // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
-      [WORKSHOP_STEP, () => workshopStep(exampleCtx, session!)],
-      // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
-      [TAB_FLASH_STEP, () => tabFlashStep(exampleCtx, session!)],
-    ] as const) {
+    // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
+    // and the rows after them (a shard's units leave out the ones another shard runs).
+    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile);
+    for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
+      if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
         if (!pressable || session === undefined) block("no plugin tool turn runs (steps 3-5), so no card to press");
@@ -3272,15 +3544,24 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : onlyUi !== undefined ? uiRowNumbers(onlyUi) : undefined));
+// A shard's table: its own units' rows alone (the sharded run merges them, and the others are another shard's).
+if (shardUnits !== undefined) rows.splice(0, rows.length, ...rows.filter((r) => runs(unitOf(r.name))));
+if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);
-console.log(`| # | step${" ".repeat(w - 4)} | result  | first failing call / detail`);
-console.log(`|---|${"-".repeat(w + 2)}|---------|----------------------------`);
-for (const r of rows) console.log(`| ${r.n} | ${r.name.padEnd(w)} | ${r.status.padEnd(7)} | ${r.detail}`);
+// Each row's seconds (since the previous result in its run or shard: rows whose turns ran earlier and were recorded
+// together at the end read short) and, in a sharded run, its shard.
+const secs = (r: TimedRow) => (r.seconds === undefined ? "-" : `${r.seconds.toFixed(1)} s`).padStart(8);
+console.log(`| # | step${" ".repeat(w - 4)} | result  |        s | shard  | first failing call / detail`);
+console.log(`|---|${"-".repeat(w + 2)}|---------|----------|--------|----------------------------`);
+for (const r of rows) console.log(`| ${r.n} | ${r.name.padEnd(w)} | ${r.status.padEnd(7)} | ${secs(r)} | ${(r.shard ?? "-").padEnd(6)} | ${r.detail}`);
 const bad = rows.filter((r) => r.status !== "PASS").length;
 console.log(`\n${rows.length - bad}/${rows.length} passed`);
+const slow = slowest(rows, 5);
+if (slow.length > 0) console.log(`slowest: ${slow.map((r) => `${r.n} (${r.seconds!.toFixed(0)} s${r.shard !== undefined ? `, ${r.shard}` : ""}) ${r.name.slice(0, 50)}`).join("; ")}`);
+for (const line of shardSummary) console.log(line);
 process.exit(code !== 0 ? code : bad > 0 ? 1 : 0);

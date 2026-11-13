@@ -96,6 +96,11 @@ describe("scripts/try", () => {
     expect(v).toContain("hdiutil attach -nobrowse -readonly");
   });
 
+  test("the table: run.ts's seconds and shard columns are read past, the detail kept whole", () => {
+    const rows = parseRunTable("| 3 | a bot turn gets the fake provider's reply | PASS    |     12.3 s | s2     | the reply came\n| 4 | x | FAIL    |        - | -      | it broke | badly\n");
+    expect(rows).toEqual([{ n: 3, name: "a bot turn gets the fake provider's reply", status: "PASS", detail: "the reply came" }, { n: 4, name: "x", status: "FAIL", detail: "it broke | badly" }]);
+  });
+
   test("the table: a step per row, a run per column, a packaged-only block named as such, and the reasons once", () => {
     const rows = parseRunTable(RUN_OUT);
     expect(rows.map((r) => [r.n, r.status])).toEqual([[1, "PASS"], [13, "PASS"], [14, "BLOCKED"], [15, "FAIL"]]);
