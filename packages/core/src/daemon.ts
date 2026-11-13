@@ -3924,6 +3924,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets, handlers: [notify.apiHandlers()],
       openCard: brokerCardOpener(pluginsBroker), main: pluginMain,
+      // A plugin's own question (`confirm`, `confirmCard`): a sealed card through the same broker. Without it every
+      // host half's confirm answered "not served on this computer" (the acceptance's add-ons row, 2026-11-13).
+      approvals: pluginsBroker,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.

@@ -118,6 +118,10 @@ describe("every call the catalog lists for host code is served", () => {
     expect([...list.matchAll(/^\s+"([a-z.]+[A-Za-z]*)": /gm)].map((m) => m[1]).sort()).toEqual([...INLINE].sort());
     const daemon = read("daemon.ts");
     expect(daemon).toContain("handlers: [notify.apiHandlers()]");
+    // confirmApi joins only when the host is given the broker (`approvals`): the daemon passes it, or every host half's
+    // confirm and confirmCard answer "not served on this computer" (the acceptance's add-ons row found it, 2026-11-13).
+    const hostStart = daemon.slice(daemon.indexOf("startPluginHost({"), daemon.indexOf("})))(opened.registry);"));
+    expect(hostStart).toContain("approvals: pluginsBroker,");
     // `addApiHandlers` is handed only to the model plugins' start, which adds `modelPluginApiHandlers` and nothing else.
     expect([...daemon.matchAll(/addApiHandlers:/g)].length).toBe(1);
     expect([...daemon.matchAll(/\.addApiHandlers\(/g)].length).toBe(1);
