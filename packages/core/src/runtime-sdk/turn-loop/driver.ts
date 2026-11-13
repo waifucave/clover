@@ -815,6 +815,9 @@ export class BotSessionDriver implements SessionDriver {
     const glossary = glossaryTool({
       tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
+      // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
+      servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
+      bot: bot.id,
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
     // What the conversation shows of a plugin tool beside its real name (`runtime-sdk/tool-display.ts`): its title, by
