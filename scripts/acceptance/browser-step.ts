@@ -215,6 +215,10 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
     await ctx.pressCard("the third-party tab's OK card", (c) => c.id === okCard.id);
     await until("the third-party tab's plugin running", 60_000, async () => ((await ctx.rpc.request<{ plugin: { state: string } }>("plugin.get", { id: tabId }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    // The app's own card is gone with the answer. The window that took the card while Clover was in front was once kept in no
+    // list (the island had shown the card's buttons first), so nothing closed it: it stayed open beside the island's card.
+    await until("the app's own card for the answered OK card closed", 15_000, async () => ((await ctx.cdp.documents()).some((d) => d.url.startsWith(`clover-sealed://card/${encodeURIComponent(okCard.id)}/own`)) ? undefined : true));
+    lines.push("the app's own card closed with the answer");
     if (process.env.CLOVER_ACCEPT_RENDERS) writeFileSync(join(process.env.CLOVER_ACCEPT_RENDERS, "third-party-tab-ok-card.json"), okText);
     lines.push(`third-party tab OK card says: ${okText.replace(/\s+/g, " ").slice(0, 600)}`);
     const settings = await settingsUsageText(ctx.cdp).catch((e: unknown) => fail(`the Settings Usage section: ${(e as Error).message}`));

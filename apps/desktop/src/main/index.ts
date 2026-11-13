@@ -892,7 +892,13 @@ function placeCardNow(cardId: string): void {
   const own = fallbacks.get(cardId);
   if (now === "window") {
     // The window's own card, at once: no 2-second wait.
-    if (own?.win === undefined) { if (own !== undefined) clearTimeout(own.timer); void showFallbackCard(cardId); }
+    // An entry of its own first (a part that showed both buttons took the timer's entry away): the window is kept in it, so
+    // the move back, or the answer, closes it. Without one the window was open for good, beside the island's card.
+    if (own?.win === undefined) {
+      if (own !== undefined) clearTimeout(own.timer);
+      fallbacks.set(cardId, { timer: setTimeout(() => undefined, 0) });
+      void showFallbackCard(cardId);
+    }
   } else {
     // The conversation draws it, or the island does: the app's own card stands down, its timer starts over as the safety net.
     if (own?.win !== undefined && !own.win.isDestroyed()) { disarmFallback(cardId); void armFallback(cardId); }
@@ -942,6 +948,10 @@ async function showFallbackCard(cardId: string): Promise<void> {
   }
   // The names a card says come from the daemon's own list; a bot not listed yet is asked for once, briefly.
   if (card.bot !== undefined && !botNames.has(card.bot) && pair?.client !== undefined) await refreshBotNames(pair.client);
+  // Stood down while the names were asked for (the card was answered, or moved to the island or a conversation), or open
+  // already: no window, and never a second one. Every caller holds an entry for the card before it comes here.
+  const held = fallbacks.get(cardId);
+  if (held === undefined || (held.win !== undefined && !held.win.isDestroyed())) return;
   const mint = sealed.mint(cardId, "own");
   if (mint === undefined) return;
   const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
@@ -996,8 +1006,8 @@ async function showFallbackCard(cardId: string): Promise<void> {
       } else win.showInactive();
     }
   }).catch(() => win.close());
-  const own = fallbacks.get(cardId);
-  if (own !== undefined) { own.win = win; own.token = mint.token; }
+  held.win = win;
+  held.token = mint.token;
 }
 
 /** A window a test run shows so Chromium composites it (CDP input needs a compositing window), made invisible to the

@@ -369,6 +369,9 @@ function EntryView({ part, component, props }: { part: Part; component: UiCompon
   );
 }
 
+/** How long a part's document waits for an animation frame before it measures itself without one. */
+const MEASURE_FALLBACK_MS = 250;
+
 /** The document's own entry: what the layer boot renders. Not for plugins. */
 export function LayerRoot({ info }: { info: MountInfo }) {
   const r = rt();
@@ -416,18 +419,27 @@ export function LayerRoot({ info }: { info: MountInfo }) {
     // a part that fills its frame reports the frame, and a small one its own size).
     const host = document.getElementById("clover-root") ?? document.body;
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let last = -1;
+    const report = () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      let bottom = 0;
+      for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);
+      const h = Math.ceil(bottom);
+      if (h !== last) {
+        last = h;
+        r.bridge.reportSize(h);
+      }
+    };
     const measure = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        let bottom = 0;
-        for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);
-        const h = Math.ceil(bottom);
-        if (h !== last) {
-          last = h;
-          r.bridge.reportSize(h);
-        }
-      });
+      clearTimeout(timer);
+      frame = requestAnimationFrame(report);
+      // A frame the browser isn't drawing yet is given no animation frame (seen with the display off: a part's frame, just
+      // loaded, never got its first one), and a frame that never reports stays at an iframe's default 150 px in its
+      // parent. The timer measures it all the same; whichever comes first reports, once.
+      timer = setTimeout(report, MEASURE_FALLBACK_MS);
     };
     const resize = new ResizeObserver(measure);
     const watch = () => {
@@ -443,6 +455,7 @@ export function LayerRoot({ info }: { info: MountInfo }) {
       resize.disconnect();
       children.disconnect();
       cancelAnimationFrame(frame);
+      clearTimeout(timer);
     };
   }, [r]);
   const part: Part = useMemo(() => ({
