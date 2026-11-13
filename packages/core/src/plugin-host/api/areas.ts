@@ -81,6 +81,9 @@ export const USAGE_WATCHES_PER_PLUGIN = 8;
 export const AUDIO_PIECE_MAX = 8 * 1024 * 1024;
 export const AUDIO_IDLE_MS = 30_000;
 export const AUDIO_UTTERANCES_MAX = 64;
+/** One plugin's (its whole tree's) utterances playing at once, under AUDIO_UTTERANCES_MAX: one plugin can't fill them
+ *  for everyone. */
+export const AUDIO_UTTERANCES_PER_PLUGIN = 8;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
@@ -448,6 +451,10 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         if (!side().bots.has(bot)) throw new ContractError("not_found", `no bot ${bot} to speak it (opts.bot names the bot whose figure plays it)`);
         u = { pluginId: ctx.pluginId, bot, session: mainSessionIdFor(bot), utterance: named ?? `pa_${randomUUID()}`, next: 0 };
         if (playing.size >= AUDIO_UTTERANCES_MAX) throw new ContractError("refused", "too many utterances are playing; let one end first");
+        const tree = topPluginIdOf(ctx.pluginId);
+        if ([...playing.values()].filter((x) => topPluginIdOf(x.pluginId) === tree).length >= AUDIO_UTTERANCES_PER_PLUGIN) {
+          throw new ContractError("refused", `${tree} has ${AUDIO_UTTERANCES_PER_PLUGIN} utterances playing, the most one plugin may; let one end first`);
+        }
         playing.set(u.utterance, u);
       }
       const now = u;

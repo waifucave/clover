@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { PLUGINS_EVENTS, PLUGINS_METHODS } from "@waifucave/clover-protocol";
 import type { ApiRouter } from "../../contracts/plugin-host";
 import type { PluginRecord, RegistryChange } from "../../contracts/plugin-registry";
-import { LAYER_CALL_MAX_BYTES, LAYER_FETCHES_PER_PLUGIN, LAYER_RESULT_MAX_BYTES, LAYER_WATCH_VALUE_MAX_BYTES, LAYER_WATCHES_PER_CONNECTION, pluginUi } from "../ui";
+import { LAYER_CALL_MAX_BYTES, LAYER_FETCHES_PER_PLUGIN, LAYER_RECORDING_VALUE_MAX_BYTES, LAYER_RESULT_MAX_BYTES, LAYER_WATCH_VALUE_MAX_BYTES, LAYER_WATCHES_PER_CONNECTION, pluginUi } from "../ui";
 
 type Sent = { follows: Map<string, () => void>; event: { type: string; [k: string]: unknown } };
 
@@ -25,8 +25,8 @@ function world(o: { router?: ApiRouter; records?: Record<string, Partial<PluginR
     routed.push({ pluginId: call.pluginId, path: call.path, args: call.args, process: call.process });
     if (call.path === "files.readBytes") return new Uint8Array([1, 2, 3]);
     if (call.path === "net.fetch") return new Response("hello", { status: 201, headers: { "x-a": "b" } });
-    if (call.path === "files.watch" || call.path === "logs.follow" || call.path === "usage.watch") {
-      const fn = call.args[call.path === "usage.watch" ? 0 : 1] as (v: unknown) => void;
+    if (call.path === "files.watch" || call.path === "logs.follow" || call.path === "usage.watch" || call.path === "audio.onRecording") {
+      const fn = call.args[call.path === "usage.watch" || call.path === "audio.onRecording" ? 0 : 1] as (v: unknown) => void;
       listeners.push(fn);
       return () => stopped.push(call.path);
     }
@@ -88,6 +88,25 @@ describe("a component's calls of the catalog", () => {
     w.ui.close();
   });
 
+  test("a whole-file read too big for an answer is refused from the file's size before it is read, saying to pass offset and length", async () => {
+    const asked: string[] = [];
+    const w = world({ router: async (call) => {
+      asked.push(call.path);
+      if (call.path === "files.stat") return { path: call.args[0], type: "file", size: String(call.args[0]).includes("big") ? 50 * 1024 * 1024 : 10 };
+      return call.path === "files.readBytes" ? new Uint8Array(10) : "ten bytes!";
+    } });
+    const read = (c: string, args: unknown[]) => w.ui.methods[M.pluginLayerCall.name]!({ call: c, args }, w.conn("luna").ctx);
+    for (const c of ["files.readText", "files.readBytes"]) {
+      expect(((await read(c, ["home/Studio/big.bin"]).catch((e: unknown) => e)) as Error).message).toContain("pass offset and length");
+    }
+    expect(asked).toEqual(["files.stat", "files.stat"]);
+    // A part of it, or a small file whole, reads.
+    await read("files.readBytes", ["home/Studio/big.bin", { offset: 0, length: 1024 }]);
+    await read("files.readText", ["home/Studio/small.txt"]);
+    expect(asked.slice(2)).toEqual(["files.readBytes", "files.stat", "files.readText"]);
+    w.ui.close();
+  });
+
   test("a plugin's pages hold at most LAYER_FETCHES_PER_PLUGIN fetches open; a fetch's headers are capped", async () => {
     const release: (() => void)[] = [];
     const w = world({ router: (call) => (call.path === "net.fetch" ? new Promise((r) => release.push(() => r(new Response("ok")))) : Promise.resolve(null)) });
@@ -129,9 +148,16 @@ describe("a component's watches (plugin.layer.watch)", () => {
     expect(w.stopped).toEqual(["files.watch", "logs.follow"]);
     expect(w.ui.watchCount()).toBe(0);
     expect(w.sent.length).toBe(2);
+    // A full-size push-to-talk piece (`voice.listen`'s 2,000,000 characters of base64, 1,500,000 bytes) reaches the
+    // page whole.
+    await watch(a, "audio.onRecording", [null]);
+    w.listeners[w.listeners.length - 1]!({ utterance: "u", format: "opus", data: new Uint8Array(1_500_000), final: false });
+    const piece = w.sent.at(-1)!.event.value as { data?: { $bytes?: string } };
+    expect(piece.data?.$bytes?.length).toBe(2_000_000);
+    expect(LAYER_RECORDING_VALUE_MAX_BYTES).toBeGreaterThan(2_000_000);
     // A value too large for the page is a marker in its place.
     await watch(a, "usage.watch", [null]);
-    w.listeners[2]!("x".repeat(LAYER_WATCH_VALUE_MAX_BYTES + 1));
+    w.listeners[w.listeners.length - 1]!("x".repeat(LAYER_WATCH_VALUE_MAX_BYTES + 1));
     expect(w.sent.at(-1)!.event.value).toEqual({ $tooLarge: LAYER_WATCH_VALUE_MAX_BYTES + 3 });
     w.ui.close();
   });

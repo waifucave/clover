@@ -167,6 +167,15 @@ export const LAYER_WATCHES_PER_PLUGIN = 64;
 /** A watch's value as sent, at most; a larger one is sent as `{ $tooLarge: <bytes> }` in its place, so the page knows
  *  it missed one. */
 export const LAYER_WATCH_VALUE_MAX_BYTES = 256 * 1024;
+/** A push-to-talk piece is bigger: `voice.listen` takes up to 2,000,000 characters of base64 a piece, and the page gets
+ *  it whole (as `{ $bytes }`, the same base64), so `audio.onRecording`'s values may take that and their envelope. */
+export const LAYER_RECORDING_VALUE_MAX_BYTES = 2_100_000;
+/** What a whole-file read (`files.readText` or `files.readBytes` with no `length`) may be, so its answer fits
+ *  LAYER_RESULT_MAX_BYTES: checked from the file's size before it is read, never after reading it all. */
+const WHOLE_READ_MAX: Readonly<Record<string, number>> = {
+  "files.readText": Math.floor((3 * 1024 * 1024) * 0.9),
+  "files.readBytes": Math.floor(((3 * 1024 * 1024) * 3) / 4) - 1024,
+};
 
 /** Why a component can't make `call` through the layer path, or undefined when it can (the SDK catalog's
  *  `COMPONENT_CALLS`, less the members that take a listener, which are watches). `settings.*` and `host.call` are among
@@ -292,6 +301,13 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     if (refusal !== undefined) throw new ContractError("refused", refusal, { call });
     processRule(pluginId, call, args);
     const input = call === "host.call" ? args : (fromLayerWire(args, { responses: false }) as unknown[]);
+    // A whole-file read the answer couldn't carry is refused from the file's size, before anything is read.
+    const wholeMax = WHOLE_READ_MAX[call];
+    const readOpts = input[1] as { length?: unknown; noFollow?: unknown } | null | undefined;
+    if (wholeMax !== undefined && typeof readOpts?.length !== "number") {
+      const st = (await o.router({ pluginId, process: "ui", path: "files.stat", args: [input[0], ...(readOpts?.noFollow !== undefined ? [{ noFollow: readOpts.noFollow }] : [])], caller: { kind: "plugin", pluginId } })) as { size?: unknown } | null;
+      if (typeof st?.size === "number" && st.size > wholeMax) throw new ContractError("refused", `${String(input[0]).slice(0, 200)} is ${st.size} bytes; a page reads at most ${wholeMax} at once: pass offset and length to read it a part at a time`, { call });
+    }
     if (call !== "net.fetch") {
       const out = await o.router({ pluginId, process: "ui", path: call, args: input, caller: { kind: "plugin", pluginId }, ...(session !== undefined ? { session } : {}) });
       return call === "host.call" ? out : handed(call, toLayerWire(out));
@@ -357,7 +373,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
       if (!open) return;
       let wire = toLayerWire(value);
       const size = jsonBytes(wire);
-      if (size === undefined || size > LAYER_WATCH_VALUE_MAX_BYTES) wire = { $tooLarge: size ?? -1 };
+      if (size === undefined || size > (call === "audio.onRecording" ? LAYER_RECORDING_VALUE_MAX_BYTES : LAYER_WATCH_VALUE_MAX_BYTES)) wire = { $tooLarge: size ?? -1 };
       emitTo(follows, { type: PLUGINS_EVENTS.pluginApiEvent.type, pluginId, watch: id, ...(wire === undefined ? {} : { value: wire }) });
     };
     const input = fromLayerWire(args, { responses: false }) as unknown[];
