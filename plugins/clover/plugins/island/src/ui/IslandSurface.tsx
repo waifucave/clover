@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { Rect } from "../model/geometry";
 import { islandPlacement, overlayWindow, toFrameRect, type SurfaceEnvironment, type SurfaceWindowSpec } from "../model/placement";
-import type { IslandCard, QuestionCard } from "../model/cards";
+import { isSealed, type IslandCard, type QuestionCard } from "../model/cards";
 import { Island, type IslandTabEntry, type IslandTimers } from "./Island";
 
 /** What the island needs from its window (lane E's surface host). */
@@ -101,19 +101,23 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
     [stable, overlay, frame, setWindow, setRegions],
   );
 
-  // The app says when its main window comes to the front (the pill steps aside): cards waiting in the strip come up.
+  // One place at a time (the owner's ruling, 2026-11-13): while Clover's main window is the one in front, the island shows no
+  // permission card and does not open for one (its strip and tabs are as ever); the window draws the card, in its conversation
+  // or in the app's own card. When the window goes back, the cards come up here again, as new arrivals (the app's side of the
+  // move is main's: it refuses this surface's frames and presses while the window is in front).
+  const front = environment?.mainFront === true;
   const [bringBack, setBringBack] = useState(0);
-  const wasFront = useRef(environment?.mainFront === true);
+  const wasFront = useRef(front);
   useEffect(() => {
-    const front = environment?.mainFront === true;
-    if (front && !wasFront.current) setBringBack((n) => n + 1);
+    if (!front && wasFront.current) setBringBack((n) => n + 1);
     wasFront.current = front;
-  }, [environment?.mainFront]);
+  }, [front]);
+  const cards = useMemo(() => (front ? props.cards.filter((c) => !isSealed(c)) : props.cards), [front, props.cards]);
 
   const island = (
     <Island
       shape={placement.shape}
-      cards={props.cards}
+      cards={cards}
       working={props.working}
       tabs={props.tabs}
       botNames={props.botNames}

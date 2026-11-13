@@ -8,7 +8,7 @@ import { DevicesList, DevicesTab, type DevicesSource } from "../src/ui/DevicesTa
 import { IslandApp, IslandHostContext, useIslandHost, type IslandHost } from "../src/ui/host";
 import { mockSealedKit } from "../src/mock-kit";
 import { SealedKitContext } from "../src/ui/sealed";
-import { APPROVAL, QUESTION, SEALED } from "../src/fixtures";
+import { APPROVAL, APPROVAL_2, QUESTION, SEALED } from "../src/fixtures";
 import manifest from "../clover.json" with { type: "json" };
 import * as client from "../client/index";
 import { NEEDS_YOU, isReservedTab } from "../src/model/tabs";
@@ -151,6 +151,29 @@ describe("IslandSurface", () => {
     expect(card!.x).toBe(0);
     expect(card!.width).toBe(withCard.bounds.width);
     expect(card!.y + card!.height).toBe(withCard.bounds.height);
+  });
+
+  test("one place at a time: while Clover's window is in front the island shows no permission card, and takes it back when the window goes back", () => {
+    const { host } = fakeHost();
+    const at = (front: boolean, cards: React.ComponentProps<typeof IslandSurface>["cards"]) =>
+      withKit(<IslandSurface environment={{ ...MAC_NOTCH, mainFront: front }} cards={cards} working={0} host={host} reducedMotion />);
+    const drawn = (c: HTMLElement) => c.querySelector("[data-sealed-card]")?.getAttribute("data-sealed-card") ?? null;
+    // Window not in front: the card is the island's (as before).
+    const view = render(at(false, [APPROVAL]));
+    expect(drawn(view.container)).toBe(APPROVAL.id);
+    // Window comes forward: the island lets go of it (no frame left of it, nothing open for it); the strip stays.
+    view.rerender(at(true, [APPROVAL]));
+    expect(drawn(view.container)).toBeNull();
+    expect(view.container.querySelector(".clv-strip")).not.toBeNull();
+    // A card that arrives while the window is in front is not drawn here either.
+    view.rerender(at(true, [APPROVAL, APPROVAL_2]));
+    expect(drawn(view.container)).toBeNull();
+    // Window goes back: the island takes the waiting cards again.
+    view.rerender(at(false, [APPROVAL, APPROVAL_2]));
+    expect(drawn(view.container)).not.toBeNull();
+    // A question is the island's own words and stays its to show.
+    view.rerender(at(true, [QUESTION]));
+    expect(view.container.textContent ?? "").toContain(QUESTION.questions[0]!.question);
   });
 
   test("asks again only when the window changes, and when the display does", () => {

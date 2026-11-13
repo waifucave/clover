@@ -196,3 +196,46 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   }
   return text;
 }
+
+/** A pending card on the island's top, with the pointer put on it (the card grows a little under the pointer) and watched for
+ *  `holdMs`: the geometry of the card, sampled every 100 ms, each distinct state kept once with its time. The window the
+ *  island sits in is sized to the card's room, which a hover must not change: the caller reads the app's log for the bounds it
+ *  was given after `hoveredAt` (`beforeHover` marks where). Whether the card carries a Review, and the Review's own size, are read too. */
+export async function islandCardHolds(cdp: Cdp, holdMs = 5_000, beforeHover?: () => void): Promise<{ states: { at: number; sig: string }[]; review: boolean }> {
+  const doc = await until("the island's card", 30_000, async () => {
+    for (const d of await cdp.documents()) {
+      const v = await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false);
+      if (v === true) return d;
+    }
+    return undefined;
+  });
+  // The card is born and rests before the pointer comes.
+  await sleep(2_000);
+  const c = await cdp.centerOf(doc.session, "[data-clover-card]", undefined);
+  if (c === undefined) throw new Error("the island's card has no place to put the pointer on");
+  beforeHover?.();
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y }, doc.session);
+  const probe = `(() => {
+    const h = (s) => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().height * 10) / 10 : -1; };
+    const card = document.querySelector('[data-clover-card]');
+    const shell = document.querySelector('.clv-card-shell');
+    return 'win=' + innerWidth + 'x' + innerHeight + ' card=' + h('[data-clover-card]') + ' hovered=' + (shell ? shell.getAttribute('data-hovered') : '-') + ' review=' + h('.clover-card-review');
+  })()`;
+  const states: { at: number; sig: string }[] = [];
+  const t0 = Date.now();
+  while (Date.now() - t0 < holdMs) {
+    const sig = String(await cdp.evaluate(doc.session, probe).catch(() => ""));
+    if (states.length === 0 || states[states.length - 1]!.sig !== sig) states.push({ at: Date.now() - t0, sig });
+    await sleep(100);
+  }
+  const review = (await cdp.evaluate(doc.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true;
+  return { states, review };
+}
+
+/** Whether any of the app's documents draws a plugin OK card's Review (the island's card, the only place it is drawn here). */
+export async function islandDrawsOkCard(cdp: Cdp): Promise<boolean> {
+  for (const d of await cdp.documents()) {
+    if ((await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true) return true;
+  }
+  return false;
+}

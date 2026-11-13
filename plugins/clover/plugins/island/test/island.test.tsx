@@ -114,6 +114,41 @@ describe("Island", () => {
     expect(view.container.querySelector('.clv-strip [data-part="waiting"]')?.textContent).toBe("2");
   });
 
+  test("a hovered card's grown look is not its room: the height the island reports holds while the pointer rests on it (the 247/251 flip)", () => {
+    // Layout stand-in: the card's content is 200 high and 368 wide; under a transform its rect is scaled, its layout size is not.
+    const real = Element.prototype.getBoundingClientRect;
+    const scaleOf = (el: Element) => {
+      const m = /scale\(([\d.]+)\)/.exec((el.closest(".clv-card-shell") as HTMLElement | null)?.style.transform ?? "");
+      return m ? Number(m[1]) : 1;
+    };
+    const isContent = (el: Element) => el.parentElement?.classList.contains("clv-card-content") === true;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      return isContent(this) ? ({ x: 0, y: 0, top: 0, left: 0, right: 368 * scaleOf(this), bottom: 200 * scaleOf(this), width: 368 * scaleOf(this), height: 200 * scaleOf(this), toJSON: () => ({}) } as DOMRect) : real.call(this);
+    };
+    const offsets = [Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight"), Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")] as const;
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get(this: HTMLElement) { return isContent(this) ? 200 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get(this: HTMLElement) { return isContent(this) ? 368 : 0; } });
+    try {
+      const seen: string[] = [];
+      const onRegions = (regions: readonly { height: number }[]) => void seen.push(regions.map((r) => Math.round(r.height)).join(","));
+      const { clock, view } = mount([APPROVAL], { onRegions });
+      clock.advance(2000);
+      const resting = seen[seen.length - 1];
+      for (let i = 0; i < 3; i++) {
+        fireEvent.mouseEnter(view.container.querySelector(".clv-card-shell")!.parentElement!.parentElement!);
+        clock.advance(300);
+        fireEvent.mouseLeave(view.container.querySelector(".clv-card-shell")!.parentElement!.parentElement!);
+        clock.advance(300);
+      }
+      expect(view.container.querySelector(".clv-card-shell")).not.toBeNull();
+      expect(new Set(seen.slice(seen.indexOf(resting!))).size).toBe(1);
+    } finally {
+      Element.prototype.getBoundingClientRect = real;
+      if (offsets[0]) Object.defineProperty(HTMLElement.prototype, "offsetHeight", offsets[0]);
+      if (offsets[1]) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offsets[1]);
+    }
+  });
+
   test("a hovered card holds; the newcomer waits below, and a click on it swaps them", () => {
     const { clock, view, update } = mount([APPROVAL]);
     clock.advance(2000);

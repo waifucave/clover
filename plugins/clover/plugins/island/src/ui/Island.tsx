@@ -329,7 +329,7 @@ export function Island(props: IslandProps): ReactElement {
   const contentRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     if (!current || !contentRef.current) return;
-    const h = Math.ceil(contentRef.current.getBoundingClientRect().height);
+    const h = layoutHeight(contentRef.current);
     if (h > 0 && heights.current.get(current.id) !== h + 2 * ISLAND.cardPadding) {
       heights.current.set(current.id, h + 2 * ISLAND.cardPadding);
       bump();
@@ -512,6 +512,18 @@ export function Island(props: IslandProps): ReactElement {
       ) : null}
     </div>
   );
+}
+
+/** A card's room is its layout height. A hovered card is drawn grown (a transform on its shell), and `getBoundingClientRect`
+ *  reports the drawn size: read that, the window grows with the hover, the pointer at the card's edge leaves, the card
+ *  shrinks, the window follows, and the pointer is back over it (the card flipped 247/251 on the owner's screen, its buttons
+ *  not showing at each turn). The drawn height is divided by the drawn scale (its width over its layout width) to get the
+ *  layout height back, fractions kept. */
+export function layoutHeight(el: HTMLElement): number {
+  const rect = el.getBoundingClientRect();
+  const scale = el.offsetWidth > 0 && rect.width > 0 ? rect.width / el.offsetWidth : 1;
+  // Clamped to a sane range (a frame's own cap is 4000): a transient zero or runaway reading is never a room.
+  return Math.min(4000, Math.max(0, Math.ceil(rect.height / scale - 0.01)));
 }
 
 function grow(rect: Rect, by: number): Rect {

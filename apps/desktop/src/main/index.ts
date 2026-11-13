@@ -66,6 +66,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
+import { cloverFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
 import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -312,6 +313,8 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
+  // One place at a time: while Clover's window is in front the island is given no frame of a card (the window draws it).
+  runtime.islandMayDraw = () => islandMayDraw(mainWindowFront(mainState()));
   // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
   runtime.onCardPage = async (cardId) => {
     if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
@@ -458,6 +461,13 @@ async function ready(): Promise<void> {
     // core's answer. The computer-use gate runs here in the main process, on both this button path and the fallback
     // (B3): fail closed — anything the core can't answer about it, the answer is refused.
     sealedAnswer: async (token, option, senderKey, children) => {
+      // One place at a time: a press from the island's frame while Clover's window is in front is not taken (the card is drawn
+      // in the window now; the island's frame was a beat behind the move).
+      const from = sealed.windowOf(token);
+      if (!pressMayBeTaken({ fromIsland: [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.pluginId === "clover/island"), front: mainWindowFront(mainState()) })) {
+        log(`sealed: answer refused (the island's frame while the window is in front: the card is drawn in the window)`);
+        return { accepted: false, reason: "this card is in Clover's window now" };
+      }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
       const client = pair.client;
@@ -662,6 +672,7 @@ async function ready(): Promise<void> {
     // when it changes, which process draws which window's frames (origins only, never a URL's path or query).
     startProcessDiag();
   }
+  startFrontSeam();
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
@@ -755,6 +766,7 @@ function surfaceName(windowId: number | undefined): string {
  *  refused before the first that was made. */
 const cardAsks = new Map<string, Map<string, { first: number; outcome: string; notYet: number; refused: number; made: boolean }>>();
 function noteAsk(cardId: string, windowId: number | undefined, outcome: SealedAskOutcome): void {
+  if (outcome === "made" && mainWindow !== undefined && !mainWindow.isDestroyed() && windowId === mainWindow.id) drawnInWindow(cardId);
   const arrived = cardArrived.get(cardId);
   const where = surfaceName(windowId);
   let bySurface = cardAsks.get(cardId);
@@ -857,6 +869,46 @@ function noteBothVisible(cardId: string, windowId: number | undefined): void {
   log(`card: ${cardId} both buttons visible in ${where} ${Date.now() - arrived.at} ms after it arrived`);
 }
 
+/** Where each pending card is drawn now (card-place.ts), and which cards a part of the main window has asked frames for (its
+ *  conversation draws them in place). A card that arrives while the window is in front waits a beat for the conversation's ask
+ *  before it is the window's own card; a move (the window comes forward or goes back) is decided at once, on what is known. */
+const cardPlaces = new Map<string, CardPlace>();
+const windowDraws = new Set<string>();
+const CONVERSATION_ASK_GRACE_MS = 400;
+function drawnInWindow(cardId: string): void {
+  if (windowDraws.has(cardId)) return;
+  windowDraws.add(cardId);
+  // The conversation came to draw a card the app's own card was showing: one place at a time.
+  if (cardPlaces.get(cardId) === "window") placeCardNow(cardId);
+}
+function placeCardNow(cardId: string): void {
+  if (!sealed.isPending(cardId)) { cardPlaces.delete(cardId); return; }
+  const now = placeCard({ front: mainWindowFront(mainState()), drawnInWindow: windowDraws.has(cardId) });
+  const before = cardPlaces.get(cardId);
+  if (before === now) return;
+  cardPlaces.set(cardId, now);
+  if (cardPlaces.size > 256) cardPlaces.delete(cardPlaces.keys().next().value!);
+  log(placeLine(cardId, now, before));
+  const own = fallbacks.get(cardId);
+  if (now === "window") {
+    // The window's own card, at once: no 2-second wait.
+    if (own?.win === undefined) { if (own !== undefined) clearTimeout(own.timer); void showFallbackCard(cardId); }
+  } else {
+    // The conversation draws it, or the island does: the app's own card stands down, its timer starts over as the safety net.
+    if (own?.win !== undefined && !own.win.isDestroyed()) { disarmFallback(cardId); void armFallback(cardId); }
+  }
+}
+/** A card arrives: the island's at once while the window isn't in front; else the conversation gets a beat to ask for it. */
+function placeArrivedCard(cardId: string): void {
+  if (!mainWindowFront(mainState())) { placeCardNow(cardId); return; }
+  const t = setTimeout(() => placeCardNow(cardId), CONVERSATION_ASK_GRACE_MS);
+  t.unref?.();
+}
+/** The window's front state changed: every card still waiting is placed again (a card in the middle of its own grace waits for it). */
+function movePendingCards(): void {
+  for (const id of sealed.pendingIds()) if (cardPlaces.has(id)) placeCardNow(id);
+}
+
 async function armFallback(cardId: string): Promise<void> {
   disarmFallback(cardId);
   const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
@@ -910,7 +962,10 @@ async function showFallbackCard(cardId: string): Promise<void> {
   win.on("closed", () => {
     const own = fallbacks.get(cardId);
     if (own?.win === win) fallbacks.delete(cardId);
+    followFront();
   });
+  // The card window counts as Clover's own: clicking from the main window onto it, or back, is not leaving Clover.
+  for (const ev of ["focus", "blur", "show", "hide"] as const) win.on(ev as "focus", followFront);
   // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within the
   // cursor's display's work area, at the top on the side the cursor is not on (the top is where a notification stands, and
   // where the page grows from as it fits), before showing it, never after, so it never appears first in its default place.
@@ -1097,6 +1152,7 @@ function makePair(): Pair {
         sealed.fromCore(parsed.data.card);
         cardArrived.set(parsed.data.card.id, { at: Date.now(), seen: new Set() });
         armFallback(parsed.data.card.id);
+        placeArrivedCard(parsed.data.card.id);
         // Its id and kind only (no text): the acceptance run checks the app was told of each card it answers.
         log(`card: a ${parsed.data.card.kind} card ${parsed.data.card.id} arrived`);
       } else log("pair: ignored a card_requested event that isn't one");
@@ -1107,6 +1163,8 @@ function makePair(): Pair {
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
         cardArrived.delete(parsed.data.id);
+        cardPlaces.delete(parsed.data.id);
+        windowDraws.delete(parsed.data.id);
         // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
         const client = pair.client;
         if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {
@@ -1566,10 +1624,29 @@ interface Surface {
   wantsVisible?: boolean;
 }
 
+/** A test-marked headless build's stand-in for the window being in front (its windows are never the focused ones): the file named
+ *  by CLOVER_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
+let frontSeam: boolean | undefined;
+function startFrontSeam(): void {
+  if (!headless || (typeof __CLOVER_TEST_BUILD__ !== "string" && typeof __CLOVER_ACCEPTANCE_BUILD__ !== "string")) return;
+  const file = process.env.CLOVER_TEST_MAIN_FRONT_FILE;
+  if (file === undefined || file === "") return;
+  const read = () => {
+    let word = "";
+    try { word = readFileSync(file, "utf8").trim(); } catch { return; }
+    const next = word === "front" ? true : word === "back" ? false : undefined;
+    if (next === undefined || next === frontSeam) return;
+    frontSeam = next;
+    log(`window: the test seam says the main window is ${next ? "in front" : "not in front"}`);
+    followFront();
+  };
+  setInterval(read, 100).unref?.();
+}
+
 function mainState(): MainWindowState {
-  const w = mainWindow;
-  if (w === undefined || w.isDestroyed()) return { exists: false, visible: false, minimized: false, focused: false };
-  return { exists: true, visible: w.isVisible(), minimized: w.isMinimized(), focused: w.isFocused() };
+  if (frontSeam !== undefined) return { exists: true, visible: true, minimized: false, focused: frontSeam };
+  // Clover is in front while its main window or one of its own card windows has the focus (a click on a card blurs the main window).
+  return cloverFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
 }
 
 /** Shows or hides one surface's window as its part asked and the front rules allow. */
@@ -1643,17 +1720,17 @@ function applyVisibility(s: Surface): void {
   clickThrough(s);
 }
 
-let lastFront = false;
-/** The main window's front state changed: the surfaces that step aside follow it, and every surface's part hears it (the
- *  island brings a waiting card up when the pill steps aside). */
+/** The main window's front state changed: the surfaces that step aside follow it at once; the placement of the waiting cards, and
+ *  every surface's part (the island lets go of its cards), follow once the state has held a beat going out (card-place.ts). */
 function followFront(): void {
   for (const s of surfaces.values()) applyVisibility(s);
-  const front = mainWindowFront(mainState());
-  if (front !== lastFront) {
-    lastFront = front;
-    tellSurfaces();
-  }
+  frontWatcher.event();
 }
+const frontWatcher = new FrontWatcher({
+  read: () => mainWindowFront(mainState()),
+  changed: () => { tellSurfaces(); movePendingCards(); },
+  settleMs: 120,
+});
 const surfaces = new Map<string, Surface>();
 
 function syncSurfaces(): void {

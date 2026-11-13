@@ -239,6 +239,24 @@
   color: var(--clover-island-text, #FFFFFF);
 }
 
+/* A plugin's OK card's Review (the SDK's plain button, after the card's parts): the island's own quiet link, like Show
+   everything, so it reads on the black and is never a bar. It opens the app's own card page; it answers nothing. */
+.clv-card-parts .clover-card-review {
+  align-self: flex-start;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--clover-island-muted, #8B8B8B);
+  font: inherit;
+  font-size: var(--clover-font-size-caption, 12px);
+  cursor: pointer;
+}
+
+.clv-card-parts .clover-card-review:hover {
+  color: var(--clover-island-text, #FFFFFF);
+}
+
 .clv-risk {
   font-size: var(--clover-font-size-label, 13px);
   line-height: 1.38;
