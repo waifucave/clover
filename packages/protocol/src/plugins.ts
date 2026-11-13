@@ -97,7 +97,8 @@ export const PluginSummary = z.object({
   treeHash: TreeHash.optional(),
   /** Tool prefix: `mcp__<namespace>__<Tool>` (§6.7). Children share their top-level plugin's. */
   namespace: utf16(40),
-  scope: Scope,
+  /** The manifest's scope (§5.1); `own-bot`: a bot plugin's own parts, its own bot's sessions and their agents only. */
+  scope: z.union([Scope, z.literal("own-bot")]),
   adult: z.boolean(),
   children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
   /** A development folder (§5.6), on this computer only. */

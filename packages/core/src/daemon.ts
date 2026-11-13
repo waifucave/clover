@@ -4287,7 +4287,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // is judged as a tool.
         // The same for the bundled tools that only read (`BUNDLED_READ_TOOLS`: the plugin builder's `PluginNew`).
         const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => bundledToolKind({
-          servers: mcp.servers(ctx.kind), record: (id) => registry.get(id), staged: bundledStaged,
+          servers: mcp.servers(ctx.kind, undefined, ctx.botId), record: (id) => registry.get(id), staged: bundledStaged,
         }, tool);
         // Stage 2: what `RequestAccess` granted each conversation's shell commands (a folder, hosts), and R1's class of a
         // folder on this computer, as the broker judges an edit's.
@@ -4354,13 +4354,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
           // computer, and judged at each call.
           containedTool: (ctx, tool) => {
-            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx));
+            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
             return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
           },
           // A plugin's read-only tool (lane B's `pluginToolReadOnly`: `readOnly` on the tree the user OK'd, never a dev
           // folder, a networked server or one with no plugin fence here): bound the same way, judged at each call, a read.
           readOnlyTool: (ctx, tool) => {
-            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx));
+            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
@@ -4400,7 +4400,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // check as the same call in the session that owns it (the agent's own session on the card; its bot's level and
         // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
         agentReach = {
-          servers: (kind, backend) => mcp.servers(kind, backend),
+          servers: (kind, backend, bot) => mcp.servers(kind, backend, bot),
           runner: node?.mcp ?? localMcpRunner(mcp, thisComputer),
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
           registry,
@@ -4449,7 +4449,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // (an unusable run folder) they're skipped and reported, and a hook that can deny denies: never unfenced.
           ...(pluginRun !== undefined ? { commandSpawner: pluginHookSpawner({ guard: pluginRun, pluginRoot: (id) => registry.get(id)?.folder, settings: host.settings }) } : {}),
         })),
-        mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
+        mcp: { servers: (ctx) => mcp.servers(ctx.kind, undefined, ctx.botId), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
         // The user's secret places (`SECRET_READ_PLACES`) too: never read, and skipped by a search from above.
         fileFence: botFileFence(fence, cloverHome, hostOs(), opts.parts?.userHome ?? homedir()),

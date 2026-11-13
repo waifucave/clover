@@ -50,7 +50,7 @@ import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
 import { modelProviderKey } from "../model-plugins";
 import { cloverSessions } from "../sessions";
-import { NO_HOOKS, servesSession, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
+import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
@@ -58,7 +58,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { servesBackend } from "./only-backends";
+import { partsServe } from "./only-backends";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
@@ -828,15 +828,10 @@ export class BotSessionDriver implements SessionDriver {
     const glossary = glossaryTool({
       tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
-      // A skill's or agent definition's plugin reaches a session by its `scope` (this session's kind and bot: `own-bot`, a bot's
-      // delegations) and, for an agent or a coding session, by its `onlyBackends` (only-backends.ts).
-      ...(this.#d.registry === undefined ? {} : {
-        serves: (pluginId: string) => {
-          const reg = this.#d.registry!;
-          const scope = (reg.get(pluginId)?.manifest as { scope?: "bots" | "agents" | "both" | "own-bot" } | undefined)?.scope ?? "both";
-          return servesSession(scope, { kind: ctx.kind, bot: bot.id }, pluginId) && servesBackend(reg, pluginId, ctx.kind);
-        },
-      }),
+      // A plugin's skills and agent definitions reach the session its `scope` serves (`servesScope`: an `agents` plugin's
+      // no bot's, an `own-bot` one's only its own bot's) and, for an agent's or a coding session, only from plugins whose
+      // `onlyBackends` name Clover's own backend, which runs it (only-backends.ts).
+      ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }) }),
       // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
       servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
       bot: bot.id,

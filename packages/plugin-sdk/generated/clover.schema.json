@@ -112,7 +112,15 @@
       "additionalProperties": false
     },
     "scope": {
-      "$ref": "#/$defs/__schema4"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema4"
+        },
+        {
+          "type": "string",
+          "const": "own-bot"
+        }
+      ]
     },
     "onlyBackends": {
       "minItems": 1,

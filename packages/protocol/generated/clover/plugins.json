@@ -140,11 +140,19 @@
                   "maxLength": 40
                 },
                 "scope": {
-                  "type": "string",
-                  "enum": [
-                    "bots",
-                    "agents",
-                    "both"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "bots",
+                        "agents",
+                        "both"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "const": "own-bot"
+                    }
                   ]
                 },
                 "adult": {
@@ -335,11 +343,19 @@
                 "maxLength": 40
               },
               "scope": {
-                "type": "string",
-                "enum": [
-                  "bots",
-                  "agents",
-                  "both"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "bots",
+                      "agents",
+                      "both"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "const": "own-bot"
+                  }
                 ]
               },
               "adult": {
