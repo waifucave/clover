@@ -143,6 +143,11 @@ export class SealedFrames {
     return false;
   }
 
+  /** Every card that still waits, oldest first (known, not answered or resolved, not past its expiry). */
+  pendingIds(): string[] {
+    return [...this.cards.keys()].filter((id) => this.isPending(id));
+  }
+
   /** Whether one card still waits (known, not answered or resolved, not past its expiry). */
   isPending(id: string): boolean {
     const c = this.cards.get(id);

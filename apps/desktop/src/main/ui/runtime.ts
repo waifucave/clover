@@ -1159,6 +1159,9 @@ export class UiRuntime {
     return (await this.onCardPage?.(cardId)) ?? false;
   }
 
+  /** Whether the island may be given a card's frames now: not while Clover's own window is in front (the card is drawn there). */
+  islandMayDraw?: () => boolean;
+
   /** Hears what came of each sealed frame's ask (the app's timing lines): made, not yet (the app hasn't heard of the card,
    *  or it is past), absent (a field the card lacks), or refused. */
   onSealedAsk?: (cardId: string, windowId: number | undefined, outcome: SealedAskOutcome) => void;
@@ -1210,6 +1213,8 @@ export class UiRuntime {
     // frame is made): the bundled `clover` tree places any card, every other plugin the cards of its own bots, by top-level id on both sides. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is the tree's alone.
     const owner = part.plugin.id.split("/")[0];
     if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot");
+    // One place at a time: the island is given no frame while the window is in front ("not yet": it asks again when it shows the card).
+    if (part.plugin.id === "clover/island" && this.islandMayDraw?.() === false) return undefined;
     // A field the card lacks draws nothing: the part's holder stays empty and takes no room.
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     // A glyph only on the button it fits (✓ approves, ✕ denies, ↗ opens a link); any other pairing is the label.
