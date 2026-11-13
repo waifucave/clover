@@ -1890,9 +1890,6 @@ const hangs = new HangWatch((windowId) => {
   void restart(true);
 });
 
-/** A window went unresponsive: which of its documents? Each is pinged; a plugin layer that doesn't answer has its
- *  process killed (its parent then shows "This part stopped" with a reload), and only a core root that doesn't answer
- *  starts the countdown to a safe-mode restart. */
 /** The player's AudioContext starts only after a user activation in its own document, and the window keeps the gesture rule
  *  (a plugin's page must not make sound unasked). So the shell's own document, and only it, is given one, once per document
  *  (a reloaded document is a new mount), before the first piece reaches it. */
@@ -1907,6 +1904,9 @@ function activateShellAudio(windowId: number): void {
   }
 }
 
+/** A window went unresponsive: which of its documents? Each is pinged; a plugin layer that doesn't answer has its
+ *  process killed (its parent then shows "This part stopped" with a reload), and only a core root that doesn't answer
+ *  starts the countdown to a safe-mode restart. */
 async function diagnoseHang(win: BrowserWindow): Promise<void> {
   if (win.isDestroyed()) return;
   const docs = runtime.documents().filter((d) => d.windowId === win.id);
