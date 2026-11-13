@@ -1993,7 +1993,13 @@ async function main(): Promise<void> {
       await stateIs(CLI_ID, (st) => st === "off", "off after clover plugin disable");
       await run(["enable", CLI_ID]);
       await stateIs(CLI_ID, (st) => st === "running" || st === "enabled", "on again after clover plugin enable");
-      await run(["update", CLI_ID]);
+      // update: a folder-installed plugin has no index or npm to update from, so `update <id>` refuses it and says why;
+      // `update` alone looks at every plugin, offers what an index or npm has (applying nothing) and skips the folder one.
+      const upd = await coreCli(["plugin", "update", CLI_ID], "plugin-cli-update-id");
+      if (upd.code === 0 || !`${upd.stderr}${upd.stdout}`.includes("a local plugin changes only when its folder does")) fail(`clover plugin update ${CLI_ID} (installed from a folder) exited ${upd.code}: ${(upd.stderr || upd.stdout).trim().slice(0, 300)}`);
+      said.push("update <id> (refused: a local plugin changes only when its folder does)");
+      const updAll = await run(["update"]);
+      if (updAll.stdout.includes(CLI_ID)) fail(`clover plugin update named the folder-installed ${CLI_ID}: ${updAll.stdout.trim().slice(0, 300)}`);
       await run(["remove", CLI_ID, "--yes"], `removed ${CLI_ID}`);
       await stateIs(CLI_ID, (st) => st === undefined, "gone after clover plugin remove");
       // wrap (a bare skill folder), then removed.

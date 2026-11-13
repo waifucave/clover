@@ -17,10 +17,11 @@ export const ENGINES = { clover: "^1.0.0" } as const;
 export const FIELDS_IDS = {
   node: "acceptance-node",
   helper: "acceptance-helper",
-  fields: "acceptance-fields",
+  // Short: a coding session's bridge leaves off a tool whose `<plugin>-<server>__<tool>` passes 34 characters.
+  fields: "acc-fields",
   platforms: "acceptance-elsewhere",
-  agents: "acceptance-agents-only",
-  cc: "acceptance-cc-only",
+  agents: "acc-agents",
+  cc: "acc-cc",
 } as const;
 
 /** A host half that serves the named host MCP servers, each with its tools, every tool answering `<tool>-pong`; and

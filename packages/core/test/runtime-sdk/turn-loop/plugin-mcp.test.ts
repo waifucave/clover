@@ -310,6 +310,25 @@ test("a third-party server is served under its plugin's key; a bundled one keeps
   }
 });
 
+test("when.os: a server for other systems isn't served on this one; one naming this system, or no when, is", async () => {
+  const registry = fakeRegistry([
+    entry("acme/tools", "mac", { type: "host", when: { os: ["macos"] } }),
+    entry("acme/tools", "win", { type: "host", when: { os: ["windows"] } }),
+    entry("acme/tools", "any", { type: "host" }),
+  ], { "acme/tools": "/nonexistent" });
+  const mac = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", os: "macos" });
+  const win = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", os: "windows" });
+  try {
+    await mac.refresh();
+    await win.refresh();
+    expect(names(mac)).toEqual(["acme-tools-mac", "acme-tools-any"]);
+    expect(names(win)).toEqual(["acme-tools-win", "acme-tools-any"]);
+  } finally {
+    mac.close();
+    win.close();
+  }
+});
+
 test("a third-party `web` server can't take mcp__web__*, and a third-party `clover_core` or `clover` is refused", async () => {
   const registry = fakeRegistry([
     entry("acme", "web", { type: "host" }),

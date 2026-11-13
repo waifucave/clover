@@ -27,10 +27,10 @@ test("the other fixtures validate", async () => {
 });
 
 test("the offer verdict names each field that went wrong", () => {
-  const bot = ["mcp__acceptance-fields-local__FieldsLocal", "mcp__acceptance-fields-mac__FieldsMac", "mcp__acceptance-cc-only-tools__CcOnly"];
-  const coding = ["mcp__clover_0123456789abcdef__acceptance-agents-only-tools__AgentsOnly"];
+  const bot = ["mcp__acc-fields-local__FieldsLocal", "mcp__acc-fields-mac__FieldsMac", "mcp__acc-cc-tools__CcOnly"];
+  const coding = ["mcp__clover_0123456789abcdef__acc-agents-tools__AgentsOnly"];
   expect(offerWrong({ bot, coding })).toEqual([]);
-  expect(offerWrong({ bot: [...bot, "mcp__acceptance-fields-win__FieldsWin"], coding: [...coding, "mcp__x__CcOnly"] })).toEqual([
+  expect(offerWrong({ bot: [...bot, "mcp__acc-fields-win__FieldsWin"], coding: [...coding, "mcp__x__CcOnly"] })).toEqual([
     "Alpha was offered FieldsWin (when.os windows)",
     "the coding session on Clover's own agent was offered CcOnly (onlyBackends: claude-code)",
   ]);
