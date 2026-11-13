@@ -768,8 +768,8 @@ export interface PluginApi {
   readonly net: NetApi;
   /** Only in a process of the plugin's own (§5.2). */
   readonly secrets?: SecretsApi;
-  /** The `clover` process's per-computer keys: not served yet. */
-  readonly keys?: NotYet<KeysApi>;
+  /** The `clover` process's per-computer keys: the plugin's own X25519 pairs, whose private half stays in the core. */
+  readonly keys?: KeysApi;
   readonly settings: SettingsApi;
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
    *  user's answer, and no plugin can read or answer it. Denied after 10 minutes unanswered. */

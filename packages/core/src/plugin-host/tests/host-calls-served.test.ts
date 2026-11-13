@@ -19,6 +19,7 @@ import { NotifyService } from "../../notify/service";
 import { modelPluginApiHandlers } from "../../runtime-sdk/model-plugins/plugin-api";
 import { areasParts } from "../api/areas";
 import { confirmApi } from "../api/confirm";
+import { keysApi } from "../api/keys";
 import { logsApi } from "../api/logs";
 import { pointsApi } from "../api/points";
 import { settingsApi } from "../api/settings";
@@ -41,6 +42,7 @@ function served(): Set<string> {
     areasParts({ bots: () => undefined, node: () => undefined, links: () => undefined }).handlers,
     confirmApi(f),
     logsApi({ home: "/nonexistent" }).handlers,
+    keysApi(f),
     new AvatarService(() => undefined).handlers(),
     new NotifyService({ registry: { entries: () => [] }, home: "/nonexistent" } as never).apiHandlers(),
     modelPluginApiHandlers(f),
@@ -109,7 +111,7 @@ describe("every call the catalog lists for host code is served", () => {
     const host = read("plugin-host/daemon-host.ts");
     const list = host.slice(host.indexOf("const handlers: ApiHandlers[] = ["), host.indexOf("const recordOf ="));
     const factories = [...list.matchAll(/\b([a-z][A-Za-z]*Api)\(/g)].map((m) => m[1]);
-    expect(factories.sort()).toEqual(["commandsApi", "confirmApi", "pointsApi", "settingsApi", "storageApi"]);
+    expect(factories.sort()).toEqual(["commandsApi", "confirmApi", "keysApi", "pointsApi", "settingsApi", "storageApi"]);
     expect(list).toContain("areas.handlers");
     expect(list).toContain("logs.handlers");
     expect(list).toContain("...(o.handlers ?? [])");

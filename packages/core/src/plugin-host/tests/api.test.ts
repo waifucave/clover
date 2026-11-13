@@ -128,14 +128,15 @@ describe("the router: the one capability gate", () => {
     expect([e.code, e.message]).toEqual(["refused", "conversation.list needs the capability conversation.read, which this plugin's OK doesn't list"]);
   });
 
-  test("where a call exists: secrets.get only in a process of the plugin's own, desktop.* only in clover's, host.call only in components; keys.* nowhere yet", async () => {
+  test("where a call exists: secrets.get only in a process of the plugin's own, desktop.* and keys.* only in clover's, host.call only in components", async () => {
     const r = routerWith(registry(), [{ "secrets.get": () => "s", "desktop.show": () => "k", "keys.publicKey": () => "never", "host.call": () => 1 }]);
     expect(await code(call(r, "luna", "secrets.get", ["x"], { process: "shared" }))).toBe("refused");
     expect(await call(r, "luna", "secrets.get", ["x"], { process: "own" })).toBe("s");
     expect(await code(call(r, "luna", "desktop.show", ["f"], { process: "shared" }))).toBe("refused");
     expect(await call(r, "luna", "desktop.show", ["f"], { process: "clover" })).toBe("k");
-    // Marked not served yet (`notYet`): refused even from clover's process, even with a handler.
-    expect((await failure(call(r, "luna", "keys.publicKey", ["f"], { process: "clover" }))).message).toContain("keys.publicKey isn't available yet");
+    expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "own" }))).toBe("refused");
+    expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "shared" }))).toBe("refused");
+    expect(await call(r, "luna", "keys.publicKey", ["f"], { process: "clover" })).toBe("never");
     expect(await code(call(r, "luna", "host.call", ["x"]))).toBe("refused");
   });
 

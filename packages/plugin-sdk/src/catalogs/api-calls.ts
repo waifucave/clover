@@ -71,10 +71,8 @@ export const API_CALLS = {
   "net.fetch": both("network:*"),
   /** Only a process of the plugin's own; never a worker of a shared process, never a layer (§5.2). */
   "secrets.get": { where: "own" },
-  /** Only the `clover` process (S4), and none of them served yet: the core keeps no per-plugin key store for plugins. */
-  "keys.publicKey": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
-  "keys.open": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
-  "keys.delete": notYet({ where: "clover" }, "the core keeps no key store for plugins yet"),
+  /** Only the `clover` process (S4): a bundled plugin's own per-computer key pairs, whose private half stays in the core. */
+  "keys.publicKey": { where: "clover" }, "keys.open": { where: "clover" }, "keys.delete": { where: "clover" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
   "conversation.history": both("conversation.read"), "conversation.follow": both("conversation.read"),

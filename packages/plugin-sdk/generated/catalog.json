@@ -4042,16 +4042,13 @@
       "where": "own"
     },
     "keys.publicKey": {
-      "where": "clover",
-      "notYet": "the core keeps no key store for plugins yet"
+      "where": "clover"
     },
     "keys.open": {
-      "where": "clover",
-      "notYet": "the core keeps no key store for plugins yet"
+      "where": "clover"
     },
     "keys.delete": {
-      "where": "clover",
-      "notYet": "the core keeps no key store for plugins yet"
+      "where": "clover"
     },
     "settings.get": {
       "where": "both"
