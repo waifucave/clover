@@ -4110,14 +4110,10 @@
       "where": "both"
     },
     "routines.list": {
-      "capability": "routines.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "routines.runs": {
-      "capability": "routines.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "computers.list": {
       "capability": "computers.read",

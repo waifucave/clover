@@ -62,6 +62,8 @@ const REPLAY_PAGE = 500;
 /** A follow replays at most this many of the latest events (older ones are `history`'s). */
 export const REPLAY_MAX = 10_000;
 export const WATCHES_PER_PLUGIN = 32;
+/** A page of a routine's runs, at most (the `routine.runs` method's own cap). */
+export const ROUTINE_RUNS_MAX = 200;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
@@ -98,6 +100,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const node = () => s.node() ?? notRunning("the computer node");
   const links = () => s.links() ?? notRunning("the device links");
   const ledger = () => s.usage?.().ledger ?? notRunning("the usage ledger");
+  const engine = () => side().routines ?? notRunning("the routine engine");
   /** The memory folder of `bot`, if the caller may read it: its own bot's always, any bot's with `memory.read`. */
   const memoryOf = (ctx: ApiCallContext, bot: string): string => {
     if (topPluginIdOf(ctx.pluginId) !== bot && !ctx.record.granted.includes("memory.read")) {
@@ -398,6 +401,31 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     "memory.read": (ctx, args) => {
       const dir = memoryOf(ctx, stringArg(args, 0, "the bot", 64));
       return readMemory(dir, stringArg(args, 1, "the memory file's path", 4096));
+    },
+
+    // ---- routines (lane D's routine engine, read-only) ----
+    // A bot plugin's own bot's routines with no capability; every bot's with `routines.read`, whose OK line says "sees
+    // your routines and their runs" (the same rule as memory's).
+    "routines.list": (ctx, args) => {
+      const f = opt(args[0]);
+      if (f.bot !== undefined && typeof f.bot !== "string") throw new ContractError("invalid", "the filter is { bot? }");
+      const own = topPluginIdOf(ctx.pluginId);
+      const granted = ctx.record.granted.includes("routines.read");
+      if (!granted && f.bot !== undefined && f.bot !== own) throw new ContractError("refused", `${String(f.bot)}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its bot's without it)`);
+      return engine().list(granted ? (f.bot as string | undefined) : own);
+    },
+    "routines.runs": (ctx, args) => {
+      const id = stringArg(args, 0, "the routine", 128);
+      const page = opt(args[1]);
+      const r = engine().get(id);
+      if (r === undefined) throw new ContractError("not_found", `no routine ${id}`);
+      if (r.bot !== topPluginIdOf(ctx.pluginId) && !ctx.record.granted.includes("routines.read")) {
+        throw new ContractError("refused", `${r.bot}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its bot's without it)`);
+      }
+      const before = typeof page.cursor === "string" ? Number.parseInt(page.cursor, 10) : undefined;
+      const limit = typeof page.limit === "number" && Number.isFinite(page.limit) ? Math.min(ROUTINE_RUNS_MAX, Math.max(1, Math.floor(page.limit))) : undefined;
+      const got = engine().runs(id, { ...(before === undefined || Number.isNaN(before) ? {} : { before }), ...(limit === undefined ? {} : { limit }) });
+      return { runs: got.runs, ...(got.next === undefined ? {} : { next: String(got.next) }) };
     },
 
     // ---- usage (lane D's ledger, read-only; `usage.read`) ----

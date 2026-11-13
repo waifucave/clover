@@ -786,8 +786,8 @@ export interface PluginApi {
   /** Its own bot's memory with no capability (a bot plugin); every bot's with `memory.read`. Read-only. */
   readonly memory: MemoryApi;
   readonly bots?: BotsApi;
-  /** Not served yet. */
-  readonly routines?: NotYet<RoutinesApi>;
+  /** Its own bot's routines with no capability (a bot plugin); every bot's with `routines.read`. Read-only. */
+  readonly routines: RoutinesApi;
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
   readonly devices?: DevicesApi;

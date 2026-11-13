@@ -103,7 +103,7 @@ describe("the plugin API's gating", () => {
     // (the controller's ruling: nothing callable).
     // logs.read widens what `logs.*` reads (Clover's log and every plugin's, beyond the plugin's own), which the core
     // checks per source: the calls themselves need no capability.
-    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read"];
+    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read"];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });

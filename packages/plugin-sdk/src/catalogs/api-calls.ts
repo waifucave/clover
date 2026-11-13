@@ -84,7 +84,8 @@ export const API_CALLS = {
    *  bot (the coordinator's ruling: what the OK card says decides). Read-only. */
   "memory.list": both(), "memory.read": both(),
   "bots.list": both("bots.read"), "bots.get": both("bots.read"), "bots.watch": both("bots.read"),
-  "routines.list": notYet(both("routines.read"), NO_SERVICE), "routines.runs": notYet(both("routines.read"), NO_SERVICE),
+  /** A bot plugin's own bot's routines need no capability; every bot's need `routines.read`, checked per bot. */
+  "routines.list": both(), "routines.runs": both(),
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),
   "computers.holds": both("computers.control"), "computers.takeHold": { capability: "computers.control", where: "host" },
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },
