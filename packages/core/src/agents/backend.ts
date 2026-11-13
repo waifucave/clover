@@ -183,6 +183,15 @@ export class AcpAgentBackend implements AgentBackend {
     return admissionFor(this.#opts.admissions ?? ADMISSIONS, this.id, this.#opts.os ?? currentOs(), version);
   }
 
+  /** The plugins' parts placed again for a running session (a plugin turned on, off, removed or updated): the
+   *  session's own placed folder is written afresh, so what was turned off or removed is gone from it. Only a backend
+   *  that reads its own folders places anything. */
+  placeAgain(_sessionId: string, parts: PluginParts, dir: string): void {
+    if (!this.#opts.place) return;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    this.#opts.place(parts, { dir });
+  }
+
   async start(spec: AcpStartSpec): Promise<AcpAgentSession> {
     const d = await this.detect();
     if (!d.installed || !d.path) throw new ContractError("not_installed", d.reason ?? `${this.id} isn't installed on this computer`);

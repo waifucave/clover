@@ -119,3 +119,27 @@ describe("the outside-the-sandbox step's scripted calls", () => {
     expect(netCommandCall("ACCEPTANCE-REPLY-OK")).toBeUndefined();
   });
 });
+
+describe("the agent row's echo probe (row 1.93): an agent calls the echo plugin's tool through its bridge", () => {
+  test("Alpha's Agent carries the child brief; the child calls only the bridge's echo tool, never a bot's own", async () => {
+    const fake = startFakeAnthropic({ key: "dummy-key", writePath: "/nonexistent/lane-b", writeContent: "x" });
+    try {
+      const send = async (text: string, tools: string[]) => (await (await fetch(`${fake.url}/v1/messages`, {
+        method: "POST", headers: { "x-api-key": "dummy-key", "content-type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 10, tools: tools.map((name) => ({ name, input_schema: { type: "object" } })), messages: [{ role: "user", content: [{ type: "text", text }] }] }),
+      })).json()) as { content: { type: string; name?: string; input?: Record<string, unknown>; text?: string }[] };
+      const agent = await send("ACCEPTANCE-AGENT-ECHO home/mac/agent-echo", ["Agent", "Glossary"]);
+      expect(agent.content[0]).toMatchObject({ type: "tool_use", name: "Agent", input: { backend: "clover-code", root: "home/mac/agent-echo" } });
+      const brief = String(agent.content[0]!.input!.prompt);
+      expect(brief).toStartWith("ACCEPTANCE-CHILD-ECHO");
+      const bridged = "mcp__clover_0123456789abcdef__acceptance-echo-echo__Echo";
+      const child = await send(brief, ["mcp__acceptance-echo-echo__Echo", bridged]);
+      expect(child.content[0]).toMatchObject({ type: "tool_use", name: bridged, input: { text: "acceptance-child-ping" } });
+      // Only a bot's own Echo offered: no call, and the tools it was offered are said.
+      const none = await send(brief, ["mcp__acceptance-echo-echo__Echo"]);
+      expect(none.content[0]).toMatchObject({ type: "text", text: "ACCEPTANCE-CHILD-NO-ECHO mcp__acceptance-echo-echo__Echo" });
+    } finally {
+      fake.close();
+    }
+  });
+});

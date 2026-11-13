@@ -239,6 +239,8 @@ export class PluginFolders {
   readonly #newest = new Map<string, Promise<void>>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
+  /** Each development folder's plugin's tree as last read, to tell a save that changed it (`lastReloadAt`). */
+  readonly #devHashes = new Map<string, string | undefined>();
   readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance; folder: string }>();
 
   constructor(opts: PluginFoldersOptions) {
@@ -317,7 +319,10 @@ export class PluginFolders {
       // A dot-name is never a plugin (`#sources` skips them too): an install's staging folder, a system file.
       if (name && !name.startsWith(".")) this.#settle(join(this.#o.pluginsDir, name));
     });
-    for (const d of this.devFolders()) this.#watchDev(d.path);
+    for (const d of this.devFolders()) {
+      this.#devHashes.set(d.path, this.#devTreeHash(d.path));
+      this.#watchDev(d.path);
+    }
   }
 
   stop(): void {
@@ -523,6 +528,8 @@ export class PluginFolders {
     this.#devChanged();
     this.#watchDev(abs);
     await this.refresh(abs);
+    // The tree as added: a save that changes it later is a reload.
+    this.#devHashes.set(abs, this.#devTreeHash(abs));
     return entry;
   }
 
@@ -682,13 +689,13 @@ export class PluginFolders {
     return this.#o.core.list().filter((p) => p.parent === r.id && !now.has(p.id)).map((p) => p.id);
   }
 
-  #settle(folder: string): void {
+  #settle(folder: string, after?: () => void): void {
     const key = resolve(folder);
     const t = this.#timers.get(key);
     if (t) clearTimeout(t);
     this.#timers.set(key, setTimeout(() => {
       this.#timers.delete(key);
-      this.refresh(key).catch((e) => this.#o.log?.(`plugins: ${key} can't be read: ${(e as Error).message}`));
+      this.refresh(key).then(() => after?.(), (e) => this.#o.log?.(`plugins: ${key} can't be read: ${(e as Error).message}`));
     }, this.#o.settleMs ?? SETTLE_MS));
   }
 
@@ -704,7 +711,25 @@ export class PluginFolders {
   }
 
   #watchDev(path: string): void {
-    this.#watch(path, () => this.#settle(path));
+    this.#watch(path, () => this.#settle(path, () => this.#reloadedIfChanged(path)));
+  }
+
+  /** The tree of the plugin a development folder holds, as the registry read it last. */
+  #devTreeHash(path: string): string | undefined {
+    const id = [...this.#byFolder].find(([, f]) => f === resolve(path))?.[0];
+    return id === undefined ? undefined : this.#o.core.get(id)?.treeHash;
+  }
+
+  /** After a settled save in a development folder: when its plugin's tree changed, it was loaded again, and the
+   *  folder says when (`plugin.dev.list`'s `lastReloadAt`, the Plugins page's "Loaded again" line). */
+  #reloadedIfChanged(path: string): void {
+    const now = this.#devTreeHash(path);
+    const before = this.#devHashes.get(path);
+    this.#devHashes.set(path, now);
+    if (now === undefined || before === undefined || now === before) return;
+    const at = this.#now();
+    this.#o.core.devFolders = this.#o.core.devFolders.map((d) => (d.path === path ? { ...d, lastReloadAt: at } : d));
+    for (const fn of this.#devListeners) fn();
   }
 
   #devChanged(): void {

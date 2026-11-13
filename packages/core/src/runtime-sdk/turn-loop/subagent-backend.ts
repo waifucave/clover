@@ -287,6 +287,7 @@ class InProcessSession implements AgentSession {
         if (hooks === "none") return {};
         if (hooks === undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: HOOKS_NOT_UP } };
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string };
+        if (this.#pluginOnBridge(input.tool_name ?? "")) return {};
         const r = await hooks.toolBefore(this.#hookSession(), { name: input.tool_name ?? "", callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, signal);
         if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
         const changed = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
@@ -300,6 +301,14 @@ class InProcessSession implements AgentSession {
         };
       }],
     };
+  }
+
+  /** A plugin's tool on this delegation's bridge: the bridge runs the plugins' hooks on it under the tool's own name
+   *  (agents/plugin-reach.ts), as a bot's call meets them, so they don't run here too under the bridge's name. The
+   *  bridge's own tools (`SendMessage`, `Glossary`) meet them here. */
+  #pluginOnBridge(name: string): boolean {
+    const prefix = `mcp__${this.spec.bridge.name}__`;
+    return name.startsWith(prefix) && !["SendMessage", "Glossary"].includes(name.slice(prefix.length));
   }
 
   /** The session the plugins' hooks see: this delegation, an `agent` session. */
@@ -320,6 +329,7 @@ class InProcessSession implements AgentSession {
         if (hooks === undefined || hooks === "none") return {};
         const input = raw as { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown };
         const name = input.tool_name ?? "";
+        if (this.#pluginOnBridge(name)) return {};
         const result = await hooks.toolAfter(this.#hookSession(), { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);
         if (result === input.tool_response) return {};
         return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };

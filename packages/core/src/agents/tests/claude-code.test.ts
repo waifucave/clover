@@ -3,7 +3,7 @@
 // allow. Whether Claude Code itself loads them through the adapter is a live gate; these check what Clover writes.
 import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOOK_SHIM_PATH, dropAllow, hookShimCommand, parseShimArgs, runHook } from "../claude-code/hook-shim";
@@ -53,6 +53,30 @@ describe("placing plugins' parts in Claude Code", () => {
     expect(hooks.PreToolUse[0].matcher).toBe("^Bash$|^mcp__.*$");
     expect(hooks.PreToolUse[0].hooks[0]).toEqual({ type: "command", command: "/opt/clover/clover-core hook-shim --timeout 3000 -- /opt/acme/guard --strict 'it'\\''s'", timeout: 8 });
     expect(hooks.SessionStart[0].matcher).toBe("compact");
+  });
+
+  test("a link inside a skill folder is never placed (it could bring a file of the user's into the agent), and is said; placing again clears what went", () => {
+    const skill = join(root, "linked-skill");
+    mkdirSync(join(skill, "notes"), { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "---\nname: linked\n---\nRead the notes.\n");
+    writeFileSync(join(skill, "notes", "ok.md"), "fine\n");
+    const secret = join(root, "users-own-file.txt");
+    writeFileSync(secret, "the user's own words\n");
+    symlinkSync(secret, join(skill, "notes", "theirs.md"));
+    symlinkSync(join(root), join(skill, "everything"));
+    const dir = join(root, "setup-links");
+    const parts: PluginParts = { skills: [{ name: "linked", pluginId: "acme/docs", dir: skill }], agents: [], hooks: [] };
+    const r = placeInClaudeCode(parts, { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    const placed = join(dir, CLAUDE_PLUGIN_FOLDER, "skills", "linked");
+    expect(r.placed.skills).toEqual(["linked"]);
+    expect(readFileSync(join(placed, "notes", "ok.md"), "utf8")).toBe("fine\n");
+    expect(existsSync(join(placed, "notes", "theirs.md"))).toBe(false);
+    expect(existsSync(join(placed, "everything"))).toBe(false);
+    expect(r.placed.skipped.map((x) => x.id).sort()).toEqual(["linked/everything", "linked/notes/theirs.md"]);
+    expect(r.placed.skipped.every((x) => x.why === "a symbolic link, never placed")).toBe(true);
+    // Placed again with nothing: the folder is written afresh, the skill gone.
+    placeInClaudeCode({ skills: [], agents: [], hooks: [] }, { dir, shim: { command: "/opt/clover/clover-core", args: ["hook-shim"] } });
+    expect(existsSync(placed)).toBe(false);
   });
 
   test("a hook whose command isn't an absolute path is skipped, and a timeout is capped (K-M2 review 9)", () => {

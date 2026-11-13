@@ -63,7 +63,7 @@ import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-fi
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
-import { CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
@@ -994,7 +994,7 @@ const errorsOf = (events: Ev[]): string[] => events.filter((e) => e.type === "ag
 const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "turn_completed")?.stopReason ?? "?");
 
 // ── the cards ────────────────────────────────────────────────────────────────────────────────────────────────────
-type Card = { id: string; hash: string; kind: string; change?: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
+type Card = { id: string; hash: string; kind: string; change?: string; session?: string; bot?: string; pluginId?: string; options: { id: string; kind: string; remember?: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
 /** The app itself was told of the card (its `card_requested`, which it logs with the card's id): a card the run reads
  *  over RPC but the app never heard of is a card the user would never see (the first packaged run's daemon sent none:
  *  its events didn't parse). Waits a moment for the app's log. */
@@ -3242,10 +3242,74 @@ async function agentStep(c: CloverClient, session: string | undefined, turnsWork
       const heard = (fake?.requests ?? []).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD")).map((r) => r.answered);
       fail(`${why(err)}; the agent is ${row?.status ?? "gone"}${row?.failure ? ` (${row.failure})` : ""}; its log: ${own.slice(-8).map((e) => `${e.type}${(e as { text?: string }).text ? `:${String((e as { text?: string }).text).slice(0, 80)}` : ""}${(e as { error?: unknown }).error ? `:${JSON.stringify((e as { error?: unknown }).error).slice(0, 160)}` : ""}`).join(", ") || "empty"}; the scripted model heard it ${heard.length} time(s) (${heard.join(", ")})`);
     });
-    record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)})`);
+    // Row 1.93 (spec §9.3): a plugin's tool reaches agents through their bridge. Alpha's delegated agent calls the echo
+    // plugin's tool, judged at her level, and its answer comes back to her conversation; the user's own coding session
+    // (`agent.start`, no bot) does the same at its own.
+    const probe = async (o: { bot?: string }) => agentEchoProbe(c, computer!, o).catch((err: unknown) => {
+      if (err instanceof StepBlocked || err instanceof StepFail) throw new StepFail(`the agent's start, row and report passed (its row ${agentRow!.id}); ${why(err)}`);
+      throw err;
+    });
+    const delegated = await probe({ bot: session });
+    const own = await probe({});
+    record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)}); the echo plugin's tool through the bridge: Alpha's agent ${delegated}; the user's coding session ${own}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   }
+}
+
+/** An agent on clover-code calls the echo plugin's tool through its bridge (row 1.93): Alpha's delegation (`bot`: her
+ *  conversation, `ACCEPTANCE-AGENT-ECHO`) or the user's own coding session (`agent.start`). The scripted model finds the
+ *  tool among those its request offers (`…__acceptance-echo-echo__Echo`), calls it, and says the answer back; a card the
+ *  call raises (it names the agent's session) is approved over RPC, at the level of the session that owns the call.
+ *  Answers what happened, for the step's detail. */
+async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: string }): Promise<string> {
+  const PONG = "acceptance-echo-pong: acceptance-child-ping";
+  const folder = o.bot === undefined ? "code-echo" : "agent-echo";
+  mkdirSync(join(userHome, folder), { recursive: true });
+  const root = `home/${computer}/${folder}`;
+  const seen = fake?.requests.length ?? 0;
+  let id: string;
+  const before = new Set((await c.request<{ sessions: { id: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.map((x) => x.id));
+  if (o.bot !== undefined) {
+    const t = await turn(c, o.bot, `ACCEPTANCE-AGENT-ECHO ${root}`, 150_000);
+    const result = (fake?.requests ?? []).slice(seen).find((r) => r.toolResult !== undefined)?.toolResult;
+    if (result === undefined || result.isError) fail(`Alpha's Agent for the echo probe didn't start: ${(result?.text ?? "no result").slice(0, 200)}${t.cards.length ? ` (${t.cards.join("; ")})` : ""}`);
+    id = await until("the echo agent's session row", 30_000, async () => {
+      const r = await c.request<{ sessions: { id: string }[] }>("session.list", { kinds: ["agent"] }).catch(() => undefined);
+      return r?.sessions.find((x) => !before.has(x.id))?.id;
+    }, 500);
+  } else {
+    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
+  }
+  // The call's card, if its level asks: it names the agent's own session.
+  const carded: string[] = [];
+  const answered = new Set<string>();
+  const where = o.bot !== undefined ? o.bot : id;
+  const heard = await until(`the echo answer in ${o.bot !== undefined ? "Alpha's conversation" : "the coding session"}`, 120_000, async () => {
+    for (const card of await cards(c).catch(() => [])) {
+      if (card.session !== id || answered.has(card.id)) continue;
+      answered.add(card.id);
+      // A bot's agent's card is its bot's (at her level, her saved rules) but offers no "always" (it would be saved
+      // under her id and answer her own calls).
+      if (o.bot !== undefined && card.bot !== "alpha") fail(`the echo agent's card names ${card.bot ?? "no bot"}, not alpha`);
+      if (o.bot !== undefined && card.options.some((x) => x.remember === "always")) fail("the echo agent's card offers \"Always allow\" (a bot's agent's card never does)");
+      await approve(c, card);
+      carded.push(`a ${card.kind} card naming the agent's session${o.bot !== undefined ? " and alpha, with no always" : ""}, approved`);
+    }
+    const evs = await history(c, where).catch(() => []);
+    return evs.find((e) => JSON.stringify(e).includes(PONG) || JSON.stringify(e).includes("ACCEPTANCE-CHILD-NO-ECHO"));
+  }, 1_000).catch((err: unknown) => {
+    const mine = (fake?.requests ?? []).slice(seen).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD-ECHO") || r.toolUse?.endsWith("Echo"));
+    fail(`${why(err)}; the agent's requests: ${mine.map((r) => `${r.answered}${r.toolUse ? ` (called ${r.toolUse})` : ""}`).join(", ") || "none"}${carded.length ? `; ${carded.join("; ")}` : ""} [packages/core/src/agents/plugin-reach.ts]`);
+  });
+  if (JSON.stringify(heard).includes("ACCEPTANCE-CHILD-NO-ECHO")) {
+    fail(`the agent's bridge offered no echo tool: ${/ACCEPTANCE-CHILD-NO-ECHO ([^"\\]*)/.exec(JSON.stringify(heard))?.[1]?.slice(0, 300) ?? "?"} [packages/core/src/agents/plugin-reach.ts]`);
+  }
+  const mine = (fake?.requests ?? []).slice(seen);
+  const called = mine.find((r) => r.toolUse !== undefined && BRIDGE_ECHO.test(r.toolUse))?.toolUse;
+  if (called === undefined) fail(`the answer came back but no request called the echo tool through a bridge (${mine.map((r) => r.toolUse).filter(Boolean).join(", ") || "no tool called"})`);
+  const offered = mine.find((r) => r.tools.some((t) => BRIDGE_ECHO.test(t)))?.tools.filter((t) => t.startsWith("mcp__clover_")) ?? [];
+  return `its bridge offered ${offered.join(", ")}; it called ${called} and got "${PONG}" back${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`;
 }
 
 async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<void> {
