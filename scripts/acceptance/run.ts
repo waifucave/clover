@@ -24,6 +24,9 @@
 //                       daemon, the dummy key, Alpha's keyed bot, then the app and just those rows; the table has them
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
+//   --only-web | --only-drag | --only-review   one row each: a web page part drawn sealed (the acceptance-webpart fixture);
+//                       Alpha's own handle dragging the window (shell.dragWindow); the Review on a plugin's OK card. The
+//                       daemon, the dummy key, Alpha's keyed bot, the app, then that row; the table has it. Each runs alone
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
 //
@@ -74,6 +77,9 @@ import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP, childStep, notifyStep } from "./child-notify-step";
 import { parseOnlyUi, uiRowNumbers } from "./steps";
 import { LISTEN_STEP, listenStep } from "./listen-step";
+import { WEB_STEP, webStep } from "./web-step";
+import { DRAG_STEP, dragStep } from "./drag-step";
+import { REVIEW_STEP, reviewStep } from "./review-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
@@ -139,6 +145,13 @@ const codeAdapterOnly = argv.includes("--only-code-adapter");
 // --only-third-party-model: only the third-party model row (the acceptance-models fixture installed from its folder, its
 // key through its sign-in, Alpha's turn answered by its own adapter through the plugin host).
 const thirdPartyOnly = argv.includes("--only-third-party-model");
+// --only-web, --only-drag, --only-review: one row each (a web page part drawn sealed; Alpha's own handle dragging the window; the
+// Review on a plugin's OK card), after the daemon, the dummy key and the app. Each runs alone: no other --only-*, --cold-start,
+// --cold-home, --keep-state or --upgrade-from, and not with one another.
+const webOnly = argv.includes("--only-web");
+const dragOnly = argv.includes("--only-drag");
+const reviewOnly = argv.includes("--only-review");
+if ([webOnly, dragOnly, reviewOnly].some(Boolean) && ([webOnly, dragOnly, reviewOnly].filter(Boolean).length > 1 || onlyUi !== undefined || listenOnly || kidsOnly || codeAdapterOnly || thirdPartyOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-web, --only-drag and --only-review each run one row alone; they take no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -1543,6 +1556,9 @@ async function main(): Promise<void> {
   if (kidsOnly) { await kidsOnlyRun(app); return; }
   if (onlyUi !== undefined) { await onlyUiRun(app); return; }
   if (listenOnly) { await listenOnlyRun(app); return; }
+  if (webOnly) { await appRowsRun(app, "web-app", [[WEB_STEP, webStep]]); return; }
+  if (dragOnly) { await appRowsRun(app, "drag-app", [[DRAG_STEP, dragStep]]); return; }
+  if (reviewOnly) { await appRowsRun(app, "review-app", [[REVIEW_STEP, reviewStep]]); return; }
   if (codeAdapterOnly) { await codeAdapterOnlyRun(); return; }
   if (thirdPartyOnly) { await thirdPartyOnlyRun(); return; }
 
@@ -3809,6 +3825,10 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       [NOTIFY_STEP, () => notifyStep(exampleCtx, session!)],
       // The app records for a held talk button and hands the audio to Alpha's listening voice (a generated clip, never the microphone).
       [LISTEN_STEP, () => listenStep(exampleCtx, session!)],
+      // A web page part, Alpha's own handle dragging the window, and the Review on a plugin's OK card.
+      [WEB_STEP, () => webStep(exampleCtx, session!)],
+      [DRAG_STEP, () => dragStep(exampleCtx, session!)],
+      [REVIEW_STEP, () => reviewStep(exampleCtx, session!)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
@@ -3879,7 +3899,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : kidsOnly ? [stepNumber(FULL_STEPS, CHILD_STEP), stepNumber(FULL_STEPS, NOTIFY_STEP)] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : listenOnly ? stepNumber(FULL_STEPS, LISTEN_STEP) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : kidsOnly ? [stepNumber(FULL_STEPS, CHILD_STEP), stepNumber(FULL_STEPS, NOTIFY_STEP)] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : listenOnly ? stepNumber(FULL_STEPS, LISTEN_STEP) : webOnly ? stepNumber(FULL_STEPS, WEB_STEP) : dragOnly ? stepNumber(FULL_STEPS, DRAG_STEP) : reviewOnly ? stepNumber(FULL_STEPS, REVIEW_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
