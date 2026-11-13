@@ -10,7 +10,7 @@
 import { ownTurnCompleted } from "./turn-end";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
-import { clickTree, fail, installFromPage, leave, SIDEBAR_ITEMS, sleep, until, type ExampleCtx } from "./example-steps";
+import { clickTree, escape, fail, installFromPage, leave, SIDEBAR_ITEMS, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
 export const CARDS_STEP = "a third-party plugin with `approvals` places its own bot's tool card in a page of its own and the run presses Approve in that frame (the tool runs); a second plugin with `approvals` and no bot is mounted, lists its cards, and is never told of it; with the page out of the window the card is still pressable (the island's buttons or the app's fallback card)";
 
@@ -26,6 +26,7 @@ export async function cardsStep(ctx: ExampleCtx): Promise<string> {
   try {
     return await run(ctx);
   } finally {
+    await escape(ctx.cdp).catch(() => undefined);
     await leave(ctx, A);
     await leave(ctx, B);
   }
@@ -171,5 +172,49 @@ async function run(ctx: ExampleCtx): Promise<string> {
   await ctx.pressCard("the second card, pressed where it is drawn", (c) => c.id === card2.id);
   await until("the second turn to complete", 90_000, async () => ((await completedAfter(session, second.seq)) ? true : undefined));
   done.push(`A's page out: ${card2.id} drawn as [${drawn}], app fallback card ${fallback ? "logged within 2.5 s" : "not logged (a visible button elsewhere, the island's, keeps it back)"}; pressed there, the tool ran again`);
+
+  // 6. Settings -> Tools: the user's own press on the tool's "Always allow" in the window; the next turn calls the tool and no card is raised
+  // (the tool runs); then "Always block": no card either, the tool does not run and the model is told the user blocked it in Settings.
+  await clickTree(cdp, "the Settings button", "button[aria-label=Settings]");
+  await clickTree(cdp, "the Settings window's Tools section", "button.cl-settings__section", "Tools");
+  const radio = (value: string) => `section[data-item="${A}"] [role=radiogroup][aria-label$="ask_card may do"] button[data-value=${value}]`;
+  const pickTool = async (value: string) => {
+    await clickTree(cdp, `the tool's ${value} control`, radio(value), undefined, 30_000);
+    await until(`the tool's ${value} control marked`, 20_000, async () => {
+      for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, `document.querySelector(${JSON.stringify(radio(value))})?.getAttribute('aria-checked')`).catch(() => null)) === "true") return true;
+      return undefined;
+    });
+  };
+  const ranCount = () => ctx.requests().filter((r) => r.toolResult?.text.includes("asked-ok")).length;
+  const cardsFor = async () => (await cardsNow()).filter((c) => c.kind === "tool" && c.session === session).map((c) => c.id);
+  await pickTool("allow");
+  // Renders for the owner (a run that sets CLOVER_SHOT_DIR only): the tab in light and in dark, the window's own pixels, headless.
+  const shots = process.env.CLOVER_SHOT_DIR;
+  if (shots !== undefined && shots !== "" && ctx.setAppearance !== undefined) {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    mkdirSync(shots, { recursive: true });
+    for (const scheme of ["light", "dark"] as const) {
+      ctx.setAppearance(scheme);
+      await sleep(1_500);
+      writeFileSync(join(shots, `tools-tab-${scheme}.png`), await cdp.screenshot());
+    }
+    ctx.setAppearance("system");
+  }
+  const ranBefore = ranCount();
+  const third = await send(session, "ACCEPTANCE-CALL ask_card {}");
+  await until("the turn to complete with the tool always allowed", 90_000, async () => ((await completedAfter(session, third.seq)) ? true : undefined), async () => `cards now: ${JSON.stringify(await cardsNow())}; settings: ${JSON.stringify((await rpc.request<unknown>("tool.permissions", {}).catch((e: Error) => String(e.message))))?.slice(0, 600)}; last results: ${JSON.stringify(ctx.requests().slice(-3).map((r) => r.toolResult?.text.slice(0, 160)))}`);
+  if (ranCount() <= ranBefore) fail("with Always allow set in Settings the tool did not run (no new asked-ok result reached the model)");
+  const stray = (await cardsFor()).filter((id) => id !== card.id && id !== card2.id);
+  if (stray.length > 0) fail(`with Always allow set in Settings a card was still raised: ${stray.join(", ")}`);
+  await pickTool("deny");
+  const ranAllowed = ranCount();
+  const fourth = await send(session, "ACCEPTANCE-CALL ask_card {}");
+  await until("the turn to complete with the tool always blocked", 90_000, async () => ((await completedAfter(session, fourth.seq)) ? true : undefined), async () => `cards now: ${JSON.stringify(await cardsNow())}; settings: ${JSON.stringify((await rpc.request<unknown>("tool.permissions", {}).catch((e: Error) => String(e.message))))?.slice(0, 600)}; last results: ${JSON.stringify(ctx.requests().slice(-3).map((r) => r.toolResult?.text.slice(0, 160)))}`);
+  if (ranCount() > ranAllowed) fail("with Always block set in Settings the tool still ran");
+  if (!ctx.requests().some((r) => r.toolResult?.text.includes("blocked this tool in Settings"))) fail("with Always block set the model was not told the user blocked the tool in Settings");
+  const strayDeny = (await cardsFor()).filter((id) => id !== card.id && id !== card2.id);
+  if (strayDeny.length > 0) fail(`with Always block set in Settings a card was raised: ${strayDeny.join(", ")}`);
+  await pickTool("ask");
+  done.push("Settings -> Tools: Always allow pressed in the window, the next turn ran the tool with no card; Always block pressed, the next turn raised no card, the tool did not run and the model was told the user blocked it in Settings; Ask restored");
   return done.join("; ");
 }

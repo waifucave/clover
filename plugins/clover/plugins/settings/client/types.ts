@@ -8,7 +8,13 @@
 import type { ReactNode } from "react";
 
 /** Clover's own sections. Usage is the usage plugin's, which fills `settings.section` (the controller's R3). */
-export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots";
+export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "tools" | "levels" | "bots";
+
+export type ToolPermission = "allow" | "ask" | "deny";
+/** The Tools tab's data (`tool.permissions`), the bots named for their cards' rules. */
+export interface ToolsView {
+  plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; isNew?: boolean; cardRules: { bot: string; botName: string; computers: string[] }[] }[] }[];
+}
 
 /** A plugin's state (lane B's `PLUGIN_STATES`, spec §5.1): found and waiting for the user's OK, refused, invalid, off,
  *  waiting for a point another plugin declares, running, or stopped after crashes. */
@@ -114,6 +120,10 @@ export interface SettingsModalProps {
   logs?: { name: string; lines: string[]; onBack: () => void };
   /** Open a bot in the bot editor. */
   onEditBot?: (id: string) => void;
+  /** Tools: what each plugin tool is set to, undefined while it loads; set one tool (or, with no tool, all the plugin lists now), or take back a card's saved rule for one bot. */
+  tools?: ToolsView;
+  onSetTool?: (server: string, tool: string | undefined, permission: ToolPermission) => void;
+  onTakeBackRule?: (server: string, tool: string, bot: string) => void;
 }
 
 /** A pairing under way: the code to enter on the other device, then the four words both show. */

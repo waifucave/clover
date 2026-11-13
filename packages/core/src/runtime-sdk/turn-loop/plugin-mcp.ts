@@ -866,6 +866,14 @@ export class PluginMcp {
     return scopeOf(this.#o.registry, plugin, entry.scope);
   }
 
+  /** Every server listed here with the tools it gives, local or not, by the key a bot sees it under: the Tools tab's list. */
+  toolListing(): { server: string; plugin: string; name: string; tools: { name: string; title?: string }[] }[] {
+    return [...this.#listed].map(([key, l]) => ({
+      server: this.#exposed(key, l.bundled), plugin: l.plugin, name: l.name,
+      tools: l.tools.map((t) => ({ name: t.name, ...(t.title === undefined ? {} : { title: t.title }) })),
+    }));
+  }
+
   /** The per-computer servers listed here, for lane J's node to serve to the other computers (`mcp.list`; the node
    *  keeps only what's ticked here). */
   listing(): PluginMcpListing[] {

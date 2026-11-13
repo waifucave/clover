@@ -1,7 +1,7 @@
 // The settings window's line icons: Lucide's (ISC, `LICENSES/lucide-react.txt`), drawn in the text colour
 // around them, 16 px at Lucide's 2 stroke (a 1.3 px line, as the reference app's). Decorative: each is
 // hidden from assistive tech, and the control or text beside it carries the meaning.
-import { Bell, Bot, Check, MonitorSmartphone, Palette, Puzzle, Search, ShieldCheck, User, X, type LucideIcon } from "lucide-react";
+import { Bell, Bot, Check, MonitorSmartphone, Palette, Puzzle, Search, ShieldCheck, User, Wrench, X, type LucideIcon } from "lucide-react";
 import type { SettingsSection } from "./types";
 
 function icon(Glyph: LucideIcon, size = 16) {
@@ -16,6 +16,7 @@ export const SECTION_ICONS: Record<SettingsSection, () => ReturnType<ReturnType<
   appearance: icon(Palette),
   notifications: icon(Bell),
   plugins: icon(Puzzle),
+  tools: icon(Wrench),
   levels: icon(ShieldCheck),
   bots: icon(Bot),
 };

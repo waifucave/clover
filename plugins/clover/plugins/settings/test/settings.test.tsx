@@ -30,7 +30,7 @@ describe("the settings window", () => {
     const nav = screen.getByRole("navigation", { name: "Sections" });
     expect(within(nav).getAllByRole("button")).toHaveLength(SECTIONS.length);
     expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "Account", "Devices", "Appearance", "Notifications", "Plugins", "Levels", "Bots",
+      "Account", "Devices", "Appearance", "Notifications", "Plugins", "Tools", "Levels", "Bots",
     ]);
     expect(within(nav).getByRole("button", { name: "Appearance" }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(within(nav).getByRole("button", { name: "Levels" }));
@@ -170,5 +170,46 @@ describe("the language chooser", () => {
     expect(screen.getAllByRole("radio")).toHaveLength(1);
     fireEvent.change(search, { target: { value: "klingon" } });
     expect(screen.getByText("No language matches")).toBeTruthy();
+  });
+});
+
+describe("the Tools tab", () => {
+  const tools = {
+    plugins: [{
+      pluginId: "reel", name: "Reel", server: "reel-reel", tools: [
+        { name: "Export", permission: "ask" as const, cardRules: [{ bot: "alpha", botName: "Alpha", computers: ["Delta"] }] },
+        { name: "Trim", permission: "allow" as const, isNew: true, cardRules: [] },
+      ],
+    }],
+  };
+
+  test("each plugin is a heading with its tools by their own names, three choices each, and a row that sets them all", () => {
+    const onSetTool = mock((_s: string, _t: string | undefined, _p: string) => undefined);
+    setup({ section: "tools", tools, onSetTool });
+    expect(screen.getByText("Reel")).toBeTruthy();
+    expect(screen.getByText("Export")).toBeTruthy();
+    expect(screen.queryByText("mcp__reel-reel__Export")).toBeNull();
+    const group = screen.getByRole("radiogroup", { name: "What Export may do" });
+    expect(within(group).getAllByRole("radio").map((r) => [r.textContent, r.getAttribute("aria-checked")])).toEqual([["Always allow", "false"], ["Ask", "true"], ["Always block", "false"]]);
+    fireEvent.click(within(group).getByRole("radio", { name: "Always allow" }));
+    expect(onSetTool).toHaveBeenLastCalledWith("reel-reel", "Export", "allow");
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "What every tool of Reel may do" })).getByRole("radio", { name: "Always block" }));
+    expect(onSetTool).toHaveBeenLastCalledWith("reel-reel", undefined, "deny");
+  });
+
+  test("a mixed plugin shows no row value; a tool added later is marked new; the plain words say what Always allow means once", () => {
+    setup({ section: "tools", tools });
+    const row = screen.getByRole("radiogroup", { name: "What every tool of Reel may do" });
+    expect(within(row).getAllByRole("radio").map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "false", "false"]);
+    expect(screen.getByText("New: asks until you set it")).toBeTruthy();
+    expect(screen.getAllByText(/runs without asking, whatever it is given|Always allow means the tool runs without asking, whatever it is given/)).toHaveLength(1);
+  });
+
+  test("a card's Always allow for one bot is on the tool's row and is taken back there", () => {
+    const onTakeBackRule = mock((_s: string, _t: string, _b: string) => undefined);
+    setup({ section: "tools", tools, onTakeBackRule });
+    expect(screen.getByText("Always allowed for Alpha, on Delta only")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take back Alpha's Always allow for Export" }));
+    expect(onTakeBackRule).toHaveBeenCalledWith("reel-reel", "Export", "alpha");
   });
 });

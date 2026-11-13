@@ -48,6 +48,7 @@ import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
 import { CloverFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
+import { toolPermissionMethods } from "./approvals/tool-permissions";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
 import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
@@ -119,7 +120,7 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { loadSettings, saveSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -138,6 +139,7 @@ import { ComputerUseService } from "./agent/computer-use";
 import { SessionTitler } from "./agent/titles";
 import { McpManager } from "./agent/mcp/manager";
 import { daemonConnectorSource } from "./agent/mcp/connector-source";
+import { connectorDenialMessage, connectorFactsFor } from "./agent/mcp/connector-permissions";
 import { notifyHeadless } from "./agent/notify-fallback";
 import { LspManager } from "./agent/lsp/manager";
 import { PermissionGate, type SessionApprovalPolicy } from "./agent/gate";
@@ -3566,6 +3568,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }));
   // Lane C's cards and lane K's agent.* methods: the broker and the agents come up with the parts (below) and go with
   // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
+  // Settings' Tools tab: always allow / ask / always block per plugin tool (one store with the connector permissions, read live by
+  // the same floor), and the card rules saved for single bots, which the user takes back there.
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(toolPermissionMethods({
+    listing: () => pluginMcp?.toolListing() ?? [],
+    pluginName: (id) => { const n = partsRegistry?.registry.get(id)?.name; return typeof n === "string" ? n : undefined; },
+    loadSettings: () => loadSettings(dirs.settingsPath),
+    saveSettings: (next) => { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); },
+    savedFor: (hash) => daemonParts?.broker?.savedFor(hash) ?? [],
+    forgetSaved: (hash, bot) => daemonParts?.broker?.forgetSaved(hash, bot) ?? 0,
+  })));
   Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
     // A user's call made on this computer (the app or the terminal here) is this computer's device.
     localDevice: () => liveDeviceId,
@@ -4401,6 +4413,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           readOnlyTool: (ctx, tool) => {
             const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
+          },
+          // What the user set for this tool in Settings (Tools), read live from the connector store at each call.
+          toolSetting: (_ctx, tool) => {
+            const facts = connectorFactsFor(connectorPermissions, tool);
+            if (facts?.setting === "allow") return { setting: "allow" };
+            return facts?.setting === "deny" ? { setting: "deny", message: connectorDenialMessage(facts.server, facts.tool, { setting: "deny", policy: "ask" }) } : undefined;
           },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
           fetchBudget: (ctx, url) => seenUrls.take(ctx.sessionId, url),

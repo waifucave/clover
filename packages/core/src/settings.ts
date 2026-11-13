@@ -413,6 +413,9 @@ export const Settings = z.object({
      *  The one reader, `connectorPermissionTable`, reads an unrecognised value as `"ask"` and a row that is
      *  not an object as `{"*": "ask"}`. */
     toolPermissions: z.record(z.string(), z.unknown()).optional(),
+    /** Settings' Tools tab: the tools each plugin server listed when the user last set a value for it (server → names), so a
+     *  tool the plugin adds later is marked new and starts at Ask (`approvals/tool-permissions.ts`). */
+    toolsSeen: z.record(z.string(), z.array(z.string())).optional(),
   }).optional(),
   reviewer: z.object({
     enabled: z.boolean().optional(),

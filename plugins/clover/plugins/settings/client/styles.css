@@ -521,3 +521,52 @@
   font-size: var(--clover-font-size-title);
   letter-spacing: 0.04em;
 }
+
+/* Tools: a plugin's group, each tool with its three-way control and, under it, a card's saved rule for one bot. */
+.cl-settings__tool-group {
+  margin-block-end: var(--clover-space-l);
+}
+
+.cl-settings__three {
+  display: inline-flex;
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-small);
+  overflow: hidden;
+}
+
+.cl-settings__three-option {
+  all: unset;
+  box-sizing: border-box;
+  padding: var(--clover-space-xs) var(--clover-space-m);
+  color: var(--clover-color-text-secondary);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.cl-settings__three-option + .cl-settings__three-option {
+  border-inline-start: 1px solid var(--clover-color-hairline);
+}
+
+.cl-settings__three-option[aria-checked="true"] {
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  font-weight: 600;
+}
+
+.cl-settings__three-option[data-value="deny"][aria-checked="true"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-settings__three-option:focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-settings__tool-rule {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-s);
+  margin-block-start: var(--clover-space-xs);
+  color: var(--clover-color-text-secondary);
+  font-size: 0.85em;
+}

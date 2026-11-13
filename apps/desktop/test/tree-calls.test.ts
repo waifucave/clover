@@ -370,6 +370,9 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "models.list": { parts: ["clover/bot-editor"], gesture: [] },
   "plugin.setEnabled": { parts: ["clover/settings", PLUGINS_PART], gesture: ["clover/settings", PLUGINS_PART] },
   "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
+  "tool.permissions": { parts: ["clover/settings"], gesture: [] },
+  "tool.setPermission": { parts: ["clover/settings"], gesture: ["clover/settings"] },
+  "tool.takeBackRule": { parts: ["clover/settings"], gesture: ["clover/settings"] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.grant.list": { parts: [PLUGINS_PART], gesture: [] },
@@ -395,7 +398,7 @@ async function appConnection(method: string): Promise<unknown> {
 
 /** Each live entry's WORST single call from a part, classified (the reviewer's table): a sealed card the core raises, a
  *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
-type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn" | "held recording";
+type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn" | "held recording" | "user's permission press";
 const WORST: Record<string, Worst> = {
   "voice.stop": "harmless change", // ends one bot's own speech; the next reply speaks again
   "voice.played": "harmless change", // says an utterance the core sent this app ended: the voice mode's next sound may start sooner; one the core isn't waiting on is ignored; nothing sounds from it
@@ -420,6 +423,9 @@ const WORST: Record<string, Worst> = {
   "models.list": "read",
   "plugin.setEnabled": "sealed card", // turning a found plugin on raises its OK card; turning an OK'd plugin back on (or off) is a gesture (accepted)
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
+  "tool.permissions": "read", // plugin tools by their own names, each with its value and the bots' saved card rules
+  "tool.setPermission": "user's permission press", // always allow, ask or always block: the user's own press in Settings, never another part
+  "tool.takeBackRule": "user's permission press", // takes back a card's Always allow for one bot
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
   "plugin.grant.list": "read", // the files and folders picked for one plugin: paths only the user chose
@@ -504,7 +510,7 @@ describe("the door, table by table: who may call each entry, with what gesture, 
 
   test("every live entry's worst single call is classified: sealed card, main-owned dialog, read or harmless change", () => {
     const live = Object.entries(TREE_CALLS).filter(([, c]) => c.disposition !== "card" && c.disposition !== "unserved").map(([m]) => m);
-    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn|held recording)$/)]);
+    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn|held recording|user's permission press)$/)]);
     expect(Object.keys(WORST).sort()).toEqual([...live].sort());
     // A read needs no gesture and a change from the Plugins page does; a read is never one that changes a thing.
     for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, []]);

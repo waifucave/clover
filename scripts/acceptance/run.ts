@@ -2841,7 +2841,8 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     const port = freePort();
     // The Browser row's local fixture site, its names served to this app's browser (as the full run's first app has them).
     if (ids.includes("browser") && browserFixture === undefined) browserFixture = startBrowserFixture();
-    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    const unitAppearance = join(root, "unit-appearance");
+    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: unitAppearance, CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
     proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
@@ -2851,7 +2852,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     rpc = (await appDriver()).client;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
-    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile);
+    const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, unitAppearance);
     for (const [name, run] of uiRowRunners(ctx, session, launch)) {
       if (!names.includes(name)) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
