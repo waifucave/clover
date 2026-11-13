@@ -113,6 +113,8 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   composer. `key` is accepted but not bound yet.
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
 - **`voices`** (list): `{ id, name, speak, listen, auth, handler }`.
+- **`voiceModes`** (list, at most one): `{ id, name, handler }`: a voice mode for the voice slot (Settings › Voice);
+  the active one speaks the bots' replies and plays sound as their voices through its one queue.
 - **`computerProviders`**, **`computer`**, **`agentBackends`**, **`relays`**, **`notifiers`**, **`companions`**:
   Clover's own services use these; a bot building a plugin for a user rarely needs them. Their fields are in the SDK's
   schema (`ServiceSchema`: `{ id, name, handler, runsOn }`).
