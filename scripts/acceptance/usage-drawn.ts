@@ -50,7 +50,7 @@ export async function settingsUsageText(cdp: Cdp): Promise<string> {
   await clickIn(cdp, "the Settings window's Usage section", "button.cl-settings__section", "Usage");
   const text = await until("the Usage section's drawn text", 20_000, async () => {
     for (const d of await treeDocs(cdp)) {
-      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Group by/.test(t) && /Period/.test(t) && /Plans/.test(t) && !/Reading usage/.test(t) ? t : null; })()`).catch(() => null);
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Plans/.test(t) && /\\d[\\d.,]*[kKmM]? in · \\d[\\d.,]*[kKmM]? out|No usage yet/.test(t) && !/Reading usage/.test(t) ? t : null; })()`).catch(() => null);
       if (typeof v === "string" && v !== "") return v;
     }
     return undefined;
