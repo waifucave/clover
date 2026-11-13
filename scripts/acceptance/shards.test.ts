@@ -41,16 +41,16 @@ describe("the split", () => {
   });
 
   test("N shards: each parallel unit in one shard, main's chain first in its own, the load spread", () => {
-    expect(planShards(1)).toEqual([["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "plugin-app", "browser", "models"]]);
+    expect(planShards(1)).toEqual([["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "plugin-app", "browser", "models"]]);
     for (const n of [2, 3, 4, 8]) {
       const plan = planShards(n);
       expect(plan.length).toBeLessThanOrEqual(n);
-      expect(plan.flat().sort()).toEqual(["arrivals", "browser", "bundled-tools", "cards", "examples", "main", "models", "plugin-app", "reopen", "workshop"]);
+      expect(plan.flat().sort()).toEqual(["addons", "archive", "arrivals", "browser", "bundled-tools", "cards", "examples", "main", "models", "plugin-app", "reopen", "workshop"]);
       // Main, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
       expect(plan[0]).toEqual(["main"]);
     }
     // With 2 shards main runs alone and the rest share the other (measured: main ~270-290 s, the rest ~230 s).
-    expect(planShards(2)).toEqual([["main"], ["examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "plugin-app", "browser", "models"]]);
+    expect(planShards(2)).toEqual([["main"], ["examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "plugin-app", "browser", "models"]]);
     expect(() => planShards(0)).toThrow();
   });
 
@@ -61,7 +61,7 @@ describe("the split", () => {
     // The rows an app over Alpha's conversation drives (uiRowRunners) start that app when their unit runs alone: a unit
     // left out of the list runs nothing (the first --units arrivals run: "not reached").
     const windowed = run.match(/const windowed = ids\.filter\(\(id\) => (.*)\);/)?.[1] ?? "";
-    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "tab-flash", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "addons", "archive", "tab-flash", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
     // The appless rows run on the shard's daemon with no app, each its own clause.
     expect(run).toContain('if (ids.includes("models"))');
     expect(run).toContain('if (runs("models"))');

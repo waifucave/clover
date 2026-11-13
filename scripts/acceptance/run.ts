@@ -80,6 +80,8 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeat
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
+import { ADDONS_STEP, addonsStep } from "./addons-step";
+import { ARCHIVE_STEP, archiveStep, seedArchive } from "./archive-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
@@ -1678,6 +1680,9 @@ async function main(): Promise<void> {
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
   try {
+    // The previous app's session in the home's store before the daemon first opens it (the archive row; not on an
+    // upgrade's home, which an earlier run made).
+    if (runs("archive") && stateDir === undefined) seedArchive(home);
     daemon = await startDaemonProc();
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");
@@ -2638,6 +2643,8 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   let session: string | undefined;
   let c: CloverClient | undefined;
   try {
+    // The previous app's session in the home's store before the daemon first opens it (the archive row).
+    if (ids.includes("archive")) seedArchive(home);
     await startDaemonProc();
     c = (await appDriver()).client;
     await signInKey(c);
@@ -2670,7 +2677,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   } finally {
     c?.close();
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "tab-flash" || id === "browser" || id === "plugin-app");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "tab-flash" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -2790,6 +2797,10 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc)) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
+    // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
+    [ADDONS_STEP, () => addonsStep(ctx, session)],
+    // The previous app's session, read on the Archive page (checklist 4.14).
+    [ARCHIVE_STEP, () => archiveStep(ctx)],
     // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
     [CHILD_STEP, () => childStep(ctx, session)],
     [NOTIFY_STEP, () => notifyStep(ctx, session)],
