@@ -548,6 +548,9 @@ let hookOutcome: { status: Status; detail: string } | undefined;
 /** The plugin's own host API step (acceptance-points; its turn here, on the first daemon; recorded at the end). */
 let pointsOutcome: { status: Status; detail: string } | undefined;
 const POINTS_PREFIX = "a plugin's own API in its host half";
+/** The `clover plugin` CLI step (run on the first daemon after the host API step; recorded at the end). */
+let cliOutcome: { status: Status; detail: string } | undefined;
+const CLI_PREFIX = "the clover plugin CLI against the run's daemon";
 /** A listener on 127.0.0.1 the fixture's hook must never reach (directly, or through its proxy as an undeclared host). */
 let hookTarget: { port: number; connections: number; stop(): void } | undefined;
 /** Where the fixture's hook tries to write outside its allowed folders: in the run's user home. */
@@ -796,7 +799,11 @@ async function appScreenshot(): Promise<{ code: number; stdout: string; stderr: 
 
 /** `clover-core app <words>` as the user runs it (the target's own CLI, as `appScreenshot`), its output kept in the logs. */
 async function appCli(words: string[], log = `app-${words[0] ?? "cli"}`): Promise<{ code: number; stdout: string; stderr: string }> {
-  const all = ["app", ...words];
+  return coreCli(["app", ...words], log);
+}
+
+/** `clover-core <words>` as the user runs it in their terminal (the target's own CLI, as `appCli`). */
+async function coreCli(all: string[], log: string): Promise<{ code: number; stdout: string; stderr: string }> {
   const [cmd, args] = target === "source" ? [process.execPath, [join(REPO, "packages", "cli", "src", "main.ts"), ...all]] : [packagedCore(), all];
   return new Promise((done) => {
     const p = spawn(cmd, args, { cwd: root, env: { ...baseEnv(), CLOVER_NO_AUTOLAUNCH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -1847,6 +1854,43 @@ async function main(): Promise<void> {
     }
   }
 
+  // The `clover plugin` CLI in the user's terminal, against this run's daemon (recorded at the end): the target's own
+  // CLI on the step-4 plugin (list, info, logs, pin and unpin, restart, index list), and a plugin made from a template
+  // and checked (new, validate), which needs no daemon.
+  if (!STEPS.some((x) => x.startsWith(CLI_PREFIX))) { /* not in this run */ }
+  else if (pluginId === undefined || !pluginOk) cliOutcome = { status: "BLOCKED", detail: "the plugin isn't installed and approved (step 4)" };
+  else if (oldHalf) cliOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
+  else {
+    try {
+      const id = pluginId;
+      const said: string[] = [];
+      const run = async (words: string[], expect?: string) => {
+        const r = await coreCli(["plugin", ...words], `plugin-cli-${words[0]}`);
+        if (r.code !== 0) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+        if (expect !== undefined && !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} didn't say "${expect}": ${r.stdout.trim().slice(0, 300)}`);
+        said.push(words.join(" "));
+        return r;
+      };
+      const pinned = async () => (await c.request<{ plugin?: { pinned?: boolean } }>("plugin.get", { id })).plugin?.pinned;
+      await run(["list"], id);
+      await run(["info", id], id);
+      await run(["logs", id, "-n", "5"]);
+      await run(["pin", id], "no updates are offered for it");
+      if ((await pinned()) !== true) fail(`clover plugin pin ${id} didn't pin it (plugin.get says ${String(await pinned())})`);
+      await run(["unpin", id], "is offered updates again");
+      if ((await pinned()) !== false) fail(`clover plugin unpin ${id} didn't unpin it`);
+      await run(["restart", id], `restarted ${id}`);
+      await run(["index", "list"]);
+      const made = join(root, "cli-new-plugin");
+      await run(["new", "tool", made, "--name", "Cli probe"]);
+      if (!existsSync(join(made, "clover.json"))) fail(`clover plugin new tool made no clover.json in ${made}`);
+      await run(["validate", made], "valid");
+      cliOutcome = { status: "PASS", detail: `${target === "source" ? "the checkout's CLI" : "the packaged core's CLI"}: clover plugin ${said.join("; ")} (each exit 0; pin and unpin read back through plugin.get)` };
+    } catch (err) {
+      cliOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
   // The stdio server step (recorded at the end): the fixture's `probe` server is a stdio one, which runs on this computer
   // (ticked here by the plugin's OK) through lane J's launcher, fenced (B's guard: its folders, its tree's proxy). Its
   // tool lists to the bot, answers a call, and reports what its fence let it do; the run checks the disk and its
@@ -2109,6 +2153,7 @@ async function main(): Promise<void> {
   record(stepNo("the bot's WebFetch reads a page"), fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
   record(stepNo("a folder-installed plugin's command hook"), hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
   if (STEPS.some((x) => x.startsWith(POINTS_PREFIX))) record(stepNo(POINTS_PREFIX), pointsOutcome?.status ?? "BLOCKED", pointsOutcome?.detail ?? "the host API step didn't run");
+  if (STEPS.some((x) => x.startsWith(CLI_PREFIX))) record(stepNo(CLI_PREFIX), cliOutcome?.status ?? "BLOCKED", cliOutcome?.detail ?? "the CLI step didn't run");
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
