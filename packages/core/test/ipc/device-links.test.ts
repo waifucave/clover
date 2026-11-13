@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SystemClock } from "../../src/clock/system-clock";
@@ -65,6 +65,22 @@ describe("the daemon's links (H-M1 wiring)", () => {
     expect(linkSidecarBinary(join(bin, "clover-core"), "darwin")).toBeNull();
     writeFileSync(join(bin, "clover-link"), "");
     expect(linkSidecarBinary(join(bin, "clover-core"), "darwin")).toBe(realpathSync(join(bin, "clover-link")));
+  });
+
+  test("the sidecar: the one beside the daemon's real binary, never one a link to it sits beside", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-bin-")));
+    const name = process.platform === "win32" ? "clover-link.exe" : "clover-link";
+    writeFileSync(join(dir, name), "");
+    writeFileSync(join(dir, "clover-core"), "");
+    expect(linkSidecarBinary(join(dir, "clover-core"))).toBe(join(dir, name));
+    if (process.platform !== "win32") {
+      // A link to the daemon in a folder the user can write: the sidecar is the one beside the real binary.
+      const linkDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-link-")));
+      symlinkSync(join(dir, "clover-core"), join(linkDir, "clover-core"));
+      writeFileSync(join(linkDir, name), "");
+      expect(linkSidecarBinary(join(linkDir, "clover-core"))).toBe(join(dir, name));
+    }
+    expect(linkSidecarBinary(join(realpathSync(mkdtempSync(join(tmpdir(), "clover-c-none-"))), "clover-core"))).toBeNull();
   });
 
   test("the device key goes in the real store; the devices methods mount; a sensitive change outside the terminal is refused", async () => {

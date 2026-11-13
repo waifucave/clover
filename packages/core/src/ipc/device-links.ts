@@ -3,7 +3,8 @@
 // network change or wake.
 //   - The link sidecar (`clover-link`, which lane M ships beside the core) is the one beside the daemon's own binary,
 //     with its links resolved (`bundledLinkBinary`), never one an environment variable or the PATH names: the sidecar
-//     is handed the device key. Without it the daemon runs with no links, and says so.
+//     is handed the device key. Without it the daemon runs with no links, and says so. It runs under the fence
+//     (fence/sidecar-spawn.ts, C-M3 item 4): Seatbelt on macOS, bubblewrap on Linux.
 //   - The device key and box key live in the contract secret store (`CloverSecretStore`), as device items.
 //   - The handshake (`https://handshake.waifucave.com`, or the dev/test build's `CLOVER_HANDSHAKE_URL`) finds peers and
 //     keeps the main computer's lease on the group's record; public time servers set the shared clock's reference.
@@ -19,8 +20,7 @@
 //     until C-M3's cards render (`renderNothing`), so verifySignedAnswer fails closed.
 //   - A paired phone or browser speaks the Clover protocol over its link (H-M2's `mountRemoteClients`, on the Clover
 //     server through `mountCloverRemoteClients`, C-M3 item 3) when the daemon passes `clients`.
-// Still to come: the sidecar's spawn under the fence (with C-M2's Bash fence: UDP and its pipes only), and the devices
-// area's events (`devicesEvents`), once the Clover server sends `core.event`s.
+// Still to come: the devices area's events (`devicesEvents`), once the Clover server sends `core.event`s.
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import type { Caller, CloverRole } from "@waifucave/clover-protocol";
@@ -40,6 +40,8 @@ import { bundledLinkBinary } from "../links/sidecar-binary";
 import { mountPeerCall } from "../links/peer-call";
 import { watchNetwork } from "../platform/network-watch";
 import { laneMethodHandlers, type CloverHandler } from "./clover";
+import type { SidecarProcess } from "../links/sidecar-wire";
+import { fencedSidecarSpawn } from "../fence/sidecar-spawn";
 import { mountCloverRemoteClients, type CloverRemoteClientsOptions } from "./link-clients";
 
 /** Until C-M3's broker: no card can be raised, so a change that needs one is refused. */
@@ -111,6 +113,8 @@ export interface DaemonLinksInput {
   driver?: DeviceLinksOptions["driver"];
   watch?: typeof watchNetwork;
   binary?: string | null;
+  /** Test seam: the sidecar's spawn in place of the fenced one. */
+  sidecarSpawn?: (argv: readonly string[]) => SidecarProcess;
   /** The sidecar's network for tests: no relay, loopback only, nothing published (`n0Lookup: false`). */
   sidecar?: Pick<NonNullable<DeviceLinksOptions["sidecar"]>, "relay" | "bind" | "n0Lookup">;
   log?(line: string): void;
@@ -150,7 +154,11 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
   const publicTime = input.publicTime === undefined ? (localOnly ? undefined : new SntpTimeSource()) : input.publicTime ?? undefined;
   const driver = input.driver !== undefined ? input.driver : localOnly ? false : undefined;
   const openCard = input.openCard ?? refuseUntilBroker;
-  const sidecar: NonNullable<DeviceLinksOptions["sidecar"]> = { ...(input.sidecar ?? {}), binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`) };
+  // The sidecar under this OS's fence (C-M3 item 4, fence/sidecar-spawn.ts).
+  const sidecar: NonNullable<DeviceLinksOptions["sidecar"]> = {
+    ...(input.sidecar ?? {}), binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`),
+    spawn: input.sidecarSpawn ?? fencedSidecarSpawn({ cloverHome: input.home, onLog: (l: string) => log(`[clover-link] ${l}`) }),
+  };
   const links = await startDeviceLinks({
     home: input.home, store: input.store, clock: input.clock,
     self: input.self ?? { name: defaultDeviceName(hostname()), kind: "desktop", os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux" },
