@@ -255,7 +255,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       expect(readFileSync(open, "utf8")).toBe("rewritten-by-the-hook");
       expect(asks.map((a) => (a.rawInput as { content?: string }).content)).toEqual(["rewritten-by-the-hook"]);
       expect(r[2]!.content).toContain("the hook's view of the file");
-      expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["agent:Write", "agent:Write", "agent:Read"]);
+      // No bot named: the user's own session on Clover's runtime, which the hooks see as `coding` (the manager's name).
+      expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["coding:Write", "coding:Write", "coding:Read"]);
     } finally {
       await session.stop();
     }

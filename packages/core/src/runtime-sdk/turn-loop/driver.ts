@@ -58,7 +58,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { scopeOf, servesBackend, servesScope } from "./only-backends";
+import { partsServe } from "./only-backends";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
 import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import { secretReadPlaces, type Fence } from "../../contracts/fence";
@@ -831,9 +831,7 @@ export class BotSessionDriver implements SessionDriver {
       // A plugin's skills and agent definitions reach the session its `scope` serves (`servesScope`: an `agents` plugin's
       // no bot's, an `own-bot` one's only its own bot's) and, for an agent's or a coding session, only from plugins whose
       // `onlyBackends` name Clover's own backend, which runs it (only-backends.ts).
-      ...(this.#d.registry === undefined ? {} : {
-        serves: (pluginId: string) => servesScope(scopeOf(this.#d.registry!, pluginId), { kind: ctx.kind, bot: bot.id }, pluginId) && servesBackend(this.#d.registry!, pluginId, ctx.kind),
-      }),
+      ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }) }),
       // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
       servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
       bot: bot.id,

@@ -12,7 +12,7 @@
 //   agent by that bot's level and rules, never more than its parent), and runs where its server runs (J's router), as
 //   the agent's own session.
 // * **Skills and agent definitions.** The parts source gives a session the plugins' skill folders and agent files in the
-//   same scope (`servesScope`, `servesBackend`), for the backends that read their own folders (Claude Code's session
+//   same scope (`partsServe`), for the backends that read their own folders (Claude Code's session
 //   plugin, claude-code/placement.ts); `Glossary` on the bridge serves them to every agent. Command hooks are never
 //   given: an outside agent can't run one under its plugin's fence.
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -23,7 +23,7 @@ import type { BotSessionContext } from "../bots/service";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
 import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
-import { scopeOf, servesBackend, servesScope } from "../runtime-sdk/turn-loop/only-backends";
+import { partsServe } from "../runtime-sdk/turn-loop/only-backends";
 import type { BotMcpServer, McpRunner } from "../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeCallContext, BridgeToolDef, BridgeToolSource } from "./bridge/tools";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -186,7 +186,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
  *  a bot's delegated agent takes `bots` parts, its own bot's `own-bot` ones) and its `onlyBackends` its backend. A plugin
  *  that isn't running here gives no active entry at all. */
 function servesSession(d: Pick<AgentPluginReachDeps, "registry">, s: AgentSessionFacts, pluginId: string): boolean {
-  return servesScope(scopeOf(d.registry, pluginId), { kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }) }, pluginId) && servesBackend(d.registry, pluginId, s.kind, s.backend);
+  return partsServe(d.registry, pluginId, s);
 }
 
 /** `path` inside `folder`, by real paths: a link out of the plugin's folder is never followed. */
