@@ -2040,7 +2040,8 @@ async function main(): Promise<void> {
       // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
       await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
       await c.request("session.compact", { id: session }, 120_000).catch((err: unknown) => wrong.push(`session.compact failed: ${why(err)}`));
-      const eventsFile = join(home, "plugin-data", id, "filler", "events.txt");
+      // A plugin's data folder is its tree's (`<home>/plugin-data/<top>`): the child's hook writes its top plugin's.
+      const eventsFile = join(home, "plugin-data", id, "events.txt");
       const all = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end", "compact.before", "compact.after"];
       await until("its hooks' notes", 30_000, async () => (all.every((e) => readLog(eventsFile).split("\n").includes(e)) ? true : undefined)).catch(() => undefined);
       const events = readLog(eventsFile);
