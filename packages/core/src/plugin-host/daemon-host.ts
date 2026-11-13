@@ -452,7 +452,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),
     settingsApi(settings),
-    commandsApi(o.registry),
+    commandsApi(o.registry, host),
     logs.handlers,
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),

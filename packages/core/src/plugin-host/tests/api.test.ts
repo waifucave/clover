@@ -139,12 +139,14 @@ describe("the router: the one capability gate", () => {
     expect(await code(call(r, "luna", "host.call", ["x"]))).toBe("refused");
   });
 
-  test("commands.run isn't available yet: refused with why, whatever the plugin holds (its `call:` gate is apiCallAllowed's, the SDK's tests)", async () => {
+  test("commands.run is gated by call:<the command's plugin>, read from the plugin's own record; its own tree's need none", async () => {
     const r = routerWith(registry(), [{ "commands.run": (_c, a) => `ran ${String(a[0])}` }]);
     for (const id of ["luna", "quiet", "tarot"]) {
-      const e = await failure(call(r, id, "commands.run", ["tarot.shuffle"]));
-      expect([id, e.code, e.message]).toEqual([id, "refused", `commands.run isn't available yet: ${API_CALLS["commands.run"].notYet}`]);
+      const out = await call(r, id, "commands.run", ["tarot.shuffle"]).then((v) => v, (e: { code: string; message: string }) => e);
+      if (typeof out === "string") expect(out).toBe("ran tarot.shuffle");
+      else expect(out.message).toContain("call:tarot");
     }
+    expect(await call(r, "tarot", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
   });
 
   test("net.fetch reaches only the plugin's network: hosts; a call no area serves yet is refused, never guessed", async () => {

@@ -4005,8 +4005,7 @@
     },
     "commands.run": {
       "capability": "call:*",
-      "where": "both",
-      "notYet": "running another plugin's command from a plugin isn't served yet; the user runs commands from the composer"
+      "where": "both"
     },
     "commands.list": {
       "where": "both"

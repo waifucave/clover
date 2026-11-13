@@ -758,8 +758,8 @@ export type NotYet<T, K extends keyof T = keyof T> = Omit<T, K> & { readonly [P 
 export interface PluginApi {
   readonly plugin: PluginSelf;
   readonly points: PointsApi;
-  /** `run` isn't served yet: a plugin doesn't run another's command (the user does, from the composer). */
-  readonly commands: NotYet<CommandsApi, "run">;
+  /** Its own tree's commands, and another plugin's with `call:<its top-level id>` (§5.4). */
+  readonly commands: CommandsApi;
   /** In components: their own host half. */
   readonly host: HostApi;
   /** In host halves: their components. */

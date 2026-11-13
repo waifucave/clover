@@ -60,7 +60,8 @@ export const API_CALLS = {
   // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
   t: { where: "ui" },
   "points.entries": both(), "points.watch": both(), "points.call": both(),
-  "commands.run": notYet(both("call:*"), "running another plugin's command from a plugin isn't served yet; the user runs commands from the composer"), "commands.list": both(),
+  /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
+  "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
   "ui.send": { where: "host" },
   /** A layer reads its own store (`plugin.layer.call`) and hears its changes (`plugin_store_changed`); only its host half
