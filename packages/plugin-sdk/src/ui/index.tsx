@@ -14,6 +14,7 @@ import {
 import type { CardMeta } from "@waifucave/clover-protocol";
 import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
+import { COMPONENT_CALLS, fromLayerWire, listenerArgOf, toLayerWire } from "../catalogs/layer-calls";
 import type { PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
@@ -926,18 +927,170 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
   };
 }
 
-/** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
- *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `approvals`, `confirm`, `confirmCard`,
- *  `plugins.install`, `conversation`'s `list`, `get` and `answer`, and
- *  its own plugin (`host.call`, `host.on`, and `storage.synced`'s `get`, `keys` and `watch`). The rest reaches layers
- *  with lane B's host side (B-M2). */
+/** A member called on the part's own plugin's connection (`plugin.layer.call`), its args and answer as the wire
+ *  carries them (bytes as `{ $bytes }`, a `net.fetch` response as `{ $response }`). */
+function layerCall(mount: string, path: string, args: readonly unknown[]): Promise<unknown> {
+  const sent = [...args];
+  while (sent.length > 0 && sent[sent.length - 1] === undefined) sent.pop();
+  return (rt().bridge.api(mount, "plugin.layer.call", { call: path, args: toLayerWire(sent) }) as Promise<{ result: unknown }>).then((r) => fromLayerWire(r.result));
+}
+
+/** What a component's watch returns: its unsubscribe, with `opened`, which settles once the core opened the watch (or
+ *  refused it, with why), and `ended`, which settles with why once the core ends the watch (the plugin stopped, was
+ *  turned off or removed, lost the capability; the source ended) or it couldn't open. */
+export type LayerUnsubscribe = Unsubscribe & { readonly opened: Promise<void>; readonly ended: Promise<string> };
+
+/** A member that takes a listener, watched on the part's own plugin's connection (`plugin.layer.watch`): the core puts
+ *  its own listener in that place and each value comes back as `plugin_api_event` to this connection alone. Values
+ *  that land before the watch's id is known wait for it. */
+function layerWatch(mount: string, pluginId: string, path: string, args: readonly unknown[], at: number): { stop: LayerUnsubscribe; opened: Promise<void> } {
+  const listener = args[at];
+  if (typeof listener !== "function") throw new Error(`${path} takes a listener`);
+  subscribe(mount, pluginId, "plugins");
+  const sent: unknown[] = [...args];
+  sent[at] = null;
+  while (sent.length > 0 && sent[sent.length - 1] === undefined) sent.pop();
+  let id: string | undefined;
+  let stopped = false;
+  let endedWith: (why: string) => void = () => {};
+  const ended = new Promise<string>((resolve) => { endedWith = resolve; });
+  type ApiEvent = { type?: unknown; pluginId?: unknown; watch?: unknown; value?: unknown; ended?: { reason?: unknown } };
+  const early: ApiEvent[] = [];
+  const deliver = (e: ApiEvent) => {
+    if (e.ended !== undefined) {
+      off();
+      endedWith(typeof e.ended.reason === "string" ? e.ended.reason : "the watch ended");
+      return;
+    }
+    if (!stopped) (listener as (v: unknown) => void)(fromLayerWire(e.value));
+  };
+  const off = onApiEvent(pluginId, (method, params) => {
+    const e = params as ApiEvent | undefined;
+    if (method !== "core.event" || e?.type !== "plugin_api_event" || e.pluginId !== pluginId) return;
+    if (id === undefined) {
+      if (early.length < 256) early.push(e);
+      return;
+    }
+    if (e.watch === id) deliver(e);
+  });
+  const unwatch = (watch: string) => void rt().bridge.api(mount, "plugin.layer.unwatch", { watch }).catch(() => undefined);
+  const opened = (rt().bridge.api(mount, "plugin.layer.watch", { call: path, args: toLayerWire(sent) }) as Promise<{ watch: string }>).then((r) => {
+    id = r.watch;
+    if (stopped) return unwatch(r.watch);
+    for (const e of early.splice(0)) if (e.watch === id) deliver(e);
+  }, (err: unknown) => {
+    off();
+    early.length = 0;
+    endedWith(err instanceof Error ? err.message : String(err));
+    throw err;
+  });
+  const stop = Object.assign(() => {
+    if (stopped) return;
+    stopped = true;
+    off();
+    if (id !== undefined) unwatch(id);
+  }, { opened, ended });
+  return { stop, opened };
+}
+
+/** Every member the catalog gives components (`COMPONENT_CALLS`), each on the part's own plugin's connection: a call
+ *  through `plugin.layer.call`, a member with a listener through `plugin.layer.watch` (`files.watch` resolves its
+ *  unsubscribe once the watch is open; the rest return it at once). The specialized members below are laid over these. */
+function catalogMembers(mount: string, pluginId: string): Record<string, unknown> {
+  const root: Record<string, unknown> = {};
+  for (const path of COMPONENT_CALLS) {
+    const names = path.split(".");
+    let at = root;
+    for (const n of names.slice(0, -1)) at = (at[n] ??= {}) as Record<string, unknown>;
+    const l = listenerArgOf(path);
+    at[names[names.length - 1]!] = l === undefined
+      ? (...args: unknown[]) => layerCall(mount, path, args)
+      : l.async === true
+        ? (...args: unknown[]) => {
+          const w = layerWatch(mount, pluginId, path, args, l.at);
+          return w.opened.then(() => w.stop);
+        }
+        : (...args: unknown[]) => {
+          const w = layerWatch(mount, pluginId, path, args, l.at);
+          w.opened.catch(() => undefined);
+          return w.stop;
+        };
+  }
+  return root;
+}
+
+const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+/** `over` laid on `base`: an object in both is merged, anything else is `over`'s. */
+function layOver(base: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(over)) out[k] = isPlain(v) && isPlain(out[k]) ? layOver(out[k] as Record<string, unknown>, v) : v;
+  return out;
+}
+
+/** A `net.fetch` request as a component's connection carries it: the URL as a string, the headers as pairs, the body
+ *  as a string or bytes (a stream, a form or a blob can't cross). */
+function fetchInit(init: RequestInit | undefined): Record<string, unknown> | undefined {
+  if (init === undefined) return undefined;
+  const out: Record<string, unknown> = {};
+  if (init.method !== undefined) out.method = init.method;
+  if (init.headers !== undefined) out.headers = [...new Headers(init.headers).entries()];
+  if (init.redirect !== undefined) out.redirect = init.redirect;
+  const body = init.body;
+  if (body !== undefined && body !== null) {
+    if (typeof body === "string" || body instanceof Uint8Array) out.body = body;
+    else if (body instanceof ArrayBuffer) out.body = new Uint8Array(body);
+    else if (ArrayBuffer.isView(body)) out.body = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+    else if (body instanceof URLSearchParams) out.body = body.toString();
+    else throw new Error("a component's net.fetch body is a string or bytes");
+  }
+  return out;
+}
+
+/** `audio.play` from a component, as a host half's: a whole clip in one call, or an async iterable a piece at a time
+ *  under one utterance, the last `final`; `{ stop, done }` once the first piece is taken. */
+async function layerAudioPlay(mount: string, audio: { format: string; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }): Promise<{ stop(): void; done: Promise<void> }> {
+  const data = audio?.data;
+  if (data instanceof Uint8Array) {
+    await layerCall(mount, "audio.play", [{ format: audio.format, data }, opts ?? {}]);
+    return { stop: () => {}, done: Promise.resolve() };
+  }
+  if (data === null || typeof data !== "object" || typeof (data as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") throw new Error("audio.play's data is bytes (a Uint8Array) or an async iterable of them");
+  const utterance = `pa_${crypto.randomUUID()}`;
+  const piece = (bytes: Uint8Array, final: boolean) => layerCall(mount, "audio.play", [{ format: audio.format, data: bytes }, opts ?? {}, { utterance, final }]).then(() => undefined);
+  const it = (data as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+  const first = await it.next();
+  if (first.done) {
+    await piece(new Uint8Array(0), true);
+    return { stop: () => {}, done: Promise.resolve() };
+  }
+  if (!(first.value instanceof Uint8Array)) throw new Error("audio.play's stream gives Uint8Array pieces");
+  await piece(first.value, false);
+  let stopped = false;
+  const done = (async () => {
+    for (;;) {
+      if (stopped) break;
+      const next = await it.next();
+      if (next.done || stopped) break;
+      if (!(next.value instanceof Uint8Array)) throw new Error("audio.play's stream gives Uint8Array pieces");
+      await piece(next.value, false);
+    }
+    await piece(new Uint8Array(0), true);
+  })();
+  done.catch(() => {});
+  return { stop: () => { stopped = true; void it.return?.(); }, done };
+}
+
+/** The plugin API in this layer, each call on the part's own plugin's connection, where the core checks it as that
+ *  plugin from the `ui` side, with the same capability, fence and limits as its host half's: every member the catalog
+ *  gives components (`catalogMembers`), with these laid over them where a component's own path serves it (the pickers,
+ *  `shell` and the app's own events through the app; `host.*`, `storage.synced`, `settings` and `points.watch` on its
+ *  own plugin's events; `net.fetch` and `audio.play`, which carry bytes). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
   return useMemo(() => {
-    const unavailable = (what: string) => () => Promise.reject(new Error(`${what} isn't available in layers yet`));
     const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
-    return {
+    return layOver(catalogMembers(part.mount, part.entry.pluginId), {
       terminal: terminalApi(part.mount, part.entry.pluginId),
       shell: shellApi(part.mount),
       conversation: {
@@ -1026,7 +1179,8 @@ export function usePluginApi(): PluginApi {
         },
       } as unknown as PluginApi["avatar"],
       // What the user hands the page (`files.pick*`, gesture-bound, served by the app's main process, which opens its own dialog):
-      // tokens for the plugin's host half (`host.call`) and the media URL below; nothing else of `files` is in a layer.
+      // tokens for the plugin's host half (`host.call`) and the media URL below. The rest of `files` (`stat`, `readText`,
+      // `write`, `watch` …) is the catalog's, through the core's fence as the plugin, as its host half's.
       files: {
         pickOpen: (opts?: unknown) => call<unknown>("files.pickOpen", opts ?? {}),
         pickFolder: (opts?: unknown) => call<unknown>("files.pickFolder", opts ?? {}),
@@ -1072,9 +1226,7 @@ export function usePluginApi(): PluginApi {
           });
           return () => { live = false; if (retry !== undefined) clearTimeout(retry); off(); };
         },
-        call: unavailable("points.call"),
       } as unknown as PluginApi["points"],
-      commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
       // The part's own plugin, on its own connection (`plugin.layer.call`; the core takes the plugin from the
       // connection): its host half's handlers, as the plugin, never as the user; its host half's messages
       // (`ui.send`, which only its own layer hears); and its synced store, read only (its host half writes it).
@@ -1105,7 +1257,13 @@ export function usePluginApi(): PluginApi {
           },
         },
       } as unknown as PluginApi["storage"],
-      net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
+      // The core places the key (the plugin's `auth` entry) and masks it out of what comes back: the page never sees it.
+      net: {
+        fetch: (url: string | URL, init?: RequestInit, opts?: unknown) => layerCall(part.mount, "net.fetch", [String(url), fetchInit(init), opts]) as Promise<Response>,
+      } as unknown as PluginApi["net"],
+      audio: {
+        play: (audio: { format: string; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }) => layerAudioPlay(part.mount, audio, opts),
+      } as unknown as PluginApi["audio"],
       settings: {
         // Its own plugin's settings. A third-party layer reads them on its own connection (`plugin.layer.call`'s
         // `settings.get`: the value in effect, a `secret` field only as `{ set }`, and with no bot, so a `bot` field reads
@@ -1154,7 +1312,7 @@ export function usePluginApi(): PluginApi {
         install: (source: unknown) => call<{ result: { id: string; state: string; card?: string } }>("plugin.layer.call", { call: "plugins.install", args: [source] }).then((r) => r.result),
       } as unknown as PluginApi["plugins"],
       t,
-    } as PluginApi;
+    }) as unknown as PluginApi;
   }, [part.entry.pluginId, part.mount, t]);
 }
 
