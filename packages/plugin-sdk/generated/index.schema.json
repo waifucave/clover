@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Clover plugin index",
-  "description": "Index format 1, signed with Ed25519 in a .sig file beside it (spec §5.1).",
+  "description": "Index format 1: a plain list of plugins, each version with its tree hash and download URL (spec §5.1).",
   "type": "object",
   "properties": {
     "$schema": {
@@ -12,51 +12,27 @@
       "type": "number",
       "const": 1
     },
-    "issued": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 40,
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z$"
-    },
-    "seq": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
     "name": {
       "type": "string",
       "minLength": 1,
       "maxLength": 200
     },
-    "revocations": {
-      "$ref": "#/$defs/__schema0"
-    },
     "plugins": {
       "maxItems": 100000,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema1"
+        "$ref": "#/$defs/__schema0"
       }
     }
   },
   "required": [
     "index",
-    "issued",
-    "seq",
     "name",
     "plugins"
   ],
   "additionalProperties": false,
   "$defs": {
     "__schema0": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096,
-      "pattern": "^https?:\\/\\/\\S+$",
-      "format": "url",
-      "description": "An http or https URL."
-    },
-    "__schema1": {
       "type": "object",
       "properties": {
         "id": {
@@ -66,10 +42,10 @@
           "minLength": 2
         },
         "name": {
-          "$ref": "#/$defs/__schema2"
+          "$ref": "#/$defs/__schema1"
         },
         "description": {
-          "$ref": "#/$defs/__schema2"
+          "$ref": "#/$defs/__schema1"
         },
         "adult": {
           "type": "boolean"
@@ -79,7 +55,7 @@
           "maxItems": 10000,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema3"
+            "$ref": "#/$defs/__schema2"
           }
         }
       },
@@ -89,7 +65,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema2": {
+    "__schema1": {
       "anyOf": [
         {
           "type": "string"
@@ -110,7 +86,7 @@
         }
       ]
     },
-    "__schema3": {
+    "__schema2": {
       "type": "object",
       "properties": {
         "version": {
@@ -123,7 +99,12 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "url": {
-          "$ref": "#/$defs/__schema0"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^https?:\\/\\/\\S+$",
+          "format": "url",
+          "description": "An http or https URL."
         }
       },
       "required": [

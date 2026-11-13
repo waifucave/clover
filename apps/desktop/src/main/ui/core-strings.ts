@@ -29,7 +29,6 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.safe.remove": "Remove",
   "clover.core.safe.bundled": "Clover's own",
   "clover.core.safe.state.found": "Waiting for your OK",
-  "clover.core.safe.state.blocked": "Blocked",
   "clover.core.safe.state.invalid": "Invalid",
   "clover.core.safe.failed": "That didn't work: {error}",
   "clover.core.safe.close": "Close",

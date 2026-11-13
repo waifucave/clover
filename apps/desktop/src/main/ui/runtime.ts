@@ -121,8 +121,6 @@ export interface RuntimeOptions {
   sealed?: SealedFrames;
   /** The core's own string tables, by language (`core-strings.ts` by default). */
   builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
-  /** Whether a plugin's tree hash matches the official index's, for the strings of sealed cards (lane B's registry). */
-  official?: (plugin: UiPlugin) => boolean;
 }
 
 export class LayerError extends Error {
@@ -392,7 +390,7 @@ export class UiRuntime {
   private tableFor(owner: string): StringTable {
     let t = this.tables.get(owner);
     if (t === undefined) {
-      t = stringTable(this.strings, { plugins: this.plugins, lang: this.language, ...(this.choices.packs !== undefined ? { packs: this.choices.packs } : {}), builtIn: this.opts.builtInStrings ?? CORE_STRINGS, ...(this.opts.official !== undefined ? { official: this.opts.official } : {}) }, owner);
+      t = stringTable(this.strings, { plugins: this.plugins, lang: this.language, ...(this.choices.packs !== undefined ? { packs: this.choices.packs } : {}), builtIn: this.opts.builtInStrings ?? CORE_STRINGS }, owner);
       this.tables.set(owner, t);
     }
     return t;

@@ -1165,7 +1165,6 @@ export function describeOk(
   report: ManifestReport,
   opts: {
     os?: "macos" | "windows" | "linux";
-    source?: "index" | "other";
     /** The tree's flag (`TreeReport.restylesCards`). */
     restylesCards?: boolean;
     /** The tree's flag (`TreeReport.restylesWindow`): a theme's `shell` block. */
@@ -1233,7 +1232,6 @@ export function describeOk(
   if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without Clover's sandbox on this computer.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
-  if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");
   return lines;
 }
 

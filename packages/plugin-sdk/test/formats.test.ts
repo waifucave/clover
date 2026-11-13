@@ -2,8 +2,8 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
-  IndexSchema, LayoutContributionSchema, LayoutSchema, LayoutFileSchema, LocaleSchema, contributionProblems, DEFAULT_TAB_LAYOUT, applyLayoutPatch, resolveLayoutFile, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
-  layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
+  IndexSchema, LayoutContributionSchema, LayoutSchema, LayoutFileSchema, LocaleSchema, contributionProblems, DEFAULT_TAB_LAYOUT, applyLayoutPatch, resolveLayoutFile, ThemeSchema, compareVersions, isTreeHashExcluded,
+  layoutPaths, layoutSpots, localeFallbacks, parseRange, parseVersion, placeholdersOf, satisfies,
   AUTO_INK, AUTO_INKS, FRAME_VARIABLES, LABEL_INK, SYSTEM_ACCENT, SYSTEM_ACCENT_TOKENS, TOKENS, contrastRatio, cssProperty, fillForWhiteLabel, flattenColor,
   isValueForToken, systemAccentFromOs, validateTree,
   cardTokensChanged, cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
@@ -369,26 +369,12 @@ describe("locale format 1", () => {
   });
 });
 
-describe("index and revocations, format 1", () => {
-  test("an index lists ids and versions, each with its tree hash and download URL", () => {
-    const index = { index: 1, issued: "2026-11-10T12:00:00Z", seq: 1, name: "Official", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.waifucave.com/luna-1.0.0.tar.gz" }] }] };
+describe("index format 1", () => {
+  test("an index lists ids and versions, each with its tree hash and download URL; it carries no signing fields", () => {
+    const index = { index: 1, name: "Somebody's plugins", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.example.com/luna-1.0.0.tar.gz" }] }] };
     expect(IndexSchema.safeParse(index).success).toBe(true);
     expect(IndexSchema.safeParse({ ...index, plugins: [{ id: "luna", versions: [{ version: "1.0", hash: "x", url: "u" }] }] }).success).toBe(false);
-  });
-
-  test("a revocation names an id, with all its versions or listed hashes, and a reason", () => {
-    const list = RevocationsSchema.parse({ revocations: 1, issued: "2026-11-10T12:00:00Z", seq: 3, entries: [{ id: "evil", reason: "malware" }, { id: "luna", versions: ["1.0.1"], reason: "leaks tokens" }, { id: "nova", hashes: [`sha256:${H("b")}`], reason: "bad build" }] });
-    expect(isRevoked(list, "evil", "9.9.9", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "malware" });
-    expect(isRevoked(list, "luna", "1.0.1", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "leaks tokens" });
-    expect(isRevoked(list, "luna", "1.0.2", `sha256:${H("c")}`)).toEqual({ revoked: false });
-    expect(isRevoked(list, "nova", "2.0.0", `sha256:${H("b")}`).revoked).toBe(true);
-  });
-
-  test("a .sig file is one line of base64: a 64-byte Ed25519 signature", () => {
-    const sig = btoa(String.fromCharCode(...new Uint8Array(64).fill(7)));
-    expect(parseSignatureFile(`${sig}\n`)?.length).toBe(64);
-    expect(parseSignatureFile("not base64")).toBeNull();
-    expect(parseSignatureFile(btoa("short"))).toBeNull();
+    expect(IndexSchema.safeParse({ ...index, seq: 1 }).success).toBe(false);
   });
 });
 

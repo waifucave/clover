@@ -74,7 +74,6 @@ export const S = {
     waiting: "Waiting",
     running: "On",
     stopped: "Stopped after an error",
-    blocked: "Blocked",
   } satisfies Record<PluginState, string>,
   pluginOks: (oks: string[]) => (oks.length === 0 ? "Asks for nothing" : oks.join(" · ")),
   pluginLogs: "Logs",

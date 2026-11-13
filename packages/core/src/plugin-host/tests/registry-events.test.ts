@@ -66,19 +66,15 @@ describe("the registry's transitions as plugin events, one per transition, ids a
     for (const e of w.events) expect(Object.keys(e).sort()).toEqual(e.type === "plugin_changed" ? ["enabled", "id", "state", "type"] : Object.keys(e).sort());
   });
 
-  test("stopped by the crash rules and restarted; revoked (blocked) and its override; removed", () => {
+  test("stopped by the crash rules and restarted; removed", () => {
     const w = world();
     w.reg.put({ id: "tarot", manifest: m("Tarot"), treeHash: "sha256:t", approved: true });
     w.events.length = 0;
     w.reg.setStopped("tarot", "plugin stopped: it crashed three times in two minutes");
     w.reg.setStopped("tarot", null);
-    w.reg.put({ id: "tarot", manifest: m("Tarot"), treeHash: "sha256:t", blocked: { by: "Friends' plugins", reason: "it sends your conversations away" } } as never);
-    w.reg.put({ id: "tarot", manifest: m("Tarot"), treeHash: "sha256:t" });
     w.reg.remove("tarot");
     expect(w.events.map((e) => [e.type, e.state])).toEqual([
       ["plugin_changed", "stopped"],
-      ["plugin_changed", "running"],
-      ["plugin_changed", "blocked"],
       ["plugin_changed", "running"],
       ["plugin_removed", undefined],
     ]);

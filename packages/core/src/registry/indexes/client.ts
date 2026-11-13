@@ -1,59 +1,35 @@
-// The plugin index client (spec §5.1 "Indexes and npm", §14.2 item 25): the indexes a user installs from, each a signed
-// JSON file (`IndexSchema`, format 1) with its Ed25519 signature in `<url>.sig`.
+// The plugin index client (spec §5.1 "Indexes and npm"; the owner's ruling, 2026-11-13): the indexes a user installs
+// from, each a plain JSON file (`IndexSchema`, format 1) the user added by its https URL. There is no official index and
+// nothing is signed: what a plugin may do is decided on its OK card, and a download must match the tree hash its index
+// lists (`install.ts`).
 //
-// * Trust: the official index (`OFFICIAL_INDEX`, empty until the owner names one) and the ones the user added, each
-//   with a LIST of trusted keys, any one of which verifies (a key is rotated by shipping the new one beside the old).
-//   A signature is checked strictly (`verifyEd25519`: canonical points, S below the group order) over the file's
-//   exact bytes, and only then is the file parsed.
-// * Replay (the controller's ruling): each file carries `seq`, which its signer only raises. The highest `seq`
-//   accepted per file, with the SHA-256 of the bytes accepted at it, is kept in the registry's MAC'd records
-//   (`indexes.json`); a lower `seq`, or the same `seq` with other bytes, is refused. Removing an index keeps its
-//   high-water mark, so adding it again can't take an older copy either.
 // * Offline: a fetch that fails keeps the last good copy, however old (an offline user keeps his plugins), cached in
-//   the fenced `plugins-state/index-cache/` and checked again (signature, hash, `seq`) each time it's read. A copy
-//   signed more than 7 days ago is marked stale for Settings. There is no hard expiry.
+//   the fenced `plugins-state/index-cache/`.
 // * 18+ (§5.7, the controller's ruling F): an entry marked adult is hidden from search until the user has confirmed
 //   they are 18 or older; after that it shows, marked.
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { z } from "zod";
-import { compareVersions, IndexSchema, parseVersion, parseSignatureFile, RevocationsSchema, type IndexFile, type RevocationsFile } from "@waifucave/clover-plugin-sdk";
+import { compareVersions, IndexSchema, parseVersion, type IndexFile } from "@waifucave/clover-plugin-sdk";
 import { ContractError } from "../../contracts/common";
-import { isStrictEd25519Point } from "../../identity/ed25519-strict";
-import { verifyEd25519 } from "../../identity/keys";
 import { pinnedFetch, type PlatformFetch } from "../../plugin-host/pinned-fetch";
-import { emptyIndexesState, type AcceptedFile, type IndexesStateFile, type LeftByRecord, type RegistryStore } from "../state";
-import { OFFICIAL_INDEX, type IndexTrust } from "./official";
+import { emptyIndexesState, type IndexesStateFile, type LeftByRecord, type RegistryStore } from "../state";
 
-/** The largest index file read; a revocation list; a `.sig` file. */
+/** The largest index file read. */
 export const INDEX_MAX_BYTES = 32 * 1024 * 1024;
-export const REVOCATIONS_MAX_BYTES = 16 * 1024 * 1024;
-export const SIGNATURE_MAX_BYTES = 1024;
 /** How long one fetch may take, the whole body included. */
 export const INDEX_FETCH_TIMEOUT_MS = 30_000;
-/** A copy signed longer ago than this is shown as stale (the controller's ruling D). */
-export const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 /** The most indexes a user may add. */
 export const MAX_ADDED_INDEXES = 64;
 
 /** Fetches one URL's bytes, at most `maxBytes`, or throws. */
-export type SignedFetch = (url: string, maxBytes: number, signal?: AbortSignal, headers?: Readonly<Record<string, string>>) => Promise<Uint8Array>;
+export type IndexFetch = (url: string, maxBytes: number, signal?: AbortSignal, headers?: Readonly<Record<string, string>>) => Promise<Uint8Array>;
 
-const HEX64 = /^[0-9a-f]{64}$/;
 /** Semver order of two version strings (the schema checked each). */
 export const byVersion = (a: string, b: string): number => compareVersions(parseVersion(a)!, parseVersion(b)!);
 const sha256 = (b: Uint8Array | string): string => createHash("sha256").update(b).digest("hex");
 
-/** The `.sig` file beside a signed file: the same URL with `.sig` added to its path. */
-export function signatureUrl(url: string): string {
-  const u = new URL(url);
-  u.pathname = `${u.pathname}.sig`;
-  return u.href;
-}
-
-/** An https URL, or why not: an index and its lists come over TLS only (their signature holds their bytes; TLS keeps
- *  what the user browses private). */
+/** An https URL, or why not: an index and its downloads come over TLS only. */
 export function httpsUrl(raw: string): string {
   let u: URL;
   try {
@@ -70,12 +46,12 @@ export function httpsUrl(raw: string): string {
 /** The most redirects one fetch follows. */
 export const MAX_HOPS = 5;
 
-/** The default fetch (index files, lists, signatures: 30 s each phase and in all): through the pinned fetch (#428: each name resolved once and connected to by the address checked,
+/** The default fetch (index files and npm metadata: 30 s each phase and in all): through the pinned fetch (#428: each name resolved once and connected to by the address checked,
  *  public addresses only, never an environment proxy), following redirects by hand so every hop is checked the same
- *  way and stays on https. A URL inside a signed index (its revocation list, a download) or a redirect can't point the
- *  daemon at this computer or the LAN. The body is read up to `maxBytes`, within the time. Tests pass their own
+ *  way and stays on https. A URL inside an index (a download) or a redirect can't point the daemon at this computer or the
+ *  LAN. The body is read up to `maxBytes`, within the time. Tests pass their own
  *  `platform` (the pinned fetch's seam); production never does. */
-export function httpsFetch(limits: number | FetchLimits = INDEX_FETCH_TIMEOUT_MS, platform: PlatformFetch = pinnedFetch()): SignedFetch {
+export function httpsFetch(limits: number | FetchLimits = INDEX_FETCH_TIMEOUT_MS, platform: PlatformFetch = pinnedFetch()): IndexFetch {
   const l: Required<FetchLimits> = typeof limits === "number"
     ? { headersMs: limits, stallMs: limits, totalMs: limits }
     : { headersMs: limits.headersMs ?? INDEX_FETCH_TIMEOUT_MS, stallMs: limits.stallMs ?? INDEX_FETCH_TIMEOUT_MS, totalMs: limits.totalMs ?? INDEX_FETCH_TIMEOUT_MS };
@@ -164,24 +140,9 @@ export interface FetchLimits {
  *  within 30 minutes, sized for the 256 MiB cap on a slow line (about 150 KB/s). */
 export const DOWNLOAD_LIMITS: Required<FetchLimits> = { headersMs: 30_000, stallMs: 30_000, totalMs: 30 * 60_000 };
 
-/** A key as a person compares it: the whole key (never a shortening an attacker could match at both ends), in
- *  groups of four. */
-export function keyFingerprint(hex: string): string {
-  return hex.toLowerCase().match(/.{1,4}/g)!.join(" ");
-}
-
-/** Whether `sigText` (a `.sig` file) is a signature over `bytes` by one of `keys` (hex). */
-export function verifySigned(bytes: Uint8Array, sigText: string, keys: readonly string[]): boolean {
-  const sig = parseSignatureFile(sigText);
-  if (sig === null) return false;
-  return keys.some((k) => HEX64.test(k) && verifyEd25519(Buffer.from(k, "hex"), bytes, sig));
-}
-
-export type SignedKind = "index" | "revocations";
-
 /** One index as the client holds it. */
 interface Held {
-  trust: IndexTrust & { official: boolean };
+  url: string;
   file?: IndexFile;
   /** The last fetch's failure, kept until one succeeds. */
   error?: string;
@@ -191,12 +152,10 @@ export interface IndexClientOptions {
   store: Pick<RegistryStore, "loadIndexes" | "saveIndexes">;
   /** Where the last good copies are kept (`plugins-state/index-cache/`). */
   cacheDir: string;
-  fetch?: SignedFetch;
+  fetch?: IndexFetch;
   /** The fetch for plugin downloads; default the pinned https fetch with `DOWNLOAD_LIMITS` (or `fetch` when a test
    *  gives one). */
-  download?: SignedFetch;
-  /** The official index; default `OFFICIAL_INDEX` (none until the owner names one). */
-  official?: IndexTrust;
+  download?: IndexFetch;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -213,13 +172,12 @@ export interface IndexEntry {
 
 export class IndexClient {
   readonly #o: IndexClientOptions;
-  readonly #fetch: SignedFetch;
-  readonly #download: SignedFetch;
+  readonly #fetch: IndexFetch;
+  readonly #download: IndexFetch;
   readonly #now: () => number;
-  readonly #official: IndexTrust | undefined;
   #state: IndexesStateFile;
   readonly #held = new Map<string, Held>();
-  /** Each file's fetches run one at a time. */
+  /** Each index's fetches run one at a time. */
   readonly #chain = new Map<string, Promise<unknown>>();
 
   constructor(o: IndexClientOptions) {
@@ -227,101 +185,52 @@ export class IndexClient {
     this.#fetch = o.fetch ?? httpsFetch();
     this.#download = o.download ?? o.fetch ?? httpsFetch(DOWNLOAD_LIMITS);
     this.#now = o.now ?? Date.now;
-    this.#official = "official" in o ? o.official : OFFICIAL_INDEX;
     this.#state = o.store.loadIndexes?.() ?? emptyIndexesState();
-    for (const t of this.trusts()) this.#held.set(t.url, { trust: t });
+    for (const a of this.#state.added) this.#held.set(a.url, { url: a.url });
   }
 
-  /** The official index first, then the user's, in the order added. */
-  trusts(): (IndexTrust & { official: boolean })[] {
-    const out: (IndexTrust & { official: boolean })[] = [];
-    if (this.#official !== undefined) out.push({ ...this.#official, url: httpsUrl(this.#official.url), official: true });
-    for (const a of this.#state.added) if (!out.some((t) => t.url === a.url)) out.push({ url: a.url, keys: a.keys, official: false });
-    return out;
+  /** The indexes the user added, in the order added. */
+  urls(): string[] {
+    return this.#state.added.map((a) => a.url);
   }
 
-  isOfficial(url: string): boolean {
-    return this.#official !== undefined && httpsUrl(this.#official.url) === url;
-  }
-
-  /** The index at `url`, as last accepted. */
+  /** The index at `url`, as last read. */
   index(url: string): IndexFile | undefined {
     return this.#held.get(url)?.file;
   }
 
-  // ---- the signed files ----
-
-  #cachePath(kind: SignedKind, url: string): string {
-    return join(this.#o.cacheDir, sha256(`${kind}:${url}`));
+  #cachePath(url: string): string {
+    return join(this.#o.cacheDir, `${sha256(`index:${url}`)}.json`);
   }
 
-  /** Accepts one signed file's bytes: signature first, then its schema, then the replay check; kept as the last good
-   *  copy, its `seq` raised. Throws why not. */
-  accept<T extends { seq: number; issued: string }>(kind: SignedKind, url: string, bytes: Uint8Array, sigText: string, keys: readonly string[], schema: z.ZodType<T>): T {
-    if (!verifySigned(bytes, sigText, keys)) throw new Error("its signature isn't by a key it's trusted under");
+  /** Reads an index's bytes: JSON, then its schema. Throws why not. */
+  static parse(bytes: Uint8Array): IndexFile {
     let parsed: unknown;
     try {
       parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     } catch {
       throw new Error("it isn't JSON");
     }
-    const r = schema.safeParse(parsed);
-    if (!r.success) throw new Error(`it isn't a ${kind === "index" ? "plugin index" : "revocation list"} Clover reads (${r.error.issues[0]?.message ?? "invalid"})`);
-    const file = r.data;
-    const hash = sha256(bytes);
-    const key = `${kind}:${url}`;
-    const seen = this.#state.accepted[key];
-    if (seen !== undefined) {
-      if (file.seq < seen.seq) throw new Error(`it is older than the copy already taken (seq ${file.seq} < ${seen.seq}), so it isn't taken`);
-      if (file.seq === seen.seq && hash !== seen.sha256) throw new Error(`it has the same seq as the copy already taken (${file.seq}) but other contents`);
-    }
-    const base = this.#cachePath(kind, url);
-    mkdirSync(dirname(base), { recursive: true, mode: 0o700 });
-    for (const [ext, data] of [[".json", bytes], [".sig", sigText]] as const) {
-      const tmp = `${base}${ext}.tmp-${process.pid}`;
-      writeFileSync(tmp, data, { mode: 0o600 });
-      renameSync(tmp, `${base}${ext}`);
-    }
-    const accepted: AcceptedFile = { seq: file.seq, sha256: hash, issued: file.issued, checkedAt: this.#now() };
-    this.#state = { ...this.#state, accepted: { ...this.#state.accepted, [key]: accepted } };
-    this.#o.store.saveIndexes?.(this.#state);
-    return file;
+    const r = IndexSchema.safeParse(parsed);
+    if (!r.success) throw new Error(`it isn't a plugin index Clover reads (${r.error.issues[0]?.message ?? "invalid"})`);
+    return r.data;
   }
 
-  /** The last good copy of a signed file, checked again: the bytes accepted (by hash), still signed by a key it's
-   *  trusted under now. Undefined when there is none, or it no longer checks. */
-  cached<T>(kind: SignedKind, url: string, keys: readonly string[], schema: z.ZodType<T>): T | undefined {
-    const seen = this.#state.accepted[`${kind}:${url}`];
-    if (seen === undefined) return undefined;
-    const base = this.#cachePath(kind, url);
-    let bytes: Buffer;
-    let sig: string;
-    try {
-      bytes = readFileSync(`${base}.json`);
-      sig = readFileSync(`${base}.sig`, "utf8");
-    } catch {
-      return undefined;
-    }
-    if (sha256(bytes) !== seen.sha256 || !verifySigned(bytes, sig, keys)) {
-      this.#o.log?.(`plugin index: the kept copy of ${url} doesn't check, so it isn't used`);
-      return undefined;
-    }
-    try {
-      const r = schema.safeParse(JSON.parse(bytes.toString("utf8")));
-      return r.success ? r.data : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** Fetches a signed file and its `.sig`, and accepts it. Throws why not; the last good copy stays. */
-  async fetchSigned<T extends { seq: number; issued: string }>(kind: SignedKind, url: string, keys: readonly string[], schema: z.ZodType<T>, maxBytes: number, signal?: AbortSignal): Promise<T> {
-    const key = `${kind}:${url}`;
-    const run = (this.#chain.get(key) ?? Promise.resolve()).catch(() => undefined).then(async () => {
-      const [bytes, sig] = await Promise.all([this.#fetch(url, maxBytes, signal), this.#fetch(signatureUrl(url), SIGNATURE_MAX_BYTES, signal)]);
-      return this.accept(kind, url, bytes, new TextDecoder().decode(sig), keys, schema);
+  /** Fetches one index and keeps it as the last good copy. Throws why not; the last good copy stays. */
+  async #fetchIndex(url: string, signal?: AbortSignal): Promise<IndexFile> {
+    const run = (this.#chain.get(url) ?? Promise.resolve()).catch(() => undefined).then(async () => {
+      const bytes = await this.#fetch(url, INDEX_MAX_BYTES, signal);
+      const file = IndexClient.parse(bytes);
+      const path = this.#cachePath(url);
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      const tmp = `${path}.tmp-${process.pid}`;
+      writeFileSync(tmp, bytes, { mode: 0o600 });
+      renameSync(tmp, path);
+      this.#state = { ...this.#state, checked: { ...(this.#state.checked ?? {}), [url]: this.#now() } };
+      this.#o.store.saveIndexes?.(this.#state);
+      return file;
     });
-    this.#chain.set(key, run);
+    this.#chain.set(url, run);
     return run;
   }
 
@@ -335,21 +244,14 @@ export class IndexClient {
     return this.#download(httpsUrl(url), maxBytes, signal);
   }
 
-  /** When a file was last accepted, and whether its copy is stale. */
-  acceptedOf(kind: SignedKind, url: string): (AcceptedFile & { stale: boolean }) | undefined {
-    const a = this.#state.accepted[`${kind}:${url}`];
-    if (a === undefined) return undefined;
-    const issued = Date.parse(a.issued);
-    return { ...a, stale: Number.isFinite(issued) && this.#now() - issued > STALE_AFTER_MS };
-  }
-
-  // ---- indexes ----
-
   /** Reads every index's last good copy (at start). */
   loadCached(): void {
     for (const [url, h] of this.#held) {
-      const file = this.cached("index", url, h.trust.keys, IndexSchema);
-      if (file !== undefined) h.file = file;
+      try {
+        h.file = IndexClient.parse(readFileSync(this.#cachePath(url)));
+      } catch {
+        // None kept yet, or it no longer reads: the next fetch brings one.
+      }
     }
   }
 
@@ -358,86 +260,52 @@ export class IndexClient {
     const targets = url === undefined ? [...this.#held.values()] : [this.#held.get(url)].filter((h): h is Held => h !== undefined);
     await Promise.all(targets.map(async (h) => {
       try {
-        h.file = await this.fetchSigned("index", h.trust.url, h.trust.keys, IndexSchema, INDEX_MAX_BYTES, signal);
+        h.file = await this.#fetchIndex(h.url, signal);
         delete h.error;
       } catch (err) {
         h.error = (err instanceof Error ? err.message : String(err)).slice(0, 300);
-        this.#o.log?.(`plugin index ${h.trust.url}: ${h.error}`);
+        this.#o.log?.(`plugin index ${h.url}: ${h.error}`);
       }
     }));
   }
 
-  /** The indexes for Settings: the official one first. */
-  list(): { url: string; name?: string; keys: string[]; official: boolean; lastCheckedAt?: number; issued?: string; stale?: boolean; error?: string }[] {
-    return this.trusts().map((t) => {
-      const h = this.#held.get(t.url);
-      const a = this.acceptedOf("index", t.url);
+  /** The indexes for Settings, in the order added. */
+  list(): { url: string; name?: string; lastCheckedAt?: number; error?: string }[] {
+    return this.urls().map((url) => {
+      const h = this.#held.get(url);
+      const at = this.#state.checked?.[url];
       return {
-        url: t.url, keys: [...t.keys], official: t.official,
+        url,
         ...(h?.file !== undefined ? { name: h.file.name } : {}),
-        ...(a !== undefined ? { lastCheckedAt: a.checkedAt, issued: a.issued, stale: a.stale } : {}),
+        ...(at !== undefined ? { lastCheckedAt: at } : {}),
         ...(h?.error !== undefined ? { error: h.error } : {}),
       };
     });
   }
 
-  /** Adds an index (after the user's warning: the caller's). Throws `invalid` or `conflict`. */
-  add(rawUrl: string, keys: readonly string[]): string {
+  /** Adds an index by its https URL; gives back the URL as kept. Throws `invalid`, `conflict` or `refused`. */
+  add(rawUrl: string): string {
     const url = httpsUrl(rawUrl);
-    const clean = [...new Set(keys.map((k) => k.toLowerCase()))];
-    if (clean.length === 0 || clean.length > 8 || !clean.every(verifyKeyShape)) throw new ContractError("invalid", "an index's keys are 1 to 8 Ed25519 public keys, 64 hex characters each");
-    if (this.isOfficial(url)) throw new ContractError("conflict", "that is the official index, which is always there");
-    if (this.#state.added.some((a) => a.url === url)) throw new ContractError("conflict", `${url} is added already; remove it first to change its keys`);
+    if (this.#state.added.some((a) => a.url === url)) throw new ContractError("conflict", `${url} is added already`);
     if (this.#state.added.length >= MAX_ADDED_INDEXES) throw new ContractError("refused", `at most ${MAX_ADDED_INDEXES} indexes can be added`);
-    this.#state = { ...this.#state, added: [...this.#state.added, { url, keys: clean, addedAt: this.#now() }] };
+    this.#state = { ...this.#state, added: [...this.#state.added, { url, addedAt: this.#now() }] };
     this.#o.store.saveIndexes?.(this.#state);
-    this.#held.set(url, { trust: { url, keys: clean, official: false } });
+    this.#held.set(url, { url });
     return url;
   }
 
-  /** The overrides the user made for revoked trees (read only when `REVOKED_OVERRIDE` is on). */
-  overrides(): Readonly<Record<string, string>> {
-    return this.#state.overrides ?? {};
-  }
-
-  /** Records the user's choice to run a revoked tree anyway (`REVOKED_OVERRIDE` on), or takes it back. */
-  setOverride(id: string, treeHash: string | undefined): void {
-    // Nothing to change, nothing written (a removal clears all three records, mostly already clear).
-    if ((this.#state.overrides ?? {})[id] === treeHash) return;
-    const overrides = { ...(this.#state.overrides ?? {}) };
-    if (treeHash === undefined) delete overrides[id];
-    else overrides[id] = treeHash;
-    this.#state = { ...this.#state, overrides };
-    this.#o.store.saveIndexes?.(this.#state);
-  }
-
-  /** Whether the user pinned this plugin to its version here (`plugin.pin`). */
+  /** Whether the user pinned this plugin to its version here (`plugin.pin`): it isn't offered updates. */
   isPinned(id: string): boolean {
     return (this.#state.pinned ?? []).includes(id);
   }
 
-  /** Pins a plugin to its version on this computer, or lets it update again. */
+  /** Pins a plugin to its version on this computer, or lets it be offered updates again. */
   setPinned(id: string, pinned: boolean): void {
     if (this.isPinned(id) === pinned) return;
     const now = new Set(this.#state.pinned ?? []);
     if (pinned) now.add(id);
     else now.delete(id);
     this.#state = { ...this.#state, pinned: [...now].sort() };
-    this.#o.store.saveIndexes?.(this.#state);
-  }
-
-  /** The blocks kept after their index was removed (`Revocations.verdict` reads them). */
-  removedBlocks(): Readonly<NonNullable<IndexesStateFile["removedBlocks"]>> {
-    return this.#state.removedBlocks ?? {};
-  }
-
-  setRemovedBlock(id: string, block: { treeHash: string; by: string; reason: string } | undefined): void {
-    const was = (this.#state.removedBlocks ?? {})[id];
-    if (block === undefined ? was === undefined : was !== undefined && was.treeHash === block.treeHash && was.by === block.by && was.reason === block.reason) return;
-    const removedBlocks = { ...(this.#state.removedBlocks ?? {}) };
-    if (block === undefined) delete removedBlocks[id];
-    else removedBlocks[id] = block;
-    this.#state = { ...this.#state, removedBlocks };
     this.#o.store.saveIndexes?.(this.#state);
   }
 
@@ -467,30 +335,31 @@ export class IndexClient {
     this.#o.store.saveIndexes?.(this.#state);
   }
 
-  /** Removes an index the user added; its high-water marks stay (adding it again takes no older copy). */
+  /** Removes an index the user added. */
   remove(rawUrl: string): void {
     const url = httpsUrl(rawUrl);
-    if (this.isOfficial(url)) throw new ContractError("refused", "the official index can't be removed");
     if (!this.#state.added.some((a) => a.url === url)) throw new ContractError("not_found", `${url} isn't one of your indexes`);
-    this.#state = { ...this.#state, added: this.#state.added.filter((a) => a.url !== url) };
+    const checked = { ...(this.#state.checked ?? {}) };
+    delete checked[url];
+    this.#state = { ...this.#state, added: this.#state.added.filter((a) => a.url !== url), checked };
     this.#o.store.saveIndexes?.(this.#state);
     this.#held.delete(url);
   }
 
-  /** Every index's entries matching `query` (the id, name or description, any case), official first; an adult entry
-   *  only once the user has confirmed 18+, marked. */
+  /** Every index's entries matching `query` (the id, name or description, any case), in the order the indexes were
+   *  added; an adult entry only once the user has confirmed 18+, marked. */
   search(o: { query?: string; limit?: number; adultConfirmed: boolean }): IndexEntry[] {
     const q = (o.query ?? "").trim().toLowerCase();
     const text = (t: unknown): string => (typeof t === "string" ? t : t !== null && typeof t === "object" ? Object.values(t as Record<string, string>).join(" ") : "");
     const out: IndexEntry[] = [];
-    for (const t of this.trusts()) {
-      const file = this.#held.get(t.url)?.file;
+    for (const url of this.urls()) {
+      const file = this.#held.get(url)?.file;
       if (file === undefined) continue;
       for (const p of file.plugins) {
         if (p.adult === true && !o.adultConfirmed) continue;
         if (q !== "" && ![p.id, text(p.name), text(p.description)].some((s) => s.toLowerCase().includes(q))) continue;
         out.push({
-          id: p.id, index: t.url,
+          id: p.id, index: url,
           ...(p.name !== undefined ? { name: p.name } : {}),
           ...(p.description !== undefined ? { description: p.description } : {}),
           versions: [...p.versions].sort((a, b) => byVersion(b.version, a.version)),
@@ -502,25 +371,20 @@ export class IndexClient {
     return out;
   }
 
-  /** The version to install of `id`: from `index` when named (else the first index that lists it, official first),
+  /** The version to install of `id`: from `index` when named (else the first index that lists it, in the order added),
    *  `version` when named (else its newest). Adult entries need the user's 18+ confirmation, as in search. */
   find(id: string, o: { version?: string; index?: string; adultConfirmed: boolean }): { index: string; version: string; hash: string; url: string; adult: boolean } | undefined {
-    const indexes = o.index !== undefined ? this.trusts().filter((t) => t.url === httpsUrl(o.index!)) : this.trusts();
-    for (const t of indexes) {
-      const p = this.#held.get(t.url)?.file?.plugins.find((e) => e.id === id);
+    const indexes = o.index !== undefined ? this.urls().filter((u) => u === httpsUrl(o.index!)) : this.urls();
+    for (const url of indexes) {
+      const p = this.#held.get(url)?.file?.plugins.find((e) => e.id === id);
       if (p === undefined) continue;
       if (p.adult === true && !o.adultConfirmed) return undefined;
       const versions = [...p.versions].sort((a, b) => byVersion(b.version, a.version));
       const v = o.version !== undefined ? versions.find((x) => x.version === o.version) : versions[0];
-      if (v !== undefined) return { index: t.url, version: v.version, hash: v.hash, url: v.url, adult: p.adult === true };
+      if (v !== undefined) return { index: url, version: v.version, hash: v.hash, url: v.url, adult: p.adult === true };
     }
     return undefined;
   }
 }
 
-/** A key that names a canonical Ed25519 point outside the small-order subgroup (checked again at each verify). */
-function verifyKeyShape(hex: string): boolean {
-  return HEX64.test(hex) && isStrictEd25519Point(Buffer.from(hex, "hex"));
-}
-
-export { IndexSchema, RevocationsSchema, type IndexFile, type RevocationsFile };
+export { IndexSchema, type IndexFile };
