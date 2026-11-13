@@ -819,11 +819,11 @@ async function appCli(words: string[], log = `app-${words[0] ?? "cli"}`): Promis
 
 /** The bundled browser panel's layer, opened as its component's plugin opens it (`layer.token` is the app role's): undefined
  *  on a packaged run, whose own connection is the CLI's. */
-function panelOpener(app: CloverClient): (() => Promise<PanelLink>) | undefined {
+function panelOpener(app: CloverClient): ((pluginId: string) => Promise<PanelLink>) | undefined {
   if (target !== "source") return undefined;
-  return async () => {
-    const minted = await app.request<{ token: string }>("layer.token", { pluginId: "clover/browser-view" });
-    const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "clover-acceptance-panel", CLOVER_PROTOCOL_VERSION, { pluginId: "clover/browser-view" });
+  return async (pluginId) => {
+    const minted = await app.request<{ token: string }>("layer.token", { pluginId });
+    const d = await hello(join(home, "run", "core.sock"), "layer", minted.token, "clover-acceptance-layer", CLOVER_PROTOCOL_VERSION, { pluginId });
     clients.push(d.client);
     const events: { type: string }[] = [];
     d.client.onNotification((method, params) => { if (method === "core.event") events.push(params as { type: string }); });

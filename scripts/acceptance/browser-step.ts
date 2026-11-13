@@ -65,7 +65,7 @@ export interface PanelLink {
   close(): void;
 }
 
-export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openPanel?: () => Promise<PanelLink>): Promise<string> {
+export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer?: (pluginId: string) => Promise<PanelLink>): Promise<string> {
   const lines: string[] = [];
   // 1. Open the fixture page in the bot's own tab.
   const opened = await browse(ctx, session, { verb: "open", url: fixture.url });
@@ -125,11 +125,11 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   lines.push("click: one card on the first site (Always allow kept), none on the next, one on another site");
   // 8. The person's panel (the bundled browser view's own layer): it lists the bot's tab, places it in its view and hears
   // that change as an event, takes it back out of sight; the tab stays the bot's and draws nothing on screen of its own.
-  if (openPanel === undefined) lines.push("panel: not run here (this target has no layer token door)");
+  if (openLayer === undefined) lines.push("panel: not run here (this target has no layer token door)");
   else {
     const back = await browse(ctx, session, { verb: "navigate", url: fixture.url });
     if (back.isError) fail(`navigate before the panel: ${back.text.slice(0, 200)}`);
-    const panel = await openPanel();
+    const panel = await openLayer("clover/browser-view");
     try {
       await panel.request("events.subscribe", { areas: ["browser"] });
       const listed = (await panel.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string; place: string }[] };
@@ -145,6 +145,26 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       lines.push("panel: lists the bot's tab, shows it (the change reaches the panel as an event), hides it again");
     } finally {
       panel.close();
+    }
+  }
+  // 9. The turns above were counted: the usage plugin's own layer (capability `usage.read`) reads the day's usage grouped by
+  // bot and finds Alpha's tokens, as its island tab and its Settings section do (row 4.19; the tab and section's drawing is held
+  // by the plugin's component tests).
+  if (openLayer === undefined) lines.push("usage: not run here (this target has no layer token door)");
+  else {
+    const usage = await openLayer("clover/usage");
+    try {
+      const deadline = Date.now() + 20_000;
+      let alpha: { key: string; inputTokens: number; outputTokens: number } | undefined;
+      while (alpha === undefined && Date.now() < deadline) {
+        const r = (await usage.request("usage.summary", { from: Date.now() - 24 * 3_600_000, to: Date.now() + 3_600_000, groupBy: "bot" })) as { groups: { key: string; inputTokens: number; outputTokens: number }[] };
+        alpha = r.groups.find((g) => g.key === "alpha" && g.inputTokens + g.outputTokens > 0);
+        if (alpha === undefined) await new Promise((r2) => setTimeout(r2, 1000));
+      }
+      if (alpha === undefined) fail("the usage plugin's layer found no tokens for alpha after the turns (usage.summary grouped by bot)");
+      lines.push(`usage: the usage plugin's layer reads ${alpha!.inputTokens} in / ${alpha!.outputTokens} out for alpha`);
+    } finally {
+      usage.close();
     }
   }
   // Closed again, so no later step meets the tab.
