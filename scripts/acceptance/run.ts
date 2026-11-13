@@ -870,7 +870,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -900,11 +900,11 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
             continue;
           }
           if (o.deny === true) {
-            await deny(c, card);
+            await deny(c, card, o.log);
             seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, denied`);
             continue;
           }
-          const how = await approve(c, card, { always: o.always === true });
+          const how = await approve(c, card, { always: o.always === true, ...(o.log !== undefined ? { log: o.log } : {}) });
           seenCards.push(`a ${card.kind}${card.change !== undefined ? ` (${card.change})` : ""} card, approved${how === "always" ? " (Always allow)" : ""}`);
         } catch (err) {
           seenCards.push(`a ${card.kind} card that the run couldn't answer (${why(err)})`);
@@ -2257,7 +2257,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
-      alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true }),
+      alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
       history: (s2) => history(rpc, s2),
     };
     record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
@@ -3211,8 +3211,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   const mediaDir = join(root, "media-fixture");
   mkdirSync(mediaDir, { recursive: true });
   cpSync(join(import.meta.dir, "media", "generated-testsrc.webm"), join(mediaDir, "generated-testsrc.webm"));
-  const mediaPicks = { answers: join(root, "media.pick"), video: join(mediaDir, "generated-testsrc.webm"), saved: join(mediaDir, "export.bin") };
-  writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nsave=${mediaPicks.saved}\n`);
+  const mediaPicks = { answers: join(root, "media.pick"), video: join(mediaDir, "generated-testsrc.webm"), saved: join(mediaDir, "export.bin"), folder: mediaDir };
+  writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nfolder=${mediaPicks.folder}\nsave=${mediaPicks.saved}\n`);
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
   const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
@@ -3281,7 +3281,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       },
       // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
       turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
-      alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true }),
+      alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true, log: proc.log }),
       history: (s) => history(rpc, s),
       appCli: (words) => appCli(words),
     };
