@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { islandMayDraw, placeCard, placeLine } from "../src/main/card-place";
+import { cloverFront, FrontWatcher, islandMayDraw, placeCard, placeLine, pressMayBeTaken, type WatchedWindow } from "../src/main/card-place";
 import { SealedFrames } from "../src/main/sealed";
 
 /** The app's bookkeeping for where a pending card is drawn, as index.ts keeps it, over a fake front state: the three
@@ -84,5 +84,74 @@ describe("where a pending card is drawn", () => {
     s.fromCore(card("old", 500));
     s.resolvedOutcome("a", { kind: "cancelled" } as never);
     expect(s.pendingIds()).toEqual(["b"]);
+  });
+});
+
+/** Fake windows and a fake clock: focus moves between Clover's own windows and out to another app. */
+function windows() {
+  const win = (focused: boolean) => ({ focused, destroyed: false, isDestroyed() { return this.destroyed; }, isFocused() { return this.focused; }, isVisible: () => true, isMinimized: () => false }) satisfies WatchedWindow & Record<string, unknown>;
+  const main = win(true);
+  const card = win(false);
+  let cardOpen = false;
+  const timers: { at: number; fn: () => void }[] = [];
+  let clock = 0;
+  const moves: boolean[] = [];
+  const front = () => { const s = cloverFront(main, cardOpen ? [card] : []); return s.exists && s.visible && !s.minimized && s.focused; };
+  const watcher = new FrontWatcher({
+    read: front,
+    changed: (f) => moves.push(f),
+    settleMs: 120,
+    setTimer: ((fn: () => void, ms: number) => { const t = { at: clock + ms, fn }; timers.push(t); return t; }) as never,
+    clearTimer: ((t: { at: number }) => { const i = timers.indexOf(t as never); if (i >= 0) timers.splice(i, 1); }) as never,
+  });
+  return {
+    main, card, moves, front, watcher,
+    openCard() { cardOpen = true; },
+    advance(ms: number) { clock += ms; for (const t of [...timers]) if (t.at <= clock) { timers.splice(timers.indexOf(t), 1); t.fn(); } },
+  };
+}
+
+describe("the app's own card is Clover's own window: answering it is not leaving the window", () => {
+  test("main in front, an unowned card shown as the app's own card: the card takes focus and main blurs, the card stays and its press is taken; focus to another app, it moves to the island", () => {
+    const w = windows();
+    w.watcher.event();
+    expect(w.moves).toEqual([true]);
+    // The card is the window's own card (nothing in the main window draws it) and is shown, unfocused.
+    expect(placeCard({ front: w.front(), drawnInWindow: false })).toBe("window");
+    w.openCard();
+    w.watcher.event();
+    // The user's first click: the card window takes focus, the main window blurs (the blur is seen first, with nothing focused for an instant).
+    w.main.focused = false;
+    w.watcher.event();
+    w.advance(30);
+    w.card.focused = true;
+    w.watcher.event();
+    w.advance(500);
+    expect(w.moves).toEqual([true]);
+    expect(placeCard({ front: w.front(), drawnInWindow: false })).toBe("window");
+    expect(pressMayBeTaken({ fromIsland: false, front: w.front() })).toBe(true);
+    // Back to the main window and onto the card again: still Clover.
+    w.card.focused = false; w.main.focused = true;
+    w.watcher.event();
+    w.advance(500);
+    expect(w.moves).toEqual([true]);
+    // Another app comes in front: nothing of Clover has the focus; after the beat the card moves to the island.
+    w.main.focused = false;
+    w.watcher.event();
+    expect(w.moves).toEqual([true]);
+    w.advance(200);
+    expect(w.moves).toEqual([true, false]);
+    expect(placeCard({ front: w.front(), drawnInWindow: false })).toBe("island");
+    // The island's frame is refused while Clover is in front, and not otherwise.
+    expect(pressMayBeTaken({ fromIsland: true, front: true })).toBe(false);
+    expect(pressMayBeTaken({ fromIsland: true, front: false })).toBe(true);
+  });
+
+  test("reading only the main window (the first version) moved the card on the click that was meant to answer it", () => {
+    const main = { isDestroyed: () => false, isFocused: () => false, isVisible: () => true, isMinimized: () => false };
+    const card = { isDestroyed: () => false, isFocused: () => true, isVisible: () => true, isMinimized: () => false };
+    expect(cloverFront(main, []).focused).toBe(false);
+    expect(cloverFront(main, [card]).focused).toBe(true);
+    expect(cloverFront(undefined, [card]).exists).toBe(false);
   });
 });

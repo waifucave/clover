@@ -522,7 +522,8 @@ export function Island(props: IslandProps): ReactElement {
 export function layoutHeight(el: HTMLElement): number {
   const rect = el.getBoundingClientRect();
   const scale = el.offsetWidth > 0 && rect.width > 0 ? rect.width / el.offsetWidth : 1;
-  return Math.ceil(rect.height / scale - 0.01);
+  // Clamped to a sane range (a frame's own cap is 4000): a transient zero or runaway reading is never a room.
+  return Math.min(4000, Math.max(0, Math.ceil(rect.height / scale - 0.01)));
 }
 
 function grow(rect: Rect, by: number): Rect {

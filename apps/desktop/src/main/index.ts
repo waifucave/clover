@@ -66,7 +66,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { islandMayDraw, placeCard, placeLine, type CardPlace } from "./card-place";
+import { cloverFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
 import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -464,7 +464,7 @@ async function ready(): Promise<void> {
       // One place at a time: a press from the island's frame while Clover's window is in front is not taken (the card is drawn
       // in the window now; the island's frame was a beat behind the move).
       const from = sealed.windowOf(token);
-      if (!islandMayDraw(mainWindowFront(mainState())) && [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.pluginId === "clover/island")) {
+      if (!pressMayBeTaken({ fromIsland: [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.pluginId === "clover/island"), front: mainWindowFront(mainState()) })) {
         log(`sealed: answer refused (the island's frame while the window is in front: the card is drawn in the window)`);
         return { accepted: false, reason: "this card is in Clover's window now" };
       }
@@ -962,7 +962,10 @@ async function showFallbackCard(cardId: string): Promise<void> {
   win.on("closed", () => {
     const own = fallbacks.get(cardId);
     if (own?.win === win) fallbacks.delete(cardId);
+    followFront();
   });
+  // The card window counts as Clover's own: clicking from the main window onto it, or back, is not leaving Clover.
+  for (const ev of ["focus", "blur", "show", "hide"] as const) win.on(ev as "focus", followFront);
   // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within the
   // cursor's display's work area, at the top on the side the cursor is not on (the top is where a notification stands, and
   // where the page grows from as it fits), before showing it, never after, so it never appears first in its default place.
@@ -1625,8 +1628,9 @@ interface Surface {
  *  by CLOVER_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
 let frontSeam: boolean | undefined;
 function startFrontSeam(): void {
+  if (!headless || (typeof __CLOVER_TEST_BUILD__ !== "string" && typeof __CLOVER_ACCEPTANCE_BUILD__ !== "string")) return;
   const file = process.env.CLOVER_TEST_MAIN_FRONT_FILE;
-  if (file === undefined || file === "" || !headless || (typeof __CLOVER_TEST_BUILD__ !== "string" && typeof __CLOVER_ACCEPTANCE_BUILD__ !== "string")) return;
+  if (file === undefined || file === "") return;
   const read = () => {
     let word = "";
     try { word = readFileSync(file, "utf8").trim(); } catch { return; }
@@ -1641,9 +1645,8 @@ function startFrontSeam(): void {
 
 function mainState(): MainWindowState {
   if (frontSeam !== undefined) return { exists: true, visible: true, minimized: false, focused: frontSeam };
-  const w = mainWindow;
-  if (w === undefined || w.isDestroyed()) return { exists: false, visible: false, minimized: false, focused: false };
-  return { exists: true, visible: w.isVisible(), minimized: w.isMinimized(), focused: w.isFocused() };
+  // Clover is in front while its main window or one of its own card windows has the focus (a click on a card blurs the main window).
+  return cloverFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
 }
 
 /** Shows or hides one surface's window as its part asked and the front rules allow. */
@@ -1717,18 +1720,17 @@ function applyVisibility(s: Surface): void {
   clickThrough(s);
 }
 
-let lastFront = false;
-/** The main window's front state changed: the surfaces that step aside follow it, and every surface's part hears it (the
- *  island brings a waiting card up when the pill steps aside). */
+/** The main window's front state changed: the surfaces that step aside follow it at once; the placement of the waiting cards, and
+ *  every surface's part (the island lets go of its cards), follow once the state has held a beat going out (card-place.ts). */
 function followFront(): void {
   for (const s of surfaces.values()) applyVisibility(s);
-  const front = mainWindowFront(mainState());
-  if (front !== lastFront) {
-    lastFront = front;
-    tellSurfaces();
-    movePendingCards();
-  }
+  frontWatcher.event();
 }
+const frontWatcher = new FrontWatcher({
+  read: () => mainWindowFront(mainState()),
+  changed: () => { tellSurfaces(); movePendingCards(); },
+  settleMs: 120,
+});
 const surfaces = new Map<string, Surface>();
 
 function syncSurfaces(): void {

@@ -29,3 +29,46 @@ export function placeLine(cardId: string, now: CardPlace, before?: CardPlace): s
 export function islandMayDraw(front: boolean): boolean {
   return !front;
 }
+
+/** Whether a press is taken: a press from the island's frame is not while Clover is in front; a press from anywhere else (the
+ *  app's own card, a conversation's frame) is taken by the sealed page's own gates alone. */
+export function pressMayBeTaken(input: { fromIsland: boolean; front: boolean }): boolean {
+  return !(input.fromIsland && input.front);
+}
+
+/** What the front rules read of a window (Electron's BrowserWindow answers all four). */
+export interface WatchedWindow { isDestroyed(): boolean; isFocused(): boolean; isVisible(): boolean; isMinimized(): boolean }
+
+/** Whether Clover is in front: its main window is up and not minimised, and the main window OR one of the app's own card windows
+ *  has the focus. A card window is a window of its own, so a click on it blurs the main window: that is Clover still in front. */
+export function cloverFront(main: WatchedWindow | undefined, cardWindows: Iterable<WatchedWindow | undefined>): { exists: boolean; visible: boolean; minimized: boolean; focused: boolean } {
+  if (main === undefined || main.isDestroyed()) return { exists: false, visible: false, minimized: false, focused: false };
+  let focused = main.isFocused();
+  for (const w of cardWindows) if (w !== undefined && !w.isDestroyed() && w.isFocused()) focused = true;
+  return { exists: true, visible: main.isVisible(), minimized: main.isMinimized(), focused };
+}
+
+/** The front state as the placement sees it. Going to the front is acted on at once; going out of it only once it has held for a
+ *  beat (`settleMs`), because moving between two of Clover's own windows is seen for an instant with neither focused. */
+export class FrontWatcher {
+  #last = false;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  constructor(private readonly o: { read: () => boolean; changed: (front: boolean) => void; settleMs: number; setTimer?: typeof setTimeout; clearTimer?: typeof clearTimeout }) {}
+  /** Any focus, blur, show, hide or close of the windows that count. */
+  event(): void {
+    const now = this.o.read();
+    if (now === this.#last) { this.#cancel(); return; }
+    if (now) { this.#cancel(); this.#last = true; this.o.changed(true); return; }
+    if (this.#timer !== undefined) return;
+    this.#timer = (this.o.setTimer ?? setTimeout)(() => {
+      this.#timer = undefined;
+      if (this.o.read() || !this.#last) return;
+      this.#last = false;
+      this.o.changed(false);
+    }, this.o.settleMs);
+  }
+  #cancel(): void {
+    if (this.#timer !== undefined) (this.o.clearTimer ?? clearTimeout)(this.#timer);
+    this.#timer = undefined;
+  }
+}
