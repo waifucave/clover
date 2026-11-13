@@ -29,6 +29,8 @@
 //                       other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
+//   --only-manifest     only the main chain's first rows (first start, the key, a turn, the folder install), then the
+//                       manifest fields row and the clover plugin CLI row; the run ends there
 //   --only-install      only the main chain's first rows: first start, the key, a turn, the folder install (step 4) and
 //                       its Review row (step 5); the run ends there
 //   --only-scheduled-routine  only the scheduled routine row (a routine Alpha makes runs from its schedule): the
@@ -93,6 +95,7 @@ import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULE
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
+import { CLAUDE_SKILL, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
@@ -197,6 +200,9 @@ const routineOnly = argv.includes("--only-scheduled-routine");
 // --only-install: the main chain's first rows alone (first start, the key, a turn, the folder install, the Review row),
 // then the run ends: the install and its Review proved apart from everything after them.
 const installOnly = argv.includes("--only-install");
+// --only-manifest: the main chain's first rows, then the manifest fields row and the CLI row alone (they read step 4's
+// plugin), then the run ends.
+const manifestOnly = argv.includes("--only-manifest");
 /** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
 // (`let`: a shard's `models` unit runs the same rows on its daemon before any app of the shard is up, appless too.)
@@ -706,6 +712,7 @@ let pointsOutcome: { status: Status; detail: string } | undefined;
 const POINTS_PREFIX = "a plugin's own API in its host half";
 /** The `clover plugin` CLI step (run on the first daemon after the host API step; recorded at the end). */
 let cliOutcome: { status: Status; detail: string } | undefined;
+let manifestOutcome: { status: Status; detail: string } | undefined;
 const CLI_PREFIX = "the clover plugin CLI against the run's daemon";
 /** The index and npm step (run on the first daemon after the CLI step; recorded at the end). */
 let indexOutcome: { status: Status; detail: string } | undefined;
@@ -1933,6 +1940,218 @@ async function main(): Promise<void> {
     record(4, statusOf(err), why(err));
   }
 
+  // The `clover plugin` CLI in the user's terminal, against this run's daemon (recorded at the end): the target's own
+  // CLI on the step-4 plugin (list, info, logs, pin refused, restart, index list); a plugin installed from a folder,
+  // switched off and on, updated and removed; a skill folder wrapped and removed; a development folder added, listed and
+  // removed; and a plugin made from a template and checked (new, validate), which needs no daemon. Each card a verb
+  // raises is answered over the app's methods, as the user would in the window.
+  async function cliStep(): Promise<void> {
+    if (!STEPS.some((x) => x.startsWith(CLI_PREFIX))) return;
+    if (pluginId === undefined || !pluginOk) { cliOutcome = { status: "BLOCKED", detail: "the plugin isn't installed and approved (step 4)" }; return; }
+    if (oldHalf) { cliOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" }; return; }
+    const CLI_ID = "acceptance-cli";
+    const WRAP_DIR = "acc-cli-skill";
+    let wrappedId: string | undefined;
+    const devFolder = join(root, "cli-dev", "acceptance-cli-dev");
+    try {
+      const id = pluginId;
+      const said: string[] = [];
+      const run = async (words: string[], expect?: string) => {
+        const r = await coreCli(["plugin", ...words], `plugin-cli-${words[0]}${words[1] !== undefined && !words[1].startsWith("/") ? `-${words[1]}` : ""}`);
+        if (r.code !== 0) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+        if (expect !== undefined && !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} didn't say "${expect}": ${r.stdout.trim().slice(0, 300)}`);
+        said.push(words.map((w) => (w.startsWith("/") ? w.slice(w.lastIndexOf("/") + 1) : w)).join(" "));
+        return r;
+      };
+      const pinned = async () => (await c.request<{ plugin?: { pinned?: boolean } }>("plugin.get", { id })).plugin?.pinned;
+      const stateOf = async (pid: string) => (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: pid }).catch(() => ({ plugin: undefined }))).plugin?.state;
+      const stateIs = (pid: string, want: (s: string | undefined) => boolean, what: string) => until(`${pid} ${what}`, 60_000, async () => (want(await stateOf(pid)) ? true : undefined));
+      const answerOk = async (pid: string) => {
+        const card = await until(`${pid}'s OK card`, 30_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && k.pluginId === pid));
+        await approve(c, card);
+      };
+      await run(["list"], id);
+      await run(["info", id], id);
+      await run(["logs", id, "-n", "5"]);
+      // A pin holds a plugin at its version against its index or npm (§5.6): a folder-installed plugin has none, so the
+      // CLI refuses it and says why (the index row pins and unpins its indexed plugin through the CLI).
+      const pin = await coreCli(["plugin", "pin", id], "plugin-cli-pin");
+      if (pin.code === 0 || !`${pin.stderr}${pin.stdout}`.includes("isn't from a plugin index or npm")) fail(`clover plugin pin ${id} (installed from a folder) exited ${pin.code}: ${(pin.stderr || pin.stdout).trim().slice(0, 300)}`);
+      if ((await pinned()) === true) fail(`clover plugin pin ${id} pinned a plugin no index or npm updates`);
+      said.push("pin (refused: it isn't from an index or npm)");
+      await run(["restart", id], `restarted ${id}`);
+      await run(["index", "list"]);
+      // install (a folder), disable, enable, update, remove.
+      const cliFolder = join(root, "cli-src", CLI_ID);
+      mkdirSync(join(cliFolder, "skills", "cli-note"), { recursive: true });
+      writeFileSync(join(cliFolder, "clover.json"), `${JSON.stringify({ manifest: 1, id: CLI_ID, name: "Acceptance CLI", version: "0.0.1", engines: { clover: "^1.0.0" }, contributes: { skills: ["skills/*/SKILL.md"] } }, null, 2)}\n`);
+      writeFileSync(join(cliFolder, "skills", "cli-note", "SKILL.md"), "---\nname: cli-note\ndescription: The acceptance run's CLI-installed skill\n---\nSay hello.\n");
+      await run(["install", cliFolder], CLI_ID);
+      await answerOk(CLI_ID);
+      await stateIs(CLI_ID, (st) => st === "running" || st === "enabled", "on after its OK");
+      await run(["disable", CLI_ID]);
+      await stateIs(CLI_ID, (st) => st === "off", "off after clover plugin disable");
+      await run(["enable", CLI_ID]);
+      await stateIs(CLI_ID, (st) => st === "running" || st === "enabled", "on again after clover plugin enable");
+      await run(["update", CLI_ID]);
+      await run(["remove", CLI_ID, "--yes"], `removed ${CLI_ID}`);
+      await stateIs(CLI_ID, (st) => st === undefined, "gone after clover plugin remove");
+      // wrap (a bare skill folder), then removed.
+      const skillDir = join(root, "cli-src", WRAP_DIR);
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), "---\nname: acc-cli-skill\ndescription: The acceptance run's skill folder wrapped from the CLI\n---\nSay hello.\n");
+      const before = new Set((await c.request<{ plugins: { id: string }[] }>("plugin.list", {})).plugins.map((x) => x.id));
+      await run(["wrap", "skill-folder", skillDir]);
+      wrappedId = await until("the wrapped skill folder's plugin", 30_000, async () => (await c.request<{ plugins: { id: string }[] }>("plugin.list", {})).plugins.map((x) => x.id).find((x) => !before.has(x)));
+      await answerOk(wrappedId);
+      await stateIs(wrappedId, (st) => st === "running" || st === "enabled", "on after its OK");
+      await run(["remove", wrappedId, "--yes"], `removed ${wrappedId}`);
+      wrappedId = undefined;
+      // dev: a development folder added, listed, removed.
+      mkdirSync(devFolder, { recursive: true });
+      writeFileSync(join(devFolder, "clover.json"), `${JSON.stringify({ manifest: 1, id: "acceptance-cli-dev", name: "Acceptance CLI dev", version: "0.0.1", engines: { clover: "^1.0.0" } }, null, 2)}\n`);
+      const dev = await run(["dev", devFolder]);
+      if (dev.stdout.includes("waits for your answer on its card")) {
+        const card = await until("the development folder's card", 30_000, async () => (await cards(c)).find((k) => JSON.stringify(k).includes("acceptance-cli-dev")));
+        await approve(c, card);
+      }
+      await until("the development folder in clover plugin dev list", 30_000, async () => ((await coreCli(["plugin", "dev", "list"], "plugin-cli-dev-list")).stdout.includes(devFolder) ? true : undefined));
+      said.push("dev list");
+      await run(["dev", "remove", devFolder], "removed");
+      const made = join(root, "cli-new-plugin");
+      await run(["new", "tool", made, "--name", "Cli probe"]);
+      if (!existsSync(join(made, "clover.json"))) fail(`clover plugin new tool made no clover.json in ${made}`);
+      await run(["validate", made], "valid");
+      cliOutcome = { status: "PASS", detail: `${target === "source" ? "the checkout's CLI" : "the packaged core's CLI"}: clover plugin ${said.join("; ")} (each exit 0; each card answered over the app's methods; states read back through plugin.get)` };
+    } catch (err) {
+      cliOutcome = { status: statusOf(err), detail: why(err) };
+    } finally {
+      await c.request("plugin.remove", { id: CLI_ID }).catch(() => undefined);
+      if (wrappedId !== undefined) await c.request("plugin.remove", { id: wrappedId }).catch(() => undefined);
+      await c.request("plugin.dev.remove", { path: devFolder }).catch(() => undefined);
+    }
+  }
+
+  // The manifest fields row (checklist rows 1.2, 1.10, 1.14, 1.17, 1.21, 1.23, 1.25, 1.26, 1.33, 1.47;
+  // manifest-fields-step.ts): fixture plugins written into the run's temp folder, installed over the app's methods and
+  // read back. Each installed plugin is removed at the end, whatever failed.
+  async function manifestFieldsStep(): Promise<void> {
+    if (!STEPS.includes(MANIFEST_FIELDS_STEP)) return;
+    if (oldHalf) { manifestOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" }; return; }
+    if (session === undefined || !turnsWork) { manifestOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" }; return; }
+    const src = join(stateDir !== undefined ? userHome : root, "plugin-src", "fields");
+    mkdirSync(src, { recursive: true });
+    const installed: string[] = [];
+    const done: string[] = [];
+    const wrong: string[] = [];
+    const stateOf = async (pid: string) => (await c.request<{ plugin?: { state?: string; reason?: string } }>("plugin.get", { id: pid }).catch(() => ({ plugin: undefined }))).plugin;
+    const install = async (source: Record<string, unknown>, o: { on?: boolean } = {}) => {
+      const r = await c.request<{ id: string; card?: string }>("plugin.install", { source }, 60_000);
+      installed.push(r.id);
+      const card = await until(`${r.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => k.kind === "plugin-ok" && ((r.card !== undefined && k.id === r.card) || k.pluginId === r.id)));
+      const text = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+      await approve(c, card);
+      if (o.on !== false) {
+        await until(`${r.id} on after its OK`, 60_000, async () => {
+          const st = (await stateOf(r.id))?.state;
+          return st === "running" || st === "enabled" ? true : undefined;
+        });
+      }
+      return { id: r.id, text };
+    };
+    const refusedWith = async (folder: string, words: string) => {
+      const r = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000).then((x) => { installed.push(x.id); return `installed as ${x.id}`; }, (err: unknown) => why(err));
+      return r.includes(words) ? undefined : r;
+    };
+    try {
+      // 1.2, 1.10: refused at validation, each with what to use instead.
+      const refused = writeRefused(src);
+      const node = await refusedWith(refused.node, NODE_REFUSAL);
+      if (node !== undefined) wrong.push(`the host.runtime node plugin: ${node.slice(0, 300)}`);
+      const helper = await refusedWith(refused.helper, HELPER_REFUSAL);
+      if (helper !== undefined) wrong.push(`the helper plugin: ${helper.slice(0, 300)}`);
+      if (node === undefined && helper === undefined) done.push("1.2/1.10 node and helper refused with their instead-messages");
+
+      // The main fixture: settings by scope, a custom sign-in, a child off by default, servers by placement.
+      const fields = await install({ from: "folder", path: writeFields(src) });
+      // 1.23: its child starts off; switched on, it runs.
+      const child = `${fields.id}/extra`;
+      const childState = (await stateOf(child))?.state;
+      if (childState !== "off") wrong.push(`its child (enabledByDefault: false) is ${childState ?? "missing"} after the OK, not off`);
+      else {
+        await c.request("plugin.setEnabled", { id: child, enabled: true });
+        await until(`${child} on`, 60_000, async () => { const st = (await stateOf(child))?.state; return st === "running" || st === "enabled" ? true : undefined; })
+          .then(() => done.push("1.23 the child (enabledByDefault: false) off after the OK, on when switched"), (err: unknown) => wrong.push(why(err)));
+      }
+      // 1.14: account, device and bot values, as its host reads them.
+      const report = async (bot: string) => (await c.request<{ result: { region?: unknown; tint?: unknown; nick?: unknown } }>("command.run", { name: `${fields.id}.report`, args: { bot } }, 30_000)).result;
+      const first = await report("alpha");
+      if (JSON.stringify(first) !== JSON.stringify({ region: "eu", tint: null, nick: null })) wrong.push(`before any setting its host read ${JSON.stringify(first)}`);
+      await c.request("plugin.settings.set", { id: fields.id, key: "region", value: "us" });
+      await c.request("plugin.settings.set", { id: fields.id, key: "tint", value: "#ff8800" });
+      await c.request("plugin.settings.set", { id: fields.id, key: "nick", value: "Al", bot: "alpha" });
+      const noBot = await c.request("plugin.settings.set", { id: fields.id, key: "nick", value: "Nobody" }).then(() => "accepted", (err: unknown) => why(err));
+      const alpha = await report("alpha");
+      const luna = await report("luna");
+      if (JSON.stringify(alpha) !== JSON.stringify({ region: "us", tint: "#ff8800", nick: "Al" })) wrong.push(`for alpha its host read ${JSON.stringify(alpha)}`);
+      else if (JSON.stringify(luna) !== JSON.stringify({ region: "us", tint: "#ff8800", nick: null })) wrong.push(`for another bot its host read ${JSON.stringify(luna)}`);
+      else if (!noBot.includes("one value per bot")) wrong.push(`a bot setting set with no bot: ${noBot.slice(0, 200)}`);
+      else done.push("1.14 account, device and bot values read by its host as set (alpha's nick not another bot's; a bot value with no bot refused)");
+      // 1.17: its custom sign-in's handlers run in its host; the core holds each answer to the flows it runs.
+      const signIn = async (index: number) => c.request("plugin.auth.signIn", { id: fields.id, index }, 30_000).then((x) => `accepted ${JSON.stringify(x)}`, (err: unknown) => why(err));
+      const core = await signIn(0);
+      const nothing = await signIn(1);
+      if (!core.includes("xAI's device sign-in is for its bundled model plugin only")) wrong.push(`the custom handler naming the core's xAI flow: ${core.slice(0, 200)}`);
+      else if (!nothing.includes("names no sign-in flow the core runs")) wrong.push(`the custom handler naming no core flow: ${nothing.slice(0, 200)}`);
+      else done.push("1.17 custom sign-in: its host handler ran; one naming the core's xAI device flow is held to xAI's own plugin, one naming none is refused");
+
+      // 1.21: a platforms list without this computer: installed behind its card, then off with why.
+      const here = `${process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux"}-${process.arch === "arm64" ? "arm64" : "x64"}`;
+      const elsewhere = await install({ from: "folder", path: writeElsewhere(src, here) }, { on: false });
+      const off = await until(`${elsewhere.id} off with why`, 30_000, async () => { const p = await stateOf(elsewhere.id); return p?.state === "off" ? p : undefined; }).catch((err: unknown) => { wrong.push(why(err)); return undefined; });
+      if (off !== undefined) {
+        if (!(off.reason ?? "").includes("Not for this computer")) wrong.push(`${elsewhere.id} is off, but its reason is ${JSON.stringify(off.reason)}`);
+        else done.push(`1.21 platforms without ${here}: installed behind its card, off ("${(off.reason ?? "").slice(0, 80)}")`);
+      }
+
+      // 1.25, 1.26, 1.47: what Alpha's turn and a coding session on Clover's own agent are offered.
+      const reach = writeReach(src);
+      await install({ from: "folder", path: reach.agents });
+      await install({ from: "folder", path: reach.cc });
+      const botTag = "ACCEPTANCE-REPLY: fields offer";
+      const botSeen = fake!.requests.length;
+      await turn(c, session, botTag, 150_000);
+      const botTools = fake!.requests.slice(botSeen).filter((r) => r.lastUserText.includes("fields offer")).flatMap((r) => r.tools);
+      const model = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+      const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
+      mkdirSync(join(userHome, "fields-code"), { recursive: true });
+      const codingSeen = fake!.requests.length;
+      await c.request("agent.start", { backend: "clover-code", computer, root: `home/${computer}/fields-code`, ...(model !== undefined ? { model } : {}), prompt: "ACCEPTANCE-REPLY: fields coding" }, 30_000);
+      const codingTools = await until("the coding session's request to the model", 120_000, async () => {
+        const mine = fake!.requests.slice(codingSeen).filter((r) => r.lastUserText.includes("fields coding"));
+        return mine.length > 0 ? mine.flatMap((r) => r.tools) : undefined;
+      }).catch((err: unknown) => { wrong.push(why(err)); return [] as string[]; });
+      const offer = offerWrong({ bot: botTools, coding: codingTools });
+      if (offer.length > 0) wrong.push(`${offer.join("; ")} (Alpha: ${botTools.filter((t) => t.startsWith("mcp__")).join(", ") || "none"}; coding: ${codingTools.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
+      else done.push("1.47 FieldsLocal (perComputer) and FieldsMac (when.os macos) offered to Alpha, FieldsWin (when.os windows) not; 1.25 AgentsOnly offered to the coding session, not to Alpha; 1.26 CcOnly (onlyBackends claude-code) offered to Alpha, not to the coding session on clover-code");
+
+      // 1.33: a Claude Code plugin folder wrapped; its skill in Alpha's Glossary.
+      const claude = await install({ from: "wrap", kind: "claude-plugin", value: writeClaudePlugin(src) });
+      const gSeen = fake!.requests.length;
+      await turn(c, session, `ACCEPTANCE-CALL Glossary ${JSON.stringify({ query: CLAUDE_SKILL })}`, 150_000);
+      const g = fake!.requests.slice(gSeen).map((r) => r.toolResult).find((x) => x !== undefined);
+      if (!claude.text.includes("Clover made") && !claude.text.toLowerCase().includes("claude")) wrong.push(`${claude.id}'s OK card doesn't say it was made from a Claude Code plugin: ${claude.text.slice(0, 300)}`);
+      else if (g === undefined || !g.text.includes(`${claude.id}:${CLAUDE_SKILL}`)) wrong.push(`after ${claude.id}'s OK, Alpha's Glossary search for its skill answered ${JSON.stringify((g?.text ?? "nothing").slice(0, 300))}`);
+      else done.push(`1.33 a Claude Code plugin folder wrapped as ${claude.id}: OK'd, its skill ${claude.id}:${CLAUDE_SKILL} in Alpha's Glossary`);
+
+      if (wrong.length > 0) fail(`${wrong.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ") || "none"})`);
+      manifestOutcome = { status: "PASS", detail: done.join("; ") };
+    } catch (err) {
+      manifestOutcome = { status: statusOf(err), detail: why(err) };
+    } finally {
+      for (const id of installed.reverse()) await c.request("plugin.remove", { id }, 60_000).catch(() => undefined);
+    }
+  }
   // Step 5: a plugin's Review on its OK card (the owner's ruling, 2026-11-13), a row of its own so a red Review never
   // stops the install row and the rows that read its plugin (the controller's ruling). A second plugin, found behind its
   // OK card; its Review asked over RPC as the app's card page asks; the internal job reads that plugin's tree and its
@@ -1993,6 +2212,13 @@ async function main(): Promise<void> {
   }
 
   if (installOnly) return;
+  if (manifestOnly) {
+    await manifestFieldsStep();
+    await cliStep();
+    record(STEPS.indexOf(MANIFEST_FIELDS_STEP) + 1, manifestOutcome?.status ?? "BLOCKED", manifestOutcome?.detail ?? "the manifest fields row didn't run");
+    record(stepNo(CLI_PREFIX), cliOutcome?.status ?? "BLOCKED", cliOutcome?.detail ?? "the CLI step didn't run");
+    return;
+  }
 
   // Step 6: the bot calls the plugin's tool.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
@@ -2161,44 +2387,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // The `clover plugin` CLI in the user's terminal, against this run's daemon (recorded at the end): the target's own
-  // CLI on the step-4 plugin (list, info, logs, pin and unpin, restart, index list), and a plugin made from a template
-  // and checked (new, validate), which needs no daemon.
-  if (!STEPS.some((x) => x.startsWith(CLI_PREFIX))) { /* not in this run */ }
-  else if (pluginId === undefined || !pluginOk) cliOutcome = { status: "BLOCKED", detail: "the plugin isn't installed and approved (step 4)" };
-  else if (oldHalf) cliOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
-  else {
-    try {
-      const id = pluginId;
-      const said: string[] = [];
-      const run = async (words: string[], expect?: string) => {
-        const r = await coreCli(["plugin", ...words], `plugin-cli-${words[0]}`);
-        if (r.code !== 0) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
-        if (expect !== undefined && !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} didn't say "${expect}": ${r.stdout.trim().slice(0, 300)}`);
-        said.push(words.join(" "));
-        return r;
-      };
-      const pinned = async () => (await c.request<{ plugin?: { pinned?: boolean } }>("plugin.get", { id })).plugin?.pinned;
-      await run(["list"], id);
-      await run(["info", id], id);
-      await run(["logs", id, "-n", "5"]);
-      // A pin holds a plugin at its version against its index or npm (§5.6): a folder-installed plugin has none, so the
-      // CLI refuses it and says why (the index row pins and unpins its indexed plugin through the CLI).
-      const pin = await coreCli(["plugin", "pin", id], "plugin-cli-pin");
-      if (pin.code === 0 || !`${pin.stderr}${pin.stdout}`.includes("isn't from a plugin index or npm")) fail(`clover plugin pin ${id} (installed from a folder) exited ${pin.code}: ${(pin.stderr || pin.stdout).trim().slice(0, 300)}`);
-      if ((await pinned()) === true) fail(`clover plugin pin ${id} pinned a plugin no index or npm updates`);
-      said.push("pin (refused: it isn't from an index or npm)");
-      await run(["restart", id], `restarted ${id}`);
-      await run(["index", "list"]);
-      const made = join(root, "cli-new-plugin");
-      await run(["new", "tool", made, "--name", "Cli probe"]);
-      if (!existsSync(join(made, "clover.json"))) fail(`clover plugin new tool made no clover.json in ${made}`);
-      await run(["validate", made], "valid");
-      cliOutcome = { status: "PASS", detail: `${target === "source" ? "the checkout's CLI" : "the packaged core's CLI"}: clover plugin ${said.join("; ")} (each exit 0; pin and unpin read back through plugin.get)` };
-    } catch (err) {
-      cliOutcome = { status: statusOf(err), detail: why(err) };
-    }
-  }
+  await cliStep();
 
   // Plugins from an index the user added and from npm (recorded at the end): the run's fake index and fake npm registry
   // (plugin-world.ts; served by name through the daemon's own pinned fetch, the source daemon's seam or a packaged test
@@ -2464,6 +2653,9 @@ async function main(): Promise<void> {
     }
   }
 
+  // The manifest fields row (recorded at the end).
+  await manifestFieldsStep();
+
   // A turn on a model a plugin's code adapter serves (its turn here, on the first daemon; recorded at the end).
   // (The `models` unit: in a sharded run, a shard of its own runs them on its own keyed daemon, unitsRun.)
   if (runs("models")) {
@@ -2623,6 +2815,7 @@ async function main(): Promise<void> {
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
   if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
+  if (STEPS.includes(MANIFEST_FIELDS_STEP)) record(STEPS.indexOf(MANIFEST_FIELDS_STEP) + 1, manifestOutcome?.status ?? "BLOCKED", manifestOutcome?.detail ?? "the manifest fields row didn't run");
   if (STEPS.includes(SCHEDULED_ROUTINE_STEP) && runs("models")) record(STEPS.indexOf(SCHEDULED_ROUTINE_STEP) + 1, routineOutcome?.status ?? "BLOCKED", routineOutcome?.detail ?? "the scheduled routine didn't run");
   if (STEPS.includes(OAUTH_SIGN_IN_STEP) && runs("models")) record(STEPS.indexOf(OAUTH_SIGN_IN_STEP) + 1, oauthOutcome?.status ?? "BLOCKED", oauthOutcome?.detail ?? "the oauth-pkce sign-in didn't run");
   if (STEPS.includes(THIRD_PARTY_MODEL_STEP) && runs("models")) record(STEPS.indexOf(THIRD_PARTY_MODEL_STEP) + 1, thirdPartyOutcome?.status ?? "BLOCKED", thirdPartyOutcome?.detail ?? "the third-party model turn didn't run");
@@ -4756,7 +4949,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : installOnly ? [1, 2, 3, 4, 5] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : installOnly ? [1, 2, 3, 4, 5] : manifestOnly ? [1, 2, 3, 4, stepNumber(FULL_STEPS, MANIFEST_FIELDS_STEP), FULL_STEPS.findIndex((x) => x.startsWith(CLI_PREFIX)) + 1] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : appRowsOnly !== undefined ? appRowsOnly.map((n) => stepNumber(FULL_STEPS, n)) : undefined));
 // A shard's table: its own units' rows alone (the sharded run merges them, and the others are another shard's).
 if (shardUnits !== undefined) rows.splice(0, rows.length, ...rows.filter((r) => runs(unitOf(r.name))));
 if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));
