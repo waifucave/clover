@@ -95,7 +95,7 @@ import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULE
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
-import { CLAUDE_SKILL, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
+import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, CLAUDE_SKILL, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
@@ -2162,14 +2162,34 @@ async function main(): Promise<void> {
       const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
       mkdirSync(join(userHome, "fields-code"), { recursive: true });
       const codingSeen = fake!.requests.length;
-      await c.request("agent.start", { backend: "clover-code", computer, root: `home/${computer}/fields-code`, ...(model !== undefined ? { model } : {}), prompt: "ACCEPTANCE-REPLY: fields coding" }, 30_000);
+      // The coding session calls AgentsOnly by the short name its bridge gives it (its full name is too long); its card,
+      // if its level asks, names the real one.
+      const coding = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root: `home/${computer}/fields-code`, ...(model !== undefined ? { model } : {}), prompt: `fields coding ACCEPTANCE-CALL ${AGENTS_ONLY_SHORT} {}` }, 30_000)).session;
       const codingTools = await until("the coding session's request to the model", 120_000, async () => {
         const mine = fake!.requests.slice(codingSeen).filter((r) => r.lastUserText.includes("fields coding"));
         return mine.length > 0 ? mine.flatMap((r) => r.tools) : undefined;
       }).catch((err: unknown) => { wrong.push(why(err)); return [] as string[]; });
       const offer = offerWrong({ bot: botTools, coding: codingTools });
       if (offer.length > 0) wrong.push(`${offer.join("; ")} (Alpha: ${botTools.filter((t) => t.startsWith("mcp__")).join(", ") || "none"}; coding: ${codingTools.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
-      else done.push("1.47 FieldsLocal (perComputer) and FieldsMac (when.os macos) offered to Alpha, FieldsWin (when.os windows) not; 1.25 AgentsOnly offered to the coding session, not to Alpha; 1.26 CcOnly (onlyBackends claude-code) offered to Alpha, not to the coding session on clover-code");
+      else done.push(`1.47 FieldsLocal (perComputer) and FieldsMac (when.os macos) offered to Alpha, FieldsWin (when.os windows) not; 1.25 AgentsOnly offered to the coding session (as ${AGENTS_ONLY_SHORT}: its full bridge name is too long), not to Alpha; 1.26 CcOnly (onlyBackends claude-code) offered to Alpha, not to the coding session on clover-code`);
+      if (offer.length === 0) {
+        const carded: string[] = [];
+        const answered = new Set<string>();
+        await until(`the coding session's call to ${AGENTS_ONLY_SHORT} answered`, 120_000, async () => {
+          for (const card of await cards(c).catch(() => [])) {
+            if (card.session !== coding || answered.has(card.id)) continue;
+            answered.add(card.id);
+            if (!JSON.stringify(card).includes(AGENTS_ONLY_REAL)) wrong.push(`the card for ${AGENTS_ONLY_SHORT} doesn't name its real name ${AGENTS_ONLY_REAL}`);
+            await approve(c, card);
+            carded.push(`its ${card.kind} card named ${AGENTS_ONLY_REAL}, approved`);
+          }
+          const evs = await history(c, coding).catch(() => []);
+          return evs.find((e) => JSON.stringify(e).includes("AgentsOnly-pong") || JSON.stringify(e).includes("ACCEPTANCE-NO-CALL-TOOL"));
+        }, 1_000).then((e) => {
+          if (JSON.stringify(e).includes("ACCEPTANCE-NO-CALL-TOOL")) wrong.push(`the coding session had no tool named ${AGENTS_ONLY_SHORT} to call`);
+          else done.push(`the coding session called ${AGENTS_ONLY_SHORT} and got AgentsOnly-pong${carded.length > 0 ? ` (${carded.join("; ")})` : " (no card at its level)"}`);
+        }, (err: unknown) => { wrong.push(why(err)); });
+      }
 
       // 1.33: a Claude Code plugin folder wrapped; its skill in Alpha's Glossary.
       const claude = await install({ from: "wrap", kind: "claude-plugin", value: writeClaudePlugin(src) });

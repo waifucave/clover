@@ -24,7 +24,8 @@ import { glossaryIndex } from "../../runtime-sdk/turn-loop/glossary";
 import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
 import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
-import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, type AgentPluginReachDeps } from "../plugin-reach";
+import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
+import type { BotMcpServer } from "../../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeToolSource } from "../bridge/tools";
 import type { PluginPartsSource } from "../placement";
 import { waitFor, World, type WorldOptions } from "./world";
@@ -73,7 +74,10 @@ const plugin = (id: string, extra: Record<string, unknown> = {}) => ({
 /** The real registry with `toolbox` (agents), `botsonly` (bots, with a skill), `cconly` (Claude Code only), `cloveronly`
  *  (Clover's own runtime only) and `kit` (agents: a skill and an agent definition), each OK'd; PluginMcp over it; the
  *  judge over the bots' approval check on `broker`. */
-async function plugins(broker: FakeApprovalBroker) {
+/** Two plugins whose ids are long (`agents` scope): their tools' bridge names pass `BRIDGE_TOOL_NAME_MAX`, and both
+ *  tools' names start with the same 27 letters. */
+const LONG_IDS = ["longnamedplugin-alphastudio-tool-a", "longnamedplugin-alphastudio-tool-b"];
+async function plugins(broker: FakeApprovalBroker, o: { long?: boolean } = {}) {
   const home = mkdtempSync(join(tmpdir(), "clover-b-reach-"));
   temps.push(home);
   const files: Record<string, unknown> = {
@@ -92,6 +96,7 @@ async function plugins(broker: FakeApprovalBroker) {
       [`${b}/host/index.js`, "export {};\n"],
       [`${b}/skills/persona/SKILL.md`, `---\nname: persona\ndescription: How ${b} talks.\n---\nTalk like ${b}.\n`],
     ])),
+    ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/clover.json`, plugin(id, { scope: "agents" })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
   };
   for (const [path, value] of Object.entries(files)) {
     mkdirSync(dirname(join(home, "plugins", path)), { recursive: true });
@@ -99,7 +104,7 @@ async function plugins(broker: FakeApprovalBroker) {
   }
   const okBroker = new FakeApprovalBroker({ clock: new FakeClock() });
   const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
-  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit", "luna", "nova"]) {
+  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit", "luna", "nova", ...(o.long ? LONG_IDS : [])]) {
     for (let i = 0; i < 250 && opened.registry.get(id) === undefined; i++) await Bun.sleep(20);
     const { card } = await opened.registry.installed(id, "app");
     if (card !== undefined) {
@@ -121,7 +126,7 @@ async function plugins(broker: FakeApprovalBroker) {
 
 /** A world whose manager's bridge serves the plugins' tools and parts (the daemon's `lateAgentPlugins` shape: the
  *  sources read deps made after the world, over its own broker). */
-async function setup(o: WorldOptions & { parts?: boolean } = {}) {
+async function setup(o: WorldOptions & { parts?: boolean; long?: boolean } = {}) {
   let tools: BridgeToolSource | undefined;
   let parts: PluginPartsSource | undefined;
   const w = (world = new World({
@@ -132,7 +137,7 @@ async function setup(o: WorldOptions & { parts?: boolean } = {}) {
       place: (p, ctx) => placeInClaudeCode(p, { dir: ctx.dir, shim: { command: "/bin/echo", args: [] } }),
     } : {}),
   }));
-  const p = await plugins(w.approvals);
+  const p = await plugins(w.approvals, { long: o.long === true });
   tools = agentPluginTools(p.deps);
   parts = agentPluginParts(p.deps);
   return { w, p };
@@ -242,6 +247,64 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(seen).toEqual([`fake:mcp__${TOOL}`, `clover:mcp__${TOOL}`, `clover-code:mcp__${TOOL}`]);
     const denied = await tools.call("s_code", { callId: "c-deny", tool: TOOL, input: { stop: true } }, { computer: "Studio", origin: "user", session: facts() });
     expect(denied).toEqual({ content: [{ type: "text", text: `${TOOL} was refused by a plugin's hook: not today` }], isError: true });
+  });
+
+  test("a long name: a short form that fits, the same each time; a name that fits is untouched; two cut to the same start stay apart; one that takes another's name gets more digits; only other characters leave a tool out", async () => {
+    const srv = (server: string, ...tools: string[]): BotMcpServer => ({ server, plugin: server, tools: tools.map((name) => ({ name, inputSchema: { type: "object" } })) }) as unknown as BotMcpServer;
+    const left: string[] = [];
+    const short = bridgeShortName("acme-studio-blender-bridge-tools", "Render");
+    // The tool's name kept whole, the server's cut, six hex digits of the full name's hash.
+    expect(short).toMatch(/^acme-studio-blender__Render_[0-9a-f]{6}$/);
+    expect(short.length).toBe(BRIDGE_TOOL_NAME_MAX);
+    // A tool whose own name leaves no room: its name cut, then the digits.
+    const a = bridgeShortName("x-tools", "longnamedpluginalphastudioone"), b = bridgeShortName("y-tools", "longnamedpluginalphastudioone");
+    expect(a.slice(0, 27)).toBe(b.slice(0, 27));
+    expect(a).not.toBe(b);
+    // A fitting tool whose full name is exactly the long one's short form: the long one takes eight digits.
+    const cut = short.indexOf("__");
+    const names = [...bridgeToolsOf([
+      srv("toolbox-tools", "toolbox"),
+      srv("acme-studio-blender-bridge-tools", "Render"),
+      srv(short.slice(0, cut), short.slice(cut + 2)),
+      srv("acme-studio-blender-bridge-tools", "has.dot"),
+    ], (n, why) => left.push(`${n}: ${why}`)).entries()].map(([name, t]) => [name, `${t.server.server}__${t.tool.name}`]);
+    expect(names).toEqual([
+      ["toolbox-tools__toolbox", "toolbox-tools__toolbox"],
+      [short, short],
+      [bridgeShortName("acme-studio-blender-bridge-tools", "Render", 8), "acme-studio-blender-bridge-tools__Render"],
+    ]);
+    expect(left).toEqual(["acme-studio-blender-bridge-tools__has.dot: a character MCP clients refuse"]);
+    for (const [name] of names) expect(name!.length).toBeLessThanOrEqual(BRIDGE_TOOL_NAME_MAX);
+    // The same servers give the same names.
+    expect([...bridgeToolsOf([srv("acme-studio-blender-bridge-tools", "Render")]).keys()]).toEqual([short]);
+  });
+
+  test("a long plugin id: its tool listed under a short name whose description starts with the real names, called through it, its card and hooks under the real name", async () => {
+    const real = (id: string) => `${id}-tools__${id.replace(/[^a-z]/g, "")}`;
+    const one = bridgeShortName(`${LONG_IDS[0]}-tools`, LONG_IDS[0]!.replace(/[^a-z]/g, ""));
+    const two = bridgeShortName(`${LONG_IDS[1]}-tools`, LONG_IDS[1]!.replace(/[^a-z]/g, ""));
+    // Both tools' names start with the same letters, so the cut alone would give them one name.
+    expect(one.slice(0, 27)).toBe(two.slice(0, 27));
+    expect(one).not.toBe(two);
+    const { w, p } = await setup({ long: true, level: "ask", script: [[{ mcp: { server: "$bridge", tool: one, input: { n: 3 } } }, { say: "Done." }]] });
+    const lines: string[] = [];
+    const tools = agentPluginTools({ ...p.deps, log: (l) => lines.push(l) });
+    const listed = await tools.tools("s_code", facts());
+    expect(listed.map((t) => t.name).sort()).toEqual([one, two, TOOL].sort());
+    expect(lines).toEqual([]);
+    expect(listed.find((t) => t.name === one)!.description).toBe(`[${LONG_IDS[0]}] longnamedpluginalphastudiotoola: The ${LONG_IDS[0]} tool. (the tool ${real(LONG_IDS[0]!)}, its name shortened to fit)`);
+    // The plugins' hooks see the call under the real name.
+    const seen: string[] = [];
+    const hooks = { toolBefore: async (_s: unknown, t: { name: string }, input: unknown) => { seen.push(t.name); return { input }; }, toolAfter: async (_s: unknown, _t: unknown, _i: unknown, r: unknown) => r } as unknown as TurnHooks;
+    const hooked = agentPluginTools({ ...p.deps, judge: async (_s, _c, call) => ({ allowed: true, input: call.input }), hooks: () => hooks });
+    expect(await hooked.call("s_code", { callId: "c-two", tool: two, input: {} }, { computer: "Studio", origin: "user", session: facts() })).toEqual({ content: [{ type: "text", text: "longnamedpluginalphastudiotoolb ran with {}" }], isError: false });
+    expect(seen).toEqual([`mcp__${real(LONG_IDS[1]!)}`]);
+    // The agent calls the short name: the card names the real one, and its yes runs it.
+    await asUser(w);
+    const card = await waitFor(() => w.approvals.cards().find((c) => c.kind === "tool"), "a card");
+    expect(card.fields["what"]).toEqual({ type: "code", code: `mcp__${real(LONG_IDS[0]!)}` });
+    await approve(w, card.id, "approve");
+    expect(await waitFor(() => w.report("mcp-result")[0], "the tool's answer")).toMatchObject({ tool: one, text: 'longnamedpluginalphastudiotoola ran with {"n":3}', isError: false });
   });
 
   test("a plugin switched off since the session started: its tool answers 'no tool named'", async () => {
