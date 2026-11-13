@@ -38,7 +38,7 @@ import { bridgeCloverParts, type BridgeCloverParts } from "./bridge/handlers";
 import { bridgeCommand } from "./bridge/main";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeToolSource } from "./bridge/tools";
-import { AgentManager, type AgentPauseGate } from "./manager";
+import { AgentManager, type AgentManagerOptions, type AgentPauseGate } from "./manager";
 import { FileAgentOks } from "./sandbox/oks";
 import { hookShimCommand } from "./claude-code/hook-shim";
 import { placeInClaudeCode } from "./claude-code/placement";
@@ -112,6 +112,8 @@ export interface AgentsOptions {
   backends?: (wire: AgentManager["wire"]) => AgentBackend[];
   pluginTools?: BridgeToolSource;
   pluginParts?: PluginPartsSource;
+  /** `Glossary` on the bridge (plugin-reach.ts `agentGlossary`): the session's skills, agent definitions and tools. */
+  glossary?: AgentManagerOptions["glossary"];
   /** A computer's level, for the read-only mode of an agent that acts without asking; read-only when unknown. */
   levelOf?: (computer: string) => Level | undefined;
   /** The levels changed (the computer registry's `watch`): running agents follow straight away (`levelsChanged`). */
@@ -192,6 +194,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     oks: new FileAgentOks(o.home),
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
+    ...(o.glossary ? { glossary: o.glossary } : {}),
     ...(o.hooks ? { hooks: o.hooks } : {}),
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
     ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
@@ -202,7 +205,14 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   });
   const wire = (id: string) => manager.wire(id);
   // Claude Code reads its own skills, agents and hooks folders: the plugins' parts are placed there (§9.3).
-  const place = { "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() }) } as const;
+  const place = {
+    "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => {
+      const r = placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() });
+      // What was left out (a link inside a skill folder, a name placed already, …), so its author can find out why.
+      if (r.placed.skipped.length > 0) o.log?.(`claude-code placement in ${ctx.dir}: left out ${r.placed.skipped.map((x) => `${x.id} (${x.why})`).join(", ")}`);
+      return r;
+    },
+  } as const;
   // One record of the user's own selections for every backend, in the daemon's fenced run folder.
   const selections = new UserSelections(join(o.home, "run", "agents", "selections"));
   // Every ACP backend is a plugin's entry; what the core grants by backend id (an admitted sandbox, Claude Code's

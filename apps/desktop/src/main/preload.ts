@@ -56,6 +56,7 @@ if (isRoot || isLayer) {
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
     sealedFrame: (mount, cardId, element, look, tokens) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element, ...(look !== undefined ? { look } : {}), ...(tokens !== undefined ? { tokens } : {}) }),
+    cardPage: (mount, cardId) => ipcRenderer.invoke("clover:card-page", { mount, cardId, active: activated() }),
     onMessage: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -97,5 +98,8 @@ if (isRoot || isLayer) {
     // A press the page saw, in one word of a fixed set (what it did with it); the app logs it with the card's id.
     pressed: (what: string) => void ipcRenderer.send("clover:sealed-press", { token, what }),
     size: (height: number) => void ipcRenderer.send("clover:sealed-size", { token, height }),
+    // The Review on the app's own card page (a plugin's OK or update card): advice the app fetches for its own page,
+    // never an answer.
+    review: (peek?: boolean) => ipcRenderer.invoke("clover:sealed-review", { token, ...(peek === true ? { peek: true } : {}) }),
   });
 }

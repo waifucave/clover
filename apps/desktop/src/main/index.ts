@@ -22,6 +22,7 @@ import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
+import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { testBuildAppRefusal } from "./test-build";
@@ -261,6 +262,19 @@ async function ready(): Promise<void> {
   runtime.botName = (id) => botNames.get(id);
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
+  // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
+  runtime.onCardPage = async (cardId) => {
+    if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
+    const own = fallbacks.get(cardId);
+    if (own?.win !== undefined && !own.win.isDestroyed()) {
+      own.win.showInactive();
+      return true;
+    }
+    if (own !== undefined) clearTimeout(own.timer);
+    fallbacks.set(cardId, { timer: setTimeout(() => undefined, 0) });
+    await showFallbackCard(cardId);
+    return true;
+  };
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   const iconsUnserved = new Set<string>();
@@ -458,6 +472,16 @@ async function ready(): Promise<void> {
       log(`sealed: press on ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(sealed.windowOf(token))}: ${what}`);
     },
     // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
+    // The Review on the app's own card page: the core's `plugin.review` for the card that page shows (its `own` token),
+    // read back to that page alone, as text.
+    sealedReview: async (token: string, peek: boolean) => {
+      const cardId = sealed.cardOf(token);
+      if (cardId === undefined || sealed.elementOf(token) !== "own") return { state: "failed", why: "This card can't be reviewed here." };
+      const client = pair.client;
+      if (client === undefined) return { state: "failed", why: "Clover isn't running." };
+      return client.request<{ state: string; report?: string; why?: string; model?: string }>("plugin.review", { card: cardId, ...(peek ? { peek: true } : {}) }, 15_000)
+        .catch((err: unknown) => ({ state: "failed", why: err instanceof Error ? err.message.slice(0, 300) : "The review couldn't start." }));
+    },
     sealedSize: (token: string, height: number) => {
       for (const own of fallbacks.values()) {
         if (own.token !== token || own.win === undefined || own.win.isDestroyed()) continue;
@@ -1870,9 +1894,12 @@ function startBrowser(): void {
     const c = pair?.client;
     if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${why(err)}`));
   };
+  // The acceptance run's fixture site, by name (a test or acceptance build only: a release build has none of this).
+  const testNames = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? testBrowserNames(process.env.CLOVER_TEST_BROWSER_NAMES) : undefined;
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
     headless,
+    ...(testNames !== undefined ? { network: { lookup: testNames.lookup, dial: testNames.dial } } : {}),
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },

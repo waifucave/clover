@@ -23,10 +23,19 @@
 //   so the app delivers it to that plugin's layer only (a listener can't cross the layer path), and a host half's
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
-import { foldTitle } from "@waifucave/clover-plugin-sdk";
-import type { BotView, Caller, DeviceView } from "@waifucave/clover-protocol";
+import { foldTitle, ROUTINE_FIRE_PAYLOAD_MAX } from "@waifucave/clover-plugin-sdk";
+import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading } from "@waifucave/clover-protocol";
+import type { UsageLedger } from "../../usage/ledger";
+import { PIECE_BYTES, type VoicePlay } from "../../voices/service";
+import { mainSessionIdFor } from "../../sessions/ids";
+import { randomUUID } from "node:crypto";
+import { listMemory, readMemory } from "../../bots/memory";
+import { botPaths } from "../../bots/paths";
+import { existsSync } from "node:fs";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { BotSide } from "../../bots/wiring";
+import { browserApiHandlers } from "../../browser/api-handlers";
+import type { BrowserService } from "../../browser/service";
 import { computersApiRoutes, filesApiRoutes, filesWatch, type ApiRoute } from "../../computers/api";
 import type { ComputerNode } from "../../computers/node";
 import { deviceView } from "../../devices/rpc";
@@ -40,12 +49,20 @@ export interface AreaServices {
   bots(): BotSide | undefined;
   node(): ComputerNode | undefined;
   links(): DeviceLinks | undefined;
+  /** The Clover Browser (the bundled Browser tool's `browser.*`), once the daemon's parts have started it. */
+  browser?(): BrowserService | undefined;
   /** Sends a core event to the app's connections (a layer's terminal output). */
   emitToApp?(event: { type: string; [key: string]: unknown }): void;
   now?(): number;
   /** The files the user picked in a plugin's page (`grant:<uuid>` paths, `fence/plugin-grants.ts`): its host half's
    *  `files.*` on them, and `files.path`. Absent: such a path is refused. */
   grants?(): ReturnType<typeof grantFiles> | undefined;
+  /** `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings, each absent where not running. */
+  usage?(): { ledger?: Pick<UsageLedger, "rows" | "summary" | "watch">; plans?(): Promise<PlanReading[]> };
+  /** The Clover home (`memory.*` reads `<home>/bots/<bot>/memory/`). */
+  home?: string;
+  /** Sends one piece of speech to this computer's app (`voice.play`), for `audio.play`. Absent: not served here. */
+  voicePlay?(p: VoicePlay): Promise<void> | void;
 }
 
 const HISTORY_PAGE_MAX = 500;
@@ -54,6 +71,16 @@ const REPLAY_PAGE = 500;
 /** A follow replays at most this many of the latest events (older ones are `history`'s). */
 export const REPLAY_MAX = 10_000;
 export const WATCHES_PER_PLUGIN = 32;
+/** A page of a routine's runs, at most (the `routine.runs` method's own cap). */
+export const ROUTINE_RUNS_MAX = 200;
+/** A page of usage rows, at most, and the usage watches one plugin may hold. */
+export const USAGE_ROWS_MAX = 1000;
+export const USAGE_WATCHES_PER_PLUGIN = 8;
+/** One `audio.play` call's audio, at most; an utterance left without its last piece ends after AUDIO_IDLE_MS; at most
+ *  AUDIO_UTTERANCES_MAX play at once across plugins. */
+export const AUDIO_PIECE_MAX = 8 * 1024 * 1024;
+export const AUDIO_IDLE_MS = 30_000;
+export const AUDIO_UTTERANCES_MAX = 64;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
@@ -89,6 +116,25 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const side = () => s.bots() ?? notRunning("the bot side");
   const node = () => s.node() ?? notRunning("the computer node");
   const links = () => s.links() ?? notRunning("the device links");
+  const ledger = () => s.usage?.().ledger ?? notRunning("the usage ledger");
+  const engine = () => side().routines ?? notRunning("the routine engine");
+  const usageWatches = new Map<string, number>();
+  /** The utterances plugins are playing now, by id: whose, which bot's figure, and the next piece. */
+  const playing = new Map<string, { pluginId: string; bot: string; session: string; utterance: string; next: number; format?: string; idle?: ReturnType<typeof setTimeout> }>();
+  /** The memory folder of `bot`, if the caller may read it: its own bot's always, any bot's with `memory.read`. */
+  /** Whether `bot` is the plugin's own LIVE bot: its id is the plugin's top-level id and the bot side has it now. A
+   *  folder or routine a removed bot left is no plugin's own (a plugin installed later under the same id doesn't
+   *  inherit it): it needs the capability. */
+  const ownLiveBot = (ctx: ApiCallContext, bot: string): boolean => topPluginIdOf(ctx.pluginId) === bot && (s.bots()?.bots.has(bot) ?? false);
+  const memoryOf = (ctx: ApiCallContext, bot: string): string => {
+    if (!ownLiveBot(ctx, bot) && !ctx.record.granted.includes("memory.read")) {
+      throw new ContractError("refused", `${bot}'s memory needs the capability memory.read, which this plugin's OK doesn't list (a bot's own plugin reads its live bot's memory without it)`);
+    }
+    if (s.home === undefined) return notRunning("the bots' memory");
+    const dir = botPaths(s.home, bot).memory;
+    if (!(s.bots()?.bots.has(bot) ?? false) && !existsSync(dir)) throw new ContractError("not_found", `no bot ${bot}`);
+    return dir;
+  };
 
   // ---- conversation (D's session host) ----
   const sessionOf = (id: string) => {
@@ -311,6 +357,19 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       await side().host.deliver(id, { from: "plugin", pluginId: ctx.pluginId, text });
     },
 
+    // A plugin's own trigger fired (§7): the engine checks the plugin adds that trigger type and the routine uses it,
+    // and runs it here; the payload reaches the run marked as the trigger's.
+    "routines.fire": async (ctx, args) => {
+      const routine = stringArg(args, 0, "the routine");
+      const type = stringArg(args, 1, "the trigger type", 64);
+      const payload = args[2];
+      if (payload !== undefined && (typeof payload !== "string" || payload.length > ROUTINE_FIRE_PAYLOAD_MAX)) throw new ContractError("invalid", `a trigger's payload is a string of at most ${ROUTINE_FIRE_PAYLOAD_MAX} characters`);
+      const engine = side().routines ?? notRunning("the routines");
+      const named = ctx.record.name as string | { en?: string } | undefined;
+      const name = typeof named === "string" ? named : named?.en;
+      await engine.fire(routine, type, { pluginId: ctx.pluginId, ...(name ? { name } : {}) }, payload, { detach: true });
+      return null;
+    },
     "bots.list": () => side().bots.list(),
     "bots.get": (_ctx, args) => {
       const id = stringArg(args, 0, "the bot");
@@ -367,6 +426,133 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         offLinks();
       };
       });
+    },
+
+    // ---- audio (the app's player and push-to-talk, through lane D's voices; `audio`) ----
+    // `audio.play`: audio the app plays as a bot's speech (its figure lip-syncs to it), the plugin's own bot's unless
+    // `opts.bot` names another; a whole clip in one call, or (from a host half, whose API sends a stream that way) a
+    // piece at a time under one utterance, the last `final`. `audio.onRecording`: each piece of the user's push-to-talk
+    // audio, as it comes, whichever bot it is for (the OK says the plugin "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices").
+    "audio.play": async (ctx, args) => {
+      const a = opt(args[0]);
+      if (a.format !== "pcm16-24k" && a.format !== "mp3" && a.format !== "opus") throw new ContractError("invalid", "audio.play's format is pcm16-24k, mp3 or opus");
+      if (!(a.data instanceof Uint8Array)) throw new ContractError("invalid", "audio.play's data is bytes (a Uint8Array) or, from a host half, an async iterable of them");
+      if (a.data.length > AUDIO_PIECE_MAX) throw new ContractError("invalid", `one piece of audio is at most ${AUDIO_PIECE_MAX} bytes`);
+      const send = s.voicePlay ?? notRunning("the app's player");
+      const piece = opt(args[2]);
+      const named = typeof piece.utterance === "string" && /^pa_[0-9a-f-]{36}$/.test(piece.utterance) ? piece.utterance : undefined;
+      let u = named === undefined ? undefined : playing.get(named);
+      if (u !== undefined && u.pluginId !== ctx.pluginId) throw new ContractError("refused", "that utterance is another plugin's");
+      if (u === undefined) {
+        const bot = typeof opt(args[1]).bot === "string" ? (opt(args[1]).bot as string) : topPluginIdOf(ctx.pluginId);
+        if (!side().bots.has(bot)) throw new ContractError("not_found", `no bot ${bot} to speak it (opts.bot names the bot whose figure plays it)`);
+        u = { pluginId: ctx.pluginId, bot, session: mainSessionIdFor(bot), utterance: named ?? `pa_${randomUUID()}`, next: 0 };
+        if (playing.size >= AUDIO_UTTERANCES_MAX) throw new ContractError("refused", "too many utterances are playing; let one end first");
+        playing.set(u.utterance, u);
+      }
+      const now = u;
+      if (now.idle !== undefined) clearTimeout(now.idle);
+      const format = a.format;
+      now.format = format;
+      for (let at = 0; at < a.data.length; at += PIECE_BYTES) {
+        await send({ bot: now.bot, session: now.session, utterance: now.utterance, seq: now.next++, audio: Buffer.from(a.data.subarray(at, at + PIECE_BYTES)).toString("base64"), format, final: false });
+      }
+      // The last piece (a whole clip's, or the stream's own last) ends the utterance for the app; a stream left
+      // hanging ends by itself after AUDIO_IDLE_MS.
+      const end = async () => {
+        playing.delete(now.utterance);
+        await send({ bot: now.bot, session: now.session, utterance: now.utterance, seq: now.next++, audio: "", format, final: true });
+      };
+      if (named === undefined || piece.final === true) await end();
+      else {
+        now.idle = setTimeout(() => { if (playing.get(now.utterance) === now) void Promise.resolve(end()).catch(() => {}); }, AUDIO_IDLE_MS);
+        (now.idle as { unref?: () => void }).unref?.();
+      }
+      return { utterance: now.utterance };
+    },
+    "audio.onRecording": (ctx, args) => {
+      const listener = listenerArg<{ utterance: string; format: string; data: Uint8Array; final: boolean }>(args, 0);
+      const voices = side().voices ?? notRunning("the bots' voices");
+      return watch(ctx, () => voices.onRecording((p) => listener({ utterance: p.utterance, format: p.format, data: p.data, final: p.final })));
+    },
+
+    // ---- memory (lane D's memory folder, read-only) ----
+    // A bot plugin's own bot (the bot whose id is the plugin's top-level id) with no capability: its own data. Any other
+    // bot with `memory.read`, whose OK line says "reads your bots' memories" (the coordinator's ruling: the card decides).
+    "memory.list": (ctx, args) => {
+      const dir = memoryOf(ctx, stringArg(args, 0, "the bot", 64));
+      return listMemory(dir);
+    },
+    "memory.read": (ctx, args) => {
+      const dir = memoryOf(ctx, stringArg(args, 0, "the bot", 64));
+      return readMemory(dir, stringArg(args, 1, "the memory file's path", 4096));
+    },
+
+    // ---- routines (lane D's routine engine, read-only) ----
+    // A bot plugin's own bot's routines with no capability; every bot's with `routines.read`, whose OK line says "sees
+    // your routines and their runs" (the same rule as memory's).
+    "routines.list": (ctx, args) => {
+      const f = opt(args[0]);
+      if (f.bot !== undefined && typeof f.bot !== "string") throw new ContractError("invalid", "the filter is { bot? }");
+      const own = topPluginIdOf(ctx.pluginId);
+      const granted = ctx.record.granted.includes("routines.read");
+      if (granted) return engine().list(f.bot as string | undefined);
+      if (f.bot !== undefined && (f.bot !== own || !ownLiveBot(ctx, own))) throw new ContractError("refused", `${String(f.bot)}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its live bot's without it)`);
+      return ownLiveBot(ctx, own) ? engine().list(own).filter((r) => r.state !== "bot-removed") : [];
+    },
+    "routines.runs": (ctx, args) => {
+      const id = stringArg(args, 0, "the routine", 128);
+      const page = opt(args[1]);
+      const r = engine().get(id);
+      if (r === undefined) throw new ContractError("not_found", `no routine ${id}`);
+      if ((!ownLiveBot(ctx, r.bot) || r.state === "bot-removed") && !ctx.record.granted.includes("routines.read")) {
+        throw new ContractError("refused", `${r.bot}'s routines need the capability routines.read, which this plugin's OK doesn't list (a bot's own plugin sees its live bot's without it)`);
+      }
+      const before = typeof page.cursor === "string" ? Number.parseInt(page.cursor, 10) : undefined;
+      const limit = typeof page.limit === "number" && Number.isFinite(page.limit) ? Math.min(ROUTINE_RUNS_MAX, Math.max(1, Math.floor(page.limit))) : undefined;
+      const got = engine().runs(id, { ...(before === undefined || Number.isNaN(before) ? {} : { before }), ...(limit === undefined ? {} : { limit }) });
+      return { runs: got.runs, ...(got.next === undefined ? {} : { next: String(got.next) }) };
+    },
+
+    // ---- usage (lane D's ledger, read-only; `usage.read`) ----
+    "usage.rows": (_ctx, args) => {
+      const q = USAGE_METHODS.usageRows.params.safeParse(args[0] ?? {});
+      if (!q.success) throw new ContractError("invalid", "usage.rows takes { since, until?, computer?, source?, bot?, session?, cursor?, limit? }");
+      const d = q.data;
+      if (d.limit !== undefined && d.limit > USAGE_ROWS_MAX) throw new ContractError("invalid", `usage.rows takes a limit of at most ${USAGE_ROWS_MAX}`);
+      return ledger().rows({
+        since: d.since, ...(d.until === undefined ? {} : { until: d.until }), ...(d.computer === undefined ? {} : { computer: d.computer }),
+        ...(d.source === undefined ? {} : { source: d.source }), ...(d.bot === undefined ? {} : { bot: d.bot }), ...(d.session === undefined ? {} : { session: d.session }),
+        ...(d.cursor === undefined ? {} : { cursor: d.cursor }), ...(d.limit === undefined ? {} : { limit: d.limit }),
+      });
+    },
+    "usage.summary": (_ctx, args) => {
+      const q = USAGE_METHODS.usageSummary.params.safeParse(args[0] ?? {});
+      if (!q.success) throw new ContractError("invalid", "usage.summary takes { from, to, groupBy, bot?, session? }");
+      const d = q.data;
+      return ledger().summary({ from: d.from, to: d.to, groupBy: d.groupBy, ...(d.bot === undefined ? {} : { bot: d.bot }), ...(d.session === undefined ? {} : { session: d.session }) });
+    },
+    "usage.plans": async () => {
+      const plans = s.usage?.().plans;
+      if (plans === undefined) return notRunning("the usage service");
+      return plans();
+    },
+    "usage.watch": (ctx, args) => {
+      const listener = listenerArg<number>(args, 0);
+      const l = ledger();
+      const n = usageWatches.get(ctx.pluginId) ?? 0;
+      if (n >= USAGE_WATCHES_PER_PLUGIN) throw new ContractError("refused", `${ctx.pluginId} has ${USAGE_WATCHES_PER_PLUGIN} usage watches open; close one first`);
+      const stop = watch(ctx, () => l.watch((since) => listener(since)));
+      usageWatches.set(ctx.pluginId, n + 1);
+      let done = false;
+      return () => {
+        if (done) return;
+        done = true;
+        const left = (usageWatches.get(ctx.pluginId) ?? 1) - 1;
+        if (left <= 0) usageWatches.delete(ctx.pluginId);
+        else usageWatches.set(ctx.pluginId, left);
+        stop();
+      };
     },
 
     "files.stat": route(files, "files.stat"),
@@ -486,8 +672,21 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     },
   };
   return {
-    handlers,
+    // The Browser tool's `browser.*` (bundled `clover` tree, `browser` capability): the browser read at each call.
+    handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.()) },
     async forget(pluginId) {
+      // Its utterances end now (their last piece, as the idle timer would send it 30 s later): its sound stops and
+      // their slots free as it stops or is removed.
+      for (const [id, u] of [...playing]) {
+        if (u.pluginId !== pluginId) continue;
+        if (u.idle !== undefined) clearTimeout(u.idle);
+        playing.delete(id);
+        try {
+          await s.voicePlay?.({ bot: u.bot, session: u.session, utterance: u.utterance, seq: u.next++, audio: "", format: (u.format ?? "pcm16-24k") as never, final: true });
+        } catch {
+          // the app's player is gone: nothing is playing there
+        }
+      }
       for (const [id, t] of [...terminals]) {
         if (t.pluginId !== pluginId) continue;
         t.stop?.();

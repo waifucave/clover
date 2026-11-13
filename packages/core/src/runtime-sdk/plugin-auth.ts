@@ -40,6 +40,7 @@ import { credentialValueRefusal, removeCredential } from "./credentials";
 import { bundledModelProviderOf, modelPluginSlotFor } from "./model-plugins/keychain-tokens";
 import { installedModelPlugins } from "./model-plugins";
 import { onCardYes, type CardYesOutput } from "../plugin-host/card-yes";
+import type { OAuthRenewal } from "./model-plugins/oauth-renewal";
 
 /** One `auth` entry as a manifest has it (the plugin SDK's `AuthSchema`), and the provider of the `models` entry it
  *  belongs to. */
@@ -106,6 +107,9 @@ export interface PluginAuthDeps {
   modelProviders?(): Iterable<{ provider: string; pluginId: string }>;
   /** Test seams: the OAuth flow (production: `runLoginFlow` on Codex's loopback port), xAI's device grant, the clock. */
   oauth?(entry: Extract<AuthEntry, { method: "oauth-pkce" }>): OAuthRun;
+  /** Keeps and drops what renews a third party's oauth-pkce sign-in (`model-plugins/oauth-renewal.ts`), and says why
+   *  one ended when a renewal was refused. */
+  oauthRenewal?: Pick<OAuthRenewal, "remember" | "forget" | "refusedReason">;
   xaiDevice?(store: CredentialStore, onUrl: (url: string) => void): Promise<unknown>;
   now?(): number;
   log?(line: string): void;
@@ -157,6 +161,8 @@ export interface PluginAuth {
   signedInProviders(): Promise<Set<string>>;
   signIn(id: string, index: number, key?: string): Promise<{ state: PluginAuthView["state"]; authorizeUrl?: string }>;
   signOut(id: string, index: number): Promise<void>;
+  /** Tells the app and the CLI each of a plugin's sign-ins as it stands now (a renewal signed it out). */
+  announceAll(id: string): Promise<void>;
 }
 
 export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
@@ -193,6 +199,9 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     } else if (name !== undefined) {
       const v = await deps.pluginSecrets.get({ owner: { kind: "plugin", pluginId: id }, name }).catch(() => null);
       if (v !== null) return { ...base, state: "signed-in" };
+      // Signed out by a refused renewal: say so, and what to do.
+      const ended = n.entry.method === "oauth-pkce" ? deps.oauthRenewal?.refusedReason(id, name) : undefined;
+      if (ended !== undefined && run === undefined) return { ...base, state: "signed-out", reason: ended.slice(0, 2000) };
     }
     if (run !== undefined) return { ...base, state: "failed", reason: run.failed.slice(0, 2000) };
     return { ...base, state: "signed-out" };
@@ -298,6 +307,8 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
             });
           } else {
             await deps.pluginSecrets.set({ owner: { kind: "plugin", pluginId: id }, name: entry.secret }, t.accessToken);
+            // What renews it, kept apart from the plugin's own item (the refresh token never reaches the plugin).
+            await deps.oauthRenewal?.remember(id, entry.secret, t);
           }
         });
         background(id, index, covers, stored);
@@ -318,6 +329,10 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       return runCoreFlow(id, index, entry.flow, provider);
     },
 
+    async announceAll(id) {
+      for (const n of authEntriesOf(record(id))) await announce(id, n.index);
+    },
+
     async signOut(id, index) {
       const { n, provider, covers } = numbered(id, index);
       running.delete(`${id}#${index}`);
@@ -331,6 +346,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       } else {
         const name = secretName(n.entry);
         if (name !== undefined) await deps.pluginSecrets.delete({ owner: { kind: "plugin", pluginId: id }, name });
+        if (name !== undefined && n.entry.method === "oauth-pkce") await deps.oauthRenewal?.forget(id, name);
       }
       // The live sessions on what the key covered are replaced: none goes on with a key the user took back.
       await afterKeyChange(covers);

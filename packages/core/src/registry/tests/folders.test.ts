@@ -324,6 +324,34 @@ describe("PluginFolders", () => {
     expect(w.core.get("tarot")).toMatchObject({ state: "running", dev: false, folder: join(w.pluginsDir, "tarot") });
   });
 
+  test("a save in a development folder that changes its plugin loads it again, and the folder says when (lastReloadAt)", async () => {
+    let now = 1_000_000;
+    const w = world({ now: () => now, settleMs: 100 });
+    const dev = join(w.home, "dev", "tarot");
+    w.write(dev, { "clover.json": manifest("tarot", { description: "dev" }), "client/index.tsx": "export {}" });
+    w.folders.start();
+    await w.folders.scan();
+    try {
+      await w.folders.addDevFolder(dev, "cli");
+      const real = realpathSync(dev);
+      const reloadAt = () => w.folders.devFolders().find((d) => d.path === real)?.lastReloadAt;
+      // Added and loaded: never reloaded yet.
+      expect(reloadAt()).toBeUndefined();
+      let told = 0;
+      const off = w.folders.onDevFoldersChanged(() => { told++; });
+      await Bun.sleep(200); // the OS's watch stream starts a moment after the call
+      now += 5_000;
+      w.write(dev, { "client/index.tsx": "export const B = 2;" });
+      const deadline = Date.now() + 5_000;
+      while (reloadAt() === undefined && Date.now() < deadline) await Bun.sleep(50);
+      expect(reloadAt()).toBe(now);
+      expect(told).toBeGreaterThan(0);
+      off();
+    } finally {
+      w.folders.stop();
+    }
+  });
+
   test("the watcher reads a folder once it has settled", async () => {
     const w = world({ settleMs: 100 });
     w.folders.start();

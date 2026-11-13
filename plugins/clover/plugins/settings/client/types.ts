@@ -11,8 +11,8 @@ import type { ReactNode } from "react";
 export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots";
 
 /** A plugin's state (lane B's `PLUGIN_STATES`, spec §5.1): found and waiting for the user's OK, refused, invalid, off,
- *  waiting for a point another plugin declares, running, stopped after crashes, or blocked (revoked). */
-export type PluginState = "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";
+ *  waiting for a point another plugin declares, running, or stopped after crashes. */
+export type PluginState = "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped";
 
 export interface SettingsPlugin {
   id: string;

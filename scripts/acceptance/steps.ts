@@ -7,6 +7,10 @@ import { CARDS_STEP } from "./cards-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
+import { API_AREAS_STEP } from "./api-areas-step";
+import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
+import { BROWSER_STEP } from "./browser-step";
+import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -29,7 +33,7 @@ export const REOPEN_STEPS = [
 
 /** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
  *  levels on the real path. */
-export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation";
+export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation; her agent and the user's own coding session each call a plugin's tool through their bridge and get its answer";
 export const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
 /** The cold-start step's name (`coldStartStep`). Its number is its own place in the table: rows after it (the idle
  *  step) must never take it. */
@@ -41,7 +45,7 @@ export const FULL_STEPS = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
-  "a plugin installs from a folder, its OK card approved",
+  "a plugin installs from a folder, its Review reports on its card, its OK card approved; a plugin whose host.start says each starts at once with no call; a plugin trigger arms a routine and fires it",
   "the bot calls the plugin's MCP tool",
   "a write to an ordinary folder lands with no card; one to a sensitive place raises a card, pressed, then lands; a Read of ~/.aws/credentials is refused with no card, an ordinary file reads",
   "the daemon restarts on the same home and boots",
@@ -58,12 +62,21 @@ export const FULL_STEPS = [
   CARDS_STEP,
   WORKSHOP_STEP,
   TAB_FLASH_STEP,
+  BROWSER_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
   "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
+  "a plugin's own API in its host half: a point's entries, call and watch; its synced store's keys, delete and watch; settings.watch; a note and a message into Alpha's conversation; its hooks on all eight events; removed with its data",
+  "the clover plugin CLI against the run's daemon: list, info, logs, pin and unpin, restart, index list; new and validate",
+  "plugins from an index the user added and from npm: installed behind their OK cards; an update offered and applied on the user's click with no card; a pinned plugin offered none; an update that adds a trigger asks again on a card that says what changed",
   "a folder-installed plugin's stdio MCP server lists and answers, fenced: no write outside its folders, no undeclared host",
-  "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says",
+  "a plugin's own network: its granted host through its proxy and nothing else, no direct socket, no borrowed proxy; a pasted MCP config reaches the network, as its card says; a pasted MCP URL's tools list to the bot and answer it",
+  API_AREAS_STEP,
+  CODE_ADAPTER_STEP,
+  THIRD_PARTY_MODEL_STEP,
+  OAUTH_SIGN_IN_STEP,
+  SCHEDULED_ROUTINE_STEP,
   ARRIVALS_STEP,
   COLD_START_STEP,
   IDLE_STEP,

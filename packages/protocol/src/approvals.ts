@@ -56,7 +56,7 @@ export type CardKind = z.infer<typeof CardKind>;
  *  (`answer-key-rotate`: the current key's hand-over signature and the user's yes on this card, answered by anything
  *  but the key it replaces). */
 export const ChangeSubject = z.enum([
-  "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder", "plugin-index", "plugin-revoked",
+  "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder",
   "repo-trust", "saved-rule", "connector-permission", "computer-create", "computer-resize", "computer-delete",
   "agent-unsandboxed", "core-setting", "answer-key-rotate",
   /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants
@@ -69,10 +69,9 @@ export const ChangeSubject = z.enum([
   "plugin-setting-host",
   /** Signing a plugin out from the Plugins page: its saved sign-in on this computer is deleted. */
   "plugin-sign-out",
-  /** Removing an index that installed plugins came from: they get no more updates or revocations from it. */
+  /** Removing an index that installed plugins came from: they get no more updates from it. */
   "plugin-index-remove",
-  /** Applying an update from an index other than the official one, or from npm, from the Plugins page: its new code
-   *  runs on the OK given before. */
+  /** Applying an update from an index or npm from the Plugins page: its new code runs on the OK given before. */
   "plugin-update",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;

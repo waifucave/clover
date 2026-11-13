@@ -11,6 +11,14 @@ export interface BridgeToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** A plugin tool its manifest preloads (`tools: { <name>: "preload" }`): offered to the model from the start, as a
+   *  bot's is (`anthropic/alwaysLoad`), never only behind a tool search. */
+  preload?: boolean;
+}
+
+/** A bridge tool as MCP's `tools/list` gives it. */
+export function listedBridgeTool(t: BridgeToolDef): { name: string; description: string; inputSchema: Record<string, unknown>; _meta?: Record<string, unknown> } {
+  return { name: t.name, description: t.description, inputSchema: t.inputSchema, ...(t.preload === true ? { _meta: { "anthropic/alwaysLoad": true } } : {}) };
 }
 
 /** The plugin tools one agent session may use, and how a call runs: wherever the tool really runs, under the same
@@ -25,13 +33,29 @@ export interface BridgeCallContext {
   origin: TurnOrigin;
   /** Withdrawn with the agent's turn. */
   signal?: AbortSignal;
+  /** The session as the manager knows it (its kind, backend and folder). */
+  session?: AgentSessionFacts;
+}
+
+/** The agent session a bridge or a plugin part is for, as the manager knows it: what decides which plugins reach it
+ *  (their `scope` by its kind, their `onlyBackends` by its backend) and where its calls are judged. */
+export interface AgentSessionFacts {
+  id: string;
+  /** `agent` for a bot's delegation, `coding` for a session the user started. */
+  kind: "agent" | "coding";
+  /** The backend's id (`clover-code`, `clover`, `claude-code`, `codex`, …). */
+  backend: string;
+  bot?: string;
+  computer: string;
+  /** The agent's working folder, its real path. */
+  root: string;
 }
 
 export interface BridgeToolSource {
-  tools(sessionId: string): Promise<BridgeToolDef[]>;
+  tools(sessionId: string, session?: AgentSessionFacts): Promise<BridgeToolDef[]>;
   call(sessionId: string, call: { callId: string; tool: string; input: unknown }, ctx: BridgeCallContext): Promise<{ content: unknown[]; isError: boolean }>;
   /** The plugins' own instructions, which the bridge sends as its server instructions and `Glossary` also serves. */
-  instructions?(sessionId: string): Promise<string>;
+  instructions?(sessionId: string, session?: AgentSessionFacts): Promise<string>;
 }
 
 export const NO_PLUGIN_TOOLS: BridgeToolSource = {

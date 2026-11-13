@@ -8,7 +8,7 @@
 import { shownCode } from "../approvals/strings";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
@@ -21,7 +21,6 @@ export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalog
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import { wrapperNetworkOpen } from "./wrap";
-import type { RevocationSubject } from "./indexes/revocations";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
@@ -177,13 +176,14 @@ interface Source {
  *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
 /** The OK card's lines that come from the tree alone, as `okText` builds them, with nothing of this computer or of where
  *  it came from: the lines an update may not add or alter without a new OK (`updateAddsTrigger`). Left out on purpose:
- *  the source line ("Not reviewed") and the wrapper's lines (the install record's, never the tree's; wrappers don't
+ *  the source line and the wrapper's lines (the install record's, never the tree's; wrappers don't
  *  update), and the per-computer lines (non-macOS logins, no sandbox here, host code held), which follow the class. */
 export function treeOkLines(folder: string, tree: TreeReport): string[] {
   const all = [tree.top, ...tree.children.map((c) => c.report)];
   return [
     ...describeOk(tree.top, { restylesCards: tree.restylesCards, treeCapabilities: all.flatMap((m) => m.capabilities) }),
     ...hookOkLines(all),
+    ...backgroundOkLines(all),
     ...agentEnvLines(folder, tree),
   ];
 }
@@ -239,6 +239,8 @@ export class PluginFolders {
   readonly #newest = new Map<string, Promise<void>>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
+  /** Each development folder's plugin's tree as last read, to tell a save that changed it (`lastReloadAt`). */
+  readonly #devHashes = new Map<string, string | undefined>();
   readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance; folder: string }>();
 
   constructor(opts: PluginFoldersOptions) {
@@ -246,7 +248,6 @@ export class PluginFolders {
     this.#now = opts.now ?? Date.now;
   }
 
-  #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
   #leftovers: Leftovers | undefined;
 
   /** What a plugin leaves when its folder goes without `plugin.remove` (`leftovers.ts`): recorded when it goes, and
@@ -261,20 +262,6 @@ export class PluginFolders {
     if (this.#leftovers === undefined || r === undefined || r.dev || r.source === "bundled" || r.parent !== undefined) return;
     this.#leftovers.left(r, this.#o.core.list().filter((c) => c.parent === id).map((c) => c.id));
   }
-  #officialIndex: string | undefined;
-
-  /** The official index's URL: only a plugin installed from it is "reviewed" on its OK (§5.6); one from an added index
-   *  is "not reviewed". */
-  setOfficialIndex(url: string | undefined): void {
-    this.#officialIndex = url;
-  }
-
-  /** Revocation (§5.1): a tree it names is read as `blocked`, with the reason; set before the first scan, so a revoked
-   *  plugin never starts. */
-  setBlocker(fn: (p: RevocationSubject) => string | undefined): void {
-    this.#blocker = fn;
-  }
-
   /** The OK for a tree was given: keep what it held (`oks/<id>.json`). */
   okGiven(id: string, treeHash: string): void {
     const top = parentOf(id) ?? id;
@@ -332,7 +319,10 @@ export class PluginFolders {
       // A dot-name is never a plugin (`#sources` skips them too): an install's staging folder, a system file.
       if (name && !name.startsWith(".")) this.#settle(join(this.#o.pluginsDir, name));
     });
-    for (const d of this.devFolders()) this.#watchDev(d.path);
+    for (const d of this.devFolders()) {
+      this.#devHashes.set(d.path, this.#devTreeHash(d.path));
+      this.#watchDev(d.path);
+    }
   }
 
   stop(): void {
@@ -486,7 +476,7 @@ export class PluginFolders {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
       lines: [
         ...describeOk(r.tree.top, {
-          os, source: r.source === "index" && this.#officialIndex !== undefined && r.provenance.index?.url === this.#officialIndex ? "index" : "other", restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
+          os, restylesCards: r.tree.restylesCards, restylesWindow: r.tree.restylesWindow, hostNetworkHeld,
           ...(sandboxed !== undefined ? { sandboxed } : {}),
           // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
           ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
@@ -496,6 +486,8 @@ export class PluginFolders {
         }),
         // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
+        // What it runs without being asked: its routine triggers, and where its host code runs in the background.
+        ...backgroundOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
         ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),
@@ -536,6 +528,8 @@ export class PluginFolders {
     this.#devChanged();
     this.#watchDev(abs);
     await this.refresh(abs);
+    // The tree as added: a save that changes it later is a reload.
+    this.#devHashes.set(abs, this.#devTreeHash(abs));
     return entry;
   }
 
@@ -638,8 +632,12 @@ export class PluginFolders {
     let change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
     // An update the core put in place (§5.1): its OK covers this exact tree when it adds no trigger, code changes
     // included. Anything else about it (a tree other than the one fetched) is judged as any change.
-    if (change === "asks-again" && ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash && updateAddsTrigger(ok, r.snapshot) === undefined) {
-      change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
+    if (ok && r.snapshot && update !== undefined && r.snapshot.okHash === update.treeHash) {
+      if (updateAddsTrigger(ok, r.snapshot) !== undefined) {
+        // It adds to its OK card (a new name or author, more capabilities…): it asks again, whatever else changed, so
+        // nothing new runs on the old OK (the owner's ruling, 2026-11-13).
+        change = "asks-again";
+      } else if (change === "asks-again") change = r.snapshot.cards !== ok.cards ? "card-styling" : "applies";
     }
     // The workshop rule (§5.6): a plugin a bot built, which that bot's sessions edit in place. Its edits, code included,
     // apply without a card while they ask for nothing the user's last OK didn't list (`workshopAdds`); one that does
@@ -651,18 +649,11 @@ export class PluginFolders {
     if (change === "asks-again" && ok && r.snapshot && update === undefined && !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined && workshopAdds(ok, r.snapshot) === undefined) {
       change = r.snapshot.cards !== ok.cards || placesCards(ok) ? "card-styling" : "applies";
     }
-    // Revocation: a tree is revoked whole. Its tree hash covers every file of the top plugin and its children (a child
-    // record carries the same hash), and a list names top-level ids only, so the top's verdict is every record's; an
-    // override is keyed to that same tree hash, so a change anywhere in the tree, a child's included, blocks it again.
-    // Files, data and secrets stay.
-    const top = r.inputs.find((i) => i.id === r.id);
-    const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
     const workshop = !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined;
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
       if (workshop) input.workshop = true;
-      if (blocked !== undefined) input.blocked = blocked;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
     if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });
@@ -698,13 +689,13 @@ export class PluginFolders {
     return this.#o.core.list().filter((p) => p.parent === r.id && !now.has(p.id)).map((p) => p.id);
   }
 
-  #settle(folder: string): void {
+  #settle(folder: string, after?: () => void): void {
     const key = resolve(folder);
     const t = this.#timers.get(key);
     if (t) clearTimeout(t);
     this.#timers.set(key, setTimeout(() => {
       this.#timers.delete(key);
-      this.refresh(key).catch((e) => this.#o.log?.(`plugins: ${key} can't be read: ${(e as Error).message}`));
+      this.refresh(key).then(() => after?.(), (e) => this.#o.log?.(`plugins: ${key} can't be read: ${(e as Error).message}`));
     }, this.#o.settleMs ?? SETTLE_MS));
   }
 
@@ -720,7 +711,25 @@ export class PluginFolders {
   }
 
   #watchDev(path: string): void {
-    this.#watch(path, () => this.#settle(path));
+    this.#watch(path, () => this.#settle(path, () => this.#reloadedIfChanged(path)));
+  }
+
+  /** The tree of the plugin a development folder holds, as the registry read it last. */
+  #devTreeHash(path: string): string | undefined {
+    const id = [...this.#byFolder].find(([, f]) => f === resolve(path))?.[0];
+    return id === undefined ? undefined : this.#o.core.get(id)?.treeHash;
+  }
+
+  /** After a settled save in a development folder: when its plugin's tree changed, it was loaded again, and the
+   *  folder says when (`plugin.dev.list`'s `lastReloadAt`, the Plugins page's "Loaded again" line). */
+  #reloadedIfChanged(path: string): void {
+    const now = this.#devTreeHash(path);
+    const before = this.#devHashes.get(path);
+    this.#devHashes.set(path, now);
+    if (now === undefined || before === undefined || now === before) return;
+    const at = this.#now();
+    this.#o.core.devFolders = this.#o.core.devFolders.map((d) => (d.path === path ? { ...d, lastReloadAt: at } : d));
+    for (const fn of this.#devListeners) fn();
   }
 
   #devChanged(): void {

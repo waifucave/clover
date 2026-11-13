@@ -28,7 +28,9 @@
 //   name (`clover`, `clover_core`) or like any bundled plugin's server is refused and logged. Two servers that come to
 //   the same key are refused and logged (never first wins): both of them, unless exactly one is bundled, which keeps
 //   the key.
-// * Only `host` servers are served here; a plugin's `stdio` and `http` servers are the MCP host's (lanes B and D).
+// * **http servers** (a remote server the plugin names by url, a pasted MCP URL's included) open through the core's
+//   own MCP client (`computers/http-mcp.ts`), to that url only; they only talk to the web, so they run where the
+//   session does (remote), like a `host` server that isn't `perComputer`.
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
@@ -40,6 +42,7 @@ import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type Mc
 import { isBundledClover } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
+import { servesBackend } from "./only-backends";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
 export const PLUGIN_MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -247,6 +250,9 @@ export interface PluginMcpOptions {
   /** The door to the plugins' `stdio` servers (lane J's `StdioMcpLauncher`: each open spawns the server fenced, a close
    *  stops it and releases what it held). Left out, `stdio` entries aren't served here. */
   stdio?: Pick<PluginHost, "openMcp">;
+  /** The door to the plugins' remote `http` servers (`HttpMcpOpener`: each open is a session with the server, through
+   *  the core's pinned fetch, to the url its OK named only). Left out, `http` entries aren't served here. */
+  http?: Pick<PluginHost, "openMcp">;
   /** Why a `host` server can't work in this build, when it can't (its plugin needs `net.fetch`, which can't cross the
    *  plugin host yet: `NET_FETCH_CROSSES_PLUGIN_HOST`). Such a server is neither started nor listed nor waited for;
    *  the reason is logged once, here and in its plugin's own log (`pluginLog`, shown on its Settings page). */
@@ -377,14 +383,14 @@ export class PluginMcp {
     for (const key of keys) void this.#listOne(key);
   }
 
-  #client(key: string, plugin: string, name: string, stdio = false): ChannelClient {
+  #client(key: string, plugin: string, name: string, type: HostServerEntry["type"] = "host"): ChannelClient {
     let c = this.#clients.get(key);
     if (c !== undefined && (c.plugin !== plugin || c.name !== name)) {
       c.client.close();
       c = undefined;
     }
     if (c === undefined) {
-      const door: Pick<PluginHost, "openMcp"> = stdio && this.#o.stdio !== undefined ? this.#o.stdio : this.#o.host;
+      const door: Pick<PluginHost, "openMcp"> = type === "stdio" && this.#o.stdio !== undefined ? this.#o.stdio : type === "http" && this.#o.http !== undefined ? this.#o.http : this.#o.host;
       c = { plugin, name, client: new ChannelClient(() => door.openMcp(plugin, name), this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS) };
       this.#clients.set(key, c);
     }
@@ -395,7 +401,7 @@ export class PluginMcp {
     return this.#o.registry.entries("mcpServers").filter((c) => {
       if (c.state !== "active" || !isObject(c.value)) return false;
       const type = (c.value as { type?: unknown }).type;
-      return type === "host" || (type === "stdio" && this.#o.stdio !== undefined);
+      return type === "host" || (type === "stdio" && this.#o.stdio !== undefined) || (type === "http" && this.#o.http !== undefined);
     });
   }
 
@@ -476,7 +482,7 @@ export class PluginMcp {
   async #list(key: string, c: Contribution): Promise<Listed> {
     const name = this.#nameOf(c);
     const timeoutMs = this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS;
-    const client = this.#client(key, c.pluginId, name, (c.value as HostServerEntry).type === "stdio");
+    const client = this.#client(key, c.pluginId, name, (c.value as HostServerEntry).type);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -747,7 +753,7 @@ export class PluginMcp {
    *  name served exactly once routes anywhere. A server
    *  another computer lists isn't one (its plugin's tree is that computer's). For the approval policy's declared
    *  lists (`pluginToolReadOnly`, `pluginToolContained`), asked at each call. */
-  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string): { plugin: string; server: string; tool: string } | undefined {
+  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string, backend?: string): { plugin: string; server: string; tool: string } | undefined {
     const { clashes } = this.#bundledTools();
     // Every full name this computer serves, wherever it routes: a name served twice (two servers, or one listing a
     // tool twice) routes to none, so a declared list never answers for a call that could reach something else.
@@ -756,7 +762,7 @@ export class PluginMcp {
     for (const [key, l] of this.#listed) {
       const scope = this.#scopeOf(l.plugin, l.entry);
       const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
-      if (!serves) continue;
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const served = this.#exposed(key, l.bundled);
       const shared = l.bundled && this.#o.bundledServer !== undefined;
       for (const t of l.tools) {
@@ -769,14 +775,15 @@ export class PluginMcp {
     return times === 1 ? found : undefined;
   }
 
-  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`). */
-  servers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] {
+  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
+   *  coding session's only from plugins whose `onlyBackends` name its `backend` (default Clover's own). */
+  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     const { clashes } = this.#bundledTools();
     for (const [key, l] of this.#listed) {
       const scope = this.#scopeOf(l.plugin, l.entry);
       const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
-      if (!serves) continue;
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const server = this.#exposed(key, l.bundled);
       const p = this.#placementOf(key, server)!;
       const loads = l.entry.tools ?? {};
@@ -875,7 +882,7 @@ export class PluginMcp {
     }
     if (l.stopped !== undefined) throw new ContractError("plugin_stopped", l.stopped);
     if (!l.tools.some((t) => t.name === tool)) throw new ContractError("not_found", `the MCP server ${server} has no tool ${tool}`);
-    const r = await this.#client(server, l.plugin, l.name, l.entry.type === "stdio").request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
+    const r = await this.#client(server, l.plugin, l.name, l.entry.type).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };
     return capResult({ ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] });
   };

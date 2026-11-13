@@ -25,8 +25,6 @@ export interface RegistryPlugin {
   cardHeld: boolean;
   /** The validator refused it: its reason. */
   invalid?: string;
-  /** The index revoked it: the revocation's reason. */
-  blocked?: string;
   /** The plugin host stopped it after crashes: the reason. */
   stopped?: string;
   folder?: string;
@@ -45,6 +43,18 @@ export interface RegistryRuleOptions {
    *  Clover's own tree, by its install source and top id). Required, so every caller of the rules decides it: `granted`
    *  never carries what it refuses, whatever the manifest or the records say. */
   mayHold: (capability: string, plugin: { id: string; source: string }) => boolean;
+  /** This computer's platform (`darwin-arm64`, …): a plugin whose `platforms` leaves it out is off here, with why.
+   *  Absent: no plugin is held to its `platforms` (a test's rules). */
+  platform?: string;
+}
+
+/** Why a plugin is off on this computer by its `platforms` (its own, else its top plugin's), or undefined when it runs
+ *  here. Calls to it from another computer would go to one it supports; that needs the computers' synced list (parked). */
+export function platformsOff(held: Pick<RegistryPlugin, "manifest">, top: Pick<RegistryPlugin, "manifest"> | undefined, platform: string | undefined): string | undefined {
+  if (platform === undefined) return undefined;
+  const listed = (held.manifest as { platforms?: unknown }).platforms ?? (top?.manifest as { platforms?: unknown } | undefined)?.platforms;
+  if (!Array.isArray(listed) || listed.length === 0 || listed.includes(platform)) return undefined;
+  return `Not for this computer: it supports ${listed.join(", ")}`;
 }
 
 export interface RegistrySnapshot {
@@ -104,7 +114,7 @@ export function notYet(held: Pick<RegistryPlugin, "id" | "manifest" | "source">,
 export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, opts: RegistryRuleOptions): RegistrySnapshot {
   const ids = [...plugins.keys()];
   const topOf = (id: string) => plugins.get(parentOf(id) ?? id);
-  // Who is on, before points: approved, valid, not blocked, refused, stopped or off, its parent on too, and its
+  // Who is on, before points: approved, valid, not refused, stopped or off, its parent on too, and its
   // namespace not taken by a plugin earlier in the synced list (§6.7).
   const offReason = new Map<string, { state: PluginState; reason?: string }>();
   const namespaces = new Map<string, string>();
@@ -115,14 +125,15 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     const parentId = parentOf(id);
     const parentOff = parentId !== undefined && offReason.has(parentId);
     const adult = top?.manifest.adult === true;
-    if (held.blocked !== undefined) offReason.set(id, { state: "blocked", reason: held.blocked });
-    else if (held.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.invalid });
+    if (held.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.invalid });
     // Clover's own plugin this build can't run yet (`availability`): listed, off, never started, whatever its switch and
     // OK say (both kept as they are). It counts only in a tree installed as Clover's own (its install source, beside the
     // validator's rule on the top id), so no other plugin can read as one of Clover's.
     else if (notYet(held, top)) offReason.set(id, { state: "off", reason: NOT_AVAILABLE_YET });
     else if (held.refused || (top?.refused ?? false)) offReason.set(id, { state: "refused" });
     else if (!held.approved || !(top?.approved ?? true)) offReason.set(id, { state: "found", reason: "waiting for your OK" });
+    // Its `platforms` leave this computer out: off here, after its OK (installing it still asks, as any install).
+    else if (platformsOff(held, top, opts.platform) !== undefined) offReason.set(id, { state: "off", reason: platformsOff(held, top, opts.platform)! });
     else if (held.stopped !== undefined) offReason.set(id, { state: "stopped", reason: `plugin stopped: ${held.stopped}` });
     else if (!held.enabled) offReason.set(id, { state: "off" });
     else if (parentOff) offReason.set(id, { state: "off", reason: "its parent is off" });
@@ -264,7 +275,7 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       // refusal or a block, or for an invalid plugin.
       // A capability the plugin may not hold at all (bundled-only, outside Clover's own tree by its install source) is
       // never granted, even where the validator was skipped.
-      granted: held.approved && top.approved && !["found", "refused", "invalid", "blocked"].includes(state)
+      granted: held.approved && top.approved && !["found", "refused", "invalid"].includes(state)
         ? (m.capabilities ?? []).filter((c) => opts.mayHold(c, { id: parentOf(id) ?? id, source: top.source ?? held.source ?? "local" }))
         : [],
       issues: structuredClone(held.issues ?? []),

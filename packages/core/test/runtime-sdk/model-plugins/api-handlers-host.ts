@@ -18,7 +18,7 @@ export function serveApiHandlers(host: Pick<PluginHost, "serveApi">, registry: P
     return fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path: call.path as ApiCallPath }, call.args);
   }, (id) => {
     const r = registry.get(id);
-    return r === undefined ? undefined : { id: r.id, source: r.source, ...(r.manifest?.host?.runtime ? { runtime: r.manifest.host.runtime } : {}) };
+    return r === undefined ? undefined : { id: r.id, source: r.source, ...(r.manifest?.host?.runtime ? { runtime: r.manifest.host.runtime } : {}), ...(r.manifest?.host?.process === "own" ? { process: "own" as const } : {}) };
   }));
   return {
     addApiHandlers(h) {

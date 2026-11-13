@@ -114,12 +114,12 @@ How to read it:
 | `plugins.install` | Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK | installs plugins for you to OK | Clover's own plugins only |
 | `plugins.watch` | Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing | sees which plugins you have and whether they're on | Clover's own plugins only |
 | `usage.read` | Read usage rows and plan readings | sees your usage and plan readings |  |
-| `logs.read` | Read Clover's logs and every plugin's | reads Clover's logs |  |
+| `logs.read` | Read Clover's logs and every plugin's | reads Clover's logs and every plugin's logs |  |
 | `avatar.read` | Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change | sees your bot's figure |  |
 | `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do | moves your bot's figure |  |
 | `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | reports your bots' figures | Clover's own plugins only |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
-| `audio` | Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on | can hear your microphone | a warning |
+| `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices | hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices | a warning |
 | `call:<plugin-id>` | Run that plugin's commands | runs commands of {plugin} |  |
 | `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards | Clover's own plugins only |
 | `network:<host>` | Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host | connects to {host} |  |
@@ -128,31 +128,28 @@ How to read it:
 
 `where`: `host` a host half, `ui` a component, `both` either, `own` a host half in a process of its own (`host.process: "own"`), `clover` Clover's own process only.
 
-- **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (clover), `desktop.show` (clover), `host.call` (ui), `host.on` (ui), `keys.delete` (clover; NOT SERVED YET: the core keeps no key store for plugins yet), `keys.open` (clover; NOT SERVED YET: the core keeps no key store for plugins yet), `keys.publicKey` (clover; NOT SERVED YET: the core keeps no key store for plugins yet), `points.call` (both), `points.entries` (both), `points.watch` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `t` (ui), `ui.send` (host)
-- **call:***: `commands.run` (both; NOT SERVED YET: running another plugin's command from a plugin isn't served yet; the user runs commands from the composer)
+- **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (clover), `desktop.show` (clover), `host.call` (ui), `host.on` (ui), `keys.delete` (clover), `keys.open` (clover), `keys.publicKey` (clover), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `points.call` (both), `points.entries` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `t` (ui), `ui.send` (host)
+- **call:***: `commands.run` (both)
 - **network:***: `net.fetch` (both)
 - **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both)
 - **conversation.post**: `conversation.answer` (ui), `conversation.note` (both), `conversation.send` (both)
-- **memory.read**: `memory.list` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `memory.read` (both; NOT SERVED YET: no service of the core answers it for plugins yet)
 - **bots.read**: `bots.get` (both), `bots.list` (both), `bots.watch` (both)
-- **routines.read**: `routines.list` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `routines.runs` (both; NOT SERVED YET: no service of the core answers it for plugins yet)
 - **computers.read**: `computers.get` (both), `computers.list` (both), `computers.watch` (both)
 - **computers.control**: `computers.cloverWindows` (host), `computers.holds` (both), `computers.releaseHold` (host), `computers.setActionRunning` (host), `computers.setUserWorking` (host), `computers.takeHold` (host)
 - **devices.read**: `devices.list` (both), `devices.watch` (both)
 - **approvals**: `approvals.pending` (ui), `approvals.watch` (ui)
 - **files**: `files.glob` (both), `files.grep` (both), `files.list` (both), `files.move` (both), `files.onDrop` (ui), `files.path` (host), `files.pickFolder` (ui), `files.pickOpen` (ui), `files.pickSave` (ui), `files.readBytes` (both), `files.readText` (both), `files.remove` (both), `files.stat` (both), `files.url` (ui), `files.watch` (both), `files.write` (both)
-- **browser**: `browser.cdp` (clover; NOT SERVED YET: this build's core runs no Clover Browser for plugins yet), `browser.close` (clover; NOT SERVED YET: this build's core runs no Clover Browser for plugins yet), `browser.hide` (both; NOT SERVED YET: where a tab shows is the person's: not served to plugins yet), `browser.navigate` (clover; NOT SERVED YET: this build's core runs no Clover Browser for plugins yet), `browser.onCdpEvent` (both; NOT SERVED YET: a page's DevTools events aren't streamed to plugins yet), `browser.open` (clover; NOT SERVED YET: this build's core runs no Clover Browser for plugins yet), `browser.screenshot` (clover; NOT SERVED YET: this build's core runs no Clover Browser for plugins yet), `browser.show` (both; NOT SERVED YET: where a tab shows is the person's: not served to plugins yet), `browser.tabs` (clover; NOT SERVED YET: this build's core runs no Clover Browser for plugins yet), `browser.watch` (both; NOT SERVED YET: tab changes aren't streamed to plugins yet)
+- **browser**: `browser.cdp` (clover), `browser.close` (clover), `browser.hide` (both; NOT SERVED YET: where a tab shows is the person's: not served to plugins yet), `browser.navigate` (clover), `browser.onCdpEvent` (both; NOT SERVED YET: a page's DevTools events aren't streamed to plugins yet), `browser.open` (clover), `browser.screenshot` (clover), `browser.show` (both; NOT SERVED YET: where a tab shows is the person's: not served to plugins yet), `browser.tabs` (clover), `browser.toolCaller` (clover), `browser.watch` (both; NOT SERVED YET: tab changes aren't streamed to plugins yet)
 - **terminal**: `terminal.close` (ui), `terminal.input` (ui), `terminal.onData` (ui), `terminal.open` (ui), `terminal.resize` (ui)
 - **shell.read**: `shell.account` (ui), `shell.apps` (ui), `shell.state` (ui), `shell.watch` (ui)
 - **shell.control**: `shell.closePanel` (ui), `shell.dragWindow` (ui), `shell.go` (ui), `shell.openBotEditor` (ui), `shell.openPanel` (ui), `shell.openSettings` (ui), `shell.provide` (ui), `shell.setSidebar` (ui), `shell.togglePanel` (ui), `shell.toggleSidebar` (ui)
 - **plugins.install**: `plugins.install` (ui)
-- **usage.read**: `usage.plans` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `usage.rows` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `usage.summary` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `usage.watch` (both; NOT SERVED YET: no service of the core answers it for plugins yet)
-- **logs.read**: `logs.follow` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `logs.read` (both; NOT SERVED YET: no service of the core answers it for plugins yet)
+- **usage.read**: `usage.plans` (both), `usage.rows` (both), `usage.summary` (both), `usage.watch` (both)
 - **notify**: `notify.send` (both)
 - **avatar.control**: `avatar.cue` (both)
 - **avatar.read**: `avatar.box` (both), `avatar.catalogue` (both), `avatar.watch` (both)
 - **avatar.report**: `avatar.report` (ui)
-- **audio**: `audio.onRecording` (both; NOT SERVED YET: no service of the core answers it for plugins yet), `audio.play` (both; NOT SERVED YET: no service of the core answers it for plugins yet)
+- **audio**: `audio.onRecording` (both), `audio.play` (both)
 
 ## Hook events (`contributes.hooks[].on`) and what a hook may return on each
 

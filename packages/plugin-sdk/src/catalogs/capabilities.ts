@@ -10,7 +10,7 @@ export interface CapabilityInfo {
   readonly lets: string;
   /** What the OK says about it (§5.6), in English; trusted packs translate it under `clover.capability.<name>`. */
   readonly ok: string;
-  /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "can hear your microphone"). */
+  /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "hears what you say to your bots…"). */
   readonly warns: boolean;
   /** Only the bundled `clover` tree may hold it, as only its process may use `keys.*`: the validator refuses it for any
    *  other plugin, and the core never grants it to one (`mayHoldCapability`). */
@@ -48,13 +48,13 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  it, so it opens nothing callable. The bundled `clover` tree only. */
   { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees which plugins you have and whether they're on", warns: false, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
-  { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
+  { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs and every plugin's logs", warns: false },
   { name: "avatar.read", lets: "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change", ok: "sees your bot's figure", warns: false },
   { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
   /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
-  { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "can hear your microphone", warns: true },
+  { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from

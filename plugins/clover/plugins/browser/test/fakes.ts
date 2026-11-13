@@ -50,6 +50,8 @@ export const codingCaller: Caller = { kind: "session", sessionId: "s-code", sess
 
 export class FakeBrowser implements BrowserApi {
   tabsList: TabView[] = [];
+  /** The core's answer to `toolCaller` (the tests give the caller through `callerOf`, so this is unused). */
+  async toolCaller(): Promise<{ kind: "session"; sessionId: string; sessionKind: string; bot?: string }> { return { kind: "session", sessionId: "unused", sessionKind: "bot" }; }
   /** Every API call, by name, in order (`cdp` calls are in `cdpCalls` too). */
   readonly calls: { name: string; args: unknown[] }[] = [];
   readonly cdpCalls: CdpCall[] = [];

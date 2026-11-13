@@ -1,11 +1,9 @@
-// The Plugins page's Updates and Indexes tabs. Updates: what is newer (`plugin.update { list }`, a read), each with
-// why it isn't applied on its own, Apply (one plugin at a time: an update from an index the user added or npm asks on
-// a sealed card first; one that asks for its OK again shows that card) and Hold back (a pin, this computer's only).
-// Indexes: where plugins come from, each with its health (last checked, a failed fetch, a stale copy, its revocation
-// list); Add one by its address and key (the core's warning card names the key's fingerprint), Remove one (a card when
-// installed plugins came from it). The official slot says plainly when this build has none.
+// The Plugins page's Updates and Indexes tabs. Updates: what is newer (`plugin.update { list }`, a read); nothing
+// updates on its own (the owner's ruling, 2026-11-13). Apply (one plugin at a time: it asks on a sealed card first; one
+// that asks for its OK again shows that card) and Hold back (a pin, this computer's only: no updates offered).
+// Indexes: the plain lists of plugins the user added, each with its health (last checked, a failed fetch); Add one by
+// its address (each plugin from it still asks for its OK), Remove one (a card when installed plugins came from it).
 import { useState } from "react";
-import { IconOfficial } from "./icons";
 import { S } from "./strings";
 import type { IndexesProps, UpdatesProps } from "./types";
 
@@ -53,10 +51,6 @@ export function Updates(props: UpdatesProps) {
 
 export function Indexes(props: IndexesProps) {
   const [url, setUrl] = useState("");
-  const [key, setKey] = useState("");
-  const official = props.indexes.find((i) => i.official);
-  const others = props.indexes.filter((i) => !i.official);
-  const keyOk = /^[0-9a-f]{64}$/.test(key.trim());
   return (
     <div className="cl-plugin-index__manage-indexes">
       {props.status && (
@@ -64,40 +58,17 @@ export function Indexes(props: IndexesProps) {
           {props.status.text}
         </p>
       )}
-      <section className="cl-plugin-index__section" aria-label={S.officialIndex}>
-        <h2 className="cl-plugin-index__subhead">{S.officialIndex}</h2>
-        {official ? (
-          <ul className="cl-plugin-index__indexes">
-            <li className="cl-plugin-index__index">
-              <span className="cl-plugin-index__name">
-                {official.name ?? official.url}
-                <span className="cl-plugin-index__badge" data-tone="accent">
-                  <IconOfficial />
-                  {S.official}
-                </span>
-              </span>
-              <span className="cl-plugin-index__meta">{props.health(official)}</span>
-            </li>
-          </ul>
-        ) : (
-          <p className="cl-plugin-index__note" data-official="none">{S.noOfficial}</p>
-        )}
-      </section>
-
       <section className="cl-plugin-index__section" aria-label={S.yourIndexes}>
         <h2 className="cl-plugin-index__subhead">{S.yourIndexes}</h2>
         <p className="cl-plugin-index__note">{S.yourIndexesDetail}</p>
-        {others.length === 0 ? (
+        {props.indexes.length === 0 ? (
           <p className="cl-plugin-index__note">{S.noIndexes}</p>
         ) : (
           <ul className="cl-plugin-index__indexes" aria-label={S.yourIndexes}>
-            {others.map((i) => (
+            {props.indexes.map((i) => (
               <li key={i.url} className="cl-plugin-index__index cl-plugin-index__setting" data-index={i.url}>
-                <span className="cl-plugin-index__name">
-                  {i.name ?? i.url}
-                  <span className="cl-plugin-index__badge" data-tone="attention">{S.notReviewed}</span>
-                </span>
-                <span className="cl-plugin-index__meta" data-tone={i.error || i.stale ? "attention" : undefined}>
+                <span className="cl-plugin-index__name">{i.name ?? i.url}</span>
+                <span className="cl-plugin-index__meta" data-tone={i.error ? "attention" : undefined}>
                   {i.name ? `${i.url} · ` : ""}
                   {props.health(i)}
                 </span>
@@ -112,16 +83,14 @@ export function Indexes(props: IndexesProps) {
           className="cl-plugin-index__row"
           onSubmit={(e) => {
             e.preventDefault();
-            if (url.trim() !== "" && keyOk) props.onAdd(url.trim(), key.trim());
+            if (url.trim() !== "") props.onAdd(url.trim());
           }}
         >
           <input className="cl-plugin-index__field" type="url" aria-label={S.indexUrl} placeholder={S.indexUrl} value={url} onChange={(e) => setUrl(e.target.value)} />
-          <input className="cl-plugin-index__field" aria-label={S.indexKey} placeholder={S.indexKey} value={key} spellCheck={false} onChange={(e) => setKey(e.target.value)} />
-          <button type="submit" className="cl-plugin-index__install" disabled={url.trim() === "" || !keyOk}>
+          <button type="submit" className="cl-plugin-index__install" disabled={url.trim() === ""}>
             {S.addIndexButton}
           </button>
         </form>
-        <p className="cl-plugin-index__note">{S.indexKeyDetail}</p>
       </section>
     </div>
   );

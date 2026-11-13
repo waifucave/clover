@@ -295,7 +295,6 @@
   font-weight: var(--clover-font-weight-medium);
 }
 
-.cl-plugin-index__state-line[data-state="blocked"],
 .cl-plugin-index__state-line[data-state="invalid"] {
   color: var(--clover-color-danger);
 }

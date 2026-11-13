@@ -86,6 +86,8 @@ describe("the settings an upgrade starts from", () => {
   });
   test("a settings file that isn't an object throws", () => {
     expect(() => settingsWithFake("[]", "u")).toThrow(/object/);
+    // The other providers' endpoints, beside what each had.
+    expect(JSON.parse(settingsWithFake('{"providers":{"groq":{"x":1}}}', "http://a", { google: "http://g", groq: "http://q/openai/v1" })).providers).toEqual({ groq: { x: 1, baseUrl: "http://q/openai/v1" }, anthropic: { baseUrl: "http://a" }, google: { baseUrl: "http://g" } });
   });
 });
 

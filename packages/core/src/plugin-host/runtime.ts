@@ -309,6 +309,51 @@ export class HostRuntime {
     }
   }
 
+  /** `audio.play` from a host half: the audio crosses as pieces of one utterance (a whole clip as one piece), the last
+   *  `final`; the answer is `{ stop, done }` once the first piece is taken (a refusal fails the call). `stop` sends no
+   *  more and ends the utterance; `done` settles once its last piece went. */
+  async #audioPlay(pluginId: string, inside: string | undefined, args: unknown[]): Promise<{ stop(): void; done: Promise<void> }> {
+    const peer = this.#o.peer;
+    const audio = (args[0] ?? {}) as { format?: unknown; data?: unknown };
+    const opts = args[1];
+    const utterance = `pa_${crypto.randomUUID()}`;
+    let seq = 0;
+    let stopped = false;
+    const piece = (data: Uint8Array, final: boolean) => peer.request("pluginHost.api", {
+      pluginId, callId: `api_${++this.#apiSeq}`, call: "audio.play",
+      args: [{ format: audio.format, data }, opts ?? {}, { utterance, seq: seq++, final }],
+      ...(inside === undefined ? {} : { invocation: inside }),
+    }).then(() => undefined, (err: unknown) => { throw apiFailure(err, "audio.play"); });
+    const data = audio.data;
+    if (data instanceof Uint8Array) {
+      await piece(data, true);
+      return { stop: () => {}, done: Promise.resolve() };
+    }
+    if (data === null || typeof data !== "object" || typeof (data as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") {
+      throw apiFailure(new ContractError("invalid", "audio.play's data is bytes (a Uint8Array) or an async iterable of them"), "audio.play");
+    }
+    const it = (data as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+    const first = await it.next();
+    if (first.done) {
+      await piece(new Uint8Array(0), true);
+      return { stop: () => {}, done: Promise.resolve() };
+    }
+    if (!(first.value instanceof Uint8Array)) throw apiFailure(new ContractError("invalid", "audio.play's stream gives Uint8Array pieces"), "audio.play");
+    await piece(first.value, false);
+    const done = (async () => {
+      for (;;) {
+        if (stopped) break;
+        const next = await it.next();
+        if (next.done || stopped) break;
+        if (!(next.value instanceof Uint8Array)) throw apiFailure(new ContractError("invalid", "audio.play's stream gives Uint8Array pieces"), "audio.play");
+        await piece(next.value, false);
+      }
+      await piece(new Uint8Array(0), true);
+    })();
+    done.catch(() => {});
+    return { stop: () => { stopped = true; void it.return?.(); }, done };
+  }
+
   /** The plugin API for one plugin: every call, at any depth, goes to the daemon by its dotted path, stamped with this
    *  plugin and the open call it is made inside (see the file's header). */
   #apiFor(pluginId: string, invocation?: string, live?: () => boolean): PluginApi {
@@ -333,6 +378,8 @@ export class HostRuntime {
           const inside = invocation ?? this.#scope.getStore();
           // `net.fetch` crosses as its own messages: a RequestInit and a Response can't go as call arguments.
           if (call === "net.fetch") return this.#fetches.fetch(pluginId, inside, args).catch((err: unknown) => { throw apiFailure(err, call); });
+          // `audio.play` answers `{ stop, done }`, and its audio may be a stream: it crosses a piece at a time.
+          if (call === "audio.play") return this.#audioPlay(pluginId, inside, args);
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));
           const params = { pluginId, callId: `api_${++this.#apiSeq}`, call, args: wire, ...(inside === undefined ? {} : { invocation: inside }) };

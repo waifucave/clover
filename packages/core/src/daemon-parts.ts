@@ -27,6 +27,10 @@
 import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
+import { browserAppHandlers } from "./browser/app-port";
+import { startBrowser, type DaemonBrowser, type StartBrowserOptions } from "./browser/daemon";
+import { DEFAULT_PROXY_SETTING } from "./browser/proxy";
+import type { AppTabPort, BrowserEvent } from "./browser/service";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
@@ -107,6 +111,9 @@ export interface DaemonBotsInput {
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
+  /** Lane B's plugin triggers' arm and disarm, where the daemon gives no `pluginHost` (whose webhook ingress this
+   *  leaves off): a routine file that names a plugin's trigger type is armed through that plugin. */
+  pluginTriggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
@@ -155,11 +162,29 @@ export interface DaemonPartsInput {
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
   agents?: false | DaemonAgentsInput;
+  /** The Clover Browser on this computer (its tabs live in the app; the headless shell where no display is); false for none. */
+  browser?: false | DaemonBrowserInput;
   log?(line: string): void;
+}
+
+/** What the browser needs that the daemon decides. */
+export interface DaemonBrowserInput {
+  /** This computer's name, as the tabs name it. */
+  computer?: string;
+  /** The app's port while the app is connected (`appTabPort` over the Clover server's connections). */
+  app?: () => AppTabPort | undefined;
+  /** No app runs on this computer at all; by default, never (a desktop's tabs live in its app). */
+  headless?: boolean;
+  /** The browser's events (`tab_changed`, `tab_closed`), for the Clover server's core events. */
+  emit?: (event: BrowserEvent) => void;
+  /** For tests: the headless shell's own options. */
+  headlessOptions?: StartBrowserOptions["headlessOptions"];
 }
 
 export interface DaemonParts {
   node?: ComputerNode;
+  /** The Clover Browser, when it runs here. */
+  browser?: DaemonBrowser;
   bots?: BotSide;
   /** Lane K's agents, when they run here. */
   agents?: DaemonAgents;
@@ -169,6 +194,8 @@ export interface DaemonParts {
   broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
+  /** Lane D's usage ledger, with the bot side: the plugin API's `usage.*` reads it. */
+  usage?: UsageLedger;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
   close(): Promise<void>;
 }
@@ -193,6 +220,9 @@ export interface DaemonAgentsInput {
   /** The bot's own shell write roots for a conversation at a level, its grants among them: a bot's agent in a root they
    *  cover runs its commands with no card; every other command of a bot's agent asks on a card. */
   botWriteRoots?: AgentsOptions["botWriteRoots"];
+  /** How the plugins reach the agents (spec §9.3, agents/plugin-reach.ts): their tools on the bridge, their skills and
+   *  agent definitions placed where a backend reads its own, and `Glossary` on the bridge. */
+  plugins?: Pick<AgentsOptions, "pluginTools" | "pluginParts" | "glossary">;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -269,6 +299,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
   };
   try {
     let side: BotSide | undefined;
+    let usageLedger: UsageLedger | undefined;
     const nodeLinks = links ? computerNodeLinks(links) : undefined;
     const computer = nodeLinks?.self.name;
     // The lease's main computer, as lane D reads it; a lone computer (no links, or no lease here) is its own.
@@ -390,6 +421,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
             },
             ...(a.backends ? { backends: a.backends } : {}),
             ...(a.botWriteRoots ? { botWriteRoots: a.botWriteRoots } : {}),
+            ...(a.plugins?.pluginTools ? { pluginTools: a.plugins.pluginTools } : {}),
+            ...(a.plugins?.pluginParts ? { pluginParts: a.plugins.pluginParts } : {}),
+            ...(a.plugins?.glossary ? { glossary: a.plugins.glossary } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;
@@ -482,6 +516,29 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ledger.close();
       });
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
+      usageLedger = ledger;
+    }
+    // The Clover Browser (lane L), started after the bot side and stopped before it. Its tabs live in the app; the app
+    // reports back with `browser.report` and `browser.hold` (its own connection only). The bundled tree's Browser tool
+    // drives it through the plugin API's `browser.*` (`browserApiHandlers`, served by the plugin host's areas off `parts.browser`): the session whose tool call it serves, its own
+    // tabs only, the tool's own nine DevTools methods only. Peers (other computers' browsers) are not served.
+    let browser: DaemonBrowser | undefined;
+    if (input.browser !== false && input.browser !== undefined) {
+      const o = input.browser;
+      const here = o.computer ?? computer ?? "this-computer";
+      const br = startBrowser({
+        computer: here,
+        home: input.cloverHome,
+        headless: o.headless ?? false,
+        ...(o.app ? { app: o.app } : {}),
+        network: { proxy: DEFAULT_PROXY_SETTING, lanBots: [] },
+        ...(o.emit ? { emit: o.emit } : {}),
+        ...(o.headlessOptions ? { headlessOptions: o.headlessOptions } : {}),
+        log: (line) => log(`[browser] ${line}`),
+      });
+      closers.push(() => br.shutdown());
+      browser = br;
+      Object.assign(input.handlers, browserAppHandlers(() => br.service));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
@@ -490,7 +547,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => b.close());
     }
     const registry = input.bots ? input.bots.registry : undefined;
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    return { ...(node ? { node } : {}), ...(browser ? { browser } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
   } catch (err) {
     await close();
     throw err;
@@ -526,6 +583,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
       writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
     } : {}),
     ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
+    ...(!host?.triggers && b.pluginTriggers ? { pluginTriggers: b.pluginTriggers } : {}),
   };
   return {
     ...(relay ? { relay } : {}),

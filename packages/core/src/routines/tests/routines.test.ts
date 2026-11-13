@@ -12,7 +12,7 @@ import { routineMethods } from "../rpc";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { SideThreadRun } from "../../bots/service";
-import { RoutineEngine, routineFilePath, untrusted } from "../engine";
+import { PLUGIN_FIRES_PER_HOUR, RoutineEngine, routineFilePath, untrusted } from "../engine";
 import { parseRoutine, serializeRoutine } from "../file";
 import { parseSpec } from "../spec";
 import { firesBetween, instantOf, nextRunInZone, wallOf } from "../zone";
@@ -344,6 +344,95 @@ describe("the routine engine", () => {
     await flush();
     expect(bots.runs).toHaveLength(1);
     expect(bots.runs[0]!.text).toContain("Untrusted outside content from the slack trigger");
+    engine.stop();
+  });
+
+  test("a plugin's trigger starts at most 30 runs of a routine in an hour; the next pauses it, says why once, and the user's resume clears it", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    const path = write(home, "slack", "id: r_slack002\nname: Ops\ntriggers:\n  - type: slack\n    channel: \"#ops\"");
+    const bots = fakeBots();
+    const notes: string[] = [];
+    const engine = new RoutineEngine({
+      home, computer: "Studio", clock, bots: { ...bots.bots, note: async (id, label, text) => { notes.push(`${id} ${label}: ${text}`); } },
+      computerLevel: () => "ask-risky", watchFiles: false, userTimeZone: () => "UTC", triggerOwners: () => ["pack/slack"],
+    });
+    await engine.start();
+    const from = { pluginId: "pack/slack", name: "Slack" };
+    for (let i = 0; i < PLUGIN_FIRES_PER_HOUR; i++) {
+      await engine.fire("r_slack002", "slack", from);
+      clock.advance(60_000);
+    }
+    expect(bots.runs).toHaveLength(PLUGIN_FIRES_PER_HOUR);
+    await expect(engine.fire("r_slack002", "slack", from)).rejects.toThrow("is paused: Slack started it 30 times in an hour");
+    expect(engine.get("r_slack002")).toMatchObject({ state: "paused", pausedWhy: "Paused: Slack started it 30 times in an hour" });
+    expect(readFileSync(path, "utf8")).toMatch(/^paused: true$/m);
+    // Paused, the next fires are refused plainly, start nothing and tell no one again.
+    await expect(engine.fire("r_slack002", "slack", from)).rejects.toThrow("is paused (Paused: Slack started it 30 times in an hour)");
+    await engine.rescan();
+    expect(bots.runs).toHaveLength(PLUGIN_FIRES_PER_HOUR);
+    expect(notes).toEqual([`alpha Routine paused: Paused: Slack started it 30 times in an hour: the routine "Ops" won't run until you resume it (take \`paused: true\` out of its file).`]);
+    // The user resumes it (their ordinary resume: the file without `paused`): the why goes, and it fires again.
+    writeFileSync(path, readFileSync(path, "utf8").replace(/^paused: true\n/m, ""));
+    await engine.rescan();
+    expect(engine.get("r_slack002")!.state).toBe("active");
+    expect(engine.get("r_slack002")!.pausedWhy).toBeUndefined();
+    await engine.fire("r_slack002", "slack", from);
+    expect(bots.runs).toHaveLength(PLUGIN_FIRES_PER_HOUR + 1);
+    engine.stop();
+  });
+
+  test("the hour slides: fires older than an hour don't count", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    write(home, "slack", "id: r_slack003\ntriggers:\n  - type: slack");
+    const bots = fakeBots();
+    const engine = new RoutineEngine({ home, computer: "Studio", clock, bots: bots.bots, computerLevel: () => "ask-risky", watchFiles: false, triggerOwners: () => ["pack/slack"] });
+    await engine.start();
+    for (let i = 0; i < PLUGIN_FIRES_PER_HOUR; i++) await engine.fire("r_slack003", "slack", { pluginId: "pack/slack" });
+    clock.advance(3_600_001);
+    await engine.fire("r_slack003", "slack", { pluginId: "pack/slack" });
+    expect([bots.runs.length, engine.get("r_slack003")!.state]).toEqual([PLUGIN_FIRES_PER_HOUR + 1, "active"]);
+    engine.stop();
+  });
+
+  test("fires while a run is going write no record and no change each; the run's record counts them", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    write(home, "slack", "id: r_slack004\ntriggers:\n  - type: slack");
+    let release: () => void = () => {};
+    const runs: SideThreadRun[] = [];
+    const engine = new RoutineEngine({
+      home, computer: "Studio", clock, computerLevel: () => "ask-risky", watchFiles: false, triggerOwners: () => ["pack/slack"],
+      bots: {
+        has: () => true,
+        runSideThread: async (_bot, run) => {
+          runs.push(run);
+          await new Promise<void>((r) => { release = r; });
+          return { routine: run.routine, session: "s_side_1", startedAt: 1, endedAt: 2, outcome: "done", summary: "Done." };
+        },
+      },
+    });
+    await engine.start();
+    let changes = 0;
+    engine.watch(() => { changes += 1; });
+    await engine.fire("r_slack004", "slack", { pluginId: "pack/slack" }, undefined, { detach: true });
+    for (let i = 0; i < 200; i++) await engine.fire("r_slack004", "slack", { pluginId: "pack/slack" }, undefined, { detach: true });
+    expect([runs.length, changes, engine.runs("r_slack004").runs.length]).toEqual([1, 0, 0]);
+    release();
+    await flush();
+    const recorded = engine.runs("r_slack004").runs;
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]!.summary).toBe("Done.\n(200 more fires, by its slack trigger, came while it ran and started nothing.)");
+    expect(changes).toBe(1);
+    // Fires during a run aren't counted toward the hour's cap: they started nothing.
+    for (let i = 0; i < PLUGIN_FIRES_PER_HOUR - 1; i++) {
+      const p = engine.fire("r_slack004", "slack", { pluginId: "pack/slack" }, undefined, { detach: true });
+      await p;
+      release();
+      await flush();
+    }
+    expect(engine.get("r_slack004")!.state).toBe("active");
     engine.stop();
   });
 

@@ -132,6 +132,13 @@ describe("a plugin process loads only its own tree", () => {
     const out = Bun.spawnSync([process.execPath, "-e", `await import(${JSON.stringify(join(w.base, "outside", "evil.ts"))})`], { cwd, env, stdout: "pipe", stderr: "pipe" });
     expect(out.exitCode).not.toBe(0);
     expect(existsSync(mark)).toBe(false);
+    // Only Bun's own eval'd code: a real file named [eval] in that folder is refused, as the entry and as an import.
+    writeFileSync(join(cwd, "[eval]"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`);
+    for (const code of ["console.log('eval ran')", "await import('./[eval]')"]) {
+      const real = Bun.spawnSync([process.execPath, "-e", code], { cwd, env, stdout: "pipe", stderr: "pipe" });
+      expect([code, real.exitCode === 0, real.stderr.toString().includes("refused to load")]).toEqual([code, false, true]);
+      expect(existsSync(mark)).toBe(false);
+    }
   }, 30_000);
 
   test("a plugin's own files, its own node_modules and data files still load", () => {

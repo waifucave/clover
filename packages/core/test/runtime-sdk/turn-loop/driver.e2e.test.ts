@@ -465,6 +465,34 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("the model plugins' catalog changing after the runtime opened (their start finishing, a model plugin installed) reopens it at the next turn; the same catalog never reopens", async () => {
+    const home = tempHome();
+    let key = "compiled";
+    let opened = 0;
+    const query: typeof sdkQuery = (args) => { opened += 1; return sdkQuery(args); };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, modelCatalogKey: () => key, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("again"), control())).reason).toBe("end_turn");
+      expect(opened).toBe(1);
+      // The model plugins come up after the runtime opened on the compiled catalog: the next turn runs on theirs.
+      key = "sha-a:plugin.acceptance-models.adapter";
+      expect((await driver.turn(user("now"), control())).reason).toBe("end_turn");
+      expect(opened).toBe(2);
+      expect(lines.filter((l) => l.includes("reopening: the model plugins' catalog changed"))).toHaveLength(1);
+      // Unchanged: no reopen.
+      await driver.turn(user("once more"), control());
+      expect(opened).toBe(2);
+      // Another catalog (a model plugin turned off): reopened again.
+      key = "sha-b:";
+      await driver.turn(user("bye"), control());
+      expect(opened).toBe(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("a server set that can't be read fails the turn and closes the runtime open under the old set, as the sandbox read does; a readable set opens it again", async () => {
     const home = tempHome();
     const runner: McpRunner = { async run(_s, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };

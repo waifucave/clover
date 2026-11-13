@@ -1,6 +1,6 @@
 // The plugin index browser's line icons: Lucide's (ISC, `LICENSES/lucide-react.txt`), 16 px at Lucide's 2 stroke.
 // Decorative: the control or text beside each carries the meaning.
-import { BadgeCheck, Puzzle, Search, type LucideIcon } from "lucide-react";
+import { Puzzle, Search, type LucideIcon } from "lucide-react";
 import { CLOVER_MARK_PATH } from "../../sidebar/client/icons";
 
 function icon(Glyph: LucideIcon, size = 16) {
@@ -11,7 +11,6 @@ function icon(Glyph: LucideIcon, size = 16) {
 
 export const IconSearch = icon(Search);
 export const IconPlugin = icon(Puzzle, 20);
-export const IconOfficial = icon(BadgeCheck, 14);
 
 /** Clover's own mark (the sidebar's, assets/brand/clover/), for the bundled `clover` tree's row. It wears
  *  `plugin.clover.mark`. */

@@ -14,8 +14,10 @@
 // * The addresses are tried in the order resolved: when one can't be connected to (an IPv6 address on a network
 //   without IPv6), the next, all of them checked. A streamed body can be sent only once, so it gets the first only.
 //
-// The coordinator's ruling for when the model plugins' code adapters ride `net.fetch` (`serveCodeAdapters`, off until
-// then: the bundled code adapters run in process, which is how a user's local endpoint works today). Not built yet:
+// The coordinator's ruling for when the model plugins' code adapters ride `net.fetch` (`serveCodeAdapters`, now on),
+// built in runtime-sdk/model-plugins/user-endpoint.ts (the origin), the model plugins' handler (plugin-api.ts: the
+// keyed fetch to it, every hop held to it, through this fetch with `reach` naming its host) and B's gate (the router's
+// `userEndpoint`):
 // * A user pointing a provider at a local model server (loopback or their LAN) is a normal, supported use; this rule
 //   must not break it.
 // * The default stays strict: private, link-local and loopback addresses are refused, after a redirect and after DNS
@@ -95,10 +97,21 @@ function unreachable(err: unknown): boolean {
   return typeof code === "string" && ["ConnectionRefused", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL", "FailedToOpenSocket"].includes(code);
 }
 
-export function pinnedFetch(seam: PinnedFetchSeam = {}): PlatformFetch {
+/** Whether a host name says it is on this computer or its local network (spec §5.3): `localhost`, `*.localhost`,
+ *  `*.local`. */
+export function localHostName(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local");
+}
+
+/** `localNames`: a name that says it is local (`localHostName`) may resolve to a loopback or private address, which it
+ *  is then pinned to like any other (§5.3: "unless the name says it's local, whose grant the OK names"). Only a
+ *  plugin's remote MCP server (`http-mcp.ts`), whose url the OK named, takes it; a raw private address stays refused. */
+export function pinnedFetch(seam: PinnedFetchSeam = {}, opts: { localNames?: boolean } = {}): PlatformFetch {
   const resolve = seam.resolve ?? systemResolve;
   const platform: PlatformFetch = seam.fetch ?? ((url, init) => fetch(url, init));
-  const allowed = (host: string, address: string): boolean => ipAddressClass(address) === null || seam.reach?.(host, address) === true;
+  const allowed = (host: string, address: string): boolean =>
+    ipAddressClass(address) === null || seam.reach?.(host, address) === true || (opts.localNames === true && isIP(host) === 0 && localHostName(host));
   return async (raw, init) => {
     const url = new URL(raw);
     const host = url.hostname.replace(/^\[|\]$/g, "");

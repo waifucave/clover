@@ -80,5 +80,6 @@ the user.
 - `commands[].key` shortcuts aren't bound yet.
 - There is no point for an app page's own menu or context menu.
 - `helper` programs aren't started; `http` MCP servers aren't served (use a `host` or `stdio` server).
-- These API calls are listed but answer "isn't available yet": `memory.*`, `routines.*`, `usage.*`, `logs.*`,
-  `audio.*`, `keys.*`, `commands.run`, `browser.*` (plugin-catalog marks them NOT SERVED YET).
+- These API calls are listed but answer "isn't available yet": `browser.*` (plugin-catalog marks them NOT SERVED YET).
+  `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*`, `keys.*` (the clover tree's only) and `commands.run` are
+  served: a plugin's own data (its logs, its own bot's memory and routines, its own commands) needs no capability.

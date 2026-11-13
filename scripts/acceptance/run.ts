@@ -26,6 +26,8 @@
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
 //                       her tab opens on a transcript as long as a full run's
+//   --only-scheduled-routine  only the scheduled routine row (a routine Alpha makes runs from its schedule): the
+//                       daemon, the dummy key, the clause over the app's methods; no app
 //
 // The steps, each PASS, FAIL or BLOCKED with the first failing call and, where it can tell, the file and line:
 //   1. first start: the app pairs and finishes its setup
@@ -61,31 +63,41 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { CLOVER_PROTOCOL_VERSION } from "../../packages/protocol/src/index";
 import { TEST_KEYCHAIN_PASSWORD } from "../../packages/core/src/auth/login-keychain";
 import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-files";
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
-import { CHILD_REPORT, netCommand, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
-import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
+import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
+import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
+import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { pluginOnce } from "./plugin-once";
+import { BROWSER_STEP, browserStep, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, uiRowNumbers } from "./steps";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
 import { FAKE_LINKED_PATH, FAKE_LINKS_PATH } from "./fake-exa";
+import { CODE_ADAPTER_STEP, codeAdapterWrong, GEMINI_MODEL, GEMINI_REPLY, GOOGLE_PLUGIN, OAUTH_MODEL, OAUTH_PLUGIN, OAUTH_REPLY, OAUTH_SIGN_IN_STEP, OPENAI_REPLY, OPENAI_WIRE_PROVIDERS, openAiWireWrong, THIRD_PARTY_KEY, THIRD_PARTY_MODEL, THIRD_PARTY_MODEL_STEP, THIRD_PARTY_PLUGIN, THIRD_PARTY_REPLY } from "./code-adapter-step";
+import { placeModelsFixture, startFakeModels, type FakeModels } from "./fake-models";
+import { placeOAuthFixture, startFakeOAuth, type FakeOAuth } from "./fake-oauth";
+import { startFakeGemini, type FakeGemini } from "./fake-gemini";
+import { startFakeOpenAi, type FakeOpenAi } from "./fake-openai";
 import { holdMachine } from "./exclusive";
 import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
+import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -149,6 +161,23 @@ const rowsOut = flag("--rows-out");
 // --only-ui [n,n]: the window steps given (default 12, the Plugins page), with only the setup they need.
 const onlyUi = argv.includes("--only-ui") ? (() => { try { return parseOnlyUi(argv[argv.indexOf("--only-ui") + 1]); } catch (e) { console.error(`acceptance: ${(e as Error).message}`); process.exit(2); } })() : undefined;
 if (onlyUi !== undefined && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-ui runs window steps alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+// --only-code-adapter: only the code-adapter row (Alpha on Gemini, served by the bundled Google plugin's adapter through
+// the plugin host to the run's Gemini fake): the daemon, the Google key through the plugin's sign-in, the turn.
+const codeAdapterOnly = argv.includes("--only-code-adapter");
+// --only-third-party-model: only the third-party model row (the acceptance-models fixture installed from its folder, its
+// key through its sign-in, Alpha's turn answered by its own adapter through the plugin host).
+const thirdPartyOnly = argv.includes("--only-third-party-model");
+// --only-oauth-sign-in: only the oauth-pkce row (the acceptance-oauth fixture signed in through the core's PKCE flow
+// against the run's OAuth server, the redirect delivered to the core's callback by the run, then a turn on its token).
+const oauthOnly = argv.includes("--only-oauth-sign-in");
+// --only-browser: only the Browser-tool row (the bot drives its own tab on a local fixture site): the daemon, the dummy key, then the app and the row.
+const browserOnly = argv.includes("--only-browser");
+// --only-scheduled-routine: only the scheduled routine row (Alpha's Routine tool makes one that runs every 15 s, its
+// schedule fires it, routine.runs lists the finished run): the daemon, the dummy key, the clause.
+const routineOnly = argv.includes("--only-scheduled-routine");
+/** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
+ *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
+const appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -157,10 +186,15 @@ for (const f of ["--keep-state", "--upgrade-from"]) {
 }
 if (keepState !== undefined && upgrade) { console.error("acceptance: --keep-state and --upgrade-from are two runs, not one (scripts/acceptance/upgrade.ts runs the pair)"); process.exit(2); }
 if (upgrade && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --upgrade-from runs its own cold start; it takes no --cold-start or --cold-home"); process.exit(2); }
+if (routineOnly && (browserOnly || oauthOnly || thirdPartyOnly || codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-scheduled-routine runs the scheduled routine row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if (oauthOnly && (thirdPartyOnly || codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-oauth-sign-in runs the oauth-pkce row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if (thirdPartyOnly && (codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-third-party-model runs the third-party model row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if (codeAdapterOnly && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-code-adapter runs the code-adapter row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if (browserOnly && (oauthOnly || thirdPartyOnly || codeAdapterOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-browser runs the Browser row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (tabFlashOnly && (workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-tab-flash runs the tab-flash row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (workshopOnly && (stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-workshop runs the workshop row alone; it takes no --only-stage, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (stageOnly && (coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-stage runs the stage row alone; it takes no --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
-if ((shards > 1 || shardUnits !== undefined) && (workshopOnly || stageOnly || tabFlashOnly || onlyUi !== undefined || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --shards and --units run the full table; they take no --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+if ((shards > 1 || shardUnits !== undefined) && (workshopOnly || stageOnly || tabFlashOnly || onlyUi !== undefined || codeAdapterOnly || thirdPartyOnly || oauthOnly || browserOnly || routineOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --shards and --units run the full table; they take no --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 if (shards > 1 && shardUnits !== undefined) { console.error("acceptance: --units is a shard's own run; it takes no --shards"); process.exit(2); }
 if (keepState !== undefined && (coldOnly || coldHome !== undefined)) { console.error("acceptance: --keep-state keeps a full run's state; it takes no --cold-start or --cold-home"); process.exit(2); }
 if (process.platform !== "darwin") {
@@ -232,6 +266,8 @@ const kept_ = stateDir === undefined ? undefined : statePaths(stateDir);
 const userHome = kept_?.user ?? join(root, "user");
 const home = kept_?.home ?? join(userHome, ".clover");
 const logs = join(root, "logs");
+/** The run's fake plugin index and npm registry: what it publishes (fake-exa.ts pluginWorldResponse). */
+const pluginWorld = join(root, "plugin-world");
 const keychain = kept_?.keychain ?? join(root, "kc", "acceptance.keychain-db");
 const answerKeyFile = answerKeyFileFor(keychain);
 const stubBin = join(root, "bin", "clover-core-stub");
@@ -278,6 +314,16 @@ esac
 
 const children: { name: string; proc: ChildProcess }[] = [];
 let fake: FakeProvider | undefined;
+/** The user's own Google endpoint (`providers.google.baseUrl`): the code-adapter clause's provider. */
+let gemini: FakeGemini | undefined;
+/** The third-party model plugin's provider, on this computer (the third-party clause). */
+let models: FakeModels | undefined;
+/** The oauth-pkce plugin's OAuth server and provider, on this computer (the oauth-pkce clause). */
+let oauthServer: FakeOAuth | undefined;
+/** The OpenAI-wire providers' fakes (the code-adapter clause), by provider id, and each one's dummy key. */
+const openAiWires = new Map<string, { fake: FakeOpenAi; key: string }>();
+/** The Google key the clause signs the bundled Google plugin in with (a dummy; the fake checks it). */
+const googleKey = `AIza-acceptance-dummy-${randomBytes(12).toString("hex")}`;
 const clients: CloverClient[] = [];
 let keychainsBefore = "";
 /** What a --keep-state run leaves in state.json besides the keychain service and the key. */
@@ -298,6 +344,9 @@ function baseEnv(): Record<string, string> {
     TMPDIR: join(root, "tmp"),
     LANG: "en_US.UTF-8",
     CLOVER_HOME: home,
+    // The run's fake plugin index and npm registry (fake-exa.ts): read by the source daemon's seam (a packaged test
+    // build reaches them by name through CLOVER_TEST_OUTSIDE_WORLD instead).
+    CLOVER_ACCEPTANCE_PLUGIN_WORLD: pluginWorld,
     // The source target is a dev build; a packaged one runs as the profile its bundle id names (a dist-signed try
     // build must pass the dist app's caller check, not the dev app's).
     ...(profile === "dev" ? { CLOVER_PROFILE: "dev" } : {}),
@@ -350,9 +399,14 @@ async function cleanup(): Promise<void> {
   // The app first (so the daemon never sees it go and starts another), then the daemon.
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
+  gemini?.stop();
+  for (const w of openAiWires.values()) w.fake.stop();
+  models?.stop();
+  oauthServer?.stop();
   hookTarget?.stop();
   netSite?.stop(true);
   outsideWorld?.stop();
+  browserFixture?.stop();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
     // The app's own log (<home>/logs/app.log and its .1) lives in the run's temp home, which is deleted below.
@@ -410,8 +464,11 @@ function makeKeychain(): void {
 /** The settings the run starts from: Anthropic's endpoint is the fake (the user's own `providers.<id>.baseUrl`). */
 function writeSettings(fakeUrl: string): void {
   const file = join(home, "settings.json");
-  // An earlier build's settings (an upgrade, a cold home) are kept: only the endpoint moves to this run's fake.
-  writeFileSync(file, settingsWithFake(existsSync(file) ? readFileSync(file, "utf8") : undefined, fakeUrl), { mode: 0o600 });
+  // An earlier build's settings (an upgrade, a cold home) are kept: only the endpoints move to this run's fakes.
+  writeFileSync(file, settingsWithFake(existsSync(file) ? readFileSync(file, "utf8") : undefined, fakeUrl, {
+    ...(gemini === undefined ? {} : { google: gemini.url }),
+    ...Object.fromEntries(OPENAI_WIRE_PROVIDERS.filter((p) => openAiWires.has(p.provider)).map((p) => [p.provider, `${openAiWires.get(p.provider)!.fake.url}${p.basePath}`])),
+  }), { mode: 0o600 });
 }
 
 /** From source, the dev bundled plugins are built into the home first: a daemon on a test keychain service doesn't
@@ -506,6 +563,18 @@ function harnessToken(): string {
 // ── the daemon ───────────────────────────────────────────────────────────────────────────────────────────────────
 let daemonRun = 0;
 let lastDaemon: { proc: ChildProcess; log: string } | undefined;
+/** The log of the daemon started last (`startDaemonProc`). */
+let lastDaemonLog: string | undefined;
+/** Waits for the model plugins to be up on the daemon started last (its `[model-plugins] up` line): until then its
+ *  sessions open on the SDK's compiled catalog, where a provider only a plugin brings isn't, and a bundled code
+ *  provider runs on the compiled adapter, not its plugin's. */
+async function modelPluginsUp(): Promise<string> {
+  return until("the model plugins up (the daemon's `[model-plugins] up` line)", 120_000, () => {
+    const log = lastDaemonLog === undefined ? "" : readLog(lastDaemonLog);
+    return /\[model-plugins\] up: [^\n]*/.exec(log)?.[0];
+  }, 300);
+}
+
 async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised = false): Promise<{ proc: ChildProcess; log: string }> {
   daemonRun++;
   // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
@@ -521,6 +590,7 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised
     // A core that carries the test build's outside-world seam reaches the run's fakes by name, on loopback.
     started = startChild(`daemon-${daemonRun}`, packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { CLOVER_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
   }
+  lastDaemonLog = started.log;
   const socket = join(home, "run", "core.sock");
   const tokenFile = join(home, "run", "app.token");
   await until("the daemon's socket and app token", 120_000, async () => {
@@ -592,6 +662,15 @@ const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
 /** The command hook step's outcome, from the plugin's turn on the first daemon. */
 let hookOutcome: { status: Status; detail: string } | undefined;
+/** The plugin's own host API step (acceptance-points; its turn here, on the first daemon; recorded at the end). */
+let pointsOutcome: { status: Status; detail: string } | undefined;
+const POINTS_PREFIX = "a plugin's own API in its host half";
+/** The `clover plugin` CLI step (run on the first daemon after the host API step; recorded at the end). */
+let cliOutcome: { status: Status; detail: string } | undefined;
+const CLI_PREFIX = "the clover plugin CLI against the run's daemon";
+/** The index and npm step (run on the first daemon after the CLI step; recorded at the end). */
+let indexOutcome: { status: Status; detail: string } | undefined;
+const INDEX_PREFIX = "plugins from an index the user added and from npm";
 /** A listener on 127.0.0.1 the fixture's hook must never reach (directly, or through its proxy as an undeclared host). */
 let hookTarget: { port: number; connections: number; stop(): void } | undefined;
 /** Where the fixture's hook tries to write outside its allowed folders: in the run's user home. */
@@ -602,6 +681,11 @@ const stdioEscape = (): string => join(userHome, "acceptance-stdio-escape");
 let stdioOutcome: { status: Status; detail: string } | undefined;
 /** The plugin network step's outcome, from its turns on the first daemon, and the run's site it reaches. */
 let netOutcome: { status: Status; detail: string } | undefined;
+let apiOutcome: { status: Status; detail: string } | undefined;
+let codeAdapterOutcome: { status: Status; detail: string } | undefined;
+let thirdPartyOutcome: { status: Status; detail: string } | undefined;
+let oauthOutcome: { status: Status; detail: string } | undefined;
+let routineOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
@@ -840,7 +924,11 @@ async function appScreenshot(): Promise<{ code: number; stdout: string; stderr: 
 
 /** `clover-core app <words>` as the user runs it (the target's own CLI, as `appScreenshot`), its output kept in the logs. */
 async function appCli(words: string[], log = `app-${words[0] ?? "cli"}`): Promise<{ code: number; stdout: string; stderr: string }> {
-  const all = ["app", ...words];
+  return coreCli(["app", ...words], log);
+}
+
+/** `clover-core <words>` as the user runs it in their terminal (the target's own CLI, as `appCli`). */
+async function coreCli(all: string[], log: string): Promise<{ code: number; stdout: string; stderr: string }> {
   const [cmd, args] = target === "source" ? [process.execPath, [join(REPO, "packages", "cli", "src", "main.ts"), ...all]] : [packagedCore(), all];
   return new Promise((done) => {
     const p = spawn(cmd, args, { cwd: root, env: { ...baseEnv(), CLOVER_NO_AUTOLAUNCH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -950,11 +1038,12 @@ const errorsOf = (events: Ev[]): string[] => events.filter((e) => e.type === "ag
 const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "turn_completed")?.stopReason ?? "?");
 
 // ── the cards ────────────────────────────────────────────────────────────────────────────────────────────────────
-type Card = { id: string; hash: string; kind: string; change?: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
+type Card = { id: string; hash: string; kind: string; change?: string; session?: string; bot?: string; pluginId?: string; options: { id: string; kind: string; remember?: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
 /** The app itself was told of the card (its `card_requested`, which it logs with the card's id): a card the run reads
  *  over RPC but the app never heard of is a card the user would never see (the first packaged run's daemon sent none:
  *  its events didn't parse). Waits a moment for the app's log. */
 async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void> {
+  if (appless) return;
   const line = `card: a ${card.kind} card ${card.id} arrived`;
   for (let i = 0; i < 50; i++) {
     if (existsSync(log) && readLog(log).includes(line)) return;
@@ -1510,6 +1599,13 @@ async function main(): Promise<void> {
   }
   makeKeychain();
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent, ordinaryWritePath, composedFetchUrl, linkedFetchUrl, hitFetchUrl });
+  gemini = startFakeGemini({ key: googleKey, reply: GEMINI_REPLY });
+  for (const p of OPENAI_WIRE_PROVIDERS) {
+    const key = `sk-acceptance-${p.provider}-dummy-${randomBytes(8).toString("hex")}`;
+    openAiWires.set(p.provider, { fake: startFakeOpenAi({ key, reply: OPENAI_REPLY }), key });
+  }
+  models = startFakeModels({ key: THIRD_PARTY_KEY, reply: THIRD_PARTY_REPLY });
+  oauthServer = startFakeOAuth({ reply: OAUTH_REPLY });
   if (target === "packaged" && packagedCoreSays("CLOVER_TEST_OUTSIDE_WORLD")) startOutsideWorld();
   // An upgrade: the home an earlier build made, copied in (its run/ sockets and tokens left behind), then this build's settings.
   if (coldHome !== undefined) cpSync(coldHome, home, { recursive: true, filter: (src) => !/[\\/]run([\\/]|$)/.test(src.slice(coldHome.length)) });
@@ -1517,7 +1613,8 @@ async function main(): Promise<void> {
   let app: { exe: string; args: string[] };
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
-    app = target === "source" ? sourceApp() : packagedApp(appBundle!);
+    // The code-adapter row alone drives no window: its clause runs over the app's methods, so no app is built.
+    app = appless ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
@@ -1528,6 +1625,11 @@ async function main(): Promise<void> {
   if (stageOnly) { await stageOnlyRun(app); return; }
   if (workshopOnly) { await workshopOnlyRun(app); return; }
   if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
+  if (codeAdapterOnly) { await codeAdapterOnlyRun(); return; }
+  if (thirdPartyOnly) { await thirdPartyOnlyRun(); return; }
+  if (oauthOnly) { await oauthOnlyRun(); return; }
+  if (browserOnly) { await browserOnlyRun(app); return; }
+  if (routineOnly) { await routineOnlyRun(); return; }
   // A shard with no part of the main chain: its units on a keyed daemon of its own.
   if (shardUnits !== undefined && !shardUnits.includes("main")) { await unitsRun(app, shardUnits); return; }
   if (onlyUi !== undefined) { await onlyUiRun(app); return; }
@@ -1548,8 +1650,9 @@ async function main(): Promise<void> {
   const pressPort = freePort();
   // The renders' scheme for the first app (the new user's Plugins page, before step 4 installs anything).
   const firstAppearance = join(root, "appearance-first");
+  browserFixture = startBrowserFixture();
   const appEnv = {
-    ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
+    ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
     CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: firstAppearance, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
   };
   const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", "--clover-smoke", "--use-mock-keychain", `--remote-debugging-port=${pressPort}`], appEnv);
@@ -1707,6 +1810,20 @@ async function main(): Promise<void> {
     });
     const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
     if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
+    // Its Review (the owner's ruling, 2026-11-13), asked over RPC as the app's own card page asks: the internal job
+    // reads this plugin's tree and its report comes back; the card is untouched, and its Approve below still works.
+    let reviewed = "not asked on the upgrade's old half";
+    if (!oldHalf) {
+      const r = await until("the plugin's Review", 120_000, async () => {
+        const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
+        return v.state === "running" ? undefined : v;
+      });
+      if (r.state !== "done") fail(`its Review is ${r.state}: ${r.why ?? "no reason"} [packages/core/src/registry/plugin-review.ts]`);
+      if (!r.report?.includes(`${REVIEW_MARK} ${installed.id}`) || !r.report.includes("a model's reading of the plugin's files")) fail(`its Review's report isn't the job's for ${installed.id}: ${(r.report ?? "").slice(0, 200)}`);
+      const after = await c.request<{ card: Card }>("card.get", { id: card.id });
+      if (after.card.hash !== card.hash) fail("the Review changed the card");
+      reviewed = "its Review's report came back from the internal job for this plugin, the card unchanged";
+    }
     // Pressed in the window, the real way: the app signs with its registered key, the broker checks the proof.
     if (pressing) {
       if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
@@ -1719,7 +1836,42 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
+    // host.start (§5.2): a plugin whose host half has nothing to call and says it starts on each computer runs as soon
+    // as it has its OK; the line its start() writes to its own log is the proof, with no call made to it.
+    let started = "not asserted on the upgrade's old half";
+    if (!oldHalf) {
+      const startFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-start");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-start"), startFolder, { recursive: true });
+      const s = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: startFolder } }, 60_000);
+      const sCard = await until("acceptance-start's OK card", 30_000, async () => (await cards(c)).find((k) => (s.card !== undefined && k.id === s.card) || k.pluginId === s.id));
+      await approve(c, sCard);
+      const logFile = join(home, "logs", "plugins", `${s.id}.log`);
+      await until(`${s.id}'s host half to start with no call (its log, ${logFile.slice(home.length + 1)})`, 30_000, async () => {
+        try { return readFileSync(logFile, "utf8").includes("acceptance-start: started with no call") ? true : undefined; } catch { return undefined; }
+      });
+      started = `${s.id} (host.start: each, nothing to call) started on its OK alone: its start() line is in its log`;
+      // A plugin's routine trigger (§7): a routine of Alpha's names acceptance-ping before the plugin is there; once
+      // the plugin has its OK the routine is armed through it, it fires, and the routine runs (its run is listed).
+      const routineFile = join(home, "routines", "alpha", "acceptance-ping.md");
+      mkdirSync(join(routineFile, ".."), { recursive: true });
+      writeFileSync(routineFile, "---\nid: r_accping1\nname: Acceptance ping\ntriggers:\n  - type: acceptance-ping\n---\nACCEPTANCE-ROUTINE-PING: answer done.\n");
+      await until("the routine r_accping1 to be listed", 30_000, async () => (await c.request<{ routines: { id: string }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.id === "r_accping1"));
+      const triggerFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-trigger");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-trigger"), triggerFolder, { recursive: true });
+      const t = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: triggerFolder } }, 60_000);
+      const tCard = await until("acceptance-trigger's OK card", 30_000, async () => (await cards(c)).find((k) => (t.card !== undefined && k.id === t.card) || k.pluginId === t.id));
+      const tShown = await c.request<{ card: Card }>("card.get", { id: tCard.id });
+      if (!JSON.stringify(tShown.card).includes("It adds routine triggers (acceptance-ping)")) fail(`${t.id}'s OK card doesn't say it adds routine triggers`);
+      await approve(c, tCard);
+      const ran = await until("the routine's run from its plugin trigger", 120_000, async () => {
+        const r = await c.request<{ runs: { outcome: string; session: string }[] }>("routine.runs", { id: "r_accping1" }).catch(() => undefined);
+        return r?.runs.find((x) => x.outcome !== "running");
+      });
+      const tLog = readLog(join(home, "logs", "plugins", `${t.id}.log`));
+      if (!tLog.includes("acceptance-trigger: armed r_accping1") || tLog.includes("fire failed")) fail(`${t.id}'s log doesn't show the routine armed and fired: ${tLog.slice(-300)}`);
+      started += `; ${t.id}'s card says it adds routine triggers, the routine Alpha had was armed through it on its OK, it fired, and the routine ran (${ran.outcome}, ${ran.session})`;
+    }
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${reviewed}; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}; ${started}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
@@ -1777,6 +1929,188 @@ async function main(): Promise<void> {
       hookOutcome = { status: "PASS", detail: `acceptance-echo's probe hook fired on turn.start (its note in ${probe.file.slice(home.length + 1)}); a write outside its folders and into its tree was refused, 127.0.0.1:${hookTarget?.port} wasn't reached directly, and its proxy answered ${seen.proxied} for the undeclared host; the listener saw 0 connections` };
     } catch (err) {
       hookOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
+  // The plugin's own host API (recorded at the end): the acceptance-points fixture, with a child that fills its point,
+  // from a folder; its probe command (run as the user, with no model turn) reads and calls the point, keeps and deletes
+  // store keys, and posts a note and a message into Alpha's conversation; the run sets a setting and switches the child
+  // off, which its watches hear; a turn with a tool call and the user's compaction (session.compact) run its child's
+  // hooks on all eight events; then it is removed with its data, and its data folder is gone.
+  if (!STEPS.some((x) => x.startsWith(POINTS_PREFIX))) { /* not in this run */ }
+  else if (session === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (oldHalf) pointsOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
+  else {
+    try {
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-points");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-points"), folder, { recursive: true });
+      const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      const id = installed.id;
+      const card = await until(`${id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === id));
+      await approve(c, card);
+      await until(`${id} to run after its OK`, 60_000, async () => {
+        const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin?.state;
+        return st === "enabled" || st === "running" ? st : undefined;
+      });
+      const before = Math.max(0, ...(await history(c, session)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
+      const probe = (await c.request<{ result: Record<string, unknown> }>("command.run", { name: `${id}.probe`, args: { session } }, 60_000)).result;
+      const wrong: string[] = [];
+      // Its commands' `runsOn` (the one-computer case: this computer is the main and the one they're called from).
+      const listed = (await c.request<{ commands: { name: string; runsOn?: string }[] }>("command.list", {})).commands.filter((k) => k.name.startsWith(`${id}.`));
+      if (JSON.stringify(listed.map((k) => [k.name, k.runsOn]).sort()) !== JSON.stringify([[`${id}.probe`, "main"], [`${id}.report`, "each"]])) wrong.push(`command.list gave ${JSON.stringify(listed.map((k) => [k.name, k.runsOn]))}`);
+      const child = `${id}/filler`;
+      if (JSON.stringify(probe.entries) !== JSON.stringify([`${child}:hello`])) wrong.push(`points.entries gave ${JSON.stringify(probe.entries)}`);
+      if (probe.called !== "hello probe from the filler") wrong.push(`points.call gave ${JSON.stringify(probe.called)}`);
+      if (JSON.stringify(probe.keys) !== JSON.stringify(["acceptance-a", "acceptance-b"]) || JSON.stringify(probe.keysAfter) !== JSON.stringify(["acceptance-b"])) wrong.push(`the store's keys were ${JSON.stringify(probe.keys)}, then ${JSON.stringify(probe.keysAfter)} after a delete`);
+      if (probe.mood !== "calm") wrong.push(`settings.get gave ${JSON.stringify(probe.mood)}, not the default`);
+      if (probe.posted !== "posted") wrong.push(`conversation.note/send: ${String(probe.posted)}`);
+      if (wrong.length > 0) fail(wrong.join("; "));
+      // Its note and its message reach Alpha's conversation; the message starts a turn the fake answers.
+      await until("its note and its message's turn in Alpha's conversation", 120_000, async () => {
+        const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
+        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") ? true : undefined;
+      });
+      // Its child's hooks: a turn with a tool call runs six of its events, and the user's compaction of Alpha's
+      // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
+      await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+      await c.request("session.compact", { id: session }, 120_000).catch((err: unknown) => wrong.push(`session.compact failed: ${why(err)}`));
+      const eventsFile = join(home, "plugin-data", id, "filler", "events.txt");
+      const all = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end", "compact.before", "compact.after"];
+      await until("its hooks' notes", 30_000, async () => (all.every((e) => readLog(eventsFile).split("\n").includes(e)) ? true : undefined)).catch(() => undefined);
+      const events = readLog(eventsFile);
+      const missing = all.filter((e) => !events.split("\n").includes(e));
+      if (missing.length > 0) wrong.push(`its hooks didn't note ${missing.join(", ")} (they noted ${JSON.stringify(events.trim().split("\n"))})`);
+      // A setting the user changes, and the child switched off: its watches hear both.
+      await c.request("plugin.settings.set", { id, key: "mood", value: "loud" });
+      await c.request("plugin.setEnabled", { id: child, enabled: false });
+      const heard = await until("its watches to hear the setting and the point", 30_000, async () => {
+        const r = (await c.request<{ result: { store: string[]; settings: string[]; points: number[] } }>("command.run", { name: `${id}.report`, args: {} })).result;
+        return r.settings.includes("mood") && r.points.includes(0) ? r : undefined;
+      });
+      if (!heard.store.includes("acceptance-a") || !heard.store.includes("acceptance-b")) wrong.push(`storage.synced.watch heard ${JSON.stringify(heard.store)}`);
+      if (wrong.length > 0) fail(wrong.join("; "));
+      // Removed with its data (the user's choice): its data folder goes with it.
+      await c.request("plugin.remove", { id, deleteData: true });
+      await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined));
+      if (existsSync(join(home, "plugin-data", id))) fail(`${id} was removed with deleteData, but its data folder is still there`);
+      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); removed with deleteData, its data folder gone` };
+    } catch (err) {
+      pointsOutcome = { status: statusOf(err), detail: why(err) };
+      // Its hooks would run on every later turn: it goes, whatever failed.
+      await c.request("plugin.remove", { id: "acceptance-points", deleteData: true }).catch(() => undefined);
+    }
+  }
+
+  // The `clover plugin` CLI in the user's terminal, against this run's daemon (recorded at the end): the target's own
+  // CLI on the step-4 plugin (list, info, logs, pin and unpin, restart, index list), and a plugin made from a template
+  // and checked (new, validate), which needs no daemon.
+  if (!STEPS.some((x) => x.startsWith(CLI_PREFIX))) { /* not in this run */ }
+  else if (pluginId === undefined || !pluginOk) cliOutcome = { status: "BLOCKED", detail: "the plugin isn't installed and approved (step 4)" };
+  else if (oldHalf) cliOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
+  else {
+    try {
+      const id = pluginId;
+      const said: string[] = [];
+      const run = async (words: string[], expect?: string) => {
+        const r = await coreCli(["plugin", ...words], `plugin-cli-${words[0]}`);
+        if (r.code !== 0) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+        if (expect !== undefined && !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} didn't say "${expect}": ${r.stdout.trim().slice(0, 300)}`);
+        said.push(words.join(" "));
+        return r;
+      };
+      const pinned = async () => (await c.request<{ plugin?: { pinned?: boolean } }>("plugin.get", { id })).plugin?.pinned;
+      await run(["list"], id);
+      await run(["info", id], id);
+      await run(["logs", id, "-n", "5"]);
+      await run(["pin", id], "no updates are offered for it");
+      if ((await pinned()) !== true) fail(`clover plugin pin ${id} didn't pin it (plugin.get says ${String(await pinned())})`);
+      await run(["unpin", id], "is offered updates again");
+      if ((await pinned()) !== false) fail(`clover plugin unpin ${id} didn't unpin it`);
+      await run(["restart", id], `restarted ${id}`);
+      await run(["index", "list"]);
+      const made = join(root, "cli-new-plugin");
+      await run(["new", "tool", made, "--name", "Cli probe"]);
+      if (!existsSync(join(made, "clover.json"))) fail(`clover plugin new tool made no clover.json in ${made}`);
+      await run(["validate", made], "valid");
+      cliOutcome = { status: "PASS", detail: `${target === "source" ? "the checkout's CLI" : "the packaged core's CLI"}: clover plugin ${said.join("; ")} (each exit 0; pin and unpin read back through plugin.get)` };
+    } catch (err) {
+      cliOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
+  // Plugins from an index the user added and from npm (recorded at the end): the run's fake index and fake npm registry
+  // (plugin-world.ts; served by name through the daemon's own pinned fetch, the source daemon's seam or a packaged test
+  // build's CLOVER_TEST_OUTSIDE_WORLD), published as an author would.
+  if (!STEPS.some((x) => x.startsWith(INDEX_PREFIX))) { /* not in this run */ }
+  else if (oldHalf) indexOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
+  else if (target !== "source" && outsideWorld === undefined) indexOutcome = { status: "BLOCKED", detail: "this packaged core has no test seam for the outside world (CLOVER_TEST_OUTSIDE_WORLD, an earlier build); the run never reaches a real index or npm" };
+  else {
+    const id = "acceptance-indexed";
+    const npmName = "acceptance-npm-plugin";
+    const npmId = "acceptance-npm";
+    const version = (v: string, extra: Record<string, unknown> = {}, host = `export const version = "${v}";\n`) => ({
+      "clover.json": JSON.stringify({ manifest: 1, id, name: "Acceptance indexed", version: v, engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, ...extra }, null, 2),
+      "host/index.ts": host,
+    });
+    const pluginOf = async (pid: string) => (await c.request<{ plugin?: { state?: string; version?: string } }>("plugin.get", { id: pid }).catch(() => ({ plugin: undefined }))).plugin;
+    const cardFor = (pid: string, what: string) => until(what, 30_000, async () => (await cards(c)).find((k) => k.pluginId === pid));
+    const runningAt = (pid: string, v: string) => until(`${pid} ${v} running`, 60_000, async () => {
+      const p = await pluginOf(pid);
+      return p?.version === v && (p.state === "running" || p.state === "enabled") ? true : undefined;
+    });
+    const said: string[] = [];
+    try {
+      // From an index: added by its address (no card), installed behind its OK card.
+      await publishIndexVersion(pluginWorld, id, "1.0.0", version("1.0.0"));
+      await c.request("plugin.index.add", { url: FAKE_INDEX_URL }, 60_000);
+      const inst = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "index", id } }, 60_000);
+      if (inst.state !== "found") fail(`from the index it is ${inst.state}, not found behind its OK card`);
+      await approve(c, await cardFor(id, `${id}'s OK card`));
+      await runningAt(id, "1.0.0");
+      said.push("index added, 1.0.0 installed behind its OK card");
+      // An update: offered (nothing applied), then applied on the user's click, with no card (it asks for nothing new).
+      await publishIndexVersion(pluginWorld, id, "1.1.0", version("1.1.0"));
+      const offered = await c.request<{ updated: unknown[]; offered?: { id: string; to: string }[] }>("plugin.update", {}, 60_000);
+      if (offered.updated.length > 0 || !offered.offered?.some((o) => o.id === id && o.to === "1.1.0")) fail(`1.1.0 wasn't offered alone: ${JSON.stringify(offered).slice(0, 300)}`);
+      if ((await pluginOf(id))?.version !== "1.0.0") fail("1.1.0 was applied before the user's click");
+      const known = new Set((await cards(c)).map((k) => k.id));
+      await c.request("plugin.update", { id }, 60_000);
+      await runningAt(id, "1.1.0");
+      if ((await cards(c)).some((k) => !known.has(k.id) && k.pluginId === id)) fail("the update that asks for nothing new raised a card");
+      said.push("1.1.0 offered, applied on the click with no card");
+      // Pinned: no update offered; unpinned, it is.
+      await c.request("plugin.pin", { id, pinned: true });
+      await publishIndexVersion(pluginWorld, id, "1.2.0", version("1.2.0",
+        { contributes: { triggers: [{ type: "acceptance-indexed-ping", title: "Ping", handler: "ping" }] } },
+        'export const version = "1.2.0";\nexport const ping = { arm(): void {}, disarm(): void {} };\n'));
+      const whilePinned = await c.request<{ offered?: { id: string }[] }>("plugin.update", {}, 60_000);
+      if (whilePinned.offered?.some((o) => o.id === id)) fail(`pinned, it was still offered an update: ${JSON.stringify(whilePinned.offered)}`);
+      await c.request("plugin.pin", { id, pinned: false });
+      const unpinned = await c.request<{ offered?: { id: string; to: string }[] }>("plugin.update", {}, 60_000);
+      if (!unpinned.offered?.some((o) => o.id === id && o.to === "1.2.0")) fail(`unpinned, 1.2.0 wasn't offered: ${JSON.stringify(unpinned).slice(0, 300)}`);
+      said.push("pinned: none offered; unpinned: 1.2.0 offered");
+      // An update that adds a trigger asks again: its card says what changed and what the trigger does.
+      await c.request("plugin.update", { id }, 60_000);
+      const asked = await cardFor(id, "the update's OK card");
+      const text = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: asked.id })).card);
+      if (!text.includes("It adds routine triggers (acceptance-indexed-ping)")) fail(`the update's card doesn't name the trigger (${text.slice(0, 400)})`);
+      if (!text.includes("Its files:")) fail(`the update's card doesn't say what changed (${text.slice(0, 400)})`);
+      await approve(c, asked);
+      await runningAt(id, "1.2.0");
+      said.push("1.2.0 (adds a trigger) asked again on a card naming the trigger and what changed, OK'd");
+      // From npm: its record and tarball (integrity checked), behind its OK card.
+      await publishNpm(pluginWorld, npmName, "1.0.0", { "clover.json": JSON.stringify({ manifest: 1, id: npmId, name: "Acceptance npm", version: "1.0.0", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const from = \"npm\";\n" });
+      const fromNpm = await c.request<{ id: string; state: string }>("plugin.install", { source: { from: "npm", name: npmName } }, 60_000);
+      if (fromNpm.id !== npmId || fromNpm.state !== "found") fail(`from npm: ${JSON.stringify(fromNpm)}`);
+      await approve(c, await cardFor(npmId, `${npmId}'s OK card`));
+      await runningAt(npmId, "1.0.0");
+      said.push(`${npmName} from npm installed behind its OK card`);
+      indexOutcome = { status: "PASS", detail: said.join("; ") };
+    } catch (err) {
+      indexOutcome = { status: statusOf(err), detail: `${why(err)}${said.length ? ` (passed: ${said.join("; ")})` : ""}` };
+    } finally {
+      for (const pid of [id, npmId]) await c.request("plugin.remove", { id: pid, deleteData: true }).catch(() => undefined);
+      await c.request("plugin.index.remove", { url: FAKE_INDEX_URL }).catch(() => undefined);
     }
   }
 
@@ -1892,6 +2226,25 @@ async function main(): Promise<void> {
         } catch (err) {
           wrong.push(`the pasted config's NetProbe: ${why(err)}`);
         }
+        // A pasted MCP URL (a remote server): its tools list to the bot and answer through the core's own MCP client,
+        // to that URL only (computers/http-mcp.ts). Before, it was accepted, shown on its card and never listed.
+        const remote = httpMcpFixture();
+        try {
+          const pastedUrl = await install({ from: "wrap", kind: "mcp-url", value: remote.url });
+          const seen = fake!.requests.length;
+          const { events } = await turn(c, session!, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
+          const mine = fake!.requests.slice(seen);
+          const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes(HTTP_MCP_MARK));
+          if (result === undefined || !result.text.includes("text=from-the-bot")) {
+            wrong.push(`${pastedUrl.id} (a pasted MCP URL) didn't answer the bot (stop ${stopOf(events)}; methods it saw: ${remote.seen.join(",") || "none"}; offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "none"}; ${mine.map((r) => r.answered).join(", ")})`);
+          } else {
+            pastedSeen += `; ${pastedUrl.id}, a pasted MCP URL, listed HttpEcho and answered the bot over http (the server saw ${remote.seen.filter((m) => m !== "DELETE").join(", ")})`;
+          }
+        } catch (err) {
+          wrong.push(`the pasted MCP URL: ${why(err)}`);
+        } finally {
+          remote.stop();
+        }
       }
       const seenAll = `own: ${own.text.slice(own.text.indexOf("acceptance-net-pong") + 20, own.text.indexOf("acceptance-net-pong") + 200)}; borrowed=${borrow.said.borrowed}; pasted: ${pastedSeen}`;
       if (wrong.length > 0) fail(`${wrong.join("; ")} (seen: ${seenAll})`);
@@ -1899,6 +2252,52 @@ async function main(): Promise<void> {
     } catch (err) {
       netOutcome = { status: statusOf(err), detail: why(err) };
     }
+  }
+
+  // The plugin API's served areas (its turn here, on the first daemon; recorded at the end): the acceptance-api fixture
+  // from a folder, its OK card approved, its ApiProbe called by the bot; one clause per area (api-areas-step.ts).
+  if (session === undefined || !turnsWork) apiOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (pluginId === undefined || !pluginOk) apiOutcome = { status: "BLOCKED", detail: "the first plugin isn't installed and approved (step 4): no other plugin's command to be refused" };
+  else {
+    try {
+      const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-api");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-api"), folder, { recursive: true });
+      const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+      const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+      await approve(c, card);
+      await until(`${installed.id} to run after its OK`, 60_000, async () => {
+        const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+        return st === "enabled" || st === "running" ? st : undefined;
+      });
+      const seen = fake.requests.length;
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-CALL ApiProbe {}", 150_000);
+      const mine = fake.requests.slice(seen);
+      const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
+      const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-api-pong"));
+      if (called === undefined) fail(`the bot was offered no ApiProbe (${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((t) => t.startsWith("mcp__")).join(", ") || "no plugin tools"})`);
+      if (result === undefined) fail(`${called} gave no answer of its own (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
+      const said = apiProbePairs(result!.text);
+      const wrong = apiProbeWrong(said);
+      if (!cardText.includes("hears what you say to your bots with push-to-talk")) wrong.push("its OK card doesn't say what audio gives");
+      if (wrong.length > 0) fail(`${wrong.join("; ")} (${result!.text.slice(0, 400)})`);
+      apiOutcome = { status: "PASS", detail: `${installed.id}'s ${called} (card approved, audio's line on it): ${Object.entries(said).map(([k, v]) => `${k}=${v}`).join(" ")}${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
+    } catch (err) {
+      apiOutcome = { status: statusOf(err), detail: why(err) };
+    }
+  }
+
+  // A turn on a model a plugin's code adapter serves (its turn here, on the first daemon; recorded at the end).
+  // (The `models` unit: in a sharded run, a shard of its own runs them on its own keyed daemon, unitsRun.)
+  if (runs("models")) {
+    if (session === undefined || !turnsWork) codeAdapterOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else codeAdapterOutcome = await codeAdapterTurn(c, session);
+    if (session === undefined || !turnsWork) thirdPartyOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else thirdPartyOutcome = await thirdPartyModelTurn(c, session);
+    if (session === undefined || !turnsWork) oauthOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else oauthOutcome = await oauthSignInTurn(c, session);
+    if (session === undefined || !turnsWork) routineOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else routineOutcome = await scheduledRoutineTurn(c, session);
   }
 
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
@@ -2041,8 +2440,16 @@ async function main(): Promise<void> {
   searchStep();
   record(stepNo("the bot's WebFetch reads a page"), fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
   record(stepNo("a folder-installed plugin's command hook"), hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
+  if (STEPS.some((x) => x.startsWith(POINTS_PREFIX))) record(stepNo(POINTS_PREFIX), pointsOutcome?.status ?? "BLOCKED", pointsOutcome?.detail ?? "the host API step didn't run");
+  if (STEPS.some((x) => x.startsWith(CLI_PREFIX))) record(stepNo(CLI_PREFIX), cliOutcome?.status ?? "BLOCKED", cliOutcome?.detail ?? "the CLI step didn't run");
+  if (STEPS.some((x) => x.startsWith(INDEX_PREFIX))) record(stepNo(INDEX_PREFIX), indexOutcome?.status ?? "BLOCKED", indexOutcome?.detail ?? "the index and npm step didn't run");
   record(stepNo("a folder-installed plugin's stdio MCP server"), stdioOutcome?.status ?? "BLOCKED", stdioOutcome?.detail ?? "the stdio server's turn didn't run");
   record(stepNo("a plugin's own network"), netOutcome?.status ?? "BLOCKED", netOutcome?.detail ?? "the network turns didn't run");
+  if (STEPS.includes(API_AREAS_STEP)) record(STEPS.indexOf(API_AREAS_STEP) + 1, apiOutcome?.status ?? "BLOCKED", apiOutcome?.detail ?? "the API areas' turn didn't run");
+  if (STEPS.includes(SCHEDULED_ROUTINE_STEP) && runs("models")) record(STEPS.indexOf(SCHEDULED_ROUTINE_STEP) + 1, routineOutcome?.status ?? "BLOCKED", routineOutcome?.detail ?? "the scheduled routine didn't run");
+  if (STEPS.includes(OAUTH_SIGN_IN_STEP) && runs("models")) record(STEPS.indexOf(OAUTH_SIGN_IN_STEP) + 1, oauthOutcome?.status ?? "BLOCKED", oauthOutcome?.detail ?? "the oauth-pkce sign-in didn't run");
+  if (STEPS.includes(THIRD_PARTY_MODEL_STEP) && runs("models")) record(STEPS.indexOf(THIRD_PARTY_MODEL_STEP) + 1, thirdPartyOutcome?.status ?? "BLOCKED", thirdPartyOutcome?.detail ?? "the third-party model turn didn't run");
+  if (STEPS.includes(CODE_ADAPTER_STEP) && runs("models")) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   if (runs("cold")) await coldStartStep(app, 1);
@@ -2183,13 +2590,26 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
       await c.request("session.attach", { id: session });
       await stageStep(c, session, true);
     }
+    if (ids.includes("models")) {
+      // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
+      await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+      await c.request("session.attach", { id: session });
+      for (const [step, turnOf] of [[CODE_ADAPTER_STEP, codeAdapterTurn], [THIRD_PARTY_MODEL_STEP, thirdPartyModelTurn], [OAUTH_SIGN_IN_STEP, oauthSignInTurn], [SCHEDULED_ROUTINE_STEP, scheduledRoutineTurn]] as const) {
+        try {
+          const out = await turnOf(c, session);
+          record(stepNumber(FULL_STEPS, step), out.status, out.detail);
+        } catch (err) {
+          record(stepNumber(FULL_STEPS, step), statusOf(err), why(err));
+        }
+      }
+    }
   } catch (err) {
     for (const name of mine) if (!rows.some((r) => r.name === name)) record(stepNumber(FULL_STEPS, name), statusOf(err), `shard setup (${ids.join(", ")}): ${why(err)}`);
     return;
   } finally {
     c?.close();
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "tab-flash");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "tab-flash" || id === "browser");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -2213,7 +2633,9 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     const pickFile = join(root, "folder.pick");
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
-    const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    // The Browser row's local fixture site, its names served to this app's browser (as the full run's first app has them).
+    if (ids.includes("browser") && browserFixture === undefined) browserFixture = startBrowserFixture();
+    const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
     proc = startChild("unit-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
@@ -2283,6 +2705,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [WORKSHOP_STEP, () => workshopStep(ctx, session)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
     [TAB_FLASH_STEP, () => tabFlashStep(ctx, session, launch, tabFlashAlone ? TAB_FLASH_SLEEP_MS : undefined)],
+    // The bots' Browser tool, on the real path, against the run's own fixture site.
+    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
   ] as const;
@@ -2332,6 +2756,351 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
 /** The workshop row alone (--only-workshop): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, cards pressed in its window, main's picker for the
  *  peer bot's folder) and the row, as the full run's UI phase gives it. */
+/** One provider's turn on a running daemon: its bundled plugin signed in with the run's dummy key through its own
+ *  sign-in (`plugin.auth.signIn`), Alpha moved to its model, one turn (`check` gives the verdict on the events and the
+ *  requests its fake saw during it), and Alpha's model and the sign-in put back, so no later turn sees the key. */
+async function providerTurn(c: CloverClient, session: string, p: { plugin: string; model: string; key: string; prompt: string; seen: () => number; check: (events: Ev[], from: number) => string | undefined }): Promise<string> {
+  let moved = false;
+  let signedIn: number | undefined;
+  /** Alpha's own model setting before the turn (null: none, the default's). */
+  let before: string | null = null;
+  try {
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: p.plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${p.plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: p.plugin, index: entry!.index, key: p.key });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${p.plugin} ${signed.state}`);
+    signedIn = entry!.index;
+    const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
+    before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    await c.request("bot.setUserLayer", { id: "alpha", patch: { model: p.model } });
+    moved = true;
+    await until(`Alpha on ${p.model}`, 30_000, async () => {
+      const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b?.model === p.model ? true : undefined;
+    }, 300);
+    const from = p.seen();
+    const { events, cards: carded } = await turn(c, session, p.prompt, 150_000);
+    const wrong = p.check(events, from);
+    if (wrong !== undefined) fail(wrong);
+    return `${p.model} (${p.seen() - from} request(s), key matched${carded.length ? `; cards: ${carded.join("; ")}` : ""})`;
+  } finally {
+    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: p.plugin, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The code-adapter clause on a running daemon: Alpha on Gemini (the Google plugin's code adapter in the plugin host),
+ *  on OpenAI's Responses wire and on Groq's Chat Completions wire (the declarative plugins' generic adapters), each
+ *  provider at the user's own endpoint (`providers.<id>.baseUrl`, the run's loopback fakes), each with the key stored
+ *  through its own sign-in. */
+async function codeAdapterTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  if (gemini === undefined || openAiWires.size !== OPENAI_WIRE_PROVIDERS.length) return { status: "BLOCKED", detail: "the run's provider fakes didn't start" };
+  const g = gemini;
+  try {
+    const done: string[] = [];
+    // Each provider's turn opens Alpha's runtime on the model plugins (their catalog, their code adapters), not the
+    // compiled path a daemon's sessions use until they're up.
+    done.push(await modelPluginsUp());
+    done.push(`code adapter: ${await providerTurn(c, session, {
+      plugin: GOOGLE_PLUGIN, model: GEMINI_MODEL, key: googleKey, prompt: "ACCEPTANCE-GEMINI: say hello", seen: () => g.requests.length,
+      check: (events, from) => codeAdapterWrong({ replyText: JSON.stringify(events), requests: g.requests.slice(from), stop: stopOf(events), ...(errorsOf(events)[0] !== undefined ? { error: errorsOf(events)[0] } : {}) }),
+    })}`);
+    for (const p of OPENAI_WIRE_PROVIDERS) {
+      const w = openAiWires.get(p.provider)!;
+      done.push(`${p.wire === "responses" ? "Responses wire" : "Chat Completions wire"}: ${await providerTurn(c, session, {
+        plugin: p.plugin, model: p.model, key: w.key, prompt: `ACCEPTANCE-OPENAI-WIRE ${p.provider}: say hello`, seen: () => w.fake.requests.length,
+        check: (events, from) => openAiWireWrong({ provider: p.provider, wire: p.wire, model: p.model, replyText: JSON.stringify(events), requests: w.fake.requests.slice(from), stop: stopOf(events), ...(errorsOf(events)[0] !== undefined ? { error: errorsOf(events)[0] } : {}) }),
+      })}`);
+    }
+    return { status: "PASS", detail: `each reply came from its provider's fake at the user's own endpoint: ${done.join("; ")}` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  }
+}
+
+/** The third-party model clause on a running daemon (row 1.91): the acceptance-models fixture installed from a folder
+ *  and its OK approved, its key stored through its own sign-in, Alpha moved to its model, one turn, then Alpha's model
+ *  and the sign-in put back. Its provider is the run's own server on this computer (fake-models.ts), which its OK names
+ *  by address and port and which answers only with the key the core placed: the reply in the conversation shows the
+ *  key arrived. No test seam: it runs the same on a packaged app. */
+async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  if (models === undefined) return { status: "BLOCKED", detail: "the run's model server didn't start" };
+  let moved = false;
+  let signedIn: number | undefined;
+  let before: string | null = null;
+  try {
+    const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", THIRD_PARTY_PLUGIN);
+    placeModelsFixture(join(import.meta.dir, "fixtures", THIRD_PARTY_PLUGIN), folder, models.port);
+    const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+    const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+    if (!cardText.includes(`127.0.0.1:${models.port}`)) fail(`its OK card doesn't name the address on this computer it reaches (127.0.0.1:${models.port})`);
+    await approve(c, card);
+    await until(`${installed.id} to run after its OK`, 60_000, async () => {
+      const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+      return st === "enabled" || st === "running" ? st : undefined;
+    });
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: installed.id });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${installed.id} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: installed.id, index: entry!.index, key: THIRD_PARTY_KEY });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${installed.id} ${signed.state}`);
+    signedIn = entry!.index;
+    const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
+    before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    // Its model is in the catalog once the model plugins have rebuilt on its OK.
+    // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
+    await modelPluginsUp();
+    await until(`${THIRD_PARTY_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === THIRD_PARTY_MODEL) ? true : undefined), 500);
+    await until(`${THIRD_PARTY_MODEL} to be a model Alpha can run`, 60_000, async () => {
+      const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: THIRD_PARTY_MODEL } }).catch(() => undefined);
+      if (set === undefined) return undefined;
+      moved = true;
+      const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b?.model === THIRD_PARTY_MODEL ? true : undefined;
+    }, 500);
+    const seen = models.requests.length;
+    const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-THIRDPARTY: say hello", 150_000);
+    const mine = models.requests.slice(seen);
+    const said = JSON.stringify(events);
+    if (mine.length === 0) fail(`the turn never reached the plugin's provider on this computer: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    if (!mine.some((r) => r.keyMatched)) fail("the plugin's provider got the turn without the key stored through its sign-in");
+    if (!said.includes("ACCEPTANCE-THIRDPARTY-OK")) fail(`the provider answered, but its reply isn't in the conversation: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    return { status: "PASS", detail: `Alpha on ${THIRD_PARTY_MODEL}: ${installed.id}'s own adapter answered through the plugin host, its provider on this computer (127.0.0.1:${models.port}, named on its OK) reached with the key stored through its sign-in (${mine.length} request(s), key matched)${carded.length ? `; cards: ${carded.join("; ")}` : ""}` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: THIRD_PARTY_PLUGIN, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The oauth-pkce clause on a running daemon (row 1.16): the acceptance-oauth fixture installed from a folder and its
+ *  OK approved (naming the OAuth server's address), its sign-in started through `plugin.auth.signIn`, which runs the
+ *  core's own PKCE flow (`runLoginFlow`: its loopback callback on OAUTH_CALLBACK_PORT, the code exchanged with the
+ *  verifier). The run is the browser: it fetches the authorize URL the sign-in answers with and delivers the server's
+ *  redirect to the core's callback; it opens no window. Then Alpha's turn on the plugin's model, whose keyed fetch must
+ *  carry a live token: near its expiry (renewed first) and after a 401 (renewed once, the call retried). What it can't
+ *  cover: a real provider's consent page and its account, and the app opening the URL in the person's browser. */
+async function oauthSignInTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  if (oauthServer === undefined) return { status: "BLOCKED", detail: "the run's OAuth server didn't start" };
+  const o = oauthServer;
+  let moved = false;
+  let signedIn: number | undefined;
+  let before: string | null = null;
+  try {
+    const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", OAUTH_PLUGIN);
+    placeOAuthFixture(join(import.meta.dir, "fixtures", OAUTH_PLUGIN), folder, o.port);
+    const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    const card = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === installed.id));
+    const cardText = JSON.stringify((await c.request<{ card: Card }>("card.get", { id: card.id })).card);
+    if (!cardText.includes(`127.0.0.1:${o.port}`)) fail(`its OK card doesn't name the OAuth server's address on this computer (127.0.0.1:${o.port})`);
+    await approve(c, card);
+    await until(`${installed.id} to run after its OK`, 60_000, async () => {
+      const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined))?.plugin?.state;
+      return st === "enabled" || st === "running" ? st : undefined;
+    });
+    const auth = await c.request<{ auth: { index: number; method: string; state: string }[] }>("plugin.auth.list", { id: installed.id });
+    const entry = auth.auth.find((a) => a.method === "oauth-pkce");
+    if (entry === undefined) fail(`plugin.auth.list ${installed.id} has no oauth-pkce entry`);
+    const started = await c.request<{ state: string; authorizeUrl?: string }>("plugin.auth.signIn", { id: installed.id, index: entry!.index });
+    signedIn = entry!.index;
+    if (started.authorizeUrl === undefined || !started.authorizeUrl.startsWith(`${o.url}/authorize?`)) fail(`plugin.auth.signIn answered ${started.state} with no authorize URL at the run's OAuth server`);
+    // The browser's part, done by the run: the authorize page redirects to the core's loopback callback with a code.
+    const consent = await fetch(started.authorizeUrl!, { redirect: "manual" });
+    const callback = consent.headers.get("location");
+    if (consent.status !== 302 || callback === null) fail(`the OAuth server didn't accept the authorize request (${consent.status}: ${(await consent.text()).slice(0, 200)})`);
+    const delivered = await fetch(callback!);
+    if (!delivered.ok) fail(`the core's callback refused the redirect (${delivered.status})`);
+    await until(`${installed.id} signed in`, 30_000, async () => {
+      const v = (await c.request<{ auth: { index: number; state: string; reason?: string }[] }>("plugin.auth.list", { id: installed.id })).auth.find((a) => a.index === entry!.index);
+      if (v?.state === "failed") fail(`the sign-in failed: ${v.reason ?? "no reason"}`);
+      return v?.state === "signed-in" ? true : undefined;
+    }, 300);
+    if (o.seen.exchanged !== 1) fail(`the code was exchanged ${o.seen.exchanged} time(s) (refused: ${o.seen.refusedExchanges})`);
+    if (o.seen.refusedExchanges > 0) fail(`the OAuth server refused ${o.seen.refusedExchanges} exchange(s)`);
+    const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
+    before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
+    await modelPluginsUp();
+    await until(`${OAUTH_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === OAUTH_MODEL) ? true : undefined), 500);
+    await until(`${OAUTH_MODEL} to be a model Alpha can run`, 60_000, async () => {
+      const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: OAUTH_MODEL } }).catch(() => undefined);
+      if (set === undefined) return undefined;
+      moved = true;
+      const b = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b?.model === OAUTH_MODEL ? true : undefined;
+    }, 500);
+    // Two turns: the first with the token near its expiry (the server's tokens live 30 s, inside the core's renewal
+    // window: renewed before the call), the second after the server revoked every token (a 401: renewed once, the call
+    // retried once).
+    const oneTurn = async (label: string, prompt: string): Promise<{ carded: string[]; requests: number }> => {
+      const from = o.seen.turns.length;
+      const refreshedBefore = o.seen.refreshed;
+      const { events, cards: carded } = await turn(c, session, prompt, 150_000);
+      const mine = o.seen.turns.slice(from);
+      if (mine.length === 0) fail(`${label}: the turn never reached the plugin's provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+      if (!mine.some((t) => t.bearerMatched)) fail(`${label}: the plugin's provider got the turn without a live token`);
+      if (o.seen.refreshed <= refreshedBefore) fail(`${label}: the core didn't renew the token at the plugin's token endpoint`);
+      if (!JSON.stringify(events).includes("ACCEPTANCE-OAUTH-OK")) fail(`${label}: the provider answered, but its reply isn't in the conversation: stop ${stopOf(events)}`);
+      return { carded, requests: mine.length };
+    };
+    const near = await oneTurn("near expiry", "ACCEPTANCE-OAUTH: say hello");
+    o.revoke();
+    const after401 = await oneTurn("after a 401", "ACCEPTANCE-OAUTH: say hello again");
+    const carded = [...near.carded, ...after401.carded];
+    return { status: "PASS", detail: `${installed.id} signed in through the core's PKCE flow (authorize, the redirect delivered to the core's callback, the code exchanged once with its verifier); Alpha's turns on ${OAUTH_MODEL} carried a renewed token, near expiry (renewed before the call) and after a 401 (renewed once, retried), ${o.seen.refreshed} renewal(s) at the plugin's token endpoint${carded.length ? `; cards: ${carded.join("; ")}` : ""}; not covered: a real provider's consent page and account, the app opening the URL in a browser` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: OAUTH_PLUGIN, index: signedIn }).catch(() => undefined);
+  }
+}
+
+/** The scheduled routine clause on a running daemon, Alpha on the run's keyed model: her Routine tool makes a routine
+ *  that runs every 15 s; nothing presses run now; its schedule fires it, and routine.runs lists the finished run, done,
+ *  with its side thread's reply. Its file is deleted at the end, whatever happened, so nothing of it fires later. */
+async function scheduledRoutineTurn(c: CloverClient, session: string): Promise<{ status: Status; detail: string }> {
+  const tag = routineTag(randomBytes(4).toString("hex"));
+  let file: string | undefined;
+  let id: string | undefined;
+  try {
+    const createdAt = Date.now();
+    const asked = fake!.requests.length;
+    const made = await turn(c, session, callText("Routine", { name: ROUTINE_NAME, instructions: tag, schedule: ROUTINE_SCHEDULE }), 150_000);
+    const mine = fake!.requests.slice(asked);
+    const calls = mine.map((r) => r.toolUse).filter((t): t is string => t !== undefined);
+    if (!calls.some((t) => t === "Routine" || t.endsWith("__Routine"))) fail(`Alpha was offered no Routine (calls: ${calls.join(", ") || "none"}; stop ${stopOf(made.events)})`);
+    const result = mine.map((r) => r.toolResult).find((r) => r !== undefined);
+    if (result === undefined || result.isError) fail(`Routine ${result === undefined ? "gave no result" : `failed: ${result.text.slice(0, 300)}`}`);
+    type Listed = { id: string; name: string; file: string; state: string; triggers: { type: string; summary: string }[]; nextRunAt?: number };
+    const listed = await until("the routine in routine.list", 30_000, async () => (await c.request<{ routines: Listed[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.name === ROUTINE_NAME));
+    id = listed.id;
+    file = join(home, "routines", "alpha", basename(listed.file));
+    if (!existsSync(file)) fail(`routine.list names its file ${listed.file}, which isn't at ${file}`);
+    if (listed.state !== "active") fail(`it is ${listed.state}, not active`);
+    if (!listed.triggers.some((t) => t.type === "schedule")) fail(`its triggers are ${JSON.stringify(listed.triggers)}, with no schedule`);
+    if (listed.nextRunAt === undefined || listed.nextRunAt > Date.now() + 20_000) fail(`its next run is ${listed.nextRunAt === undefined ? "unset" : `${Math.round((listed.nextRunAt - Date.now()) / 1000)} s away`}, not within its 15 s`);
+    // Nothing presses run now: the only way it runs is its schedule.
+    let runs: RunSeen[] = [];
+    const check = () => scheduledRunWrong({ id: listed.id, runs, createdAt, tag, mainSession: session });
+    await until("its schedule to fire it and the run to finish", 90_000, async () => {
+      runs = (await c.request<{ runs: RunSeen[] }>("routine.runs", { id: listed.id })).runs;
+      return check() === undefined ? true : undefined;
+    }, 1_000).catch((err: unknown) => fail(`${check() ?? why(err)} (waited 90 s)`));
+    const done = runs.find((r) => r.routine === listed.id && r.outcome === "done")!;
+    const sideAsked = fake!.requests.slice(asked).filter((r) => r.lastUserText.includes(tag)).length;
+    if (sideAsked === 0) fail("no request of its side thread reached the model");
+    // Removed as the Routine tool says a routine is: its file deleted. It leaves routine.list, so it fires no more.
+    rmSync(file, { force: true });
+    await until("the routine gone from routine.list once its file is deleted", 30_000, async () => ((await c.request<{ routines: Listed[] }>("routine.list", { bot: "alpha" })).routines.some((r) => r.id === listed.id) ? undefined : true), 500);
+    file = undefined;
+    return { status: "PASS", detail: `Routine "${ROUTINE_NAME}" (${listed.triggers.map((t) => t.summary).join(", ")}) made with ${made.cards.length ? `cards: ${made.cards.join("; ")}` : "no card"}; its schedule fired it ${Math.round((done.startedAt - createdAt) / 1000)} s after it was made, no run now; routine.runs: ${runs.filter((r) => r.routine === listed.id).map((r) => r.outcome).join(", ")} (side thread ${done.session}, ${sideAsked} request(s), its reply as the summary); its file deleted, gone from routine.list` };
+  } catch (err) {
+    return { status: statusOf(err), detail: why(err) };
+  } finally {
+    if (file !== undefined) rmSync(file, { force: true });
+    if (id !== undefined) await until("the routine gone", 15_000, async () => ((await c.request<{ routines: { id: string }[] }>("routine.list", { bot: "alpha" }).catch(() => ({ routines: [] }))).routines.some((r) => r.id === id) ? undefined : true), 500).catch(() => undefined);
+  }
+}
+
+/** The scheduled routine row alone (--only-scheduled-routine): the daemon, the dummy key through the Anthropic plugin's
+ *  sign-in, Alpha on the keyed model, then the clause over the app's methods. */
+async function routineOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    const session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await scheduledRoutineTurn(c, session);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+  }
+}
+
+/** The oauth-pkce row alone (--only-oauth-sign-in): the daemon, then the clause over the app's methods. */
+async function oauthOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const session = await alphaSession(c);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await oauthSignInTurn(c, session);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+  }
+}
+
+/** The third-party model row alone (--only-third-party-model): the daemon, then the clause over the app's methods. */
+async function thirdPartyOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const session = await alphaSession(c);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await thirdPartyModelTurn(c, session);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+  }
+}
+
+/** Alpha's main conversation, once the bots' side answers (it comes up after the daemon's socket, so a call made at
+ *  once may find `bot.list` not served yet). */
+async function alphaSession(c: CloverClient): Promise<string> {
+  return until("Alpha's main conversation (bot.list)", 120_000, async () => {
+    const bots = await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {}).catch(() => undefined);
+    return bots?.bots.find((b) => b.id === "alpha")?.mainSession;
+  }, 500);
+}
+
+/** The code-adapter row alone (--only-code-adapter): the daemon, then the clause over the app's methods. */
+async function codeAdapterOnlyRun(): Promise<void> {
+  const n = stepNumber(FULL_STEPS, CODE_ADAPTER_STEP);
+  let c: CloverClient | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const session = await alphaSession(c);
+    await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await c.request("session.attach", { id: session });
+    const out = await codeAdapterTurn(c, session);
+    record(n, out.status, out.detail);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+  }
+}
+
 async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, WORKSHOP_STEP);
   let c: CloverClient | undefined;
@@ -2495,6 +3264,72 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
   }
 }
 
+/** The Browser-tool row alone (--only-browser): the daemon, the dummy key through the app's own methods, Alpha on the
+ *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
+async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, BROWSER_STEP);
+  let c: CloverClient | undefined;
+  let proc: { proc: ChildProcess; log: string } | undefined;
+  let cdp: Cdp | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    const session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    c.close();
+    c = undefined;
+    // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
+    const welcomeDone = join(home, "app-data", profile, "welcome-done");
+    mkdirSync(dirname(welcomeDone), { recursive: true });
+    if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
+    const pickFile = join(root, "folder.pick");
+    writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
+    const port = freePort();
+    browserFixture = startBrowserFixture();
+    const env = { ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+    proc = startChild("browser-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 100);
+    const rpc = (await appDriver()).client;
+    c = rpc;
+    await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    await rpc.request("session.attach", { id: session });
+    const log = proc.log;
+    const ctx: ExampleCtx = {
+      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
+      appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
+      requests: () => fake?.requests ?? [],
+      pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
+      pressCard: async (what, match) => {
+        const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
+        await pressApprove(cdp!, card, log);
+        return card.id;
+      },
+      approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
+      denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
+      turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
+      history: (s2) => history(rpc, s2),
+    };
+    record(n, "PASS", await browserStep(ctx, session, browserFixture));
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+    cdp?.close();
+    if (proc !== undefined) await endChild(proc.proc);
+  }
+}
+
 /** CPU seconds a process has used so far (`ps`'s cumulative time), or undefined when it is gone. */
 function cpuSeconds(pid: number): number | undefined {
   const out = spawnSync("ps", ["-o", "time=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
@@ -2621,8 +3456,10 @@ function packagedCoreSays(name: string): boolean {
 
 /** The run's outside world for a packaged core (fake-exa.ts serveOutsideWorld): its test build's seam reaches it by name. */
 let outsideWorld: OutsideWorld | undefined;
+/** The bots' Browser tool's fixture site (browser-step.ts): a local server the test-marked app reaches by name. */
+let browserFixture: BrowserFixture | undefined;
 function startOutsideWorld(): void {
-  outsideWorld = serveOutsideWorld();
+  outsideWorld = serveOutsideWorld(pluginWorld);
 }
 
 /** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
@@ -2755,10 +3592,74 @@ async function agentStep(c: CloverClient, session: string | undefined, turnsWork
       const heard = (fake?.requests ?? []).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD")).map((r) => r.answered);
       fail(`${why(err)}; the agent is ${row?.status ?? "gone"}${row?.failure ? ` (${row.failure})` : ""}; its log: ${own.slice(-8).map((e) => `${e.type}${(e as { text?: string }).text ? `:${String((e as { text?: string }).text).slice(0, 80)}` : ""}${(e as { error?: unknown }).error ? `:${JSON.stringify((e as { error?: unknown }).error).slice(0, 160)}` : ""}`).join(", ") || "empty"}; the scripted model heard it ${heard.length} time(s) (${heard.join(", ")})`);
     });
-    record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)})`);
+    // Row 1.93 (spec §9.3): a plugin's tool reaches agents through their bridge. Alpha's delegated agent calls the echo
+    // plugin's tool, judged at her level, and its answer comes back to her conversation; the user's own coding session
+    // (`agent.start`, no bot) does the same at its own.
+    const probe = async (o: { bot?: string }) => agentEchoProbe(c, computer!, o).catch((err: unknown) => {
+      if (err instanceof StepBlocked || err instanceof StepFail) throw new StepFail(`the agent's start, row and report passed (its row ${agentRow!.id}); ${why(err)}`);
+      throw err;
+    });
+    const delegated = await probe({ bot: session });
+    const own = await probe({});
+    record(n, "PASS", `Agent on clover-code with alpha:study-buddy: no card; ${started!.text.slice(0, 90)}; its row ${agentRow!.id} (backend ${agentRow!.backend}, definition ${agentRow!.definition}); its report came back (${String((report as { type?: string }).type)}); the echo plugin's tool through the bridge: Alpha's agent ${delegated}; the user's coding session ${own}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   }
+}
+
+/** An agent on clover-code calls the echo plugin's tool through its bridge (row 1.93): Alpha's delegation (`bot`: her
+ *  conversation, `ACCEPTANCE-AGENT-ECHO`) or the user's own coding session (`agent.start`). The scripted model finds the
+ *  tool among those its request offers (`…__acceptance-echo-echo__Echo`), calls it, and says the answer back; a card the
+ *  call raises (it names the agent's session) is approved over RPC, at the level of the session that owns the call.
+ *  Answers what happened, for the step's detail. */
+async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: string }): Promise<string> {
+  const PONG = "acceptance-echo-pong: acceptance-child-ping";
+  const folder = o.bot === undefined ? "code-echo" : "agent-echo";
+  mkdirSync(join(userHome, folder), { recursive: true });
+  const root = `home/${computer}/${folder}`;
+  const seen = fake?.requests.length ?? 0;
+  let id: string;
+  const before = new Set((await c.request<{ sessions: { id: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.map((x) => x.id));
+  if (o.bot !== undefined) {
+    const t = await turn(c, o.bot, `ACCEPTANCE-AGENT-ECHO ${root}`, 150_000);
+    const result = (fake?.requests ?? []).slice(seen).find((r) => r.toolResult !== undefined)?.toolResult;
+    if (result === undefined || result.isError) fail(`Alpha's Agent for the echo probe didn't start: ${(result?.text ?? "no result").slice(0, 200)}${t.cards.length ? ` (${t.cards.join("; ")})` : ""}`);
+    id = await until("the echo agent's session row", 30_000, async () => {
+      const r = await c.request<{ sessions: { id: string }[] }>("session.list", { kinds: ["agent"] }).catch(() => undefined);
+      return r?.sessions.find((x) => !before.has(x.id))?.id;
+    }, 500);
+  } else {
+    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
+  }
+  // The call's card, if its level asks: it names the agent's own session.
+  const carded: string[] = [];
+  const answered = new Set<string>();
+  const where = o.bot !== undefined ? o.bot : id;
+  const heard = await until(`the echo answer in ${o.bot !== undefined ? "Alpha's conversation" : "the coding session"}`, 120_000, async () => {
+    for (const card of await cards(c).catch(() => [])) {
+      if (card.session !== id || answered.has(card.id)) continue;
+      answered.add(card.id);
+      // A bot's agent's card is its bot's (at her level, her saved rules) but offers no "always" (it would be saved
+      // under her id and answer her own calls).
+      if (o.bot !== undefined && card.bot !== "alpha") fail(`the echo agent's card names ${card.bot ?? "no bot"}, not alpha`);
+      if (o.bot !== undefined && card.options.some((x) => x.remember === "always")) fail("the echo agent's card offers \"Always allow\" (a bot's agent's card never does)");
+      await approve(c, card);
+      carded.push(`a ${card.kind} card naming the agent's session${o.bot !== undefined ? " and alpha, with no always" : ""}, approved`);
+    }
+    const evs = await history(c, where).catch(() => []);
+    return evs.find((e) => JSON.stringify(e).includes(PONG) || JSON.stringify(e).includes("ACCEPTANCE-CHILD-NO-ECHO"));
+  }, 1_000).catch((err: unknown) => {
+    const mine = (fake?.requests ?? []).slice(seen).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD-ECHO") || r.toolUse?.endsWith("Echo"));
+    fail(`${why(err)}; the agent's requests: ${mine.map((r) => `${r.answered}${r.toolUse ? ` (called ${r.toolUse})` : ""}`).join(", ") || "none"}${carded.length ? `; ${carded.join("; ")}` : ""} [packages/core/src/agents/plugin-reach.ts]`);
+  });
+  if (JSON.stringify(heard).includes("ACCEPTANCE-CHILD-NO-ECHO")) {
+    fail(`the agent's bridge offered no echo tool: ${/ACCEPTANCE-CHILD-NO-ECHO ([^"\\]*)/.exec(JSON.stringify(heard))?.[1]?.slice(0, 300) ?? "?"} [packages/core/src/agents/plugin-reach.ts]`);
+  }
+  const mine = (fake?.requests ?? []).slice(seen);
+  const called = mine.find((r) => r.toolUse !== undefined && BRIDGE_ECHO.test(r.toolUse))?.toolUse;
+  if (called === undefined) fail(`the answer came back but no request called the echo tool through a bridge (${mine.map((r) => r.toolUse).filter(Boolean).join(", ") || "no tool called"})`);
+  const offered = mine.find((r) => r.tools.some((t) => BRIDGE_ECHO.test(t)))?.tools.filter((t) => t.startsWith("mcp__clover_")) ?? [];
+  return `its bridge offered ${offered.join(", ")}; it called ${called} and got "${PONG}" back${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`;
 }
 
 async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<void> {
@@ -3572,7 +4473,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : onlyUi !== undefined ? uiRowNumbers(onlyUi) : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : codeAdapterOnly ? stepNumber(FULL_STEPS, CODE_ADAPTER_STEP) : thirdPartyOnly ? stepNumber(FULL_STEPS, THIRD_PARTY_MODEL_STEP) : oauthOnly ? stepNumber(FULL_STEPS, OAUTH_SIGN_IN_STEP) : browserOnly ? stepNumber(FULL_STEPS, BROWSER_STEP) : routineOnly ? stepNumber(FULL_STEPS, SCHEDULED_ROUTINE_STEP) : onlyUi !== undefined ? uiRowNumbers(onlyUi) : undefined));
 // A shard's table: its own units' rows alone (the sharded run merges them, and the others are another shard's).
 if (shardUnits !== undefined) rows.splice(0, rows.length, ...rows.filter((r) => runs(unitOf(r.name))));
 if (rowsOut !== undefined) writeFileSync(rowsOut, JSON.stringify(rows));
