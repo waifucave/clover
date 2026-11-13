@@ -588,6 +588,28 @@ async function ready(): Promise<void> {
     follow();
     watchFile(file, { interval: 250 }, follow);
   }
+  // The acceptance run's key press (a headless test-marked or acceptance build only, compiled out of a release; the marker
+  // gate's TEST_ONLY_APP_STRINGS checks it): a key chord from a file the harness writes, `{ n, key, modifiers }`, pressed
+  // in the main window with `sendInputEvent`, the one way a synthesized press reaches the window's before-input-event
+  // (CDP key events don't). Each new `n` is one press.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_KEY_FILE) {
+    const file = process.env.CLOVER_TEST_KEY_FILE;
+    let last = 0;
+    watchFile(file, { interval: 250 }, () => {
+      try {
+        const v = JSON.parse(readFileSync(file, "utf8")) as { n?: unknown; key?: unknown; modifiers?: unknown };
+        if (typeof v.n !== "number" || v.n <= last || typeof v.key !== "string" || !Array.isArray(v.modifiers)) return;
+        last = v.n;
+        const modifiers = v.modifiers.filter((m): m is "shift" | "control" | "alt" | "meta" => m === "shift" || m === "control" || m === "alt" || m === "meta");
+        const w = mainWindow;
+        if (w === undefined || w.isDestroyed()) return;
+        for (const type of ["keyDown", "keyUp"] as const) w.webContents.sendInputEvent({ type, keyCode: v.key, modifiers });
+        log(`keys: pressed ${modifiers.join("+")}+${v.key} in the window`);
+      } catch {
+        // Not written yet.
+      }
+    });
+  }
   // The acceptance run's narrow window (row 40; a headless test-marked or acceptance build only, compiled out of a
   // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the main window's real content size from a file the
   // harness writes, "<width>x<height>", the window itself resized as a person's drag would; anything else puts back the
