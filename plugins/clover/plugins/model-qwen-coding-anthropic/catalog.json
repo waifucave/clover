@@ -130,7 +130,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.5",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/glm-4.7",
@@ -221,7 +222,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/glm-5",
@@ -305,7 +307,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qwen-coding-anthropic/kimi-k2.5",
@@ -405,7 +408,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.5",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/qwen3-coder-next",
@@ -503,7 +507,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3-coder-next",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/qwen3-coder-plus",
@@ -601,7 +606,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3-coder-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/qwen3-max-2026-01-23",
@@ -685,7 +691,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3-max-2026-01-23",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "qwen-coding-anthropic/qwen3.5-plus",
@@ -771,7 +778,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/qwen3.6-plus",
@@ -857,7 +865,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-coding-anthropic/qwen3.7-plus",
@@ -950,7 +959,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.7-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     }
   ]
 }

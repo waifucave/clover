@@ -150,7 +150,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-4.5-air",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zhipu/glm-4.6",
@@ -258,7 +259,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-4.6",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zhipu/glm-4.7",
@@ -377,7 +379,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zhipu/glm-4.7-flash",
@@ -489,7 +492,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-4.7-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "weak"
     },
     {
       "key": "zhipu/glm-4.7-flashx",
@@ -608,7 +612,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-4.7-flashx",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "weak"
     },
     {
       "key": "zhipu/glm-5",
@@ -727,7 +732,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zhipu/glm-5-turbo",
@@ -839,7 +845,8 @@
         }
       },
       "canonicalModelId": "glm-5-turbo",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zhipu/glm-5.1",
@@ -958,7 +965,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zhipu/glm-5.2",
@@ -1086,7 +1094,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zhipu/glm-5.3",
@@ -1217,7 +1226,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zhipu/glm-5.3-flash",
@@ -1351,7 +1361,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zhipu/glm-5.3-flashx",
@@ -1485,7 +1496,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3-flashx",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -140,6 +140,54 @@ describe.if(posix)("scripts/heavy", () => {
     expect(lines[2]).toMatch(/^second \d+$/);
     expect(lines[2]).not.toBe(`second ${first.pid}`);
     expect(existsSync(join(dir, "exclusive"))).toBe(false);
+  });
+
+  test("waiters take the lock first-come: in the order they came, whoever polls first; --status lists the queue", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    const holder = spawn(HEAVY, ["--exclusive", "sh", "-c", `echo holder >> '${log}'; sleep 3`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("holder"), "the holder starting");
+    const waiters = [];
+    for (const name of ["one", "two", "three"]) {
+      waiters.push(spawn(HEAVY, ["--exclusive", "sh", "-c", `echo ${name} >> '${log}'; sleep 0.3`], { env: env(dir), stdio: "ignore" }));
+      await until(() => readdirSync(join(dir, "exclusive-queue")).length === waiters.length, `${name}'s ticket`);
+    }
+    const status = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "1" }), encoding: "utf8" });
+    expect(status.stdout).toMatch(new RegExp(`queue 1: pid ${waiters[0]!.pid}: sh -c echo one[^\\n]*\\nqueue 2: pid ${waiters[1]!.pid}: [^\\n]*\\nqueue 3: pid ${waiters[2]!.pid}:`));
+    for (const w of [holder, ...waiters]) await exited(w);
+    expect(readFileSync(log, "utf8")).toBe("holder\none\ntwo\nthree\n");
+    expect(readdirSync(join(dir, "exclusive-queue"))).toEqual([]);
+  }, 30_000);
+
+  test("no deadlock: a packaged holder doesn't wait on a slot whose job is itself queued for the lock (M's 38 minutes)", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    // Someone holds the lock; a packaged run queues behind it; then an acceptance run started through plain heavy (in a
+    // slot) queues for the lock too. When the holder ends, the packaged run takes the lock and waits for the slots to
+    // empty: the acceptance run's slot is marked waiting, so it goes on, and the acceptance run follows it.
+    const holder = spawn(HEAVY, ["--exclusive", "sh", "-c", `echo holder >> '${log}'; sleep 2`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("holder"), "the holder starting");
+    const packaged = spawn(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo packaged >> '${log}'`], { env: env(dir), stdio: "ignore" });
+    await until(() => existsSync(join(dir, "exclusive-queue")) && readdirSync(join(dir, "exclusive-queue")).length === 1, "the packaged run's ticket");
+    const inSlot = spawn(HEAVY, ["sh", "-c", `'${HEAVY}' --exclusive sh -c "echo acceptance >> '${log}'"`], { env: env(dir), stdio: "ignore" });
+    await until(() => readdirSync(join(dir, "exclusive-queue")).length === 2, "the slot's acceptance run's ticket");
+    const status = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "2" }), encoding: "utf8" });
+    expect(status.stdout).toMatch(/slot \d: pid \d+: sh -c [^\n]*\(waiting for the exclusive lock\)/);
+    expect(status.stdout).toMatch(new RegExp(`queue 1: pid \\d+: sh -c echo packaged[^\\n]*\\nqueue 2: pid \\d+: sh -c echo acceptance`));
+    for (const p of [holder, packaged, inSlot]) await exited(p);
+    expect(readFileSync(log, "utf8")).toBe("holder\npackaged\nacceptance\n");
+  }, 30_000);
+
+  test("a waiter that is gone leaves the queue: the next one takes its turn", async () => {
+    const dir = slotDir();
+    mkdirSync(join(dir, "exclusive-queue"), { recursive: true });
+    const gone = spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(dir, "exclusive-queue", `00000000000000001-${gone}`), "a waiter that died\n");
+    const run = spawnSync(HEAVY, ["--exclusive", "true"], { env: env(dir), encoding: "utf8", timeout: 20_000 });
+    expect(run.status).toBe(0);
+    expect(readdirSync(join(dir, "exclusive-queue"))).toEqual([]);
   });
 
   test("a holder that is gone is taken over by pid check", () => {

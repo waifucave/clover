@@ -77,6 +77,9 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
   // reads; an install stays inside Clover and lands found, its sealed OK card the user's gate, nothing of it running
   // before the yes (an update of the bot's own plugin is judged by the workshop rule, asking on a card when it adds).
   ["PluginValidate", "read"], ["PluginStatus", "read"], ["PluginInstall", "contained"],
+  // A look at a place in this computer's app (bots/app-screenshot.ts): drawn in a window the user never sees, saved in
+  // the bot's own scratch; Settings is never drawn and a card there is a placeholder. Nothing changes.
+  ["AppScreenshot", "read"],
   // Finding and loading what isn't loaded (the agent SDK's `hostToolSearch`): a search answers names and descriptions,
   // a load makes a tool callable or returns a skill's words. Nothing runs; each call of a tool it loads is judged as
   // that tool. Without this, every on-demand tool (Glob, Grep, a plugin's tool its manifest doesn't preload) cost a card

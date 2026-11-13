@@ -96,6 +96,21 @@ async function windowDoc(cdp: Cdp): Promise<string> {
   return d;
 }
 
+/** Opens her tab when the window shows something else (her layout not showing): presses the stock sidebar's Alpha row. */
+async function openHerTab(cdp: Cdp): Promise<void> {
+  const win = await windowDoc(cdp);
+  const hers = await cdp.evaluate(win, `[...document.querySelectorAll("[data-clover-layout-part]")].some((el) => el.getClientRects().length > 0)`).catch(() => false);
+  if (hers === true) return;
+  const at = await until("the stock sidebar's Alpha row", 20_000, async () => {
+    for (const d of await treeDocs(cdp)) {
+      const c = await cdp.centerOf(d.session, STOCK_ROWS, "Alpha").catch(() => undefined);
+      if (c !== undefined) return { session: d.session, c };
+    }
+    return undefined;
+  }, () => dumpFrames(cdp));
+  await cdp.click(at.session, at.c.x, at.c.y);
+}
+
 /** Her tab, settled: her layout, her room drawn, her transcript's rows. */
 async function herTabSettled(cdp: Cdp, minRows: number): Promise<void> {
   await until("Alpha's tab drawn (her layout, her room, her transcript)", 60_000, async () => {
@@ -157,8 +172,10 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
   try {
     await ctx.pressCard("the app's OK card", (c) => c.kind === "plugin-ok" && c.pluginId === APP_ID);
     await until(`${APP_ID} running`, 30_000, async () => ((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: APP_ID }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
-    // Installing it loads the window's document again (a layer it may now frame): her tab, settled.
+    // Installing it loads the window's document again (a layer it may now frame): her tab, settled. In the full table the
+    // row starts wherever the row before it left the window (the new-message composer, say), so it opens her tab itself.
     await sleep(1_500);
+    await openHerTab(cdp);
     await herTabSettled(cdp, 2);
 
     // 0. The window's start (sampled from the moment the shell was there, before anything else ran).

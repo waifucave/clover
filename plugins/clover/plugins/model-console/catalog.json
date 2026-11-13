@@ -218,7 +218,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-fable-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-fable-5-1",
@@ -438,7 +439,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-fable-5.1",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-haiku-4-5-20251001",
@@ -543,7 +545,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
       },
       "canonicalModelId": "claude-haiku-4.5-20251001",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "weak"
     },
     {
       "key": "console/claude-haiku-4.5",
@@ -648,7 +651,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
       },
       "canonicalModelId": "claude-haiku-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "weak"
     },
     {
       "key": "console/claude-haiku-5-5",
@@ -830,7 +834,8 @@
         "observedAt": "2026-10-24T00:00:00Z"
       },
       "canonicalModelId": "claude-haiku-5.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "weak"
     },
     {
       "key": "console/claude-opus-4.5",
@@ -961,7 +966,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
       },
       "canonicalModelId": "claude-opus-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-opus-4.6",
@@ -1097,7 +1103,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-opus-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-opus-4.7",
@@ -1259,7 +1266,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-opus-4.7",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-opus-4.8",
@@ -1446,7 +1454,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-opus-4.8",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-opus-5",
@@ -1665,7 +1674,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-opus-5-5",
@@ -1894,7 +1904,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-opus-5.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "console/claude-sonnet-4.5",
@@ -2016,7 +2027,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
       },
       "canonicalModelId": "claude-sonnet-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "console/claude-sonnet-4.6",
@@ -2145,7 +2157,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — the Model compatibility table lists Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5.5, Opus 5, Opus 4.8, 4.7, 4.6, Sonnet 4.6, Opus 4.5, Sonnet 4.5 and Haiku 4.5 (not Sonnet 5); \"Custom tool search implementation\": a client tool returns a tool_result whose content carries {type:\"tool_reference\", tool_name} blocks, every referenced tool declared in tools with defer_loading: true, and the API expands them; \"The prefix is untouched, so prompt caching is preserved\" (https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)."
       },
       "canonicalModelId": "claude-sonnet-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "console/claude-sonnet-5",
@@ -2321,7 +2334,8 @@
         "sourceRef": "https://platform.claude.com/docs/en/models/opus-5-5/migration-guide — \"Don't end messages with a prefilled assistant turn: it is rejected\"; \"Prefilling assistant messages returns a 400 error on Claude Opus 4.6 and later Opus models, including Claude Opus 5.5\"; Sonnet 5 and Opus 5: \"Manual extended thinking, non-default sampling parameters, and assistant prefill return a 400 error on both models\"; the Fable 5.1 guide: prefill \"returns a 400 error, unchanged from Claude Fable 5\". Live gate 2026-09-26 on claude-opus-5-5: \"This model does not support assistant message prefill. The conversation must end with a user message.\""
       },
       "canonicalModelId": "claude-sonnet-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "console/claude-sonnet-5-5",
@@ -2553,7 +2567,8 @@
         "observedAt": "2026-09-29T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-5.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     }
   ]
 }

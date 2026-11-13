@@ -19,6 +19,7 @@ from then on it runs.
 | check | `PluginValidate` (Clover's) | `{ folder }` → `clover plugin validate`'s report: the plugin's class, contributions, hosts, capabilities, tools, each finding, "The OK will say: …", then "valid" or "invalid: N errors". For a plugin of yours already installed, its last line says whether installing this folder updates it at once or asks the user again, and why. A read: no card, nothing installed. |
 | install | `PluginInstall` (Clover's) | `{ folder }`: a path relative to your scratch folder, or absolute, inside your scratch or the conversation's outputs, and named exactly as the manifest's `id`. A new plugin waits for the user's OK on its card, which says it was built by you and that you can change its code later without asking, within what the card lists. The same id again updates your plugin: at once if it adds nothing, otherwise the user is asked again. An id you didn't build is refused: pick another. No approval card for the call itself; the OK card is the gate. |
 | look | `PluginStatus` (Clover's) | `{ id }`, for your own plugins: its state in words (waiting for the user's OK, running, invalid, stopped, refused) and why (a client build's error is the reason), what it is waiting for, its findings, and its log's last 50 lines. |
+| see | `AppScreenshot` (Clover's) | `{ target, size? }`: a picture of a place in the app, drawn in a window the user never sees (their own stays where it is): `app:<plugin id or page key>`, `bot:<id>`, `plugins`, `archive`, `code`, or `window` (the user's own window as it is now, not while Settings shows); `size` is `"wide"` (1280x820, the default), `"narrow"` (860x820) or `{ width, height }` up to 2560x1640. The picture comes back as an image and is saved under `shots/` in your scratch, with the place's frames and the console errors and warnings of a plugin you built. A read: no card. Settings is never drawn, and a card waiting there shows as a plain placeholder. |
 
 Moving the folder works as well as the install tool: `mv` or `cp -R` your scratch folder to `<clover home>/plugins/<id>/`
 in one shell call (or write it there with your file tools). Once it has been quiet for about 2 seconds with a valid
@@ -28,11 +29,12 @@ isn't yours stays refused. The move must finish inside the shell call itself; on
 (`… &`) isn't counted as yours, so the plugin gets an ordinary card and you get no edit rights. A change to the folder
 while its card waits replaces the card with one for the new files.
 
-These three are in a bot's own sessions (its conversation and side threads), not in an agent's: build plugins from
+These are in a bot's own sessions (its conversation and side threads), not in an agent's: build plugins from
 there. Use them, not Clover's command line in your shell: your shell is fenced, and a `clover plugin install`, `dev`
 or `status` there can't reach Clover as the user (its token isn't readable from inside the fence).
 
-The other skills say "the scaffold tool", "the check tool", "the install tool" and "the status tool" for these.
+The other skills say "the scaffold tool", "the check tool", "the install tool", "the status tool" and "the screenshot
+tool" for these.
 
 ## Which skill for what
 

@@ -120,7 +120,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "amazon.nova-lite",
-      "modelFamily": "nova"
+      "modelFamily": "nova",
+      "strength": "weak"
     },
     {
       "key": "bedrock/amazon.nova-micro-v1:0",
@@ -205,7 +206,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "amazon.nova-micro",
-      "modelFamily": "nova"
+      "modelFamily": "nova",
+      "strength": "weak"
     },
     {
       "key": "bedrock/amazon.nova-premier-v1:0",
@@ -292,7 +294,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "amazon.nova-premier",
-      "modelFamily": "nova"
+      "modelFamily": "nova",
+      "strength": "medium"
     },
     {
       "key": "bedrock/amazon.nova-pro-v1:0",
@@ -379,7 +382,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "amazon.nova-pro",
-      "modelFamily": "nova"
+      "modelFamily": "nova",
+      "strength": "medium"
     },
     {
       "key": "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
@@ -423,7 +427,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "claude-3.5-sonnet-20241022",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "bedrock/anthropic.claude-haiku-4-5",
@@ -484,7 +489,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-haiku-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "weak"
     },
     {
       "key": "bedrock/anthropic.claude-opus-4-6",
@@ -545,7 +551,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "bedrock/anthropic.claude-opus-4-7",
@@ -606,7 +613,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.7",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "bedrock/anthropic.claude-sonnet-4-5",
@@ -667,7 +675,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "bedrock/anthropic.claude-sonnet-4-6",
@@ -728,7 +737,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "bedrock/openai.gpt-oss-120b-1:0",
@@ -788,7 +798,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "bedrock/us.amazon.nova-2-lite-v1:0",
@@ -875,7 +886,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "amazon.nova-2-lite",
-      "modelFamily": "nova"
+      "modelFamily": "nova",
+      "strength": "weak"
     }
   ]
 }

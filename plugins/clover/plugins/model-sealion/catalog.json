@@ -94,7 +94,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "aisingapore/qwen-sea-lion-v4.5-27b-it",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

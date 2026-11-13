@@ -106,7 +106,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-5.3-codex",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "freemodel-dev/gpt-5.4",
@@ -177,7 +178,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-5.4",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "freemodel-dev/gpt-5.4-mini",
@@ -248,7 +250,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-5.4-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "freemodel-dev/gpt-5.5",
@@ -319,7 +322,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-5.5",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     }
   ]
 }

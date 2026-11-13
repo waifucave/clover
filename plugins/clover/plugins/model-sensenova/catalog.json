@@ -110,7 +110,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "sensenova/glm-5.2",
@@ -181,7 +182,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "sensenova/sensenova-6.7-flash-lite",
@@ -242,7 +244,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "sensenova-6.7-flash-lite",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

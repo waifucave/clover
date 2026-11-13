@@ -88,7 +88,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-chat",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "freetheai/gpt-4o-mini",
@@ -141,7 +142,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gpt-4o-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "freetheai/llama-3.3-70b-instruct",
@@ -194,7 +196,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3.3-70b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     }
   ]
 }

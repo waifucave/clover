@@ -116,7 +116,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zai-anthropic/glm-4.7-flash",
@@ -198,7 +199,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-4.7-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "weak"
     },
     {
       "key": "zai-anthropic/glm-5",
@@ -280,7 +282,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zai-anthropic/glm-5-turbo",
@@ -326,7 +329,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "glm-5-turbo",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "zai-anthropic/glm-5.1",
@@ -408,7 +412,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zai-anthropic/glm-5.2",
@@ -490,7 +495,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zai-anthropic/glm-5.3",
@@ -591,7 +597,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zai-anthropic/glm-5.3-flash",
@@ -695,7 +702,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }
