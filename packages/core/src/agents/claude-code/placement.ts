@@ -10,8 +10,8 @@
 // Hook events map onto Claude Code's: `tool.before` → `PreToolUse`, `tool.after` → `PostToolUse`, `message.in` and
 // `turn.start` → `UserPromptSubmit`, `turn.end` → `Stop`, `compact.before` → `PreCompact`, `compact.after` →
 // `SessionStart` (matcher `compact`). `message.out` has no Claude Code event, so those hooks aren't placed.
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { cpSync, existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, isAbsolute, join, relative } from "node:path";
 import type { HookEvent, PluginParts } from "../placement";
 import { DEFAULT_HOOK_TIMEOUT_MS } from "./hook-shim";
 
@@ -74,7 +74,17 @@ export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: 
       placed.skipped.push({ id: s.name, why: "a skill of that name is placed already" });
       continue;
     }
-    cpSync(s.dir, join(root, "skills", name), { recursive: true, dereference: false });
+    // A link inside a skill folder is never placed: copied as a link, it could bring a file of the user's (anything it
+    // points at) into the agent's context. Each one left out is said in `skipped` (the backend's log).
+    cpSync(s.dir, join(root, "skills", name), {
+      recursive: true, dereference: false,
+      filter: (src) => {
+        let link = false;
+        try { link = lstatSync(src).isSymbolicLink(); } catch { link = true; }
+        if (link) placed.skipped.push({ id: `${s.name}/${relative(s.dir, src) || "."}`, why: "a symbolic link, never placed" });
+        return !link;
+      },
+    });
     placed.skills.push(name);
   }
 

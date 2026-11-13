@@ -205,7 +205,14 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   });
   const wire = (id: string) => manager.wire(id);
   // Claude Code reads its own skills, agents and hooks folders: the plugins' parts are placed there (§9.3).
-  const place = { "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() }) } as const;
+  const place = {
+    "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => {
+      const r = placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() });
+      // What was left out (a link inside a skill folder, a name placed already, …), so its author can find out why.
+      if (r.placed.skipped.length > 0) o.log?.(`claude-code placement in ${ctx.dir}: left out ${r.placed.skipped.map((x) => `${x.id} (${x.why})`).join(", ")}`);
+      return r;
+    },
+  } as const;
   // One record of the user's own selections for every backend, in the daemon's fenced run folder.
   const selections = new UserSelections(join(o.home, "run", "agents", "selections"));
   // Every ACP backend is a plugin's entry; what the core grants by backend id (an admitted sandbox, Claude Code's
