@@ -31,7 +31,8 @@ const HOME = `<!doctype html><meta charset="utf-8"><title>Browser fixture home</
 <h1>Browser fixture home</h1>
 <p>This page is served by the acceptance run, nothing else.</p>
 <a href="/second">Go to the second page</a>
-<form onsubmit="return false"><label>Name <input aria-label="Name" type="text"></label><button type="button">Say hello</button></form>`;
+<form onsubmit="return false"><label>Name <input aria-label="Name" type="text"></label><button type="button" onclick="document.getElementById('said').textContent='hello was clicked'">Say hello</button></form>
+<p id="said"></p>`;
 const SECOND = `<!doctype html><meta charset="utf-8"><title>Browser fixture second</title><h1>Browser fixture second page</h1><p>You followed the link.</p>`;
 
 export function startBrowserFixture(): BrowserFixture {
@@ -117,6 +118,9 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   const first = await browse(ctx, session, { verb: "click", ref }, { always: true });
   if (first.isError) fail(`the first click: ${first.text.slice(0, 300)}`);
   if (first.cards.length !== 1 || !first.cards[0]!.includes("Always allow")) fail(`the first click on a site raised ${first.cards.length} card(s) (${first.cards.join("; ") || "none"}), not the one card answered with Always allow`);
+  // The click reached the button (the page says so), and the page is still the one that was read.
+  const afterClick = await browse(ctx, session, { verb: "read" });
+  if (afterClick.isError || !/hello was clicked/.test(afterClick.text)) fail(`the first click did not reach the button: the page reads ${afterClick.text.slice(0, 300)}`);
   const again = await browse(ctx, session, { verb: "click", ref });
   if (again.isError || again.cards.length > 0) fail(`the next click on the same site: ${again.cards.length} card(s) (${again.cards.join("; ")}), ${again.text.slice(0, 200)}`);
   const otherRef = await buttonRef(fixture.otherUrl);
