@@ -13,7 +13,8 @@ export interface StepRow { n: number; name: string; status: string; detail: stri
 export function parseRunTable(text: string): StepRow[] {
   const rows: StepRow[] = [];
   for (const line of text.split("\n")) {
-    const m = /^\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(PASS|FAIL|BLOCKED)\s*\|\s*(.*?)\s*\|?\s*$/.exec(line);
+    // A row's seconds and shard (`| 12.3 s | s2 |`, run.ts since the shards) sit between its status and its detail.
+    const m = /^\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(PASS|FAIL|BLOCKED)\s*\|(?:\s*(?:[\d.]+ s|-)\s*\|)?(?:\s*(?:s\d+|serial|-)\s*\|)?\s*(.*?)\s*\|?\s*$/.exec(line);
     if (m) rows.push({ n: Number(m[1]), name: m[2]!, status: m[3]!, detail: m[4]! });
   }
   return rows;

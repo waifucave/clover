@@ -151,7 +151,15 @@ export async function launchSamples(cdp: Cdp, ms = 6_000): Promise<(FlashSample 
   return (JSON.parse((await cdp.evaluate(win, "JSON.stringify(window.__cloverFlash)")) as string) as { out: (FlashSample & { n: number })[] }).out;
 }
 
-export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (FlashSample & { n: number })[]): Promise<string> {
+/** How long her frames stay out of sight before they sleep when the row runs alone: the app's seam
+ *  (CLOVER_TEST_SLEEP_AFTER_MS, a test or acceptance build's), so "a minute away" is this, not the layer's minute. */
+export const TAB_FLASH_SLEEP_MS = 5_000;
+
+/** Her frames in the window's document as the sampler names them (`<entry>:<state>[:hidden]`). */
+const ALPHA_FRAMES = `[...document.querySelectorAll('[data-clover-entry^="alpha#"]')].map((f) => f.getAttribute("data-clover-entry") + ":" + (f.hasAttribute("data-clover-asleep") ? "asleep" : f.tagName))`;
+
+/** `sleepAfterMs`: the app was started with that seam (the row alone); unset, the layer's own minute. */
+export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (FlashSample & { n: number })[], sleepAfterMs?: number): Promise<string> {
   const { cdp, rpc } = ctx;
   const lines: string[] = [];
   const flashes: string[] = [];
@@ -212,9 +220,22 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
     judge("Settings → her tab", (JSON.parse((await cdp.evaluate(win, "JSON.stringify(window.__cloverFlash)")) as string) as { out: (FlashSample & { n: number })[] }).out, true);
     await herTabSettled(cdp, 2);
 
-    // 5. A minute away (her frames out of sight long enough to sleep), and back.
+    // 5. A minute away (her frames out of sight long enough to sleep), and back. Away until they have slept: past the
+    // app's sleep time (the layer's minute, or the seam's when the row runs alone), and, where any frame of hers is a
+    // sleeping kind, until every such frame says so (seen in the window's document), so the way back wakes them.
     await sampled(cdp, "her dock's app row", { selector: DOCK, text: APP_TITLE }, 300);
-    await sleep(65_000);
+    const away = sleepAfterMs ?? 60_000;
+    const left = Date.now();
+    await sleep(away + 1_000);
+    const win5 = await windowDoc(cdp);
+    const framesNow = async () => ((await cdp.evaluate(win5, ALPHA_FRAMES).catch(() => [])) as string[]);
+    // A frame of hers that sleeps is an iframe while awake and a placeholder marked asleep after; her inline parts (the
+    // layout the window's own document draws) never sleep. Away until no iframe of hers is left awake.
+    const slept = await until(`her frames asleep ${Math.round(away / 1000)} s away`, 20_000, async () => {
+      const f = await framesNow();
+      return f.every((x) => !x.endsWith(":IFRAME")) ? f : undefined;
+    }, async () => `her frames: ${(await framesNow()).join(", ") || "none"}`);
+    lines.push(`away ${((Date.now() - left) / 1000).toFixed(1)} s (sleep after ${Math.round(away / 1000)} s): ${slept.join(", ") || "no frames"}`);
     judge("the app's page, a minute later → her tab", await sampled(cdp, "the stock sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }, 2_500), true);
     await herTabSettled(cdp, 2);
   } finally {
