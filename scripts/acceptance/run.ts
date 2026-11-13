@@ -135,6 +135,9 @@ const oauthOnly = argv.includes("--only-oauth-sign-in");
 // --only-scheduled-routine: only the scheduled routine row (Alpha's Routine tool makes one that runs every 15 s, its
 // schedule fires it, routine.runs lists the finished run): the daemon, the dummy key, the clause.
 const routineOnly = argv.includes("--only-scheduled-routine");
+/** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
+ *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
+const appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -956,6 +959,7 @@ type Card = { id: string; hash: string; kind: string; change?: string; session?:
  *  over RPC but the app never heard of is a card the user would never see (the first packaged run's daemon sent none:
  *  its events didn't parse). Waits a moment for the app's log. */
 async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void> {
+  if (appless) return;
   const line = `card: a ${card.kind} card ${card.id} arrived`;
   for (let i = 0; i < 50; i++) {
     if (existsSync(log) && readLog(log).includes(line)) return;
@@ -1525,7 +1529,7 @@ async function main(): Promise<void> {
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
     // The code-adapter row alone drives no window: its clause runs over the app's methods, so no app is built.
-    app = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
+    app = appless ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
