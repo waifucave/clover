@@ -447,6 +447,29 @@ export const KEY_CHANGED_TEXT = "Couldn't confirm: this computer's answer key is
  *  again): reconnecting starts a fresh registration, so the card says that may help. */
 export const KEY_FAULT_TEXT = "Couldn't confirm: Clover couldn't take this computer's key. Reconnecting may help: a reconnect registers it again.";
 
+/** What a render window (`app.window.render`: a bot's AppScreenshot) gets where a card's sealed frame would be: the
+ *  real page's layout with every word hidden and no script of its own, under a plain box that says "approval button"
+ *  or "card field", so it takes the room the frame would and the picture shows where the card goes. It has no token,
+ *  no answer bridge (the preload gives `cloverSealed` to `clover-sealed://card/` alone) and no visibility report: it
+ *  tells its frame its size (numbers only) and nothing else, so there is never a second live approval control. */
+export function placeholderPage(real: string, kind: "button" | "field"): string {
+  const words = kind === "button" ? "approval button" : "card field";
+  const size = kind === "button"
+    ? `const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); try { parent.postMessage({ cloverSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ }`
+    : `try { parent.postMessage({ cloverSealedSize: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, "*"); } catch (e) { /* no parent */ }`;
+  const script = `(() => {
+  const send = () => { ${size} };
+  addEventListener("DOMContentLoaded", () => { new ResizeObserver(send).observe(document.body); send(); });
+  addEventListener("load", send);
+})();`;
+  const css = `body > *:not(.seal-placeholder) { visibility: hidden !important; }
+.seal-placeholder { position: fixed; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px dashed var(--seal-muted); border-radius: 8px; background: color-mix(in srgb, var(--seal-muted) 12%, transparent); color: var(--seal-muted); font: 11px/1.2 system-ui, sans-serif; white-space: nowrap; pointer-events: none; user-select: none; }`;
+  return real
+    .replace(/<script>[\s\S]*?<\/script>/g, "")
+    .replace("</head>", `<style>${css}</style>\n<script>${script}</script>\n</head>`)
+    .replace(/<body[^>]*>/, `<body data-placeholder="${kind}">\n<div class="seal-placeholder" aria-hidden="true">${words}</div>`);
+}
+
 /** The fields in B's own order (§5.5), read at once. */
 export const CARD_FIELD_ORDER = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"] as const;
 

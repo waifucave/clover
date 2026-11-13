@@ -133,6 +133,33 @@ export const AppOpenResult = z.object({
 export type AppOpenResult = z.infer<typeof AppOpenResult>;
 /** What the daemon asks the app: a target to open, or none for where it is. */
 export const AppWindowOpenParams = z.object({ target: AppOpenTarget.optional(), frames: z.boolean().optional() }).strict();
+/** What a bot's `AppScreenshot` asks this computer's app (`app.window.render`): a place drawn in a render window at a
+ *  content size, or `window` (the user's main window as it is). */
+export const AppWindowRenderParams = z.object({
+  target: AppOpenTarget,
+  size: z.object({ width: z.number().int().min(320).max(2560), height: z.number().int().min(240).max(1640) }).strict(),
+  frames: z.boolean().optional(),
+}).strict();
+export type AppWindowRenderParams = z.infer<typeof AppWindowRenderParams>;
+/** A console line a page wrote while it drew (an error or a warning), with the plugin whose frame wrote it. */
+export const RenderConsoleLine = z.object({ plugin: utf16(256), level: z.enum(["error", "warning"]), message: utf16(500) });
+/** `app.window.render`'s answer: whether the place showed and drew, its picture (PNG, base64) and a smaller copy for a
+ *  model when it is large, the place, its frames (ids and sizes) and its pages' console lines. */
+export const AppRenderResult = z.object({
+  target: AppOpenTarget,
+  size: z.object({ width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }),
+  shown: z.boolean(),
+  reason: utf16(500).optional(),
+  drawn: z.boolean(),
+  note: utf16(300).optional(),
+  png: utf16(7_000_000).optional(),
+  pixels: z.object({ width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }).optional(),
+  preview: z.object({ png: utf16(7_000_000), width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }).optional(),
+  where: AppPlace.optional(),
+  frames: z.array(CapturedFrame).max(256).optional(),
+  console: z.array(RenderConsoleLine).max(50).optional(),
+});
+export type AppRenderResult = z.infer<typeof AppRenderResult>;
 
 export const APP_METHODS = {
   appOpen: defineMethod({
@@ -149,6 +176,11 @@ export const APP_METHODS = {
     name: "app.window.open", owner: "D", roles: ["app"], direction: "from-daemon",
     params: AppWindowOpenParams, result: AppOpenResult,
     doc: "The daemon asks the app's main process for `app.open`'s answer (with a target) or `app.where`'s (without).",
+  }),
+  appWindowRender: defineMethod({
+    name: "app.window.render", owner: "D", roles: ["app"], direction: "from-daemon",
+    params: AppWindowRenderParams, result: AppRenderResult,
+    doc: "The daemon asks the app's main process to draw a place for a bot's AppScreenshot in a render window the user never sees (hidden, offscreen, no input, no sound, a card there a plain placeholder), or to capture the main window as it is (`window`, never while Settings shows), and answers with the picture.",
   }),
   appCapture: defineMethod({
     name: "app.capture", owner: "D", roles: ["cli"], userOnly: true,

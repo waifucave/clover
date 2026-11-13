@@ -8,6 +8,9 @@
 //    Alpha can change its code later without asking, within what this card lists."; the row presses it in the window,
 //    and the plugin runs: its tool answers a call.
 // 3. `PluginStatus` reports it running.
+// 3b. `AppScreenshot` shows her the Plugins page (where her plugin is listed), wide and narrow: drawn in a render window
+//    the user never sees, saved in her scratch's shots/ at the size asked, the picture reaching the model as an image,
+//    the page's frames listed, no card; no window is shown, and the user's own window stays where it was.
 // 4. Alpha edits a file of the installed plugin in place, under `<home>/plugins/<id>/`, with `Edit` and no card; about
 //    two seconds later the change is live with no new OK card: the tool answers with the new text.
 // 5. An edit that adds a capability pauses the plugin behind its sealed OK card at once (the coordinator's ruling: the
@@ -27,7 +30,7 @@ import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -224,6 +227,37 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const s = await ok(ctx, session, "PluginStatus", { id: WORKSHOP_ID });
     if (!/: running\b/.test(s.result.text.split("\n")[0] ?? "")) fail(`PluginStatus's first line is "${s.result.text.split("\n")[0]}"`);
     done.push("3 PluginStatus: running");
+  });
+
+  // 3b. A look at the app, as she would after building a page.
+  await stepOf("3b. AppScreenshot draws the Plugins page wide and narrow, with no card and no window shown", async () => {
+    const whereOf = async () => {
+      if (ctx.appCli === undefined) return undefined;
+      const r = await ctx.appCli(["where"]);
+      try { return JSON.stringify((JSON.parse(r.stdout) as { where?: unknown }).where); } catch { return `no JSON (${r.code})`; }
+    };
+    const before = await whereOf();
+    const said: string[] = [];
+    for (const [size, w, h] of [["wide", 1280, 820], ["narrow", 860, 820]] as const) {
+      const seen = ctx.requests().length;
+      const s = await ok(ctx, session, "AppScreenshot", { target: "plugins", size });
+      const head = `plugins drawn at ${w}x${h} (${size})`;
+      if (!s.result.text.startsWith(head)) fail(`AppScreenshot ${size} answered "${s.result.text.slice(0, 200)}"`);
+      const file = /^Saved: (.+\.png)$/m.exec(s.result.text)?.[1];
+      if (file === undefined || !file.startsWith(join(scratch, "shots") + "/")) fail(`AppScreenshot ${size} saved nothing under her scratch's shots/ ("${s.result.text.slice(0, 300)}")`);
+      const png = (() => { try { return readFileSync(file!); } catch { return undefined; } })();
+      if (png === undefined || png.length < 1000 || png.readUInt32BE(0) !== 0x89504e47) fail(`${file} isn't a PNG (${png?.length ?? 0} bytes)`);
+      const [pw, ph] = [png!.readUInt32BE(16), png!.readUInt32BE(20)];
+      if (pw !== w || ph !== h) fail(`${file} is ${pw}x${ph}, not ${w}x${h}`);
+      if (!/^Frames \(\d+\):$/m.test(s.result.text) || !s.result.text.includes("clover-plugin://clover")) fail(`AppScreenshot ${size} listed no frames of the page ("${s.result.text.slice(0, 300)}")`);
+      if (!ctx.requests().slice(seen).some((r) => (r.toolResult?.images ?? 0) >= 1)) fail(`AppScreenshot ${size}'s picture didn't reach the model as an image`);
+      said.push(`${size} ${pw}x${ph} ${png!.length} bytes`);
+    }
+    if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (AppScreenshot)");
+    if (!/render: a render window 1280x820 opened/.test(ctx.appLog())) fail("the app logged no render window for AppScreenshot");
+    const after = await whereOf();
+    if (before !== after) fail(`the user's window moved: ${before} -> ${after}`);
+    done.push(`3b AppScreenshot plugins: ${said.join(", ")}, an image to the model, no card${before !== undefined ? ", the user's window where it was" : ""}`);
   });
 
   // 4 to 6 don't hang on each other (1 to 3 make the plugin they use): each runs, and the row fails with every one that

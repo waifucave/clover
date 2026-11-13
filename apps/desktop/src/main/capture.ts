@@ -110,7 +110,9 @@ export function blit(base: Buffer, baseSize: Size, top: Buffer, topSize: Size, x
   }
 }
 
-async function captureOne(deps: CaptureDeps, name: string, win: WindowLike, params: AppCaptureParams): Promise<CapturedWindow> {
+/** One window's picture and frames. `fit`: the picture drawn at exactly that many pixels (a render window's asked size,
+ *  whatever the display's scale). */
+export async function captureOne(deps: CaptureDeps, name: string, win: WindowLike, params: AppCaptureParams, fit?: Size): Promise<CapturedWindow> {
   const bounds = win.getBounds();
   const visible = win.isVisible() && !win.isMinimized();
   const offscreen = win.webContents.isOffscreen();
@@ -147,6 +149,7 @@ async function captureOne(deps: CaptureDeps, name: string, win: WindowLike, para
     }
     image = deps.fromBitmap(bitmap, size);
   }
+  if (fit !== undefined && (image.getSize().width !== fit.width || image.getSize().height !== fit.height)) image = image.resize(fit);
   const max = deps.maxPngBytes ?? MAX_PNG_BYTES;
   let png = image.toPNG();
   let reduced = false;

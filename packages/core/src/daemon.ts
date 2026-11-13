@@ -47,7 +47,7 @@ import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcSe
 import { CloverFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
-import { appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
+import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
 import { usagePlansMethods } from "./usage/rpc";
@@ -247,7 +247,7 @@ export interface BrowserHostInjection {
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/clover-protocol";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { AppRenderResult, topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -4098,6 +4098,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // Lane B's plugin workshop (§5.6): a bot builds a plugin in its scratch, installs it for the user's OK, and edits
       // it in place afterwards under the workshop rule.
       ...(partsRegistry !== undefined ? { workshop: workshopFor(partsRegistry) } : {}),
+      // A bot's look at this computer's app (`AppScreenshot`): the app here draws the place (`app.window.render`).
+      appScreenshot: {
+        home: cloverHome,
+        render: async (params) => {
+          const app = (cloverServer?.connections() ?? []).find((c) => c.role === "app" && c.features.includes(APP_RENDER_FEATURE));
+          if (app === undefined || cloverServer === undefined) throw new Error((cloverServer?.connections() ?? []).some((c) => c.role === "app") ? "the app on this computer is older than AppScreenshot" : "the app isn't running on this computer");
+          const answer = AppRenderResult.safeParse(await cloverServer.ask(app, "app.window.render", params, APP_RENDER_TIMEOUT_MS));
+          if (!answer.success) throw new Error("the app's answer to app.window.render isn't one");
+          return answer.data;
+        },
+        ownPlugins: (bot) => (partsRegistry?.registry.list() ?? []).filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id),
+      },
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       // §6.6: the bots' voices stream from their voice plugins on the plugin host, and each piece goes to this

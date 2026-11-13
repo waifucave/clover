@@ -3,7 +3,7 @@
 // callbacks across a frame's edge, sizes, releases, the crash census and a reload's fresh token, each part themed by its
 // tab, and safe mode.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
@@ -18,13 +18,13 @@ function frame(url: string, parent: FrameRef | null = null, osPid = ++pid): Fram
   return { processId: osPid, routingId: ++pid, url, osPid, parent };
 }
 
-function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => number; log?: (line: string) => void } = {}) {
+function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => number; log?: (line: string) => void; render?: boolean } = {}) {
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
   const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
   const plugins = [...readUiPlugins([...cloverViews(), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
-  rt.openWindow(WIN, { material: "vibrancy" });
+  rt.openWindow(WIN, { material: "vibrancy", ...(opts.render ? { render: true } : {}) });
   const rootFrame = frame("clover-core://app/");
   const root = rt.describe(rootFrame, WIN, undefined);
   return { rt, sent, root, rootFrame };
@@ -999,8 +999,8 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
     fields: { title: { type: "text", text: "Run?" } }, options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
   });
-  function placed() {
-    const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)]);
+  function placed(render = false) {
+    const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)], { render });
     const shell = mountShell(s);
     const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     if (item.kind !== "frame") throw new Error("not a frame");
@@ -1039,6 +1039,50 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^clover-sealed:/);
     expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow();
     expect(heard).toEqual([["card_later", WIN, "not yet"], ["card_own", WIN, "absent"], ["card_own", WIN, "made"], ["card_other", WIN, "refused"]]);
+  });
+
+  // The render window's rule (AppScreenshot): where a pending card's sealed element would be, a plain placeholder of the
+  // same layout; never a minted frame, no step of the card's timing, nothing that answers.
+  test("in a render window a pending card's elements are placeholders: no mint, no ask heard, no answer bridge, served once", () => {
+    const { s, store, docFrame, mount } = placed(true);
+    const minted: string[] = [];
+    const mint = store.mint.bind(store);
+    store.mint = (...a: Parameters<SealedFrames["mint"]>) => { minted.push(a[1]); return mint(...a); };
+    store.onMinted = (cardId) => minted.push(`onMinted ${cardId}`);
+    const heard: string[] = [];
+    s.rt.onSealedAsk = (cardId, _w, outcome) => heard.push(`${cardId} ${outcome}`);
+    expect(s.rt.isRenderWindow(WIN)).toBe(true);
+    const button = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")!;
+    const field = s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:title")!;
+    expect(button).toMatch(/^clover-sealed:\/\/placeholder\/[0-9a-f]{24}$/);
+    expect(field).toMatch(/^clover-sealed:\/\/placeholder\/[0-9a-f]{24}$/);
+    // The same rules as a frame: a field the card lacks is nothing, a card not yet here is asked again, another bot's is refused.
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:nothing")).toBe("");
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_later", "button:allow_once")).toBeUndefined();
+    expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow("takes a card of this plugin's own bot");
+    expect({ minted, heard }).toEqual({ minted: [], heard: [] });
+    const page = s.rt.servePlaceholder(new URL(button).pathname.slice(1))!;
+    expect(page.html).toContain('<div class="seal-placeholder" aria-hidden="true">approval button</div>');
+    expect(page.html).toContain("visibility: hidden !important");
+    expect(page.html).toContain("cloverSealedSize");
+    expect(page.html).not.toContain("cloverSealed.");
+    expect(page.html).not.toContain("window.cloverSealed");
+    expect(page.html).toContain('class="seal-button'); // the real layout, hidden, so it takes the same room
+    expect(page.headers["Content-Security-Policy"]).toContain("connect-src 'none'");
+    expect(s.rt.servePlaceholder(new URL(button).pathname.slice(1))).toBeUndefined();
+    expect(s.rt.servePlaceholder(new URL(field).pathname.slice(1))!.html).toContain(">card field</div>");
+    // A placeholder's page gets no answer bridge: the preload gives `cloverSealed` to the card host alone.
+    expect(readFileSync(join(import.meta.dir, "../src/main/preload.ts"), "utf8")).toContain('where === "clover-sealed:" && location.host === "card"');
+    // The window going drops what it hadn't served.
+    const left = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:deny")!;
+    s.rt.closeWindow(WIN);
+    expect(s.rt.servePlaceholder(new URL(left).pathname.slice(1))).toBeUndefined();
+  });
+
+  test("an ordinary window still gets the live frame (the placeholder is the render window's alone)", () => {
+    const { s, docFrame, mount } = placed();
+    expect(s.rt.isRenderWindow(WIN)).toBe(false);
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")).toMatch(/^clover-sealed:\/\/card\//);
   });
 });
 
