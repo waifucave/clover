@@ -234,7 +234,9 @@ export class ModelPlugins {
     const server = createHostModelAdapterServer((id) => {
       const s = served.get(id);
       if (s === undefined) return undefined;
-      const adapter = pluginHostModelAdapter(this.#o.host, { pluginId: s.pluginId, handler: s.handler }, { caller: opts.caller, ...(opts.session !== undefined ? { session: opts.session } : {}), countTokens: s.description.countTokens });
+      const named = this.#o.registry.get(s.pluginId)?.manifest?.name;
+      const name = (typeof named === "string" ? named : named?.en) ?? s.pluginId;
+      const adapter = pluginHostModelAdapter(this.#o.host, { pluginId: s.pluginId, handler: s.handler }, { caller: opts.caller, ...(opts.session !== undefined ? { session: opts.session } : {}), countTokens: s.description.countTokens, name });
       if (connectionFor === undefined) return adapter;
       const fill = async <C extends { connection: HostModelAdapterContextConnection }>(ctx: C): Promise<C> => ({ ...ctx, connection: await connectionFor(s.pluginId, ctx.connection) });
       const filled: HostModelAdapter = {
