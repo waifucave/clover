@@ -71,7 +71,15 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const [rev, setRev] = useState(0);
   const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session, rev]);
   const kind = session?.kind ?? props.sessionKind;
-  const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind, rev]);
+  // The bot's own changes (its voice set or cleared in its settings, the user's layer) reload it, so the talk control follows them.
+  const [botRev, setBotRev] = useState(0);
+  useEffect(() => {
+    if (kind !== "bot") return;
+    return api.bots?.watch?.((b) => {
+      if (b.id === props.bot.id) setBotRev((n) => n + 1);
+    });
+  }, [api, props.bot.id, kind]);
+  const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind, rev, botRev]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
   const catalog = useLoad(() => host?.models(), [host]);
   // The draft is the user's: it outlives a reload of the window's document (installing or turning on a plugin with
@@ -152,7 +160,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       live = false;
       window.removeEventListener("focus", read);
     };
-  }, [host, props.bot.id, kind, voiceKey]);
+  }, [host, props.bot.id, kind, voiceKey, botRev]);
   const [listening, setListening] = useState(false);
   // A release that answers after a newer press began must not undo it.
   const hold = useRef(0);
