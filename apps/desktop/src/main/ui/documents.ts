@@ -117,6 +117,19 @@ export const CORE_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
+/** The one origin that may record: the bundled `clover` layer's, whose shell is the app's push-to-talk recorder (spec §6.6; the
+ *  app records and plugins never get the microphone). Every other document of the app's schemes keeps `microphone=()`. */
+export const MICROPHONE_ORIGIN = `${LAYER_SCHEME}://clover`;
+
+/** `headers` with the microphone policy opened to `allow` (`(self)` for the clover layer's own document, the layer's origin for
+ *  the core root that frames it); the iframe still needs `allow="microphone"` (root.ts), and main's permission handler
+ *  still answers only while the user's press has a recording open (listen.ts). */
+export function withMicrophone(headers: Record<string, string>, allow: "(self)" | `(self "${string}")`): Record<string, string> {
+  const policy = headers["Permissions-Policy"];
+  if (policy === undefined || !policy.includes("microphone=()")) return headers;
+  return { ...headers, "Permissions-Policy": policy.replace("microphone=()", `microphone=${allow}`) };
+}
+
 /** Headers every response on the app's schemes carries. */
 export function commonHeaders(): Record<string, string> {
   return {
@@ -147,8 +160,8 @@ export function webHeaders(): Record<string, string> {
 }
 
 /** The headers of a response on a layer's origin. A document (`text/html`) names the installed layers it may frame. */
-export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = [], wasm = false): Record<string, string> {
-  const h: Record<string, string> = { ...commonHeaders(), "Content-Type": contentType };
+export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = [], wasm = false, microphone = false): Record<string, string> {
+  const h: Record<string, string> = { ...(microphone ? withMicrophone(commonHeaders(), "(self)") : commonHeaders()), "Content-Type": contentType };
   const doc = contentType.startsWith("text/html");
   if (doc) h["Content-Security-Policy"] = layerCsp(hosts, wasm);
   if (doc || contentType.startsWith("text/javascript")) h["Connection-Allowlist"] = connectionAllowlist(hosts, doc ? layers : undefined);

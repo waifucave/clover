@@ -259,6 +259,19 @@ export class VoiceService {
     return { utterance, bytes, cut: signal.aborted };
   }
 
+  /** Whether a `voice.listen` for the bot would reach a listening voice now (`voice.status`): the bot has a voice, its
+   *  plugin's `voices` entry is installed and on, and that entry listens. The same lookup `listen` uses, so the app's
+   *  hold-to-talk control and the call never disagree; nothing is asked of the plugin and no card is raised. */
+  listens(bot: string): boolean {
+    const voice = this.#o.voiceOf(bot);
+    if (!voice) return false;
+    try {
+      return this.#entry(voice.provider).listen;
+    } catch {
+      return false;
+    }
+  }
+
   /** The user's `voice.stop`: ends the bot's utterance now, if one is being spoken. */
   stop(bot: string): void {
     this.#speaking.get(bot)?.abort();

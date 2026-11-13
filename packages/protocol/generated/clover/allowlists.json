@@ -127,6 +127,7 @@
       "usage.summary",
       "voice.listen",
       "voice.speak",
+      "voice.status",
       "voice.stop"
     ],
     "receives": [

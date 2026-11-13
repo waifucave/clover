@@ -1,5 +1,5 @@
 // Lane D's voice methods (protocol app area): `voice.listen`, the app's push-to-talk audio for a bot's listening voice
-// plugin, on the computer the user talks on (§6.6); `voice.stop`, the user ending a bot's speech; and `voice.speak`, the
+// plugin, on the computer the user talks on (§6.6); `voice.status`, whether the bot's voice listens; `voice.stop`, the user ending a bot's speech; and `voice.speak`, the
 // user asking to hear one past reply. `voice.play` goes the other way, from `VoiceService.speak`.
 // Owner: lane D.
 import { APP_METHODS, type SessionView } from "@waifucave/clover-protocol";
@@ -24,6 +24,7 @@ export function voicesMethods(deps: VoicesMethodsDeps): Record<string, MethodHan
       requireUser(ctx, "talk to a bot");
       return deps.voices.listen(p);
     }),
+    [M.voiceStatus.name]: handler(M.voiceStatus, async (p) => ({ listens: deps.voices.listens(p.bot) })),
     [M.voiceStop.name]: handler(M.voiceStop, async (p, ctx) => {
       requireUser(ctx, "stop a bot's speech");
       deps.voices.stop(p.bot);

@@ -14,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -24,6 +24,14 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); held = { ...held, model, ...(effort !== undefined ? { effort } : {}) }; },
     interrupt: async () => { host.push(["interrupt"]); },
     stop: async () => { host.push(["stop"]); },
+    ...(opts.listen
+      ? {
+          listenStatus: async () => ({ listens: opts.listen!.listens }),
+          // Recorded at once, as the host takes it: inside the press, or not at all.
+          listenStart: () => { host.push(["listenStart"]); return Promise.resolve(opts.listen!.start?.() ?? {}); },
+          listenStop: () => { host.push(["listenStop"]); return Promise.resolve(opts.listen!.stop?.() ?? {}); },
+        }
+      : {}),
     ...(opts.commands
       ? {
           commands: async () => ({ commands: opts.commands! }),
@@ -254,5 +262,76 @@ describe("the composer entry", () => {
     cleanup();
     await mount(session({ id: "s_other" }), { kept: new Map(atReload) });
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
+  });
+
+  describe("push-to-talk", () => {
+    const box = () => screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement;
+
+    test("the control shows only while the bot's voice listens (and only in a bot's conversation)", async () => {
+      await mount();
+      expect(screen.queryByRole("button", { name: "Hold to talk" })).toBeNull();
+      cleanup();
+      await mount(session({}), { listen: { listens: false } });
+      expect(screen.queryByRole("button", { name: "Hold to talk" })).toBeNull();
+      cleanup();
+      await mount(session({}), { listen: { listens: true } });
+      expect(screen.getByRole("button", { name: "Hold to talk" })).toBeTruthy();
+      cleanup();
+      await mount(session({ id: "agent-1", kind: "agent", parent: "s_alpha", backend: "Codex", model: "openai/gpt-6" }), { listen: { listens: true } });
+      expect(screen.queryByRole("button", { name: "Hold to talk" })).toBeNull();
+    });
+
+    test("a press asks the app to record, inside the press; the release puts what was heard in the box after what is there, to edit and send", async () => {
+      const { host, sends } = await mount(session({}), { listen: { listens: true, stop: () => ({ text: "check the staging deploy" }) } });
+      fireEvent.change(box(), { target: { value: "Please" } });
+      const mic = screen.getByRole("button", { name: "Hold to talk" });
+      fireEvent.pointerDown(mic, { pointerId: 1 });
+      // The host call is made in the press itself, not after an await, and the box says it is listening.
+      expect(host.filter((h) => h[0] === "listenStart")).toEqual([["listenStart"]]);
+      expect(screen.getByRole("status").textContent).toContain("Listening");
+      expect(box().readOnly).toBe(true);
+      fireEvent.pointerUp(mic, { pointerId: 1 });
+      await act(() => settle());
+      expect(host.filter((h) => h[0] === "listenStop")).toEqual([["listenStop"]]);
+      expect(box().value).toBe("Please check the staging deploy");
+      expect(box().readOnly).toBe(false);
+      // Nothing was sent by hearing; the user edits and sends.
+      expect(sends).toEqual([]);
+      fireEvent.change(box(), { target: { value: "Please check staging" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      await act(() => settle());
+      expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "Please check staging" } }]);
+    });
+
+    test("Ctrl+Shift+Space in the box does the same", async () => {
+      const { host } = await mount(session({}), { listen: { listens: true, stop: () => ({ text: "hello" }) } });
+      const chord = { key: " ", code: "Space", ctrlKey: true, shiftKey: true };
+      fireEvent.keyDown(box(), chord);
+      expect(host.filter((h) => h[0] === "listenStart").length).toBe(1);
+      fireEvent.keyUp(box(), { key: "Shift", code: "ShiftLeft" });
+      await act(() => settle());
+      expect(box().value).toBe("hello");
+    });
+
+    test("a start the app refuses says why by the box and stops showing it is listening; a release with nothing heard says why too", async () => {
+      await mount(session({}), { listen: { listens: true, start: () => ({ note: "Microphone access is off for Clover." }) } });
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }), { pointerId: 1 });
+      await act(() => settle());
+      expect(screen.getByRole("alert").textContent).toContain("Microphone access is off");
+      expect(screen.queryByRole("status")).toBeNull();
+      cleanup();
+      await mount(session({}), { listen: { listens: true, stop: () => ({ note: "Nothing was heard." }) } });
+      const mic = screen.getByRole("button", { name: "Hold to talk" });
+      fireEvent.pointerDown(mic, { pointerId: 1 });
+      fireEvent.pointerUp(mic, { pointerId: 1 });
+      await act(() => settle());
+      expect(screen.getByRole("alert").textContent).toContain("Nothing was heard.");
+      expect(box().value).toBe("");
+      cleanup();
+      await mount(session({}), { listen: { listens: true, start: () => Promise.reject(new Error("refused")) } });
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }), { pointerId: 1 });
+      await act(() => settle());
+      expect(screen.getByRole("alert").textContent).toContain("Recording didn't start");
+    });
   });
 });

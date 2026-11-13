@@ -1717,6 +1717,41 @@
         "additionalProperties": false
       }
     },
+    "voice.status": {
+      "doc": "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "listens": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "listens"
+        ],
+        "additionalProperties": false
+      }
+    },
     "voice.play": {
       "doc": "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
       "owner": "D",
