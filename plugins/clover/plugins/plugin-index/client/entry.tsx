@@ -177,7 +177,7 @@ export function toDetailSetting(s: SettingRow, lang = "en"): DetailSetting {
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[] },
+  more: { childTools?: string[]; settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[] },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
@@ -205,7 +205,8 @@ export function toDetail(
     ...(description ? { description } : {}),
     provenance: PROVENANCE[d.provenance.by] ?? "",
     oks,
-    tools: servers.flatMap(([, s]) => Object.keys(s.tools ?? {})),
+    // Its own tools and its child plugins' (a child's server is a tool the bots get like any other).
+    tools: [...servers.flatMap(([, s]) => Object.keys(s.tools ?? {})), ...(more.childTools ?? [])],
     servers: servers.filter(([, s]) => Object.keys(s.tools ?? {}).length === 0).map(([name]) => name),
     settings: (more.settings ?? []).map((s) => toDetailSetting(s, lang)),
     signIns: (more.auth ?? []).filter((a) => a.method !== "core").map((a) => ({
@@ -310,14 +311,19 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     let live = true;
     const quiet = <T,>(p: Promise<T>) => p.catch(() => undefined);
     void Promise.all([
-      core.call("plugin.get", { id: open }),
+      core.call("plugin.get", { id: open }).then(async (d) => {
+        // Its children's tools too: each child is a plugin of its own, with its own servers.
+        const kids = await Promise.all(d.plugin.children.map((c) => quiet(core.call("plugin.get", { id: c }))));
+        const childTools = kids.flatMap((k) => Object.values((k?.plugin.manifest as { contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }> } } | undefined)?.contributes?.mcpServers ?? {}).flatMap((s) => Object.keys(s.tools ?? {})));
+        return { d, childTools };
+      }),
       quiet(core.call("plugin.settings.get", { id: open })),
       quiet(core.call("plugin.auth.list", { id: open })),
       quiet(core.call("plugin.logs", { id: open, lines: 200 })),
       quiet(core.call("notify.mutes", {})),
       quiet(core.call("plugin.grant.list", { pluginId: open })),
     ]).then(
-      ([d, settings, auth, logs, mutes, grants]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}) }, "en", icons)),
+      ([{ d, childTools }, settings, auth, logs, mutes, grants]) => live && setDetail(toDetail(d.plugin, { childTools, ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}) }, "en", icons)),
       () => live && setOpen(null),
     );
     return () => {

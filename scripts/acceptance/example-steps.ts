@@ -150,7 +150,7 @@ export async function installFromPage(ctx: ExampleCtx, folder: string, id: strin
 const stateOf = async (rpc: CloverClient, id: string) => (await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state;
 
 /** Opens a plugin's detail on the Plugins page (Installed → its row's Open). */
-async function openDetail(cdp: Cdp, name: string): Promise<void> {
+export async function openDetail(cdp: Cdp, name: string): Promise<void> {
   await pluginsPage(cdp, "Installed");
   await clickTree(cdp, `Open ${name}`, `button[aria-label=${JSON.stringify(`Open ${name}`)}]`);
 }

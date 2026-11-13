@@ -79,6 +79,7 @@ import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-hos
 import { pluginUi } from "./plugin-host/ui";
 import { registryEvents } from "./plugin-host/registry-events";
 import { uiSettingsMethods } from "./plugin-host/ui-settings";
+import { CoreNotices } from "./notify/core-updates";
 import { notifyLayerMethods, notifyMuteMethods, NotifyService, type DesktopPort } from "./notify/service";
 import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
 import type { MethodContext, MethodHandler } from "./rpc/handler";
@@ -4090,7 +4091,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         partsRegistry?.folders.setBotNames((id) => (side.bots.has(id) ? plainText(side.bots.effective(id).name) : undefined));
         const offBots = side.bots.onEvent((e) => { if (e.type === "bot_removed") shellGrants?.forgetBot(e.id); });
         const offEnded = side.host.watch((view) => { if (view.status === "stopped" || view.status === "failed") shellGrants?.forgetSession(view.id); });
-        return () => { offBots(); offEnded(); };
+        // The core's own updates for the notifiers (a bot's message, an agent's report, a routine's result, a card or a
+        // question that waits), through the notify service (`notify/core-updates.ts`).
+        const notices = notifyService === undefined ? undefined : new CoreNotices({ host: side.host, sink: notifyService, log: (line) => console.error(line) });
+        return () => { offBots(); offEnded(); notices?.close(); };
       },
       registry: registry,
       // The drop: the folders bots made in the plugins folder that the registry hasn't recorded yet (the fence lets their

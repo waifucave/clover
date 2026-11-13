@@ -1,1 +1,1 @@
-{ "extends": "../tsconfig.base.json", "include": ["."], "exclude": ["acceptance/fixtures/*/client"] }
+{ "extends": "../tsconfig.base.json", "include": ["."], "exclude": ["acceptance/fixtures/*/client", "acceptance/fixtures/*/plugins/*/client"] }

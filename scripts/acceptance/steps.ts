@@ -6,6 +6,7 @@ import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
+import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -57,6 +58,8 @@ export const FULL_STEPS = [
   CARDS_STEP,
   WORKSHOP_STEP,
   TAB_FLASH_STEP,
+  CHILD_STEP,
+  NOTIFY_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",
@@ -93,10 +96,10 @@ export function stepNumber(steps: readonly string[], name: string): number {
  *  order. A step nothing recorded reads BLOCKED "not reached"; a step recorded more than once (two steps took the same
  *  number: a harness bug) reads FAIL and names every result, so the clash shows instead of one row silently replacing
  *  another; a result for a number outside the table is dropped. */
-export function finishTable(recorded: readonly Row[], steps: readonly string[], only?: number): Row[] {
+export function finishTable(recorded: readonly Row[], steps: readonly string[], only?: number | readonly number[]): Row[] {
   const out: Row[] = [];
   for (let n = 1; n <= steps.length; n++) {
-    if (only !== undefined && n !== only) continue;
+    if (only !== undefined && !(typeof only === "number" ? n === only : only.includes(n))) continue;
     const mine = recorded.filter((r) => r.n === n);
     const name = steps[n - 1]!;
     if (mine.length === 0) out.push({ n, name, status: "BLOCKED", detail: "not reached" });
