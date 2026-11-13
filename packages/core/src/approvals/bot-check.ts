@@ -26,6 +26,7 @@ import { fenceContextFor, type Fence } from "../contracts/fence";
 import type { CloverApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
 import { FETCHES_PER_DOMAIN, FETCHES_PER_TURN, normalUrl, type FetchBudget } from "./seen-urls";
+import { browserActionWords, type ReadElement } from "./browser-words";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
 import { secretPlaceOf, secretReadRefusal } from "../fence/secret-reads";
 import { rootCovered, runLaterByName } from "../fence/sandbox-settings";
@@ -416,6 +417,8 @@ export function botApprovalCheck(
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
     /** The site the bot's own browser tab is on (the host of its address), or undefined: it has no tab. */
     browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>;
+    /** What the session's last Browser `read` said a ref was (its role and name), for the card's words. */
+    browserElement?: (ctx: BotSessionContext, ref: string) => ReadElement | undefined;
     /** Whether a plugin's MCP tool is one its OK'd manifest declares display-only (the daemon's: the router's binding,
      *  then `pluginToolContained`, asked at each call): a contained call, which the broker judges after its fence,
      *  card-every-time and unresolved-path rules. */
@@ -501,6 +504,7 @@ export function botApprovalCheck(
     });
     if (known.ruleKey !== undefined) req.ruleKey = known.ruleKey;
     if (known.what !== undefined) req.fields.what = { type: "code", code: plainOf(known.what) };
+    if (known.command !== undefined) req.fields.command = { type: "code", code: plainOf(known.command) };
     if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
     if (known.cardAlways === true) req.cardAlways = true;
     // A bot's agent's call to a plugin tool (agents/plugin-reach.ts): its bot's saved rules answer it as they would the
@@ -689,6 +693,8 @@ interface Known {
   host?: string;
   /** A card every time, with no "always" (`CloverApprovalRequest.cardAlways`). */
   cardAlways?: boolean;
+  /** The card's `command` line, as code: a Browser acting card's act in plain language (`browser-words.ts`). */
+  command?: string;
   /** The fetch's place in its turn's budget. */
   budget?: FetchBudget;
 }
@@ -706,6 +712,8 @@ function knownEffect(
     messageTarget?: (ctx: BotSessionContext, to: string) => MessageTarget | undefined;
     levelOf?: (computer: string) => Level | undefined;
     browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>;
+    /** What the session's last Browser `read` said a ref was (its role and name), for the card's words. */
+    browserElement?: (ctx: BotSessionContext, ref: string) => ReadElement | undefined;
   },
 ): Known | Promise<Known> {
   if (hostTools.has(tool)) {
@@ -746,18 +754,22 @@ function knownEffect(
  *  other kept answers); at "ask" every acting call is a card. With no tab to name the site, a card every time. */
 async function browserKnown(
   ctx: BotSessionContext, tool: string, input: Record<string, unknown>,
-  opts: { levelOf?: (computer: string) => Level | undefined; browserHost?: (ctx: BotSessionContext) => Promise<string | undefined> },
+  opts: { levelOf?: (computer: string) => Level | undefined; browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>; browserElement?: (ctx: BotSessionContext, ref: string) => ReadElement | undefined },
 ): Promise<Known> {
   const verb = typeof input.verb === "string" ? input.verb : "";
   if (!BROWSER_ACTING_VERBS.has(verb)) return { effect: "read" }; // looking, or a verb the tool refuses itself
   const host = await opts.browserHost?.(ctx).catch(() => undefined);
-  // A user's coding session has no bot (`botId` undefined): the card and the kept rule are that session's own.
-  const botId = typeof ctx.botId === "string" && ctx.botId !== "" ? ctx.botId : undefined;
-  const name = botId === undefined ? "this coding session" : botId.charAt(0).toUpperCase() + botId.slice(1);
-  const what = host === undefined ? `Let ${name} click and type in its browser tab` : `Let ${name} click and type on ${host}`;
+  // A user's coding session has no bot: its kept rule is keyed by the site alone, so one "Always allow" holds for every
+  // coding session of the user's on this computer (the card's sentence says that, from the rule's empty bot).
+  // `Browser: …` names the card's tool and what it asks for; the card's sentence reads "<who> wants to click and type on <site>".
+  const what = host === undefined ? `Browser: click and type in its browser tab` : `Browser: click and type on ${host}`;
   const level = ctx.level ?? opts.levelOf?.(ctx.computer);
-  if (host === undefined || level === "ask") return { effect: "screen", what, cardAlways: true };
-  return { effect: "screen", what, ruleKey: `${OTHER_TOOL_KEY}${tool}(${host})` };
+  // The card's own words: what it asks for ("click and type on <site>") and the act, from the element the session's last read listed.
+  const ref = typeof input.ref === "string" ? input.ref.trim().toLowerCase() : undefined;
+  const element = ref === undefined || ref === "" ? undefined : opts.browserElement?.(ctx, ref);
+  const command = browserActionWords(input, element);
+  if (host === undefined || level === "ask") return { effect: "screen", what, cardAlways: true, command };
+  return { effect: "screen", what, command, ruleKey: `${OTHER_TOOL_KEY}${tool}(${host})` };
 }
 
 /** A `SendMessage`: contained to the bot's own sessions and to a session at a level no wider than the bot's; to any

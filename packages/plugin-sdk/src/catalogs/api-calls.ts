@@ -105,7 +105,7 @@ export const API_CALLS = {
    *  is for drives the Clover Browser, under its own rules; the bundled panel's component acts for the person and alone
    *  places a tab in a view and hears the tabs change. A third-party plugin's `browser` isn't served: raw DevTools on the
    *  person's signed-in pages is more than an OK card's one line can carry. */
-  "browser.toolCaller": BROWSER, "browser.tabs": BROWSER, "browser.open": BROWSER,
+  "browser.toolCaller": { capability: "browser", where: "host" }, "browser.tabs": BROWSER, "browser.open": BROWSER,
   "browser.close": BROWSER, "browser.navigate": BROWSER,
   "browser.show": BROWSER, "browser.hide": BROWSER, "browser.screenshot": BROWSER, "browser.cdp": BROWSER,
   /** Components only: a listener can't cross a call, so the panel hears the tabs change as the core's `tab_changed` and

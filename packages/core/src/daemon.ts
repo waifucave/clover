@@ -1,3 +1,4 @@
+import { ReadElements } from "./approvals/browser-words";
 import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { CLOVER_VOICE } from "./voices/slot";
@@ -226,7 +227,7 @@ import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, run
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
-import { MigrationCRefused, finishMigrationC, isOldLayout, migrationCManifestPath, migrationCState, runMigrationC } from "./migration/migrate-c";
+import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
 import { localScopeKeyFor, projectScopeRootFor, projectScopeTrust, projectScopeTrusted, runHomeInputFor } from "./runtime-sdk/run-home-input";
 import { reservedMcpServerNames } from "./capabilities/names";
@@ -983,10 +984,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // other home in the old layout refuses boot until `clover migrate --sdk-home --home <dir>` runs. A
   // preflight refusal refuses BOOT — the supported build must never start writing `sdk/projects` while
   // `<home>/projects` still holds the store. Phase 2 runs at the late site, once the router exists.
-  if (linkedRouterSupportsRunHome() && isOldLayout(home)) {
+  // A home that is not the old layout and holds no Migration C manifest is marked current here, before anything of
+  // this boot writes a folder the old layout names (`agents/` takes botless agents' transcripts): from then on it is
+  // never read as the old layout, whatever it holds.
+  const oldLayout = linkedRouterSupportsRunHome() ? oldLayoutMarkers(home) : [];
+  if (linkedRouterSupportsRunHome() && oldLayout.length === 0 && migrationCState(home).kind === "absent" && !markCurrentLayout(home)) {
+    console.error(`migration C: couldn't mark ${home} as the current layout`);
+  }
+  if (oldLayout.length > 0) {
     try {
+      console.error(`migration C: ${home} reads as the old layout: ${oldLayout.join("; ")}`);
       if (!isDefaultCloverHome(home, profile, opts.migration?.homedirOverride)) {
-        throw new MigrationCRefused("sdk_home_migration_required", `migration C: ${home} is in the old layout and is not the profile's default home — stop, then run \`clover migrate --sdk-home --home ${home}\``);
+        throw new MigrationCRefused("sdk_home_migration_required", `migration C: ${home} is in the old layout (${oldLayout.join("; ")}) and is not the profile's default home — stop, then run \`clover migrate --sdk-home --home ${home}\``);
       }
       await runMigrationC(home, { log: (line) => console.error(line), reconcileAvailable: true, convertLegacyPlugins: convertLegacyPluginsForMigration });
     } catch (err) {
@@ -995,6 +1004,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       throw err;
     }
   }
+
+  // A home an earlier build migrated has `agents` as a link to `sdk/agents`, through which no botless agent's transcript
+  // is written: it becomes a real folder again, its transcripts moved back (`repairAgentsLink`; idempotent, never throws).
+  if (linkedRouterSupportsRunHome()) repairAgentsLink(home, (line) => console.error(line));
 
   // WS-21 (spec §4.1, §8): the settings split — every boot, every home, every build (the runtime-facing
   // keys are read from `sdk/` only since L3.2). Under the lock, before anything reads them. Once per key;
@@ -4190,6 +4203,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // the bot's conversation or routine run it came from, whatever kind it is.
     let sessionsOf: (() => { get(id: string): { kind: string; parent?: string } | undefined } | undefined) | undefined;
     // Before the bot side is up no root can be known: no budget then, never a fresh one.
+    const readElements = new ReadElements();
     const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
     // The conversations' shell grants (lane C's `SandboxGrants`, made with the drivers): a removed bot's go with it, and
     // a conversation's own when it ends.
@@ -4356,6 +4370,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           }),
           bundledTool,
           // The site a bot's own browser tab is on, for the one card its acting calls ask per bot and site.
+          browserElement: (ctx, ref) => readElements.get(ctx.sessionId, ref),
           browserHost: async (ctx) => {
             const svc = daemonParts?.browser?.service;
             if (svc === undefined) return undefined;
@@ -4435,7 +4450,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         observe: {
           turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId, origin, ctx.kind === "side-thread"); },
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
-          toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
+          toolResult: (ctx, tool, response) => {
+            const kind = bundledTool(ctx, tool);
+            if (kind === "web-search") seenUrls.searchResult(ctx.sessionId, response);
+            else if (kind === "browser") readElements.note(ctx.sessionId, response);
+          },
           tasks: (ctx, live) => { if (live > 0) liveTasks.set(ctx.sessionId, live); else liveTasks.delete(ctx.sessionId); },
         },
         // The core tools (lane D's, lane K's Agent and TaskStop), and lane C's `RequestAccess` where a broker can raise its cards.

@@ -505,3 +505,10 @@ describe("hosts from settings (#187's review)", () => {
     expect(underSharedHosting("example.com")).toBe(false);
   });
 });
+
+describe("browser.toolCaller", () => {
+  test("is the tool's host half's call only, so no component is offered it", () => {
+    expect(API_CALLS["browser.toolCaller"]).toEqual({ capability: "browser", where: "host" });
+    expect(API_CALLS["browser.tabs"]?.where).toBe("both");
+  });
+});
