@@ -24,7 +24,7 @@ const calls = API_CALLS as Record<string, ApiCallInfo>;
 
 const TOOL_NAMES = ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus"];
 /** The framing variables a bot's layout sets for Clover's own avatar renderers (plugin-ui, "Fitting the space you get"). */
-const AVATAR_FRAMING = ["--clover-avatar-crop", "--clover-avatar-headroom"];
+const AVATAR_FRAMING = ["--clover-avatar-framing", "--clover-avatar-crop", "--clover-avatar-headroom"];
 const ENTRY = "building-plugins";
 
 describe("every skill", () => {
@@ -238,27 +238,33 @@ test("the entry skill's move-into-the-plugins-folder line matches a build with t
 // renderer, and the framing variables only Clover's own renderer reads from its own element.
 describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => {
   const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
-  test("a frame is as wide as its place and as tall as its content says", () => {
+  test("main, panel and avatar frames fill their column and scroll themselves; every other frame is as tall as its content says", () => {
     const sdk = read("packages/plugin-sdk/src/ui/index.tsx");
-    expect(sdk).toContain('style={{ display: "block", border: 0, width: "100%", height: height === undefined ? undefined : `${height}px`');
+    expect(sdk).toContain('const FILL_SPOTS: readonly string[] = ["main", "panel", "avatar"];');
+    expect(sdk).toContain('const FILL_STYLE: CSSProperties = { height: "100%", flex: "1 1 0", minHeight: 0 };');
+    expect(sdk).toContain('...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` })');
     expect(sdk).toContain('if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);');
     expect(sdk).toContain("for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);");
     expect(sdk).toContain('style={{ display: "contents" }}');
+    expect(read("apps/desktop/src/layer/layer.css")).toContain('html[data-clover-spot="main"] body, html[data-clover-spot="panel"] body { overflow: auto; }');
     expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("height: Math.max(0, Math.min(100_000, Math.round(height)))");
-    expect(read("apps/desktop/src/layer/layer.css")).toContain("html, body, #clover-root { margin: 0; height: 100%;");
   });
-  test("the fixed boxes, the narrow window and the stage's props", () => {
+  test("the fixed boxes, the narrow window, and the stage's props with its framing", () => {
     expect(read("plugins/clover/plugins/shell/client/styles.css")).toMatch(/\.cl-window__sidebar-content iframe \{[^}]*height: 100% !important;/);
     expect(read("plugins/clover/plugins/sidebar/client/styles.css")).toMatch(/\.cl-sidebar__app-badge > iframe \{\s*width: 48px;\s*height: 18px;/);
     expect(read("plugins/alpha/tab/layout.css")).toContain(".alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }");
-    expect(read("plugins/clover/plugins/shell/client/Shell.tsx")).toContain('const q = "(max-width: 899px)";');
-    const stage = read("packages/plugin-sdk/src/catalogs/spots.ts");
-    expect(stage).toContain('props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() })');
-    const vrm = read("plugins/clover/plugins/vrm/src/ui/VrmAvatar.tsx");
-    for (const v of AVATAR_FRAMING) expect({ v, read: vrm.includes(`num("${v}")`) }).toEqual({ v, read: true });
-    expect(text("plugin-ui")).toContain("## Fitting the space you get");
+    expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("export const NARROW_BELOW = 900;");
+    expect(read("packages/plugin-sdk/src/ui/bridge.ts")).toContain("window: { narrow: boolean };");
+    const stage = read("plugins/clover/plugins/character/client/stage.tsx");
+    for (const v of AVATAR_FRAMING) expect({ v, read: stage.includes(`"${v}"`) }).toEqual({ v, read: true });
+    expect(stage).toContain("export interface AvatarFraming { mode?: \"full\" | \"bust\" | \"waist\"; crop?: number; headroom?: number }");
+    expect(read("packages/plugin-sdk/src/catalogs/spots.ts")).toContain('props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() })');
+    const flat = text("plugin-ui").replace(/\s+/g, " ");
+    expect(flat).toContain("`useMountContext().window.narrow` says so, and changes live");
+    expect(flat).toContain("`framing: { mode?, crop?, headroom? }`");
   });
 });
+
 
 // plugin-loop's crash-stop line (lane B's 2c5e2c6ab): the note's words, a child named by its own id, the fixed tree
 // starting again with a fresh count, and the third stop in an hour said so. Fails on a build without it.
@@ -271,4 +277,17 @@ test("plugin-loop's crash-stop line matches the plugin host's notice and restart
   const flat = text("plugin-loop").replace(/\s+/g, " ");
   expect(flat).toContain("fix the code in place, and it starts again by itself with a fresh count");
   expect(flat).toContain("If the note says it is the third stop within an hour, stop editing");
+});
+
+// plugin-loop's `instructions` line and the builder's view in Glossary (lane A's 896f4a55a): a plugin loaded by id
+// answers its MCP servers' instructions and an index of its tools, callable at once up to PLUGIN_LOAD_MAX_TOOLS, and a
+// plugin a bot built that doesn't run is listed to that bot with where its log is. Fails on a build without it.
+test("plugin-loop's Glossary lines match what loading a plugin answers", () => {
+  const glossary = readFileSync(join(ROOT, "packages/core/src/runtime-sdk/turn-loop/glossary.ts"), "utf8");
+  expect(glossary).toContain("export const PLUGIN_LOAD_MAX_TOOLS = 50;");
+  expect(glossary).toContain("which you built: ${why}. PluginStatus ${p.id} has the log.");
+  const flat = text("plugin-loop").replace(/\s+/g, " ");
+  expect(flat).toContain("Give your plugin's MCP server an `instructions` file (`contributes.mcpServers.<name>.instructions`");
+  expect(flat).toContain("a plugin with 50 tools or fewer has them callable at once");
+  expect(flat).toContain("with its state and a line saying the status tool has its log");
 });

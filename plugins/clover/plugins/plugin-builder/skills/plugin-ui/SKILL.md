@@ -125,24 +125,31 @@ screen, not the parts around you.
 - **Width** is the place's: the frame is as wide as the column or slot its spot gives it, and changes when that does
   (the main area as the window or the sidebar changes, a Settings section's column, an equal share of the status bar's
   row with its other entries).
-- **Height** is your content's, almost everywhere: Clover measures the bottom of your page's top elements as they
-  change and sizes the frame to it (up to 100,000 px). So never size your root by `100vh` or `height: 100%` in such a
-  spot: those mean your frame, which is as tall as you say, and it stays at its first 150 px. Let your content decide.
+- **Height in the main area and a panel** (`main`, `panel`) is the column's: your frame fills it, and your page
+  scrolls inside itself (Clover makes your document's body scroll there). So an app's page can be laid out like an
+  editor: `height: 100vh` for its root, a toolbar and a pinned footer, and the middle scrolling on its own.
+- **Height everywhere else** is your content's: Clover measures the bottom of your page's top elements as they change
+  and sizes the frame to it (up to 100,000 px). So in a Settings section, the status bar or another plugin's spot,
+  never size your root by `100vh` or `height: 100%`: those mean your frame, which is as tall as you say, and it stays
+  at its first 150 px. Let your content decide.
 - **A fixed box**, set by the host, in a few places: the sidebar card a bot's child plugin fills (`sidebar`, with
   `when.bot`) is the card's whole height; a `sidebar.app` badge is 48 x 18; and a plugin that hosts others may size the
   frames in its own spot from its own stylesheet (`.slot > iframe { height: 72px !important }`: a `Spot` adds no
   element of its own, so the frame is a direct child of what holds it). Alpha's tab does so for her figure and room.
   In a fixed box, `100%` is that box, and short boxes are real: draw less, not smaller.
 - **A narrow window** (the main window under 900 px) rests a floating sidebar as a narrow rail, so the main area keeps
-  most of its width. Your frame only sees its own width change; nothing tells a part that the window itself is narrow.
+  most of its width. `useMountContext().window.narrow` says so, and changes live: fold your layout the way the shell
+  folds its own (your own box may barely change).
 - **What a host passes a nested part**: props (plain data, through `Spot`'s `props`) and the size of the frame (its
-  stylesheet). CSS variables don't cross into another plugin's frame. The stage hands an avatar renderer `{ bot, file,
-  format, name, speaking }`. Clover's own renderers draw in the stage's document and read the layout's framing from CSS
-  variables on their element (`--clover-avatar-crop`, `--clover-avatar-headroom`); a renderer from another plugin, in a
-  frame, doesn't see those, so it frames the figure by its own box (its width, and the height its host gives it).
+  stylesheet). CSS variables don't cross into another plugin's frame, so a host reads them and passes the values. The
+  stage does so for an avatar renderer: its frame fills the stage, and its props hold `{ bot, file, format, name,
+  speaking }` and `framing: { mode?, crop?, headroom? }`, the layout's `--clover-avatar-framing` (`full`, `bust`,
+  `waist`), `--clover-avatar-crop` and `--clover-avatar-headroom`, read again as the stage resizes. A renderer frames
+  the figure by its own box and that `framing`.
 
-plugin-examples, "A page that fits its space" (`ex-fit`, `ex-fit-tile`), switches a layout at a width and hides a
-secondary line when its box is short.
+plugin-examples, "A page that fits its space" (`ex-fit`, `ex-fit-tile`): an editor-shaped page that fills the main
+area, pins its footer, scrolls its middle and folds when the window is narrow, and a tile that hides a secondary line
+when its box is short.
 
 ## What a layer can and can't do
 
