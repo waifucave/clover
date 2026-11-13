@@ -59,6 +59,8 @@ interface Ctx {
   uiSettings(): { appearance?: string };
   /** Sets the window's dark or light (the renders; the app follows a file the run writes). */
   setAppearance?(scheme: "dark" | "light" | "system"): void;
+  /** Main presses a key chord in the window (`webContents.sendInputEvent`), from a file the build watches. */
+  pressKey?(key: string, modifiers: string[]): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
   /** Only these window steps run (`--only-ui`), by their place in UI_STEPS; the others are skipped, not recorded. */
@@ -1264,23 +1266,20 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         if (line !== "Hallo aus dem Fixture" && line !== "Hello from the fixture") fail(`its page's t() line reads ${JSON.stringify(line)}, not one of its two strings`);
         translated = `its page's t() line read ${JSON.stringify(line)} (the app's language couldn't be set on this core)`;
       }
-      // A command's default key (§5.4 `commands[].key`): the fixture's `ping` names mod+shift+y. The press is a real key press
-      // in the window (CDP's trusted input, which main's before-input-event sees as the user's); main runs the command
+      // A command's default key (§5.4 `commands[].key`): the fixture's `ping` names mod+shift+y. The press is main's own
+      // `sendInputEvent` in the window (CDP key events never reach the window's before-input-event, as the first runs showed),
+      // which its before-input-event sees as a key press; main runs the command
       // as the user, its host half tells the page, and the page shows a count. A press before main has read the
       // commands' keys is lost, so it is pressed again until the page counts one.
       const keyShell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
-      const chord = process.platform === "darwin" ? 4 | 8 : 2 | 8;
       let presses = 0;
       let pinged = "0";
       await until("its key to run its command", 40_000, async () => {
         pinged = await pageRead("document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-pinged') ?? ''");
         if (pinged !== "" && pinged !== "0") return true;
         presses += 1;
-        // The press goes to the window's top document (the app root) and, on every other try, to the shell's frame: whichever
-        // target the browser's input path takes it from, main's before-input-event sees it as the user's.
-        const root = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
-        const target = presses % 2 === 1 && root !== undefined ? root.session : keyShell.session;
-        for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Y", code: "KeyY", windowsVirtualKeyCode: 89, modifiers: chord }, target).catch(() => undefined);
+        if (ctx.pressKey === undefined) fail("this run can't press a key in the window");
+        ctx.pressKey!("Y", [process.platform === "darwin" ? "meta" : "control", "shift"]);
         await sleep(1_500);
         return undefined;
       }, async () => `its page counts ${JSON.stringify(pinged)} after ${presses} press(es); the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-3).join(" | ") || "no keys: line"}`);
