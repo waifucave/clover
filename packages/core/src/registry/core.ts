@@ -63,6 +63,15 @@ export interface RegistryCoreOptions {
   now?: () => number;
   /** A plugin's OK was answered or a folder changed: the folder layer keeps the OK'd tree's snapshot. */
   onOk?: (id: string, treeHash: string) => void;
+  /** This computer's platform, for plugins' `platforms` (`thisPlatform()`); absent, none is held to it. */
+  platform?: string;
+}
+
+/** This computer's platform as a manifest's `platforms` names it (`darwin-arm64`, `windows-x64`, `linux-x64`,
+ *  `linux-arm64`); another (an Intel Mac) is named the same way and matches no list that leaves it out. */
+export function thisPlatform(): string {
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : process.platform;
+  return `${os}-${process.arch}`;
 }
 
 interface Held {
@@ -437,7 +446,7 @@ export class RegistryCore implements PluginRegistry {
     }
     this.#persist(ids);
     const before = this.#snap;
-    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability });
+    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability, ...(this.#o.platform !== undefined ? { platform: this.#o.platform } : {}) });
     const changes = registryChanges(before, this.#snap);
     for (const change of changes) this.#listeners.emit(change);
     // A plugin whose tree changed under the same id (an update applied, a folder edited) and is still there, when the

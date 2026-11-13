@@ -1,8 +1,9 @@
 // Manifest fields over the REAL registry (checklist row 26): `enabledByDefault` on a child decides whether it is on after
 // its tree's OK; `scope` (bots, agents, both) decides which sessions get a plugin's MCP servers (PluginMcp over the real
 // registry, a stand-in host for the servers); `locales` reach the app's view of the plugin (its language files). Temp
-// homes, the fake approval broker and an in-memory secret store; nothing opens a window. `platforms` and `onlyBackends`
-// aren't here: nothing in the core reads them yet (the checklist says so).
+// homes, the fake approval broker and an in-memory secret store; nothing opens a window. `onlyBackends`: an agent on a
+// backend its list leaves out gets none of the plugin's servers (or its skills, agent definitions and hooks, which read
+// the same rule); bots aren't narrowed by it. `platforms` has its own real-host test (plugin-host/tests/platforms.test.ts).
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { uiPluginViews } from "../../plugin-host/ui";
+import { servesBackend } from "../../runtime-sdk/turn-loop/only-backends";
 import { PluginMcp } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { openPluginRegistry } from "../open";
 
@@ -93,6 +95,38 @@ describe("manifest fields over the real registry", () => {
       expect(plugins("side-thread")).toEqual(["for-all", "for-bots"]);
       expect(plugins("agent")).toEqual(["for-agents", "for-all"]);
       expect(plugins("coding")).toEqual(["for-agents", "for-all"]);
+    } finally {
+      mcp.close();
+      w.opened.close();
+    }
+  });
+
+  test("onlyBackends: an agent on a backend the list leaves out gets none of the plugin; bots and other backends do", async () => {
+    const plugin = (id: string, only?: string[]) => ({
+      manifest: 1, id, name: id, version: "1.0.0", engines: ENGINES, host: { entry: "host/index.js" },
+      ...(only !== undefined ? { onlyBackends: only } : {}),
+      contributes: { mcpServers: { srv: { type: "host" } } },
+    });
+    const w = await world({
+      "cc-only/clover.json": plugin("cc-only", ["claude-code"]), "cc-only/host/index.js": "export {};\n",
+      "cc-and-clover/clover.json": plugin("cc-and-clover", ["claude-code", "clover"]), "cc-and-clover/host/index.js": "export {};\n",
+      "any/clover.json": plugin("any"), "any/host/index.js": "export {};\n",
+    });
+    const mcp = new PluginMcp({ registry: w.opened.registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
+    try {
+      for (const id of ["cc-only", "cc-and-clover", "any"]) await w.approve(id);
+      await mcp.refresh();
+      const plugins = (kind: "bot" | "agent" | "coding", backend?: string) => mcp.servers(kind, backend).map((s) => s.plugin).sort();
+      // Clover's own backend (a bot's delegation, the user's coding session): not the Claude-Code-only plugin.
+      expect(plugins("agent")).toEqual(["any", "cc-and-clover"]);
+      expect(plugins("coding")).toEqual(["any", "cc-and-clover"]);
+      // Claude Code: all three; Codex: only the one with no list.
+      expect(plugins("agent", "claude-code")).toEqual(["any", "cc-and-clover", "cc-only"]);
+      expect(plugins("agent", "codex")).toEqual(["any"]);
+      // A bot isn't an agent backend: it gets all three.
+      expect(plugins("bot")).toEqual(["any", "cc-and-clover", "cc-only"]);
+      // The one rule the hooks and the glossary read too.
+      expect([servesBackend(w.opened.registry, "cc-only", "agent", "codex"), servesBackend(w.opened.registry, "cc-only", "agent", "claude-code"), servesBackend(w.opened.registry, "cc-only", "side-thread")]).toEqual([false, true, true]);
     } finally {
       mcp.close();
       w.opened.close();
