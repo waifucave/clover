@@ -6,7 +6,7 @@
 // definitions are placed in Claude Code's per-session plugin folder and leave it when their plugin goes off; Glossary
 // on the bridge serves the same scope. Temp homes, the fake broker, an in-memory secret store; nothing opens a window.
 import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -279,5 +279,31 @@ describe("a plugin's skills and agent definitions for an agent", () => {
     // Its tools are the bridge's names.
     const t = await glossary("s", { query: "toolbox" }, facts());
     expect(t.results).toEqual(expect.arrayContaining([expect.objectContaining({ name: TOOL, kind: "tool" })]));
+  });
+});
+
+describe("Alpha's persona stays hers", () => {
+  test("her skills and agent definitions (her own and her extras') reach bots, never a coding session or another agent", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-b-alpha-"));
+    temps.push(home);
+    // Alpha as Clover ships her: from a bundled folder (a copy of the repository's), which asks for no OK.
+    const bundled = join(home, "bundled");
+    cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "alpha"), join(bundled, "alpha"), { recursive: true, filter: (src) => !src.includes("node_modules") });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", bundledDirs: [bundled], broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    closers.push(() => opened.close());
+    for (let i = 0; i < 250 && !["running", "enabled"].includes(String(opened.registry.get("alpha")?.state)); i++) await Bun.sleep(20);
+    await opened.registry.setEnabled("alpha/extras", true);
+    const active = (point: string) => opened.registry.entries(point).filter((c) => c.state === "active").map((c) => c.pluginId);
+    // They are there for a bot (her own Glossary and Agent read them unscoped by agents).
+    expect(active("skills")).toEqual(expect.arrayContaining(["alpha", "alpha/extras"]));
+    expect(active("agents")).toContain("alpha");
+    const deps = { registry: opened.registry, servers: () => [] };
+    for (const f of [facts(), facts({ backend: "claude-code" }), facts({ kind: "agent", bot: "alpha", backend: "clover-code" })]) {
+      const parts = await agentPluginParts(deps).parts("s", f);
+      expect([parts.skills, parts.agents]).toEqual([[], []]);
+      const g = await agentGlossary(deps)("s", { query: ["study", "morning"], load: "alpha:study-buddy" }, f);
+      expect(g.results.filter((x) => String((x as { name: string }).name).startsWith("alpha"))).toEqual([]);
+      expect(g.loaded).toEqual([{ name: "alpha:study-buddy", found: false }]);
+    }
   });
 });

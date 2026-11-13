@@ -5,6 +5,7 @@
   "description": "Clover's first bot: one continuous conversation, with a memory of her own, on every computer you connect.",
   "icon": "assets/portrait.svg",
   "version": "1.0.0",
+  "scope": "bots",
   "engines": {
     "clover": "^1.0.0"
   },
