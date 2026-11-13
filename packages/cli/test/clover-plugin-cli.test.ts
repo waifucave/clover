@@ -296,6 +296,8 @@ describe("clover plugin install, wrap, enable, remove, update, pin, index, info"
     expect(quiet.asked).toEqual([]);
     // The terminal's removal carries no card: the y/N is its question.
     expect(d.calls.filter((c) => c.method === "plugin.remove").map((c) => c.params)).toEqual([{ id: "tarot" }, { id: "tarot" }]);
+    expect(await runPluginCommand("remove", ["tarot", "--delete-data", "--yes"], d.call, quiet.io)).toEqual({ code: 0, output: "removed tarot and its data" });
+    expect(d.calls.filter((c) => c.method === "plugin.remove").at(-1)!.params).toEqual({ id: "tarot", deleteData: true });
   });
 
   test("enable, disable, restart, pin, unpin, update (all or one), index list/add/remove, info", async () => {

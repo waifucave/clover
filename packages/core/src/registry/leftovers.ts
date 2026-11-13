@@ -24,7 +24,7 @@ import { PluginSecretFiles } from "./secret-files";
  *  Its data folder is kept, as the spec says (§5.4), but moved out of the id's path to
  *  `<home>/plugin-data/.removed/<id>/<when>-<tree hash>/`, keyed to that install, so another publisher's plugin with
  *  the same id starts with an empty one. No plugin id starts with a dot. */
-export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: Pick<PluginRecord, "id" | "source" | "treeHash" | "okHash" | "provenance">; children: readonly string[]; now?: () => number }): Promise<{ dataKeptAt?: string }> {
+export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: Pick<PluginRecord, "id" | "source" | "treeHash" | "okHash" | "provenance">; children: readonly string[]; now?: () => number; deleteData?: boolean }): Promise<{ dataKeptAt?: string }> {
   const ids = [o.record.id, ...o.children];
   for (const pluginId of ids) {
     if (o.secrets !== undefined) for (const meta of await o.secrets.list({ kind: "plugin", pluginId })) await o.secrets.delete(meta.ref);
@@ -34,6 +34,13 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
   // Its secrets' files (`${secretFile:…}`) go with it.
   new PluginSecretFiles(o.home).releasePlugin(o.record.id);
   const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
+  // The user asked for its data to go too (`plugin.remove`'s `deleteData`): its folder, and what earlier removals of
+  // the same id set aside.
+  if (o.deleteData === true) {
+    rmSync(data, { recursive: true, force: true });
+    rmSync(join(o.home, "plugin-data", ".removed", ...o.record.id.split("/")), { recursive: true, force: true });
+    return {};
+  }
   if (!existsSync(data)) return {};
   const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);
   const kept = join(o.home, "plugin-data", ".removed", ...o.record.id.split("/"), `${new Date(o.now?.() ?? Date.now()).toISOString().replace(/[:.]/g, "-")}-${hash}`);

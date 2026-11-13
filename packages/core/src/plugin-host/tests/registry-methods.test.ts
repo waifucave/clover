@@ -149,6 +149,44 @@ describe("plugin.* over the registry", () => {
     }
   });
 
+  test("removing with deleteData deletes its data folder and what earlier removals set aside; its card says so", async () => {
+    const home = temp("clover-b2-methods-");
+    const put = () => {
+      mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
+      writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot"));
+    };
+    put();
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    const asked: { fields?: unknown }[] = [];
+    const m = pluginRegistryMethods({
+      opened, host: { restart: async () => {} }, home, secrets,
+      openCard: async (req) => {
+        asked.push(req as never);
+        return { card: "card_1", allowed: Promise.resolve(true) };
+      },
+    });
+    const APP = { caller: { kind: "user", client: "app" } } as never;
+    try {
+      // An earlier removal set its data aside.
+      writeFileSync(join(pluginDataFolder(home, "tarot"), "deck.json"), "the first deck");
+      await m["plugin.remove"]!({ id: "tarot" }, APP);
+      expect(readdirSync(join(home, "plugin-data", ".removed", "tarot")).length).toBe(1);
+      put();
+      await opened.folders.refresh(join(home, "plugins", "tarot"));
+      writeFileSync(join(pluginDataFolder(home, "tarot"), "deck.json"), "the second deck");
+      // From the page: its card says the data goes for good; the yes deletes it all.
+      expect(await m["plugin.remove"]!({ id: "tarot", card: true, deleteData: true }, APP)).toEqual({ applied: false, card: "card_1" });
+      expect(JSON.stringify(asked[0]!.fields)).toContain("Its saved keys, settings and data on this computer are deleted, for good.");
+      for (let i = 0; i < 50 && existsSync(join(home, "plugins", "tarot")); i++) await Bun.sleep(20);
+      expect(existsSync(join(home, "plugins", "tarot"))).toBe(false);
+      expect(existsSync(join(home, "plugin-data", "tarot"))).toBe(false);
+      expect(existsSync(join(home, "plugin-data", ".removed", "tarot"))).toBe(false);
+    } finally {
+      opened.close();
+    }
+  });
+
   test("a secret that can't be deleted stops the removal: the folder stays, so nothing is left for a same-id reinstall (#332's second review)", async () => {
     const home = temp("clover-b2-methods-");
     mkdirSync(join(home, "plugins", "tarot"), { recursive: true });

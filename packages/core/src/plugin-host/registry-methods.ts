@@ -174,7 +174,7 @@ export function pluginRegistryMethods(o: {
       return { ok: true as const };
     }),
     // Removing deletes a plugin's folder from the plugins directory; a bundled or development plugin isn't removed here.
-    [M.pluginRemove.name]: handler(M.pluginRemove, async ({ id, card }, ctx) => {
+    [M.pluginRemove.name]: handler(M.pluginRemove, async ({ id, card, deleteData }, ctx) => {
       requireUser(ctx, "remove a plugin");
       const r = must(id);
       if (r.source === "bundled") throw new ContractError("refused", `${id} comes with Clover; switch it off instead`);
@@ -189,7 +189,7 @@ export function pluginRegistryMethods(o: {
         const children = registry.list().filter((c) => c.parent === now.id).map((c) => c.id);
         // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
         // id finds it (#332's second review).
-        await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: now, children });
+        await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: now, children, ...(deleteData === true ? { deleteData: true } : {}) });
         // This computer's record for the id goes too: a later install under it is never pinned.
         o.indexes?.setPinned(id, false);
         rmSync(folder, { recursive: true, force: true });
@@ -211,7 +211,7 @@ export function pluginRegistryMethods(o: {
         fields: {
           title: { type: "text", text: `Remove ${typeof r.name === "string" ? r.name : id}?` },
           detail: { type: "list", items: [
-            `Its saved keys and settings on this computer are deleted. Its data is set aside.`,
+            deleteData === true ? "Its saved keys, settings and data on this computer are deleted, for good." : "Its saved keys and settings on this computer are deleted. Its data is set aside.",
             folders.okText(id, o.os ?? "macos").source,
           ] },
         },

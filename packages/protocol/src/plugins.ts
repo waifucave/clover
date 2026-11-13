@@ -473,9 +473,11 @@ export const PLUGINS_METHODS = {
       /** Ask first, on a sealed card (the app sets it for a part of its own tree: a part's page shows plugin text, so a
        *  click there never deletes keys by itself). Only the yes removes. */
       card: z.literal(true).optional(),
+      /** Delete its data folder too (and copies set aside by earlier removals), instead of setting it aside. */
+      deleteData: z.literal(true).optional(),
     }),
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
-    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside (§5.1). With `card`, only after the user's yes on a sealed card.",
+    doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
   }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
