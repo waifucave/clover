@@ -246,6 +246,20 @@ button.cl-window__title:hover {
   padding-top: var(--clover-plugin-clover-bar-height);
 }
 
+/* A bot's own header (its plugin's, on a stock tab) takes the top, under the bar; its controls sit above the composer. */
+.cl-bot-tab__header {
+  flex: none;
+  padding-top: var(--clover-plugin-clover-bar-height);
+}
+
+.cl-bot-tab:has(> .cl-bot-tab__header) > .cl-bot-tab__conversation {
+  --cl-inset-top: 0px;
+}
+
+.cl-bot-tab__controls {
+  flex: none;
+}
+
 .cl-window__content:has(> .cl-agent-tab) {
   padding-top: 0;
 }

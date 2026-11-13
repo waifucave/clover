@@ -5,7 +5,7 @@
 import type { BotRef, BotView, EntryProps, SessionView } from "../runtime/types";
 import { useEffect, useState } from "react";
 import { useLoad } from "./data";
-import { Spot, usePluginApi } from "./sdk";
+import { Spot, useSpotEntries, usePluginApi } from "./sdk";
 import { S } from "./strings";
 import { BotTab } from "./Window";
 
@@ -13,11 +13,18 @@ import { BotTab } from "./Window";
 export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?: (session: string) => void }>) {
   const api = usePluginApi();
   const bot = useLoad(() => api.bots?.get(props.bot.id) ?? Promise.reject(new Error("no bots.read")), [api, props.bot.id]);
+  // The bot's own plugin's header and controls (a bot with no layout of its own): the stock tab shows them when something
+  // other than the shell's own fills the spot, above the conversation and between it and the composer.
+  const own = (spot: string) => useSpotEntries(spot, undefined, { bot: props.bot }).entries.some((e) => e.pluginId !== "clover/shell");
+  const header = own("bot.header");
+  const controls = own("bot.controls");
   if (!bot) return <div className="cl-shell-empty" role="status">{S.loading}</div>;
   const stage = bot.avatar !== undefined;
   const at = { bot: props.bot, session: bot.mainSession };
   return (
     <BotTab
+      header={header ? <Spot name="bot.header" props={{ bot: props.bot }} /> : undefined}
+      controls={controls ? <Spot name="bot.controls" props={at} /> : undefined}
       stage={stage ? <Spot name="bot.stage" props={{ bot: props.bot }} /> : undefined}
       conversation={<Spot name="conversation" props={{ ...at, onOpenAgent: props.onOpenAgent }} />}
       composer={<Spot name="composer" props={at} />}
