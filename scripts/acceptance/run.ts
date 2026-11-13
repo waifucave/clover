@@ -69,6 +69,7 @@ import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
+import { BROWSER_STEP, browserStep, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -308,6 +309,7 @@ async function cleanup(): Promise<void> {
   hookTarget?.stop();
   netSite?.stop(true);
   outsideWorld?.stop();
+  browserFixture?.stop();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
     // The app's own log (<home>/logs/app.log and its .1) lives in the run's temp home, which is deleted below.
@@ -1497,8 +1499,9 @@ async function main(): Promise<void> {
   const pressPort = freePort();
   // The renders' scheme for the first app (the new user's Plugins page, before step 4 installs anything).
   const firstAppearance = join(root, "appearance-first");
+  browserFixture = startBrowserFixture();
   const appEnv = {
-    ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
+    ...baseEnv(), CLOVER_TEST_BROWSER_NAMES: browserFixture.names, CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
     CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_APPEARANCE_FILE: firstAppearance, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }),
   };
   const appProc = startChild("app", app.exe, [...app.args, "--clover-headless", "--clover-smoke", "--use-mock-keychain", `--remote-debugging-port=${pressPort}`], appEnv);
@@ -2287,6 +2290,8 @@ function packagedCoreSays(name: string): boolean {
 
 /** The run's outside world for a packaged core (fake-exa.ts serveOutsideWorld): its test build's seam reaches it by name. */
 let outsideWorld: OutsideWorld | undefined;
+/** The bots' Browser tool's fixture site (browser-step.ts): a local server the test-marked app reaches by name. */
+let browserFixture: BrowserFixture | undefined;
 function startOutsideWorld(): void {
   outsideWorld = serveOutsideWorld();
 }
@@ -3192,6 +3197,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       [WORKSHOP_STEP, () => workshopStep(exampleCtx, session!)],
       // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
       [TAB_FLASH_STEP, () => tabFlashStep(exampleCtx, session!)],
+      // The bots' Browser tool, on the real path, against the run's own fixture site.
+      [BROWSER_STEP, () => browserStep(exampleCtx, session!, browserFixture!)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {

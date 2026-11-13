@@ -114,10 +114,8 @@ export type Unsubscribe = () => void;
 
 export type { McpServerTransport, PluginSelf } from "@waifucave/clover-plugin-sdk";
 
-/** `browser`: the Clover Browser's API (§12.1), less what the core won't serve a host half (`show`, `hide`,
- *  `onCdpEvent`, `watch`). The SDK types all of `browser` absent in this build (`HostPluginApi`: no browser runs for
- *  plugins yet, and this plugin is listed as not available); this parked tool is typed against the calls it will use
- *  when it is served, from the SDK's own `BrowserApi`. */
+/** `browser`: the Clover Browser's API (§12.1), less what the core doesn't serve a host half (`show`, `hide`,
+ *  `onCdpEvent`, `watch`), from the SDK's own `BrowserApi`. */
 export type BrowserApi = Omit<SdkBrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
 
 /** The members of the plugin API this plugin reads. `browser` is there only with the `browser` capability. */

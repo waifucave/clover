@@ -85,6 +85,7 @@ import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
+import { appTabPort } from "./browser/app-port";
 import { lateAgentDoors, lateApprovalBroker, pluginOkTicks, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -568,6 +569,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
   parts?: {
     node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string;
+    /** The Clover Browser: `false` starts none; an object is a test's seams (the app's port, the headless shell's options). */
+    browser?: DaemonPartsInput["browser"];
     agents?: false | Pick<DaemonAgentsInput, "defaultModel" | "backends" | "fillProvider">;
     /** TEST SEAMS: the computer node's safety reviewer (default: the daemon's own `BashReviewer`) and an approval
      *  broker for its cards (lane J's `nodeParts`). */
@@ -3876,7 +3879,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
       // The API's areas on the other lanes' services, which come up with the links after this: read at each call.
       areas: {
-        bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined,
+        bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined, browser: () => daemonParts?.browser?.service,
         emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
       },
@@ -4442,6 +4445,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           ...(p.node ?? {}),
         },
         bots,
+        // The Clover Browser: its tabs live in this computer's app (asked over the Clover server's connections); the
+        // bundled Browser tool reaches it through the plugin host's router. `browser: false` starts none (a test's seam).
+        browser: p.browser === false ? false : {
+          app: appTabPort(appDoors),
+          computer: computerNameFor(defaultDeviceName(hostname())) || "Computer",
+          ...(p.browser ?? {}),
+        },
         // The computer node judges another computer's calls at "ask for risky actions" with the daemon's safety
         // reviewer (lane J's `nodeParts`; it fails closed without one).
         ...((p.reviewer ?? bashReviewer) !== undefined ? { reviewer: (p.reviewer ?? bashReviewer)! } : {}),

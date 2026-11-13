@@ -27,6 +27,8 @@ import { foldTitle } from "@waifucave/clover-plugin-sdk";
 import type { BotView, Caller, DeviceView } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { BotSide } from "../../bots/wiring";
+import { browserApiHandlers } from "../../browser/api-handlers";
+import type { BrowserService } from "../../browser/service";
 import { computersApiRoutes, filesApiRoutes, filesWatch, type ApiRoute } from "../../computers/api";
 import type { ComputerNode } from "../../computers/node";
 import { deviceView } from "../../devices/rpc";
@@ -40,6 +42,8 @@ export interface AreaServices {
   bots(): BotSide | undefined;
   node(): ComputerNode | undefined;
   links(): DeviceLinks | undefined;
+  /** The Clover Browser (the bundled Browser tool's `browser.*`), once the daemon's parts have started it. */
+  browser?(): BrowserService | undefined;
   /** Sends a core event to the app's connections (a layer's terminal output). */
   emitToApp?(event: { type: string; [key: string]: unknown }): void;
   now?(): number;
@@ -486,7 +490,8 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     },
   };
   return {
-    handlers,
+    // The Browser tool's `browser.*` (bundled `clover` tree, `browser` capability): the browser read at each call.
+    handlers: { ...handlers, ...browserApiHandlers(() => s.browser?.()) },
     async forget(pluginId) {
       for (const [id, t] of [...terminals]) {
         if (t.pluginId !== pluginId) continue;

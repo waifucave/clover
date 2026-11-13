@@ -137,3 +137,19 @@ describe("whose tabs", () => {
     expect(h.browser.sent("Page.reload").map((c) => c.tab)).toEqual(["tab_1", "tab_2"]);
   });
 });
+
+describe("the caller from the core (`api.browser.toolCaller()`), when the host gives no context of its own", () => {
+  test("a tool call is for the session the core says; when the core refuses (outside a tool call) the tool refuses every call", async () => {
+    const { serveBrowser } = await import("../src/serve");
+    const { FakeBrowser, FakeTransport, alphaCaller } = await import("./fakes");
+    const browser = new FakeBrowser([]);
+    let answer: unknown = alphaCaller;
+    const api = { plugin: { id: "clover/browser", namespace: "clover", version: "0.0.0", computer: "Studio" }, browser: Object.assign(browser, { toolCaller: async () => { if (answer === undefined) throw new Error("no call"); return answer; } }) };
+    const transport = new FakeTransport();
+    await serveBrowser(transport, api as never, { mac: false, pollMs: 1, settleMs: 50 });
+    const text = async () => ((await transport.request("tools/call", { name: "Browser", arguments: { verb: "tabs" } }, "c1")).result as { content: { text: string }[] }).content.map((c) => c.text).join("\n");
+    expect(await text()).not.toMatch(/can't tell which session/);
+    answer = undefined;
+    expect(await text()).toMatch(/can't tell which session/);
+  });
+});
