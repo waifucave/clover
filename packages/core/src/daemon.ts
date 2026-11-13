@@ -3976,6 +3976,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const hostSettings = pluginHost.settings;
     pluginUiParts = pluginUi({
       registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds,
+      // A component's watch values: to the one layer connection that opened it (its follows), never any other.
+      emitTo: (follows, event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.follows === follows }),
       log: (line) => console.error(`[plugins] ${line}`),
       // The user's own layout for a bot (its user layer), drawn over the bot's; read from the bot side once it runs.
       userLayout: (botId) => {

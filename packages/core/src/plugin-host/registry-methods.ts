@@ -558,7 +558,7 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
   "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
-  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "notify.send", "plugin.iconSource",
+  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "plugin.layer.watch", "plugin.layer.unwatch", "notify.send", "plugin.iconSource",
   "plugin.review",
 ];
 

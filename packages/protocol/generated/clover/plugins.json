@@ -3331,7 +3331,7 @@
       }
     },
     "plugin.layer.call": {
-      "doc": "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
+      "doc": "A plugin component's plugin API call on its own layer connection: its host half's handler, its synced store and settings, or any member the catalog gives components, through the core's capability gate as the plugin, never as the user.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -3343,24 +3343,11 @@
         "properties": {
           "call": {
             "type": "string",
-            "enum": [
-              "host.call",
-              "storage.synced.get",
-              "storage.synced.keys",
-              "settings.get",
-              "settings.set",
-              "points.entries",
-              "avatar.cue",
-              "avatar.catalogue",
-              "avatar.box",
-              "avatar.report",
-              "confirm",
-              "confirmCard",
-              "plugins.install"
-            ]
+            "minLength": 1,
+            "maxLength": 128
           },
           "args": {
-            "maxItems": 3,
+            "maxItems": 8,
             "type": "array",
             "items": {}
           }
@@ -3379,6 +3366,77 @@
         "required": [
           "result"
         ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.watch": {
+      "doc": "A plugin component's watch: each value comes back as `plugin_api_event` to this layer connection alone, until `plugin.layer.unwatch`, the connection closes, or the plugin stops, is turned off or removed, or loses the capability (`ended`).",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {
+            "maxItems": 8,
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "watch"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.unwatch": {
+      "doc": "Ends one of this layer connection's own watches (`plugin.layer.watch`); an unknown or another connection's id is a no-op.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "layer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "watch"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
         "additionalProperties": false
       }
     },
@@ -5367,6 +5425,60 @@
           "pluginId",
           "event",
           "value"
+        ]
+      }
+    },
+    "plugin_api_event": {
+      "doc": "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "layer"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_api_event"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "watch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "value": {},
+          "ended": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "watch"
         ]
       }
     },
