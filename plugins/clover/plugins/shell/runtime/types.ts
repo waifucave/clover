@@ -158,6 +158,12 @@ export interface CoreMethods {
   "plugin.index.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginIndexRemove>;
   "plugin.dev.list": FromB<typeof Proto.PLUGINS_METHODS.pluginDevList>;
   "plugin.dev.add": FromB<typeof Proto.PLUGINS_METHODS.pluginDevAdd>;
+  "plugin.grant.list": FromB<typeof Proto.PLUGINS_METHODS.pluginGrantList>;
+  "plugin.grant.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginGrantRemove>;
+  "plugin.setScope": FromB<typeof Proto.PLUGINS_METHODS.pluginSetScope>;
+  "plugin.setComputers": FromB<typeof Proto.PLUGINS_METHODS.pluginSetComputers>;
+  "plugin.confirmAdult": FromB<typeof Proto.PLUGINS_METHODS.pluginConfirmAdult>;
+  "computer.list": FromB<typeof Proto.COMPUTERS_METHODS.computerList>;
   "plugin.dev.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRemove>;
   "plugin.dev.renew": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRenew>;
   // The app's own (the main process answers them, tree-calls.ts), for the Plugins page only.

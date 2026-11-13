@@ -5,15 +5,18 @@ import { runtimeWith } from "../../shell/runtime/ui";
 import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
-import { PluginIcon, stateText } from "../client/Installed";
+import { Detail, PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
 /** How the fake core answers a setting's change, by key (a card's ask, a refusal); applied otherwise. */
 const settingAnswers: Record<string, () => unknown> = {};
+/** The development folders the fake core lists. */
+let devFolders: { path: string; pluginId?: string; addedAt: number; expiresAt: number; lastReloadAt?: number }[] = [];
 afterEach(() => {
   for (const k of Object.keys(settingAnswers)) delete settingAnswers[k];
+  devFolders = [];
 });
 
 async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
@@ -28,6 +31,16 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
     "plugin.setEnabled": () => ({ applied: true }),
     "plugin.settings.set": ({ key }) => (settingAnswers[key]?.() ?? { applied: true }) as never,
     "plugin.restart": () => ({ ok: true }),
+    "plugin.dev.list": () => ({ folders: devFolders as never }),
+    "plugin.dev.add": () => ({ applied: false, card: "card_dev" }),
+    "plugin.dev.remove": () => ({ ok: true }),
+    "plugin.dev.renew": () => ({ applied: false, card: "card_renew" }),
+    "plugin.grant.list": () => ({ grants: [{ token: "g1", path: "/Users/me/clips/a.mov", kind: "file", access: "read", addedAt: NOW }, { token: "g2", path: "/Users/me/exports", kind: "folder", access: "write", addedAt: NOW }] as never }),
+    "plugin.grant.remove": () => ({ removed: true }),
+    "plugin.setScope": () => ({ applied: true }),
+    "plugin.setComputers": () => ({ applied: true }),
+    "plugin.confirmAdult": () => ({ ok: true }),
+    "computer.list": () => ({ computers: [{ name: "Studio" }, { name: "Laptop" }] as never }),
     "ui.secret": () => ({ opened: true }),
     "ui.pick": () => ({ token: "pick-1", name: "tarot" }),
     "plugin.update": ({ id, list }) => (list
@@ -229,7 +242,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["notify.mutes", "plugin.auth.list", "plugin.get", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["computer.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -511,4 +524,60 @@ describe("the Plugins page: updates and indexes", () => {
     await mount({ tab: "find" }, "found", atReload);
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
+
+  test("development folders: listed with when they expire and reload; a folder from main's picker is added on a card; Renew asks on a card; Remove stops loading it", async () => {
+    devFolders = [{ path: "/Users/me/dev/reel", pluginId: "reel", addedAt: NOW - 3_600_000, expiresAt: NOW + 3_600_000, lastReloadAt: NOW - 60_000 }];
+    const { core } = await mount({ tab: "add" });
+    const row = document.querySelector('[data-dev-folder="/Users/me/dev/reel"]')!;
+    expect(row.textContent).toContain("Loads as reel");
+    expect(row.textContent).toContain("Loaded again");
+    fireEvent.click(screen.getByRole("button", { name: "Choose a development folder…" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "ui.pick" && (c.params as { use: string }).use === "plugin.dev.add")?.params).toEqual({ kind: "folder", use: "plugin.dev.add" });
+    fireEvent.click(screen.getByRole("button", { name: "Add tarot as a development folder" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.add")?.params).toEqual({ path: "pick-1" });
+    expect(screen.getAllByRole("status").some((e) => e.textContent === "Answer the card to add the development folder.")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Keep /Users/me/dev/reel on for another 24 hours" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.renew")?.params).toEqual({ path: "/Users/me/dev/reel" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove the development folder /Users/me/dev/reel" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.dev.remove")?.params).toEqual({ path: "/Users/me/dev/reel" });
+  });
+
+  test("a plugin's page: where it works, the files it may open (each can be taken back), and the adult confirm", async () => {
+    const { core } = await mount({});
+    fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("radio", { name: "Agents" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.setScope")?.params).toEqual({ id: "tarot-panel", scope: "agents" });
+    expect(document.querySelector('[data-grant="g1"]')?.textContent).toContain("/Users/me/clips/a.mov");
+    expect(document.querySelector('[data-grant="g2"]')?.textContent).toContain("folder, to save");
+    fireEvent.click(screen.getByRole("button", { name: "Take back /Users/me/clips/a.mov" }));
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.grant.remove")?.params).toEqual({ pluginId: "tarot-panel", token: "g1" });
+  });
+
+  test("an adult plugin says so until the user confirms; the computers a server runs on are ticked one by one", () => {
+    const calls: unknown[] = [];
+    const view = { ...toDetail(installedDetail("tarot-panel"), {}), adult: true, computerTargets: [{ target: "tarot", ticked: ["Studio"] }] };
+    render(
+      <Detail
+        plugin={view} adultConfirmed={false} computers={["Studio", "Laptop"]}
+        onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onRunAnyway={() => undefined}
+        onConfirmAdult={() => calls.push(["adult"])} onComputers={(t, c) => calls.push([t, c])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "I am 18 or older" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Run on Laptop" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Run on Studio" }));
+    expect(calls).toEqual([["adult"], ["tarot", ["Studio", "Laptop"]], ["tarot", []]]);
+    cleanup();
+    render(<Detail plugin={view} adultConfirmed computers={["Studio"]} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onRunAnyway={() => undefined} onConfirmAdult={() => undefined} />);
+    expect(screen.queryByRole("button", { name: "I am 18 or older" })).toBeNull();
+  });
 });
+
+

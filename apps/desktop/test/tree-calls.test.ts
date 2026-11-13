@@ -312,8 +312,10 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
+  "plugin.grant.list": { parts: [PLUGINS_PART], gesture: [] },
+  "computer.list": { parts: [PLUGINS_PART], gesture: [] },
   "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+  ...Object.fromEntries(["ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
 /** One active message action, as the part's own spot resolves it. */
 const PIN_ENTRY = [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "pinReply" } }];
@@ -357,6 +359,8 @@ const WORST: Record<string, Worst> = {
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
+  "plugin.grant.list": "read", // the files and folders picked for one plugin: paths only the user chose
+  "computer.list": "read", // the computers' names, to tick which a plugin's server runs on
   "notify.mutes": "read", // which plugins' notifications are muted
   "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves
   "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
@@ -372,6 +376,10 @@ const WORST: Record<string, Worst> = {
   "plugin.auth.signOut": "sealed card", // main sets card: the sign-out card
   "plugin.dev.add": "sealed card", // a picked folder only, and the core's development-folder card
   "plugin.dev.remove": "harmless change", // stops loading a development folder
+  "plugin.grant.remove": "harmless change", // takes a picked file or folder back: the plugin no longer reaches it
+  "plugin.setScope": "harmless change", // the user's own choice of where a plugin works (bots, agents, both); the manifest's stays the default
+  "plugin.setComputers": "harmless change", // ticks the computers a plugin's server runs on; code already OK'd, the core cards anything that moves a host
+  "plugin.confirmAdult": "harmless change", // the user's own statement that they are 18 or older
   "plugin.dev.renew": "sealed card", // main sets card: another 24 hours of code that reloads asks on the development-folder card
 };
 

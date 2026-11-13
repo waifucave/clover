@@ -135,6 +135,31 @@ export interface PluginDetailView extends InstalledPlugin {
   muted: boolean;
   /** It was revoked and the user may run it anyway (on a sealed warning card). */
   revoked?: boolean;
+  /** Where it works now (the user's choice, else the manifest's), and what the manifest says. */
+  scope?: "bots" | "agents" | "both";
+  /** Self-declared adult content (§5.7). */
+  adult?: boolean;
+  /** The files and folders the user picked for it. */
+  grants?: GrantRow[];
+  /** The things whose computers the user ticks (its host half, its local servers), each with the computers ticked now. */
+  computerTargets?: { target: string; ticked: string[] }[];
+}
+
+/** A file or folder the user picked for a plugin (`plugin.grant.list`). */
+export interface GrantRow {
+  token: string;
+  path: string;
+  kind: "file" | "folder";
+  access: "read" | "write";
+}
+
+/** A development folder (`plugin.dev.list`). */
+export interface DevRow {
+  path: string;
+  pluginId?: string;
+  addedAt: number;
+  expiresAt: number;
+  lastReloadAt?: number;
 }
 
 export interface InstalledProps {
@@ -169,6 +194,17 @@ export interface DetailProps {
   onMute?: (muted: boolean) => void;
   /** Changes one of its plain settings (`plugin.settings.set`; null puts the default back). */
   onSetting?: (key: string, value: unknown, asks: boolean) => void;
+  /** The names of this computer and the others, for ticking where a server runs. */
+  computers?: string[];
+  /** The user said they are 18 or older already. */
+  adultConfirmed?: boolean;
+  onConfirmAdult?: () => void;
+  /** Sets where it works (`plugin.setScope`). */
+  onScope?: (scope: "bots" | "agents" | "both") => void;
+  /** Ticks the computers for a target (`plugin.setComputers`). */
+  onComputers?: (target: string, computers: string[]) => void;
+  /** Takes a picked file or folder back (`plugin.grant.remove`). */
+  onGrantRemove?: (token: string) => void;
   status?: DetailStatus;
 }
 
@@ -231,4 +267,13 @@ export interface AddProps {
   onFind: () => void;
   busy?: boolean;
   status?: DetailStatus;
+  /** The development folders (`plugin.dev.list`), the one main's picker just gave, and what the page does with them. */
+  devFolders?: DevRow[];
+  devPicked?: { token: string; name: string };
+  onDevPick?: () => void;
+  onDevAdd?: (token: string) => void;
+  onDevRemove?: (path: string) => void;
+  onDevRenew?: (path: string) => void;
+  now?: number;
+  format?: { locale: string; timeZone?: string };
 }

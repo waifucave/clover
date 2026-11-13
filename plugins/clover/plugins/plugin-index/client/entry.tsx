@@ -12,7 +12,7 @@ import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
 import { useCore, useKept } from "./sdk";
 import { S } from "./strings";
-import type { AddSource, DetailSetting, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
+import type { AddSource, DetailSetting, DevRow, GrantRow, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
 
 export interface PluginIndexEntryProps {
   route?: string;
@@ -178,7 +178,7 @@ export function toDetailSetting(s: SettingRow, lang = "en"): DetailSetting {
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean },
+  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[] },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
@@ -223,7 +223,21 @@ export function toDetail(
     notifies: d.capabilities.includes("notify") && d.id.split("/")[0] !== CLOVER_TREE,
     muted: more.muted === true,
     ...(d.state === "blocked" ? { revoked: true } : {}),
+    scope: d.scope,
+    adult: d.adult,
+    grants: more.grants ?? [],
+    computerTargets: computerTargets(d),
   };
+}
+
+/** The things whose computers the user ticks: its host half when it starts on the chosen ones, a local server or command
+ *  that runs on them, and any target the core already holds a tick list for. */
+function computerTargets(d: PluginDetail): { target: string; ticked: string[] }[] {
+  const m = d.manifest as { host?: { start?: unknown }; contributes?: { mcpServers?: Record<string, { runsOn?: unknown }>; commands?: { name?: unknown; runsOn?: unknown }[]; services?: { id?: unknown; runsOn?: unknown }[] } };
+  const targets = new Set<string>(Object.keys(d.computers ?? {}));
+  if (m.host?.start === "chosen") targets.add("*");
+  for (const [name, s] of Object.entries(m.contributes?.mcpServers ?? {})) if (s.runsOn === "chosen") targets.add(name);
+  return [...targets].sort().map((target) => ({ target, ticked: [...(d.computers?.[target] ?? [])] }));
 }
 
 /** "12 min ago" (the Find tab's words). */
@@ -267,6 +281,10 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [detail, setDetail] = useState<PluginDetailView | undefined>(undefined);
   const [status, setStatus] = useState<DetailStatus | undefined>(undefined);
   const [revision, setRevision] = useState(0);
+  const [devFolders, setDevFolders] = useState<DevRow[] | undefined>(undefined);
+  const [devPicked, setDevPicked] = useState<{ token: string; name: string } | undefined>(undefined);
+  const [adultConfirmed, setAdultConfirmed] = useState<boolean | undefined>(undefined);
+  const [computerNames, setComputerNames] = useState<string[]>([]);
 
   // What is installed: `plugin.list` alone, never a call per plugin.
   useEffect(() => {
@@ -279,6 +297,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
         for (const v of ui.plugins) if (typeof (v as { icon?: unknown }).icon === "string") next[v.pluginId] = (v as { icon: string }).icon;
         setIcons(next);
         setInstalled(toInstalled(r.plugins, "en", next));
+        setAdultConfirmed(r.adultConfirmed === true);
       },
       () => live && setInstalled([]),
     );
@@ -298,14 +317,31 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("plugin.auth.list", { id: open })),
       quiet(core.call("plugin.logs", { id: open, lines: 200 })),
       quiet(core.call("notify.mutes", {})),
+      quiet(core.call("plugin.grant.list", { pluginId: open })),
     ]).then(
-      ([d, settings, auth, logs, mutes]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open) }, "en", icons)),
+      ([d, settings, auth, logs, mutes, grants]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}) }, "en", icons)),
       () => live && setOpen(null),
     );
     return () => {
       live = false;
     };
   }, [core, open, revision]);
+
+  // The computers a plugin's server may be ticked onto (this one and the others).
+  useEffect(() => {
+    if (!core || open === undefined) return;
+    let live = true;
+    core.call("computer.list", {}).then((r) => live && setComputerNames(r.computers.map((c) => c.name)), () => undefined);
+    return () => { live = false; };
+  }, [core, open, revision]);
+
+  // The development folders, read when the Add tab shows and again after each change.
+  useEffect(() => {
+    if (!core || tab !== "add") return;
+    let live = true;
+    core.call("plugin.dev.list", {}).then((r) => live && setDevFolders(r.folders.map((f) => ({ path: f.path, addedAt: f.addedAt, expiresAt: f.expiresAt, ...(f.pluginId ? { pluginId: f.pluginId } : {}), ...(f.lastReloadAt ? { lastReloadAt: f.lastReloadAt } : {}) }))), () => live && setDevFolders([]));
+    return () => { live = false; };
+  }, [core, tab, revision]);
 
   // A change: done (the page reads again), or asked on a sealed card (the page says so; it reads again when answered).
   const act = useCallback((run: () => Promise<unknown>, asked?: string) => {
@@ -493,6 +529,39 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     );
   };
 
+  const devPick = () => {
+    if (!core) return;
+    setAddStatus(undefined);
+    core.call("ui.pick", { kind: "folder", use: "plugin.dev.add" }).then(
+      (r) => {
+        if ("cancelled" in r) {
+          setDevPicked(undefined);
+          setAddStatus({ tone: "info", text: S.pickCancelled });
+        } else setDevPicked({ token: r.token, name: r.name });
+      },
+      (err: unknown) => setAddStatus({ tone: "danger", text: S.failed(why(err)) }),
+    );
+  };
+  const devChange = (run: () => Promise<unknown>, asked: string, done?: string) => {
+    setAddStatus(undefined);
+    run().then(
+      (r) => {
+        const pending = typeof r === "object" && r !== null && (r as { applied?: unknown }).applied === false;
+        setAddStatus({ tone: "info", text: pending ? asked : (done ?? "") });
+        setRevision((n) => n + 1);
+      },
+      (err: unknown) => {
+        setAddStatus({ tone: "danger", text: S.failed(why(err)) });
+        setRevision((n) => n + 1);
+      },
+    );
+  };
+  const devAdd = (token: string) => {
+    if (!core) return;
+    setDevPicked(undefined);
+    devChange(() => core.call("plugin.dev.add", { path: token }), S.devAsked, S.devAdded);
+  };
+
   const find = (
     <PluginIndex
       bare
@@ -540,6 +609,12 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             onPin={(pinned) => act(() => core.call("plugin.pin", { id, pinned }))}
             onMute={(muted) => act(() => core.call("notify.setMuted", { pluginId: id, muted }))}
             onSetting={(key, value, asks) => act(() => core.call("plugin.settings.set", { id, key, value }), asks ? S.settingAsked : undefined)}
+            computers={computerNames}
+            {...(adultConfirmed !== undefined ? { adultConfirmed } : {})}
+            onConfirmAdult={() => act(() => core.call("plugin.confirmAdult", {}))}
+            onScope={(scope) => act(() => core.call("plugin.setScope", { id, scope }))}
+            onComputers={(target, computers) => act(() => core.call("plugin.setComputers", { id, target, computers }))}
+            onGrantRemove={(token) => act(() => core.call("plugin.grant.remove", { pluginId: id, token }))}
             {...(status ? { status } : {})}
           />
         ) : (
@@ -566,7 +641,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             ) : tab === "indexes" ? (
               <Indexes indexes={indexRows} health={health} onAdd={(url, key) => indexChange(() => core!.call("plugin.index.add", { url, keys: [key] }))} onRemove={(url) => indexChange(() => core!.call("plugin.index.remove", { url }))} {...(indexStatus ? { status: indexStatus } : {})} />
             ) : tab === "add" ? (
-              <Add {...(picked ? { picked } : {})} onPick={pick} onInstall={add} onFind={() => setTab("find")} busy={adding} {...(addStatus ? { status: addStatus } : {})} />
+              <Add {...(picked ? { picked } : {})} onPick={pick} onInstall={add} onFind={() => setTab("find")} busy={adding} {...(addStatus ? { status: addStatus } : {})} {...(devFolders ? { devFolders } : {})} {...(devPicked ? { devPicked } : {})} onDevPick={devPick} onDevAdd={devAdd} onDevRemove={(path) => devChange(() => core!.call("plugin.dev.remove", { path }), "", "")} onDevRenew={(path) => devChange(() => core!.call("plugin.dev.renew", { path }), S.devRenewAsked)} now={props.now ?? Date.now()} />
             ) : (
               find
             )}

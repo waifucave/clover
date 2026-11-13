@@ -300,6 +300,73 @@ export function Detail(props: DetailProps) {
         )}
       </Section>
 
+      {!p.notYet && p.adult === true && props.adultConfirmed === false && props.onConfirmAdult && (
+        <Section title={S.adultTitle}>
+          <div className="cl-plugin-index__index cl-plugin-index__setting" data-adult="">
+            <span className="cl-plugin-index__name">{S.adultNeeds}</span>
+            <button type="button" className="cl-plugin-index__button" onClick={props.onConfirmAdult}>
+              {S.adultConfirm}
+            </button>
+          </div>
+        </Section>
+      )}
+
+      {!p.notYet && p.scope !== undefined && props.onScope && (
+        <Section title={S.where}>
+          <p className="cl-plugin-index__note">{S.whereDetail}</p>
+          <div className="cl-plugin-index__row" role="radiogroup" aria-label={S.scopeLabel} data-scope={p.scope}>
+            {(["bots", "agents", "both"] as const).map((v) => (
+              <label key={v} className="cl-plugin-index__choice">
+                <input type="radio" name={`cl-plugin-index-scope-${p.id}`} checked={p.scope === v} onChange={() => props.onScope!(v)} />
+                {S.scope[v]}
+              </label>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {!p.notYet && p.computerTargets !== undefined && p.computerTargets.length > 0 && props.onComputers && (
+        <Section title={S.computers}>
+          {(props.computers ?? []).length === 0 ? <p className="cl-plugin-index__note">{S.computersNone}</p> : p.computerTargets.map((t) => (
+            <div key={t.target} className="cl-plugin-index__computers" data-computers={t.target}>
+              <p className="cl-plugin-index__note">{S.computersDetail(t.target)}</p>
+              <div className="cl-plugin-index__row">
+                {(props.computers ?? []).map((name) => (
+                  <label key={name} className="cl-plugin-index__choice">
+                    <input
+                      type="checkbox"
+                      aria-label={S.computerTick(name)}
+                      checked={t.ticked.includes(name)}
+                      onChange={() => props.onComputers!(t.target, t.ticked.includes(name) ? t.ticked.filter((n) => n !== name) : [...t.ticked, name])}
+                    />
+                    {name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
+
+      {!p.notYet && p.grants !== undefined && props.onGrantRemove && (
+        <Section title={S.grants}>
+          <p className="cl-plugin-index__note">{S.grantsDetail}</p>
+          {p.grants.length === 0 ? <p className="cl-plugin-index__note">{S.grantsNone}</p> : (
+            <ul className="cl-plugin-index__indexes" aria-label={S.grants}>
+              {p.grants.map((g) => (
+                <li key={g.token} className="cl-plugin-index__index cl-plugin-index__setting" data-grant={g.token}>
+                  <span className="cl-plugin-index__name">{g.path}</span>
+                  <span className="cl-plugin-index__meta">{`${g.kind === "folder" ? S.grantFolder : S.grantFile}, ${g.access === "write" ? S.grantWrite : S.grantRead}`}</span>
+                  <button type="button" className="cl-plugin-index__button" data-tone="danger" aria-label={S.grantTakeBackName(g.path)} onClick={() => props.onGrantRemove!(g.token)}>
+                    {S.grantTakeBack}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
+
       {!p.notYet && <Section title={S.settings}>
         {p.settings.length === 0 ? <p className="cl-plugin-index__note">{S.settingsNone}</p> : (
           <ul className="cl-plugin-index__indexes">

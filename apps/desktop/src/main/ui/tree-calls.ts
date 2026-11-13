@@ -109,6 +109,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
+  // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.
+  "plugin.grant.list": { disposition: READ, part: PLUGINS_PART },
+  "computer.list": { disposition: READ, part: PLUGINS_PART },
   // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
   "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   // main's own dialog, for the use the page names: the Plugins page's folders (an install, a development folder) and the
@@ -128,6 +131,12 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.add": PAGE,
   "plugin.dev.remove": PAGE,
   "plugin.dev.renew": PAGE,
+  // The user's own choices on a plugin's page: take a picked file or folder back, where it works (bots, agents), the computers
+  // it runs on, and that they are 18 or older (before an adult plugin is switched on).
+  "plugin.grant.remove": PAGE,
+  "plugin.setScope": PAGE,
+  "plugin.setComputers": PAGE,
+  "plugin.confirmAdult": PAGE,
   "notify.setMuted": PAGE,
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
