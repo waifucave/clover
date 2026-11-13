@@ -123,8 +123,9 @@ export const API_CALLS = {
   "plugins.install": { capability: "plugins.install", where: "ui" },
   "usage.rows": notYet(both("usage.read"), NO_SERVICE), "usage.plans": notYet(both("usage.read"), NO_SERVICE),
   "usage.summary": notYet(both("usage.read"), NO_SERVICE), "usage.watch": notYet(both("usage.read"), NO_SERVICE),
-  /** The plugin's own tree's logs (`{ plugin: id }`); Clover's own log isn't open to plugins in this build. */
-  "logs.read": both("logs.read"), "logs.follow": both("logs.read"),
+  /** A plugin's own tree's logs need no capability; Clover's own (`"core"`) and any other plugin's need `logs.read`,
+   *  which the core checks per source (the coordinator's ruling: what the OK card says decides). */
+  "logs.read": both(), "logs.follow": both(),
   "notify.send": both("notify"),
   /** This computer's own notifications (the local app's `app.notify`): only the bundled `clover` tree's process, for its
    *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name

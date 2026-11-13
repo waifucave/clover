@@ -2,9 +2,9 @@
 // host half's console, its stdio servers' stderr and Clover's notes about it wrote (`<home>/logs/plugins/<id>.log`,
 // `pluginLogWriter`, the same file its Settings page shows). Owner: lane A.
 //
-// * **Whose:** a plugin reads its own tree's logs (its own and its children's, by id). The capability's text says
-//   "Clover's logs and every plugin's"; this build serves the narrow reading, a plugin's own, for the coordinator's
-//   ruling: Clover's own log (`source: "core"`) and another plugin's are refused with why.
+// * **Whose** (the coordinator's ruling: the OK card is the gate): a plugin reads its own tree's logs (its own and its
+//   children's, by id) with no capability. With `logs.read`, whose OK line says "It reads Clover's logs and every
+//   plugin's logs", it also reads Clover's own log (`source: "core"`, `<home>/logs/daemon.log`) and any other plugin's.
 // * **`read(source, { lines })`:** the last `lines` lines (default LOG_READ_DEFAULT, at most LOG_READ_MAX), from the
 //   file and, when it holds fewer, the one it rotated to (`<id>.log.1`); at most LOG_READ_BYTES of each is read.
 // * **`follow(source, listener)`:** each line written from now on, read as the file grows (a rotation starts it again
@@ -13,6 +13,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
+import { DAEMON_LOG_FILE } from "../../daemon-log-file";
 import { pluginPath } from "../paths";
 import { listenerArg, type ApiCallContext, type ApiHandlers } from "./router";
 
@@ -31,13 +32,18 @@ export function pluginLogFile(home: string, pluginId: string): string {
   return `${pluginPath(join(home, "logs", "plugins"), pluginId)}.log`;
 }
 
-/** The plugin whose log `source` names, if the caller may read it: its own tree's only. */
-function sourceOf(ctx: ApiCallContext, raw: unknown): string {
-  if (raw === "core") throw new ContractError("refused", "Clover's own log isn't open to plugins; a plugin reads its own logs ({ plugin: id })");
+/** The log file `source` names, if the caller may read it: its own tree's always, Clover's own and any other plugin's
+ *  with `logs.read` on its OK. */
+function fileOf(home: string, ctx: ApiCallContext, raw: unknown): string {
+  const granted = ctx.record.granted.includes("logs.read");
+  if (raw === "core") {
+    if (!granted) throw new ContractError("refused", "Clover's own log needs the capability logs.read, which this plugin's OK doesn't list");
+    return join(home, "logs", DAEMON_LOG_FILE);
+  }
   const id = typeof raw === "object" && raw !== null ? (raw as { plugin?: unknown }).plugin : undefined;
-  if (typeof id !== "string" || id === "") throw new ContractError("invalid", "the source is { plugin: id }");
-  if (topPluginIdOf(id) !== topPluginIdOf(ctx.pluginId)) throw new ContractError("refused", `${ctx.pluginId} reads only its own logs, not ${id}'s`);
-  return id;
+  if (typeof id !== "string" || id === "") throw new ContractError("invalid", "the source is \"core\" or { plugin: id }");
+  if (!granted && topPluginIdOf(id) !== topPluginIdOf(ctx.pluginId)) throw new ContractError("refused", `${id}'s log needs the capability logs.read, which this plugin's OK doesn't list (a plugin reads its own logs without it)`);
+  return pluginLogFile(home, id);
 }
 
 /** The last bytes of a file (at most `max`), as text from its first whole line; empty when it isn't there. */
@@ -64,20 +70,18 @@ export function logsApi(o: { home: string; pollMs?: number }): { handlers: ApiHa
   const follows = new Map<string, Set<() => void>>();
   const handlers: ApiHandlers = {
     "logs.read": (ctx, args) => {
-      const id = sourceOf(ctx, args[0]);
+      const file = fileOf(o.home, ctx, args[0]);
       const want = (args[1] as { lines?: unknown } | undefined)?.lines;
       const n = typeof want === "number" && Number.isFinite(want) ? Math.min(LOG_READ_MAX, Math.max(1, Math.floor(want))) : LOG_READ_DEFAULT;
-      const file = pluginLogFile(o.home, id);
       let lines = linesOf(tail(file, LOG_READ_BYTES));
       if (lines.length < n && existsSync(`${file}.1`)) lines = [...linesOf(tail(`${file}.1`, LOG_READ_BYTES)), ...lines];
       return lines.slice(-n);
     },
     "logs.follow": (ctx, args): Unsubscribe => {
-      const id = sourceOf(ctx, args[0]);
+      const file = fileOf(o.home, ctx, args[0]);
       const listener = listenerArg<string>(args, 1);
       const mine = follows.get(ctx.pluginId) ?? new Set<() => void>();
       if (mine.size >= LOG_FOLLOWS_PER_PLUGIN) throw new ContractError("refused", `${ctx.pluginId} follows ${LOG_FOLLOWS_PER_PLUGIN} logs already; close one first`);
-      const file = pluginLogFile(o.home, id);
       const sizeNow = () => { try { return statSync(file).size; } catch { return 0; } };
       let offset = sizeNow();
       let partial = "";

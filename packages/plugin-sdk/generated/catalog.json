@@ -117,7 +117,7 @@
     {
       "name": "logs.read",
       "lets": "Read Clover's logs and every plugin's",
-      "ok": "reads Clover's logs",
+      "ok": "reads Clover's logs and every plugin's logs",
       "warns": false
     },
     {
@@ -4390,11 +4390,9 @@
       "notYet": "no service of the core answers it for plugins yet"
     },
     "logs.read": {
-      "capability": "logs.read",
       "where": "both"
     },
     "logs.follow": {
-      "capability": "logs.read",
       "where": "both"
     },
     "notify.send": {

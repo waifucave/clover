@@ -48,7 +48,7 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  it, so it opens nothing callable. The bundled `clover` tree only. */
   { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees which plugins you have and whether they're on", warns: false, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
-  { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
+  { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs and every plugin's logs", warns: false },
   { name: "avatar.read", lets: "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change", ok: "sees your bot's figure", warns: false },
   { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
   /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
