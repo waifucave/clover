@@ -8,6 +8,11 @@
 //   ACCEPTANCE-AGENT <root> → a `tool_use` of `Agent`: Alpha's study-buddy definition on clover-code in <root>, with
 //                       the brief `ACCEPTANCE-CHILD …`
 //   ACCEPTANCE-CHILD  → the child agent's own turn: text, `CHILD_REPORT`
+//   ACCEPTANCE-AGENT-ECHO <root> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//                       `ACCEPTANCE-CHILD-ECHO …`
+//   ACCEPTANCE-CHILD-ECHO → an agent's turn (a bot's or the user's coding session): a `tool_use` of the echo plugin's
+//                       tool on its bridge (named `…__acceptance-echo-echo__Echo`) with `acceptance-child-ping`; its
+//                       result is then said back (`ACCEPTANCE-DONE: …`), or `ACCEPTANCE-CHILD-NO-ECHO <its tools>`
 //   ACCEPTANCE-STAGE-STATUS → a `tool_use` of the tool whose name ends in `__stage_status` (Alpha's read-only tool)
 //   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
 //   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
@@ -392,6 +397,27 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "end_turn";
         } else {
           content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-CHILD-ECHO")) {
+        const tool = record.tools.find((t) => t.endsWith("__acceptance-echo-echo__Echo"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: `ACCEPTANCE-CHILD-NO-ECHO ${record.tools.filter((t) => t.startsWith("mcp__")).join(", ") || "no MCP tools"}` }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-child-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-AGENT-ECHO")) {
+        const tool = record.tools.find((t) => t === "Agent");
+        const root = /ACCEPTANCE-AGENT-ECHO (\S+)/.exec(said)?.[1] ?? "";
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-AGENT-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "clover-code", root, description: "Echo probe", prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." } }];
           stop = "tool_use";
           record.toolUse = tool;
         }

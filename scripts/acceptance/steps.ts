@@ -30,7 +30,7 @@ export const REOPEN_STEPS = [
 
 /** Alpha's stage tools are display-only (`contained`, her own tree's rule, no special case): the step proves the three
  *  levels on the real path. */
-export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation";
+export const AGENT_STEP = "Alpha starts her study-buddy on Clover's own coding agent with no card; the agent's row names the definition and the backend, and its report comes back to her conversation; her agent and the user's own coding session each call a plugin's tool through their bridge and get its answer";
 export const STAGE_STEP = "Alpha's stage tool runs with no card at the default level and changes her stage; it asks at \"ask\" and is refused at read-only, where her read-only stage_status still answers with no card";
 /** The cold-start step's name (`coldStartStep`). Its number is its own place in the table: rows after it (the idle
  *  step) must never take it. */

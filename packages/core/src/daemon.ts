@@ -204,6 +204,7 @@ import { ContractError } from "./contracts/common";
 import { agentHookSource, pluginHooks, type TurnHooks } from "./runtime-sdk/turn-loop/hooks";
 import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
 import { MCP_FIRST_LISTING_WAIT_MS, MCP_RELIST_DEBOUNCE_MS, PluginMcp, localMcpRunner, serversNamingSetting } from "./runtime-sdk/turn-loop/plugin-mcp";
+import { agentBackendOf, agentToolJudge, lateAgentPlugins, type AgentPluginReachDeps } from "./agents/plugin-reach";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
 import { HttpMcpOpener } from "./computers/http-mcp";
@@ -4124,6 +4125,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  agent has no plugin hooks to wait for. Safe mode is the app's (§5.8, the pair's status): the daemon's plugins and
    *  bot side run as usual in it, so the hooks are up. */
   let pluginsGaveUp = false;
+  /** How the plugins reach the agents (spec §9.3, agents/plugin-reach.ts), once the bot side's drivers are made: their
+   *  tools judged by the bots' approval check, run through this computer's router. */
+  let agentReach: AgentPluginReachDeps | undefined;
   // The bot's own shell write roots as its sandbox draws them now, at a level (its grants among them); none before the
   // bot side is up.
   let botShellRoots: ((conversation: string | undefined, bot: string, level: Level | undefined) => readonly string[]) | undefined;
@@ -4288,13 +4292,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // reads Clover's state): bound by the router to the plugin, server and tool it really reaches on this
           // computer, and judged at each call.
           containedTool: (ctx, tool) => {
-            const routed = mcp.routedTool(ctx.kind, tool);
+            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx));
             return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
           },
           // A plugin's read-only tool (lane B's `pluginToolReadOnly`: `readOnly` on the tree the user OK'd, never a dev
           // folder, a networked server or one with no plugin fence here): bound the same way, judged at each call, a read.
           readOnlyTool: (ctx, tool) => {
-            const routed = mcp.routedTool(ctx.kind, tool);
+            const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx));
             return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
           },
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
@@ -4327,6 +4331,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // the home's ordinary top-level folders), by real paths only. On any doubt, no (the card is asked).
         const writableAlready = (ctx: BotSessionContext, folder: string) => {
           try { return grantsCover(sandboxOf(ctx).filesystem?.allowWrite ?? [], folder, hostOs()); } catch { return false; }
+        };
+        // The plugins' tools on an agent's bridge (spec §9.3): each call meets the plugins' hooks, is judged by this same
+        // check as the same call in the session that owns it (the agent's own session on the card; its bot's level and
+        // saved rules, or the user's coding session's own), and runs where its server is, as the agent's session.
+        agentReach = {
+          servers: (kind, backend) => mcp.servers(kind, backend),
+          runner: node?.mcp ?? localMcpRunner(mcp, thisComputer),
+          hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
+          registry,
+          judge: agentToolJudge(check),
         };
         return botDriverFactory({
         home: cloverHome,
@@ -4560,6 +4574,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           // The bots' plugin hooks (made with the bot side), so an in-process delegation's tool calls and an agent's
           // permission requests meet them too; none to wait for when plugins are off or their registry gave up.
           hooks: agentHookSource({ hooks: () => agentTurnHooks, plugins: () => opts.plugins !== false, registryGaveUp: () => pluginsGaveUp, ownBots: () => opts.parts?.bots === undefined }),
+          // The plugins' tools, skills and agent definitions, and Glossary, for every agent (spec §9.3): none until the bot
+          // side's drivers are made (and so the approval check that judges each call).
+          plugins: lateAgentPlugins(() => agentReach, pluginRegistry === undefined ? undefined : (fn) => pluginRegistry.watch(() => fn())),
         },
         // The Clover server's core events: the terminal panel's output (owner-scoped: the opener only), and the broker's
         // cards to the app, remote clients and plugins with `approvals` (C-M3 item 2), from before the bot side starts.

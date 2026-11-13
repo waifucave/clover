@@ -198,6 +198,9 @@ export interface DaemonAgentsInput {
   /** The bot's own shell write roots for a conversation at a level, its grants among them: a bot's agent in a root they
    *  cover runs its commands with no card; every other command of a bot's agent asks on a card. */
   botWriteRoots?: AgentsOptions["botWriteRoots"];
+  /** How the plugins reach the agents (spec §9.3, agents/plugin-reach.ts): their tools on the bridge, their skills and
+   *  agent definitions placed where a backend reads its own, and `Glossary` on the bridge. */
+  plugins?: Pick<AgentsOptions, "pluginTools" | "pluginParts" | "glossary">;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -396,6 +399,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
             },
             ...(a.backends ? { backends: a.backends } : {}),
             ...(a.botWriteRoots ? { botWriteRoots: a.botWriteRoots } : {}),
+            ...(a.plugins?.pluginTools ? { pluginTools: a.plugins.pluginTools } : {}),
+            ...(a.plugins?.pluginParts ? { pluginParts: a.plugins.pluginParts } : {}),
+            ...(a.plugins?.glossary ? { glossary: a.plugins.glossary } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;

@@ -10,7 +10,7 @@
 // Hook events map onto Claude Code's: `tool.before` → `PreToolUse`, `tool.after` → `PostToolUse`, `message.in` and
 // `turn.start` → `UserPromptSubmit`, `turn.end` → `Stop`, `compact.before` → `PreCompact`, `compact.after` →
 // `SessionStart` (matcher `compact`). `message.out` has no Claude Code event, so those hooks aren't placed.
-import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import type { HookEvent, PluginParts } from "../placement";
 import { DEFAULT_HOOK_TIMEOUT_MS } from "./hook-shim";
@@ -56,6 +56,9 @@ export const MAX_HOOK_TIMEOUT_MS = 60_000;
 
 export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: { command: string; args: readonly string[] } }): PlacementResult {
   const root = join(ctx.dir, CLAUDE_PLUGIN_FOLDER);
+  // Written afresh each time: a skill, agent or hook of a plugin turned off or removed since is never left behind. The
+  // folder is Clover's own, per session, in the fenced run folder: never the user's `~/.claude` or a project's.
+  rmSync(root, { recursive: true, force: true });
   mkdirSync(join(root, ".claude-plugin"), { recursive: true, mode: 0o700 });
   writeFileSync(join(root, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: "clover", version: "0.0.0", description: "Skills, agents and hooks from Clover's plugins, for this session." }, null, 2)}\n`);
   const placed: PlacementResult["placed"] = { skills: [], agents: [], hooks: [], skipped: [] };
@@ -66,6 +69,11 @@ export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: 
       continue;
     }
     const name = safeName(s.name || basename(s.dir));
+    // Two parts of one name: the first stays, the other is skipped (never merged into one folder).
+    if (placed.skills.includes(name)) {
+      placed.skipped.push({ id: s.name, why: "a skill of that name is placed already" });
+      continue;
+    }
     cpSync(s.dir, join(root, "skills", name), { recursive: true, dereference: false });
     placed.skills.push(name);
   }
@@ -73,6 +81,10 @@ export function placeInClaudeCode(parts: PluginParts, ctx: { dir: string; shim: 
   if (parts.agents.length > 0) mkdirSync(join(root, "agents"), { recursive: true });
   for (const a of parts.agents) {
     const name = safeName(a.name);
+    if (placed.agents.includes(name)) {
+      placed.skipped.push({ id: a.name, why: "an agent of that name is placed already" });
+      continue;
+    }
     writeFileSync(join(root, "agents", `${name}.md`), a.markdown);
     placed.agents.push(name);
   }
