@@ -4423,7 +4423,10 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   writeFileSync(mediaPicks.answers, `open=${mediaPicks.video}\nfolder=${mediaPicks.folder}\nsave=${mediaPicks.saved}\n`);
   // The renders' dark and light: the app follows this file (CLOVER_TEST_APPEARANCE_FILE, test-marked builds only).
   const appearanceFile = join(root, "appearance");
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // A command's default key pressed in the window (CLOVER_TEST_KEY_FILE, test-marked and acceptance builds only): CDP key events never reach the window's before-input-event, so main presses it with sendInputEvent from this file.
+  const keyFile = join(root, "press-key");
+  let keyPresses = 0;
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -4438,6 +4441,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : {}),
       pickFolder,
+      setPick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       avatarFolder,
       mediaPicks,
       healFake: (id) => fake?.heal(id),
@@ -4445,6 +4449,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       appCli: (words) => appCli(words),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
+      pressKey: (key: string, modifiers: string[]) => writeFileSync(keyFile, JSON.stringify({ n: ++keyPresses, key, modifiers })),
       ...(pressable ? {
         pressCard: async (what: string, match: (c: Card) => boolean) => {
           const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);
