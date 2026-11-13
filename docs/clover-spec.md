@@ -230,7 +230,7 @@ These are **not** pluggable [D]. Plugins can extend them only through the declar
 * **[P] Crashes and logs:** a crashed worker restarts after 1 second, the delay doubling up to 1 minute. After 3 crashes in 10 minutes the plugin stops on that computer, its tools answer "plugin stopped: <reason>", and Settings shows its last log lines until the user restarts it. A worker that misses the plugin host's heartbeat for 30 seconds counts as crashed. A folder holding a native module runs in a process of its own (§5.2). Each plugin logs to `logs/plugins/<id>.log`, which Settings and `clover plugin logs` show.
 * **[D] Each plugin declares its scope: `bots`, `agents` or `both`.**
   * Scope covers a plugin's MCP servers, skills, agent definitions and hooks, and defaults to `both`.
-  * A plugin may also limit itself to certain agent backends (`onlyBackends`), for example only Claude Code.
+  * A plugin may also limit itself to certain agent backends (`onlyBackends`), for example only Claude Code. **[P]** An agent session on a backend the list leaves out gets none of the plugin's MCP servers, skills, agent definitions or hooks; a session Clover's own runtime drives (a bot's delegation on Clover's agent, the user's coding session) is on the backend `clover`. Bots aren't agent backends: the list never narrows what a bot gets.
   * The user can override the scope in settings.
   * An agent definition can narrow which in-scope plugins its agent receives.
   * Bots stay equal: everything scoped to bots is visible to every bot.
