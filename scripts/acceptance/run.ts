@@ -2175,10 +2175,12 @@ async function main(): Promise<void> {
       await run(["list"], id);
       await run(["info", id], id);
       await run(["logs", id, "-n", "5"]);
-      await run(["pin", id], "no updates are offered for it");
-      if ((await pinned()) !== true) fail(`clover plugin pin ${id} didn't pin it (plugin.get says ${String(await pinned())})`);
-      await run(["unpin", id], "is offered updates again");
-      if ((await pinned()) !== false) fail(`clover plugin unpin ${id} didn't unpin it`);
+      // A pin holds a plugin at its version against its index or npm (§5.6): a folder-installed plugin has none, so the
+      // CLI refuses it and says why (the index row pins and unpins its indexed plugin through the CLI).
+      const pin = await coreCli(["plugin", "pin", id], "plugin-cli-pin");
+      if (pin.code === 0 || !`${pin.stderr}${pin.stdout}`.includes("isn't from a plugin index or npm")) fail(`clover plugin pin ${id} (installed from a folder) exited ${pin.code}: ${(pin.stderr || pin.stdout).trim().slice(0, 300)}`);
+      if ((await pinned()) === true) fail(`clover plugin pin ${id} pinned a plugin no index or npm updates`);
+      said.push("pin (refused: it isn't from an index or npm)");
       await run(["restart", id], `restarted ${id}`);
       await run(["index", "list"]);
       const made = join(root, "cli-new-plugin");
@@ -2232,16 +2234,22 @@ async function main(): Promise<void> {
       if ((await cards(c)).some((k) => !known.has(k.id) && k.pluginId === id)) fail("the update that asks for nothing new raised a card");
       said.push("1.1.0 offered, applied on the click with no card");
       // Pinned: no update offered; unpinned, it is.
-      await c.request("plugin.pin", { id, pinned: true });
+      // Pinned and unpinned from the user's terminal (`clover plugin pin`), read back through plugin.get.
+      const cli = async (words: string[], expect: string) => {
+        const r = await coreCli(["plugin", ...words], `plugin-cli-index-${words[0]}`);
+        if (r.code !== 0 || !r.stdout.includes(expect)) fail(`clover plugin ${words.join(" ")} exited ${r.code}: ${(r.stderr || r.stdout).trim().slice(0, 300)}`);
+      };
+      await cli(["pin", id], "no updates are offered for it");
+      if ((await pluginOf(id) as { pinned?: boolean } | undefined)?.pinned !== true) fail(`clover plugin pin ${id} didn't pin it`);
       await publishIndexVersion(pluginWorld, id, "1.2.0", version("1.2.0",
         { contributes: { triggers: [{ type: "acceptance-indexed-ping", title: "Ping", handler: "ping" }] } },
         'export const version = "1.2.0";\nexport const ping = { arm(): void {}, disarm(): void {} };\n'));
       const whilePinned = await c.request<{ offered?: { id: string }[] }>("plugin.update", {}, 60_000);
       if (whilePinned.offered?.some((o) => o.id === id)) fail(`pinned, it was still offered an update: ${JSON.stringify(whilePinned.offered)}`);
-      await c.request("plugin.pin", { id, pinned: false });
+      await cli(["unpin", id], "is offered updates again");
       const unpinned = await c.request<{ offered?: { id: string; to: string }[] }>("plugin.update", {}, 60_000);
       if (!unpinned.offered?.some((o) => o.id === id && o.to === "1.2.0")) fail(`unpinned, 1.2.0 wasn't offered: ${JSON.stringify(unpinned).slice(0, 300)}`);
-      said.push("pinned: none offered; unpinned: 1.2.0 offered");
+      said.push("pinned with clover plugin pin: none offered; unpinned with clover plugin unpin: 1.2.0 offered");
       // An update that adds a trigger asks again: its card says what changed and what the trigger does.
       await c.request("plugin.update", { id }, 60_000);
       const asked = await cardFor(id, "the update's OK card");
