@@ -1268,7 +1268,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         // target the browser's input path takes it from, main's before-input-event sees it as the user's.
         const root = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
         const target = presses % 2 === 1 && root !== undefined ? root.session : keyShell.session;
-        for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Y", code: "KeyY", windowsVirtualKeyCode: 89, modifiers: chord }, target).catch(() => undefined);
+        // A rawKeyDown: the browser hands only that kind to the window's before-input-event (a plain keyDown goes straight to the page).
+        for (const type of ["rawKeyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Y", code: "KeyY", windowsVirtualKeyCode: 89, modifiers: chord }, target).catch(() => undefined);
         await sleep(1_500);
         return undefined;
       }, async () => `its page counts ${JSON.stringify(pinged)} after ${presses} press(es); the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-3).join(" | ") || "no keys: line"}`);
