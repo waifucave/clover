@@ -70,6 +70,8 @@ interface Ctx {
   /** Runs the user's `clover-core app screenshot --window main --out <dir>` (the target's own CLI) into a fresh folder:
    *  its exit code, what it printed, and the folder. */
   appScreenshot?(): Promise<{ code: number; stdout: string; stderr: string; dir: string }>;
+  /** Runs the user's `clover-core app <words>` (the target's own CLI): its exit code and what it printed. */
+  appCli?(words: string[]): Promise<{ code: number; stdout: string; stderr: string }>;
 }
 
 /** The distinct colours in a PNG (8-bit RGB or RGBA, not interlaced: what `Page.captureScreenshot` gives), counting colours
@@ -630,6 +632,26 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (colours < 6) fail(`the main window's PNG (${width}x${height}) has ${colours} colour(s): an empty or flat picture [apps/desktop/src/main/capture.ts]`);
       if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (the screenshot)");
       shotSaid = `; clover-core app screenshot drew main.png ${width}x${height} (bounds ${w!.bounds.width}x${w!.bounds.height} at scale ${w!.scale}), ${colours} colours, not visible, no window shown`;
+    }
+    // The user's navigation from a terminal (`clover-core app open`): Settings, then back to her tab, each by the route
+    // the app's own sidebar uses, each shown; nothing is clicked, and no window is shown.
+    if (ctx.appCli !== undefined) {
+      const went: string[] = [];
+      // Settings is a dialog over her tab: the shell says so (`dialog`), with the tab under it.
+      for (const [to, kind, dialog] of [["settings", "bot", "settings"], ["bot:alpha", "bot", undefined]] as const) {
+        const r = await ctx.appCli(["open", to]);
+        let a: { shown?: boolean; reason?: string; where?: { tab?: { kind?: string; id?: string }; dialog?: string }; frames?: unknown[] };
+        try { a = JSON.parse(r.stdout); } catch { return fail(`clover-core app open ${to} printed no JSON (exit ${r.code}): ${(r.stderr || r.stdout).trim().slice(0, 300)} [packages/cli/src/app-cli.ts, apps/desktop/src/main/open.ts]`); }
+        if (r.code !== 0 || a.shown !== true || a.where?.tab?.kind !== kind || a.where?.dialog !== dialog) fail(`clover-core app open ${to}: shown ${String(a.shown)}${a.reason ? ` (${a.reason})` : ""}, the window at ${JSON.stringify(a.where?.tab)}${a.where?.dialog ? ` under ${a.where.dialog}` : ""} [apps/desktop/src/main/open.ts]`);
+        if (!Array.isArray(a.frames) || a.frames.length === 0) fail(`clover-core app open ${to} listed no frames`);
+        went.push(`${to} shown (${a.frames!.length} frames)`);
+      }
+      const here = await ctx.appCli(["where"]);
+      const at = (JSON.parse(here.stdout) as { where?: { tab?: { kind?: string; id?: string } } }).where?.tab;
+      const over = (JSON.parse(here.stdout) as { where?: { dialog?: string } }).where?.dialog;
+      if (at?.kind !== "bot" || at.id !== "alpha" || over !== undefined) fail(`clover-core app where says the window is at ${JSON.stringify(at)}${over ? ` under ${over}` : ""}, not Alpha's tab`);
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (app open)");
+      shotSaid += `; clover-core app open ${went.join(", then ")}; app where: Alpha's tab; no window shown`;
     }
     return `Alpha's talk column is drawn, with the composer in it, on screen; the header says "${parts.header.replace(/\s+/g, " ")}" and the stage is ${parts.w}x${parts.h} with the avatar on a canvas (${parts.text})${shotSaid}`;
   });

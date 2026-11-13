@@ -604,6 +604,8 @@ export interface ShellState {
   readonly tab: { readonly kind: "bot" | "agent" | "settings" | "plugins" | "app" | "archive" | "bot-editor" | "other"; readonly id?: string };
   /** The bot whose tab shows, if one does. */
   readonly bot?: string;
+  /** A window over the tab: `settings` while Settings shows over it (the tab under it stays `tab`). */
+  readonly dialog?: "settings";
   /** The sidebar: rested as a rail of icons, and which side it shows (the bots' or the code's). */
   readonly sidebar: { readonly collapsed: boolean; readonly side: "bots" | "code" };
   /** The panels of the tab: the views open now, and the ones it offers. */

@@ -357,6 +357,8 @@ function str(v: unknown, max = 256): string | undefined {
 }
 
 export interface IpcHooks {
+  /** What a window's shell said of its place (`app.open` waits on it). */
+  shellState?(windowId: number, state: ShellState): void;
   /** The root's measured title-bar area, for the frame's variables. */
   frameMetrics(windowId: number, m: { top: number; start: number; end: number }): void;
   /** A command from the root (restart normally, open the plugin manager…). */
@@ -727,6 +729,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (report === undefined) return;
     const before = JSON.stringify(shellWindows.get(s.windowId)?.state);
     shellWindows.set(s.windowId, report);
+    hooks.shellState?.(s.windowId, report.state);
     sayProvides(s.windowId);
     if (JSON.stringify(report.state) !== before) runtime.windowPluginMessage(s.windowId, (p) => hearsShell(p, report.state), { type: "shell-state", state: report.state });
   });

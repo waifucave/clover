@@ -256,8 +256,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // Where the window is, said to the core for the plugin frames that read it (`shell.state`): data only, whenever it changes.
   const appEntries = useSpotEntries("sidebar.app").entries;
   const stateOut: ShellState = {
-    tab: { kind: !shown ? "other" : shown.route === "bot" ? "bot" : shown.route === "agent" ? "agent" : shown.route === "bot-editor" ? "bot-editor" : shown.route === "settings" || shown.route === "plugins" || shown.route === "archive" ? shown.route : "app", ...(shown?.params.bot ?? shown?.params.session !== undefined ? { id: (shown?.params.bot ?? shown?.params.session)! } : {}) },
+    tab: { kind: !shown ? "other" : shown.route === "bot" ? "bot" : shown.route === "agent" ? "agent" : shown.route === "bot-editor" ? "bot-editor" : shown.route === "settings" || shown.route === "plugins" || shown.route === "archive" ? shown.route : "app", ...(shown?.params.bot ?? shown?.params.session !== undefined ? { id: (shown?.params.bot ?? shown?.params.session)! } : shown !== undefined && !["bot", "agent", "bot-editor", "settings", "plugins", "archive"].includes(shown.route) ? { id: shown.route } : {}) },
     ...(botRef ? { bot: botRef.id } : {}),
+    ...(dialog ? { dialog: "settings" as const } : {}),
     sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots" },
     panels: { open, available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [] },
     safeArea: { left: 80, top: 44 },

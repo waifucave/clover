@@ -106,7 +106,50 @@ export type CapturedWindow = z.infer<typeof CapturedWindow>;
 export const AppCaptureResult = z.object({ windows: z.array(CapturedWindow).max(32) });
 export type AppCaptureResult = z.infer<typeof AppCaptureResult>;
 
+/** Where `app.open` goes: `bot:<id>`, `app:<key>` or a `main` spot key (a plugin's page), `settings` or
+ *  `settings:<section>`, `plugins`, `archive`, `code`. */
+export const AppOpenTarget = utf16(200, 1).regex(/^[A-Za-z0-9._:#/-]+$/);
+export const AppOpenParams = z.object({ target: AppOpenTarget, frames: z.boolean().optional() }).strict();
+export const AppWhereParams = z.object({ frames: z.boolean().optional() }).strict();
+/** The window's place as its shell reports it: the tab showing (`kind`, and the bot's id, a session's, or an app's key)
+ *  and the bot whose tab shows. */
+export const AppPlace = z.object({
+  tab: z.object({ kind: utf16(32), id: utf16(256).optional() }),
+  bot: utf16(256).optional(),
+  side: utf16(16).optional(),
+  /** `settings` while Settings shows over the tab. */
+  dialog: utf16(16).optional(),
+});
+/** `app.open`'s and `app.where`'s answer: whether the target shows (`shown`, with why not), the window's place, whether
+ *  it is drawn, and its frames (ids and sizes only). */
+export const AppOpenResult = z.object({
+  target: AppOpenTarget.optional(),
+  shown: z.boolean(),
+  reason: utf16(500).optional(),
+  drawn: z.boolean(),
+  where: AppPlace.optional(),
+  frames: z.array(CapturedFrame).max(256).optional(),
+});
+export type AppOpenResult = z.infer<typeof AppOpenResult>;
+/** What the daemon asks the app: a target to open, or none for where it is. */
+export const AppWindowOpenParams = z.object({ target: AppOpenTarget.optional(), frames: z.boolean().optional() }).strict();
+
 export const APP_METHODS = {
+  appOpen: defineMethod({
+    name: "app.open", owner: "D", roles: ["cli"], userOnly: true,
+    params: AppOpenParams, result: AppOpenResult,
+    doc: "The user's own navigation of this computer's app from a terminal: shows a bot's tab, a plugin's page, Settings, Plugins, Archive or the coding side in the main window by the route its own sidebar uses, waits until it shows, and says where the window is and its frames; never shows, raises, focuses, moves or resizes a window, and never clicks or types in a page. A local user's CLI only.",
+  }),
+  appWhere: defineMethod({
+    name: "app.where", owner: "D", roles: ["cli"], userOnly: true,
+    params: AppWhereParams, result: AppOpenResult,
+    doc: "Where this computer's app's main window is (the tab showing) and its frames, changing nothing. A local user's CLI only.",
+  }),
+  appWindowOpen: defineMethod({
+    name: "app.window.open", owner: "D", roles: ["app"], direction: "from-daemon",
+    params: AppWindowOpenParams, result: AppOpenResult,
+    doc: "The daemon asks the app's main process for `app.open`'s answer (with a target) or `app.where`'s (without).",
+  }),
   appCapture: defineMethod({
     name: "app.capture", owner: "D", roles: ["cli"], userOnly: true,
     params: AppCaptureParams, result: AppCaptureResult,

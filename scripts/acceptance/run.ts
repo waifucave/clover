@@ -51,7 +51,7 @@
 // and is ended, and the temp folder and the keychain file are deleted, on every way out.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -788,15 +788,24 @@ const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n"
  *  bundle's core (the CLI is that binary); the run's temp home and throwaway keychain, into a fresh folder under the run. */
 async function appScreenshot(): Promise<{ code: number; stdout: string; stderr: string; dir: string }> {
   const dir = mkdtempSync(join(root, "shot-"));
-  const words = ["app", "screenshot", "--window", "main", "--out", dir];
-  const [cmd, args] = target === "source" ? [process.execPath, [join(REPO, "packages", "cli", "src", "main.ts"), ...words]] : [packagedCore(), words];
+  return { ...(await appCli(["screenshot", "--window", "main", "--out", dir], "app-screenshot")), dir };
+}
+
+/** `clover-core app <words>` as the user runs it (the target's own CLI, as `appScreenshot`), its output kept in the logs. */
+async function appCli(words: string[], log = `app-${words[0] ?? "cli"}`): Promise<{ code: number; stdout: string; stderr: string }> {
+  const all = ["app", ...words];
+  const [cmd, args] = target === "source" ? [process.execPath, [join(REPO, "packages", "cli", "src", "main.ts"), ...all]] : [packagedCore(), all];
   return new Promise((done) => {
     const p = spawn(cmd, args, { cwd: root, env: { ...baseEnv(), CLOVER_NO_AUTOLAUNCH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     p.stdout!.on("data", (b: Buffer) => { stdout += b.toString(); });
     p.stderr!.on("data", (b: Buffer) => { stderr += b.toString(); });
     const timer = setTimeout(() => p.kill("SIGKILL"), 60_000);
-    p.on("close", (code) => { clearTimeout(timer); writeFileSync(join(logs, "app-screenshot.log"), `${stdout}\n--- stderr ---\n${stderr}`); done({ code: code ?? -1, stdout, stderr, dir }); });
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      try { appendFileSync(join(logs, `${log}.log`), `$ clover-core ${all.join(" ")}\n${stdout}\n--- stderr ---\n${stderr}\n`); } catch { /* best effort */ }
+      done({ code: code ?? -1, stdout, stderr });
+    });
   });
 }
 
@@ -3122,6 +3131,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       mediaPicks,
       healFake: (id) => fake?.heal(id),
       appScreenshot: () => appScreenshot(),
+      appCli: (words) => appCli(words),
       uiSettings: () => { try { return JSON.parse(readFileSync(join(home, "settings", "ui.json"), "utf8")) as { appearance?: string }; } catch { return {}; } },
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       ...(pressable ? {

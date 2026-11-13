@@ -2,6 +2,413 @@
   "area": "app",
   "owner": "E (with C, D, G, M)",
   "methods": {
+    "app.open": {
+      "doc": "The user's own navigation of this computer's app from a terminal: shows a bot's tab, a plugin's page, Settings, Plugins, Archive or the coding side in the main window by the route its own sidebar uses, waits until it shows, and says where the window is and its frames; never shows, raises, focuses, moves or resizes a window, and never clicks or types in a page. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.where": {
+      "doc": "Where this computer's app's main window is (the tab showing) and its frames, changing nothing. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.open": {
+      "doc": "The daemon asks the app's main process for `app.open`'s answer (with a target) or `app.where`'s (without).",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
     "app.capture": {
       "doc": "The user's own look at what this computer's app draws: a window's picture (Electron's own capture of its page, never the screen) with its bounds, its display's scale and its frame list; never shows, raises or resizes a window. A local user's CLI only.",
       "owner": "D",
