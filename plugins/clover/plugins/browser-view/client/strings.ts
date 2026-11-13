@@ -14,7 +14,7 @@ export const S = {
   placeholderTitle: "The live page shows here",
   placeholderText: "The page opens here as soon as the browser has it.",
   /** A tab the user holds in the view: the bot's commands on it wait. */
-  held: "You are using this tab. The bot waits until you let go.",
+  held: "You are using this tab. The bot can see this page, and is paused from clicking and typing in it until you let go.",
   noTab: "No tab open",
   /** The live view went to another panel the person used since (R8). */
   paused: "Paused: the live page is in another panel. Click the picture to bring it here.",
