@@ -7,6 +7,9 @@ import { CARDS_STEP } from "./cards-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
 import { ADDONS_STEP } from "./addons-step";
 import { ARCHIVE_STEP } from "./archive-step";
+import { ACP_BACKEND_STEP } from "./acp-backend-step";
+import { BUILDER_EXAMPLES_STEP } from "./builder-examples-step";
+import { WORKSHOP_POINTS_STEP } from "./workshop-points-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { API_AREAS_STEP } from "./api-areas-step";
@@ -82,6 +85,9 @@ export const FULL_STEPS = [
   ARRIVALS_STEP,
   ADDONS_STEP,
   ARCHIVE_STEP,
+  ACP_BACKEND_STEP,
+  BUILDER_EXAMPLES_STEP,
+  WORKSHOP_POINTS_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

@@ -79,6 +79,9 @@ import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
 import { ADDONS_STEP, addonsStep } from "./addons-step";
 import { ARCHIVE_STEP, archiveStep, seedArchive } from "./archive-step";
+import { ACP_BACKEND_STEP, acpBackendStep } from "./acp-backend-step";
+import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-step";
+import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
@@ -2636,7 +2639,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   } finally {
     c?.close();
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "tab-flash" || id === "browser");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -2740,6 +2743,11 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [ADDONS_STEP, () => addonsStep(ctx, session)],
     // The previous app's session, read on the Archive page (checklist 4.14).
     [ARCHIVE_STEP, () => archiveStep(ctx)],
+    // An agent backend a plugin brings (ACP), on a fake agent in place of a vendor's CLI (checklist 1.51, 4.25).
+    [ACP_BACKEND_STEP, () => acpBackendStep(ctx)],
+    // The plugin builder's 15 examples installed and drawn on the app (checklist 5.4), and a bot's plugin that takes a plugin (5.12).
+    [BUILDER_EXAMPLES_STEP, () => builderExamplesStep(ctx, session)],
+    [WORKSHOP_POINTS_STEP, () => workshopPointsStep(ctx, session)],
   ] as const;
 }
 

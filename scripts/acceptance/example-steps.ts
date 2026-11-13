@@ -80,8 +80,8 @@ export async function until<T>(what: string, ms: number, probe: () => Promise<T 
 // Alpha's own frames too: while her tab shows, her sidebar (not the stock one) is what the user presses.
 export const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
 export const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
-const layerDocs = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
-const frames = async (cdp: Cdp) => (await cdp.documents()).map((d) => `${d.url.slice(0, 50)}: ${d.text.replace(/\s+/g, " ").slice(0, 80)}`).join(" || ");
+export const layerDocs = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
+export const frames = async (cdp: Cdp) => (await cdp.documents()).map((d) => `${d.url.slice(0, 50)}: ${d.text.replace(/\s+/g, " ").slice(0, 80)}`).join(" || ");
 
 async function clickIn(cdp: Cdp, what: string, docs: () => Promise<{ session: string }[]>, selector: string, text?: string, ms = 20_000): Promise<void> {
   const at = await until(what, ms, async () => {
@@ -97,7 +97,7 @@ export const clickTree = (cdp: Cdp, what: string, selector: string, text?: strin
 
 /** Clicks the element one of whose lines, or whose accessible name, is exactly `text` (the sidebar's Notes entry, beside
  *  Notes keeper; a bot's row, its initial on a line of its own). */
-async function clickExact(cdp: Cdp, what: string, selector: string, text: string, ms = 20_000): Promise<void> {
+export async function clickExact(cdp: Cdp, what: string, selector: string, text: string, ms = 20_000): Promise<void> {
   const at = await until(what, ms, async () => {
     for (const d of await treeDocs(cdp)) {
       const c = await cdp.evaluate(d.session, `(() => {
@@ -113,7 +113,7 @@ async function clickExact(cdp: Cdp, what: string, selector: string, text: string
   await cdp.click(at.session, at.c.x, at.c.y);
 }
 
-async function escape(cdp: Cdp): Promise<void> {
+export async function escape(cdp: Cdp): Promise<void> {
   for (const d of await treeDocs(cdp)) for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
   await sleep(300);
 }
