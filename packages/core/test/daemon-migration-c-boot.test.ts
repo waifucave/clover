@@ -9,7 +9,7 @@
 //
 // Every home is a mkdtemp; the default-home gate is driven by `homedirOverride` (P9c-15), never the real ~.
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { transcriptProjectKey } from "@waifucave/clover-agent-sdk";
 import { SessionStore } from "../src/sessions/store";
 import { tmpdir } from "node:os";
@@ -17,7 +17,9 @@ import { dirname, join } from "node:path";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { setRunHomeSupportForTests } from "../src/runtime-sdk/run-home-support";
-import { MigrationCRefused, migrationCCompletePath, migrationCCurrentLayoutPath, migrationCManifestPath, migrationCState, oldLayoutMarkers, rollbackMigrationC, runMigrationC } from "../src/migration/migrate-c";
+import { MigrationCRefused, migrationCCompletePath, migrationCCurrentLayoutPath, migrationCManifestPath, migrationCState, oldLayoutMarkers, repairAgentsLink, rollbackMigrationC, runMigrationC, type MigrationCManifest } from "../src/migration/migrate-c";
+import { LocalHolder } from "../src/tree/holder";
+import { hostOs } from "../src/tree/names";
 import { AgentTranscript } from "../src/agents/transcript";
 import { openRuntimeStateDb } from "../src/runtime-state/db";
 import { readSdkSettings } from "../src/sdk-files";
@@ -67,7 +69,93 @@ function writeTranscript(home: string, session: string): void {
   t.call({ tool: "x" });
 }
 
+/** A home an earlier build migrated: its whole `agents` folder (a definition and botless agents' transcripts) renamed
+ *  into `sdk/agents`, Migration C's link left at `agents`, and the manifest saying so — as move-dirs did before. */
+async function migratedTheOldWay(home: string): Promise<void> {
+  seedOldLayout(home);
+  writeTranscript(home, "agent-1");
+  writeTranscript(home, "agent-2");
+  writeFileSync(join(home, "agents", "reviewer.md"), "---\nname: reviewer\n---\n");
+  await runMigrationC(home, { log: () => undefined, reconcileAvailable: true });
+  // Back to the old move-dirs' shape: everything under sdk/agents, a link at agents.
+  for (const name of readdirSync(join(home, "agents"))) renameSync(join(home, "agents", name), join(home, "sdk", "agents", name));
+  rmSync(join(home, "agents"), { recursive: true });
+  symlinkSync("sdk/agents", join(home, "agents"));
+  const m = JSON.parse(readFileSync(migrationCManifestPath(home), "utf8")) as MigrationCManifest;
+  m.moved = [...m.moved.filter((mv) => !mv.from.startsWith("agents/")), { from: "agents", to: "sdk/agents" }];
+  m.links = [...m.links, "agents"];
+  writeFileSync(migrationCManifestPath(home), JSON.stringify(m, null, 2));
+}
+
+function treeHolder(cloverHome: string): LocalHolder {
+  const allowAll = { check: () => ({ allowed: true as const }), fencedSet: () => [] };
+  return new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home: dirname(cloverHome), os: hostOs(), cloverHome, botsRoot: join(cloverHome, "bots"), runsBot: () => true, fence: allowAll });
+}
+
 describe("Migration C at boot (run-home router)", () => {
+  test("a home an earlier build migrated (agents a link to sdk/agents): the boot makes agents a real folder, its transcripts come back and a new one is written and read through the tree; the second boot does nothing", async () => {
+    setRunHomeSupportForTests(true);
+    const parent = parentDir();
+    const home = join(parent, ".clover");
+    await migratedTheOldWay(home);
+    // Before: the writer refuses the link, so a botless agent's transcript is lost.
+    writeTranscript(home, "lost");
+    expect(existsSync(join(home, "sdk", "agents", "lost", "agent.json"))).toBe(false);
+    daemon = await boot(home, parent);
+    expect(lstatSync(join(home, "agents")).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(home, "agents", "agent-1", "agent.json"))).toBe(true);
+    expect(existsSync(join(home, "agents", "agent-2", "calls.ndjson"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "agents", "reviewer.md"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "agents", "agent-1"))).toBe(false);
+    const m = (migrationCState(home) as { manifest: MigrationCManifest }).manifest;
+    expect(m.links).not.toContain("agents");
+    expect(m.moved).toContainEqual({ from: "agents/reviewer.md", to: "sdk/agents/reviewer.md" });
+    expect(m.agentsLinkRepair?.transcripts).toEqual(["agent-1", "agent-2"]);
+    writeTranscript(home, "agent-3");
+    expect(existsSync(join(home, "agents", "agent-3", "agent.json"))).toBe(true);
+    const as = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" } as const;
+    expect(await treeHolder(home).read("home/Studio/.clover/agents/agent-1/agent.json", { as })).toMatchObject({ encoding: "utf8" });
+    expect(await treeHolder(home).read("home/Studio/.clover/agents/agent-3/calls.ndjson", { as })).toMatchObject({ encoding: "utf8" });
+    await daemon.stop();
+    daemon = undefined;
+    const before = readFileSync(migrationCManifestPath(home), "utf8");
+    daemon = await boot(home, parent);
+    expect(readFileSync(migrationCManifestPath(home), "utf8")).toBe(before);
+    expect(existsSync(join(home, "agents", "agent-3", "agent.json"))).toBe(true);
+  });
+
+  test("the agents-link repair resumes after a crash, and a rollback after it puts each definition back into the real folder beside the transcripts", async () => {
+    const parent = parentDir();
+    const home = join(parent, ".clover");
+    await migratedTheOldWay(home);
+    // A crash after the intent and the unlink, before the folder was made.
+    const m = JSON.parse(readFileSync(migrationCManifestPath(home), "utf8")) as MigrationCManifest;
+    m.moved = [...m.moved.filter((mv) => mv.from !== "agents"), { from: "agents/reviewer.md", to: "sdk/agents/reviewer.md" }];
+    m.agentsLinkRepair = { at: "then", transcripts: ["agent-1", "agent-2"] };
+    writeFileSync(migrationCManifestPath(home), JSON.stringify(m, null, 2));
+    unlinkSync(join(home, "agents"));
+    expect(repairAgentsLink(home, () => undefined)).toEqual({ transcripts: ["agent-1", "agent-2"] });
+    expect(repairAgentsLink(home, () => undefined)).toBeUndefined();
+    await rollbackMigrationC(home, { log: () => undefined });
+    expect(lstatSync(join(home, "agents")).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(home, "agents", "reviewer.md"))).toBe(true);
+    expect(existsSync(join(home, "agents", "agent-1", "agent.json"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "agents", "reviewer.md"))).toBe(false);
+  });
+
+  test("a link at agents that Migration C didn't make is left alone", async () => {
+    const parent = parentDir();
+    const home = join(parent, ".clover");
+    await migratedTheOldWay(home);
+    unlinkSync(join(home, "agents"));
+    mkdirSync(join(parent, "elsewhere"));
+    symlinkSync(join(parent, "elsewhere"), join(home, "agents"));
+    const lines: string[] = [];
+    expect(repairAgentsLink(home, (l) => lines.push(l))).toBeUndefined();
+    expect(lstatSync(join(home, "agents")).isSymbolicLink()).toBe(true);
+    expect(lines.join("\n")).toContain("didn't make");
+  });
+
   for (const which of ["default", "non-default"] as const) {
     test(`a home the current layout already ran (${which}): a clover.json plugin with .mcp.json and a skill, agent transcripts — boots twice, never migrated or refused, and is marked current`, async () => {
       setRunHomeSupportForTests(true);

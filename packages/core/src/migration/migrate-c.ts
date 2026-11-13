@@ -32,7 +32,7 @@
 // canonical transcripts — archiving them unreconciled would drop turns the sessions already had. The
 // router keeps `reconcileRootForRecovery` for exactly this and for boot recovery.
 import { Database } from "bun:sqlite";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
@@ -93,6 +93,11 @@ export interface MigrationCManifest {
    *  records it (checked: the old path gone, the target there). Only ever one. */
   moving?: { from: string; to: string };
   links: string[];
+  /** The agents-link repair (`repairAgentsLink`) on a home an earlier build migrated: `agents` was a link to
+   *  `sdk/agents`; it is a real folder again, the transcript folders named here moved back into it from
+   *  `sdk/agents`, and each definition left in `sdk/agents` recorded as its own move in `moved` (rollback
+   *  renames it back into the real folder). Absent on a home that needed none. */
+  agentsLinkRepair?: { at: string; transcripts: string[] };
   copied: string[];
   archived: { from: string; to: string }[];
   /** Review I6: per root, the router's overall outcome and — from a per-transcript router — each
@@ -472,6 +477,63 @@ function moveAgentDefinitions(home: string, m: MigrationCManifest, inFlight: Mig
     m.moved.push(rel);
     delete m.moving;
     writeManifest(home, m);
+  }
+}
+
+/**
+ * The repair for a home an earlier build migrated (move-dirs then renamed all of `<home>/agents` into `sdk/agents` and
+ * left a link): a botless agent's transcript writer (`agents/transcript.ts`) writes nothing through a link, so on such a
+ * home every botless agent ran with no transcript. On a home whose Migration C is complete and whose manifest still
+ * lists the `agents` link, every boot of a run-home build (it is idempotent, and resumes a crashed run):
+ *   - records its intent first (`agentsLinkRepair`, the `agents` move split into one move per definition),
+ *   - removes the link (only Migration C's own, text `sdk/agents`) and makes `<home>/agents` a real folder,
+ *   - moves each transcript folder (`isAgentTranscriptFolder`) back from `sdk/agents`,
+ *   - and drops `agents` from `links`.
+ * Rollback then renames each definition back into the real folder. Returns what it did, or undefined when there was
+ * nothing to do. Never throws: a home it can't repair keeps its link, and the line says why.
+ */
+export function repairAgentsLink(home: string, log: (line: string) => void): { transcripts: string[] } | undefined {
+  const st = migrationCState(home);
+  if (st.kind !== "parsed" || st.manifest.status !== "complete" || !st.manifest.links.includes("agents")) return undefined;
+  const m = st.manifest;
+  const link = join(home, "agents");
+  const sdkAgents = join(home, "sdk", "agents");
+  try {
+    if (isSymlink(link) && readlinkSync(link) !== relative(home, sdkAgents)) {
+      log(`migration C: ${link} is a link Migration C didn't make (${readlinkSync(link)}) — left as it is; botless agents' transcripts aren't written while it is there`);
+      return undefined;
+    }
+    if (!isSymlink(link) && existsSync(link) && !lstatSync(link).isDirectory()) {
+      log(`migration C: ${link} is a file — left as it is; botless agents' transcripts aren't written while it is there`);
+      return undefined;
+    }
+    const entries = (() => { try { return readdirSync(sdkAgents, { withFileTypes: true }); } catch { return []; } })();
+    const transcripts = entries.filter((e) => e.isDirectory() && isAgentTranscriptFolder(join(sdkAgents, e.name))).map((e) => e.name).sort();
+    const definitions = entries.filter((e) => !isFolderNoise(e.name) && !transcripts.includes(e.name)).map((e) => e.name).sort();
+    // The intent, before anything moves: the one `agents` move becomes one per definition (rollback's reversal), and
+    // the transcripts to bring back are named.
+    if (m.agentsLinkRepair === undefined) {
+      m.moved = [...m.moved.filter((mv) => mv.from !== "agents"), ...definitions.map((d) => ({ from: `agents/${d}`, to: `sdk/agents/${d}` }))];
+      m.agentsLinkRepair = { at: new Date().toISOString(), transcripts };
+      writeManifest(home, m);
+    }
+    if (isSymlink(link)) unlinkSync(link);
+    mkdirSync(link, { recursive: true, mode: 0o700 });
+    const back: string[] = [];
+    for (const name of m.agentsLinkRepair.transcripts) {
+      const from = join(sdkAgents, name);
+      const to = join(link, name);
+      if (!existsSync(from) || existsSync(to) || isSymlink(to)) continue;
+      renameSync(from, to);
+      back.push(name);
+    }
+    m.links = m.links.filter((l) => l !== "agents");
+    writeManifest(home, m);
+    log(`migration C: ${link} is a real folder again (it was a link to ${sdkAgents}): ${back.length} botless agent transcript(s) moved back, ${definitions.length} agent definition(s) stay in ${sdkAgents}`);
+    return { transcripts: back };
+  } catch (err) {
+    log(`migration C: couldn't make ${link} a real folder again — ${err instanceof Error ? err.message : String(err)}; botless agents' transcripts aren't written while it is a link`);
+    return undefined;
   }
 }
 

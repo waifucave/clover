@@ -225,7 +225,7 @@ import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, run
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
-import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, runMigrationC } from "./migration/migrate-c";
+import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
 import { localScopeKeyFor, projectScopeRootFor, projectScopeTrust, projectScopeTrusted, runHomeInputFor } from "./runtime-sdk/run-home-input";
 import { reservedMcpServerNames } from "./capabilities/names";
@@ -1002,6 +1002,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       throw err;
     }
   }
+
+  // A home an earlier build migrated has `agents` as a link to `sdk/agents`, through which no botless agent's transcript
+  // is written: it becomes a real folder again, its transcripts moved back (`repairAgentsLink`; idempotent, never throws).
+  if (linkedRouterSupportsRunHome()) repairAgentsLink(home, (line) => console.error(line));
 
   // WS-21 (spec §4.1, §8): the settings split — every boot, every home, every build (the runtime-facing
   // keys are read from `sdk/` only since L3.2). Under the lock, before anything reads them. Once per key;
