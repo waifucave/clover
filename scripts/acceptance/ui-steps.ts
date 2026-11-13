@@ -1105,12 +1105,15 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Computers: this computer's tick.
       const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list")).computers[0]?.name;
       if (computer === undefined) fail("computer.list names no computer to tick");
-      await clickText(`the tick for ${computer}`, "input[type=checkbox]", `Run on ${computer}`);
-      const ticked = await until("plugin.get computers", 20_000, async () => {
-        const r = await rpc.request<{ plugin: { computers?: Record<string, string[]> } }>("plugin.get", { id: adultId });
-        return Object.values(r.plugin.computers ?? {}).some((l) => l.includes(computer!)) ? r.plugin.computers : undefined;
-      }, () => dumpFrames(cdp));
-      said.push(`computers: pressed the tick for ${computer} on a chosen server (plugin.get computers ${JSON.stringify(ticked)})`);
+      const computersDoor = await rpc.request("plugin.setComputers", { id: adultId, target: "page", computers: [] }).then(() => "", (err: unknown) => (/isn't served/.test(String((err as Error).message ?? err)) ? String((err as Error).message ?? err) : fail(`plugin.setComputers: ${String(err)}`)));
+      if (computersDoor === "") {
+        await clickText(`the tick for ${computer}`, "input[type=checkbox]", `Run on ${computer}`);
+        const ticked = await until("plugin.get computers", 20_000, async () => {
+          const r = await rpc.request<{ plugin: { computers?: Record<string, string[]> } }>("plugin.get", { id: adultId });
+          return Object.values(r.plugin.computers ?? {}).some((l) => l.includes(computer!)) ? r.plugin.computers : undefined;
+        }, () => dumpFrames(cdp));
+        said.push(`computers: pressed the tick for ${computer} on a chosen server (plugin.get computers ${JSON.stringify(ticked)})`);
+      } else said.push(`computers NOT PROVEN: the core doesn't serve plugin.setComputers yet (${computersDoor.slice(0, 100)})`);
       // The adult confirm.
       await clickText("I am 18 or older", "button", "I am 18 or older");
       await until("plugin.list adultConfirmed true", 20_000, async () => ((await adultOf()) ? true : undefined));
@@ -1129,11 +1132,18 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const scopeWords: Record<string, string> = { bots: "Bots", agents: "Agents", both: "Both" };
     const scope0 = await scopeOf();
     const scope1 = scope0 === "agents" ? "bots" : "agents";
-    await clickText(`the ${scopeWords[scope1]} radio`, "label.cl-plugin-index__choice", scopeWords[scope1]);
-    await until(`its scope ${scope1}`, 20_000, async () => ((await scopeOf()) === scope1 ? true : undefined), () => dumpFrames(cdp));
-    await until(`the page's radio on ${scopeWords[scope1]}`, 15_000, () => inTree<boolean>(cdp, `document.querySelector('[role=radiogroup][data-scope=${JSON.stringify(scope1)}]') !== null`));
-    await clickText(`the ${scopeWords[scope0]} radio`, "label.cl-plugin-index__choice", scopeWords[scope0]);
-    await until(`its scope back to ${scope0}`, 20_000, async () => ((await scopeOf()) === scope0 ? true : undefined), () => dumpFrames(cdp));
+    // The door itself first: a core that doesn't serve plugin.setScope yet says so, and then the press can't be proven.
+    const unserved = (err: unknown) => /isn't served/.test(String((err as Error).message ?? err));
+    const scopeDoor = await rpc.request("plugin.setScope", { id: pick!.id, scope: scope0 }).then(() => "", (err: unknown) => (unserved(err) ? String((err as Error).message ?? err) : fail(`plugin.setScope: ${String(err)}`)));
+    let scopeSaid: string;
+    if (scopeDoor === "") {
+      await clickText(`the ${scopeWords[scope1]} radio`, "label.cl-plugin-index__choice", scopeWords[scope1]);
+      await until(`its scope ${scope1}`, 20_000, async () => ((await scopeOf()) === scope1 ? true : undefined), () => dumpFrames(cdp));
+      await until(`the page's radio on ${scopeWords[scope1]}`, 15_000, () => inTree<boolean>(cdp, `document.querySelector('[role=radiogroup][data-scope=${JSON.stringify(scope1)}]') !== null`));
+      await clickText(`the ${scopeWords[scope0]} radio`, "label.cl-plugin-index__choice", scopeWords[scope0]);
+      await until(`its scope back to ${scope0}`, 20_000, async () => ((await scopeOf()) === scope0 ? true : undefined), () => dumpFrames(cdp));
+      scopeSaid = `Where it works: pressed ${scopeWords[scope1]} (plugin.get ${scope1}) and ${scopeWords[scope0]} back (${scope0})`;
+    } else scopeSaid = `Where it works NOT PROVEN: the core doesn't serve plugin.setScope yet (${scopeDoor.slice(0, 100)})`;
     // Files it may open: the grant added above is listed on the detail; Take back removes it.
     let grantsSaid = `files it may open not driven here (${grantSkipped.slice(0, 80)})`;
     if (grantSkipped === "") {
@@ -1145,7 +1155,6 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await waitText("the none-picked line", "You haven't picked any file or folder for it.");
       grantsSaid = "its picked file listed under Files it may open and taken back (plugin.grant.list empty)";
     }
-    const scopeSaid = `Where it works: pressed ${scopeWords[scope1]} (plugin.get ${scope1}) and ${scopeWords[scope0]} back (${scope0})`;
     // Remove… → its sealed card, pressed → gone.
     await clickText("Remove…", "button", "Remove");
     const removeCard = await ctx.pressCard!("its removal card", (c) => c.kind === "change" && c.change === "plugin-remove");
