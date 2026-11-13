@@ -91,8 +91,12 @@ describe("a bundled model plugin's keys come from its provider's keychain slot",
       },
     });
     await creds.prime();
-    expect(creds.connectionFor(modelPluginId("codex-oauth"), { providerId: "codex-oauth" } as { account?: string })).toEqual({ providerId: "codex-oauth", account: "acct-1" } as never);
-    expect(creds.connectionFor(modelPluginId("codex-oauth"), { account: "stated" })).toEqual({ account: "stated" });
+    expect(await creds.connectionFor(modelPluginId("codex-oauth"), { providerId: "codex-oauth" } as { account?: string })).toEqual({ providerId: "codex-oauth", account: "acct-1" } as never);
+    expect(await creds.connectionFor(modelPluginId("codex-oauth"), { account: "stated" })).toEqual({ account: "stated" });
+    // A sign-in made after the start (a new account) is read at the call, before any token is.
+    store.values.set("codex-oauth:default", JSON.stringify({ kind: "oauth", accessToken: "a-one", refreshToken: "r", accountId: "acct-2" }));
+    expect(await creds.connectionFor(modelPluginId("codex-oauth"), { providerId: "codex-oauth" } as { account?: string })).toEqual({ providerId: "codex-oauth", account: "acct-2" } as never);
+    store.values.set("codex-oauth:default", JSON.stringify({ kind: "oauth", accessToken: "a-one", refreshToken: "r", accountId: "acct-1" }));
     const source = creds.tokens(modelPluginId("codex-oauth"), "chatgpt");
     expect(await source.current()).toEqual({ value: "a-one", generation: 1 });
     expect(await source.newer(1)).toEqual({ value: "a-two", generation: 2 });
@@ -171,16 +175,16 @@ describe("startModelPlugins", () => {
     expect(serveApiCalls).toBe(0);
   });
 
-  test("by default no code adapter is served through the plugin host: every code provider stays on this build's compiled adapter, and sessions get no host adapters", async () => {
+  test("with serving off no code adapter is served through the plugin host: every code provider stays on this build's compiled adapter, and sessions get no host adapters", async () => {
     const registry = registryOf();
     const host = new FakePluginHost({ clock: new FakeClock() });
     for (const id of Object.keys(CODE_PLUGINS)) {
       const record = registry.get(modelPluginId(id))!;
-      host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+      host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun", ...(record.manifest!.host!.process === "own" ? { process: "own" as const } : {}) });
     }
     const api = serveApiHandlers(host, registry);
     const lines: string[] = [];
-    started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-off-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h), log: (l) => lines.push(l) });
+    started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-off-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: false, log: (l) => lines.push(l) });
     expect(started.plugins.snapshot!.served.size).toBe(0);
     expect(lines.some((l) => l.includes("code providers stay on the compiled path"))).toBe(true);
     const option = started.plugins.sessionOption({ caller: { kind: "core" } });
@@ -203,7 +207,7 @@ describe("startModelPlugins", () => {
       const host = new FakePluginHost({ clock: new FakeClock() });
       for (const id of Object.keys(CODE_PLUGINS)) {
         const record = registry.get(modelPluginId(id))!;
-        host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+        host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun", ...(record.manifest!.host!.process === "own" ? { process: "own" as const } : {}) });
       }
       const store = new DaemonStore();
       store.values.set("codex-oauth:default", JSON.stringify({ kind: "oauth", accessToken: codexFake.FAKE_ACCESS_TOKEN, accountId: codexFake.FAKE_ACCOUNT_ID }));
@@ -213,8 +217,7 @@ describe("startModelPlugins", () => {
         return globalThis.fetch(`${fake.url}${u.pathname}${u.search}`, init);
       };
       const api = serveApiHandlers(host, registry);
-      // The fake host carries live objects in process, so the code adapters may be served through it.
-      started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: true });
+        started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: true });
       expect(installedModelPlugins()).toBe(started.plugins);
       expect(activeCatalog()).not.toBe(loadCatalog());
       expect(activeCatalog().providers.length).toBe(loadCatalog().providers.length);
