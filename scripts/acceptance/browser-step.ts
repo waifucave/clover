@@ -5,7 +5,7 @@
 // (`CLOVER_TEST_BROWSER_NAMES`, apps/desktop/src/main/browser/test-names.ts: a test or acceptance build only): the name
 // resolves to a public-kind address and is dialled to this server, so the network filter judges it as any web address.
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTurn, until, type ExampleCtx } from "./example-steps";
 import { islandShooter, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
@@ -189,6 +189,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
     await ctx.pressCard("the third-party tab's OK card", (c) => c.id === okCard.id);
     await until("the third-party tab's plugin running", 60_000, async () => ((await ctx.rpc.request<{ plugin: { state: string } }>("plugin.get", { id: tabId }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    if (process.env.CLOVER_ACCEPT_RENDERS) writeFileSync(join(process.env.CLOVER_ACCEPT_RENDERS, "third-party-tab-ok-card.json"), okText);
     lines.push(`third-party tab OK card says: ${okText.replace(/\s+/g, " ").slice(0, 600)}`);
     const settings = await settingsUsageText(ctx.cdp).catch((e: unknown) => fail(`the Settings Usage section: ${(e as Error).message}`));
     const settingsProblem = settingsDrawnProblem(settings);

@@ -109,11 +109,26 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   await shoot?.("1-closed-strip");
   await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 20_000);
   /** Chooses a tab on the dots by its label, clicking again until it reads as selected (a dot takes a click once the island rests). */
+  /** The pointer over the open island (it puts itself away a moment after the pointer leaves, and a click alone doesn't move it);
+   *  an island that has put itself away is opened again from its strip. */
+  const hold = async (): Promise<void> => {
+    for (const d of await here()) {
+      const c = await cdp.centerOf(d.session, ".clv-open", undefined).catch(() => undefined);
+      if (c !== undefined) { await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y }, d.session).catch(() => undefined); return; }
+    }
+    await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 10_000).catch(() => undefined);
+    await sleep(1_200);
+  };
   const choose = async (label: string): Promise<void> => {
     const selector = `[role=tab][aria-label=${JSON.stringify(label)}]`;
     for (let attempt = 0; attempt < 5; attempt++) {
+      await hold();
       await sleep(600);
-      await clickIn(cdp, `the island's ${label} tab dot`, selector, undefined, 20_000);
+      await clickIn(cdp, `the island's ${label} tab dot`, selector, undefined, 20_000).catch(async (err: unknown) => {
+        const seen: string[] = [];
+        for (const d of await here()) seen.push(String(await cdp.evaluate(d.session, "[...document.querySelectorAll('[role=tab]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-selected')).join(',') || (document.body ? 'no dots; ' + document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : '')").catch(() => "")));
+        throw new Error(`${(err as Error).message} (attempt ${attempt + 1}; dots: ${seen.filter((x) => x !== "").join(" | ")})`);
+      });
       await sleep(400);
       for (const d of await here()) {
         const v = await cdp.evaluate(d.session, `(() => { const t = document.querySelector(${JSON.stringify(selector)}); return t ? t.getAttribute('aria-selected') === 'true' : null; })()`).catch(() => null);
