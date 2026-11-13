@@ -4,7 +4,8 @@
 // the plugin it was given). The row presses the button with a real pointer click (the page ignores a script's), and checks:
 // the note names the model the files go to (before and after), the report shows with its heading, the card is unchanged and
 // still waiting, and the card is then denied (the plugin never installs).
-import { resolve } from "node:path";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fail, sleep, until, type ExampleCtx } from "./example-steps";
 
 export const REVIEW_STEP = "Review on a plugin's OK card: pressed on the card's own page, the report (the fake model's reading of this plugin's files) shows as text under a heading that says it is a model's reading, the note names the model, and the card is unchanged and still waiting";
@@ -34,6 +35,8 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
   const { cdp, rpc } = ctx;
   let cardId: string | undefined;
   let installed = false;
+  let roleSet = false;
+  let settingsBefore: string | undefined;
   try {
     const r = await rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: FIXTURE_DIR } }, 60_000);
     if (r.id !== PLUGIN_ID) fail(`${PLUGIN_ID} installed as ${r.id}`);
@@ -43,17 +46,20 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
       return all.find((c) => c.kind === "plugin-ok" && c.pluginId === PLUGIN_ID);
     });
     cardId = card.id;
-    // The daemon's internal-provider view learns of the run's key on its first refusal (it re-reads the credentials then, at
-    // most every 30 s): a Review asked before that says "unavailable". Asked here over RPC until a model can run it, as the
-    // page asks (the page's own press then shows the one review this card has).
-    const primed = await until("a model that can run the review", 90_000, async () => {
-      const v = await rpc.request<{ state: string; why?: string }>("plugin.review", { card: card.id, peek: true });
-      if (v.state !== "unavailable") return v;
-      await rpc.request("plugin.review", { card: card.id }).catch(() => undefined);
-      await sleep(3_000);
-      return undefined;
-    }, async () => "plugin.review stayed unavailable: no internal provider can run the reviewer role in this run");
-    void primed;
+    // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model chosen for the role: it won't pick one
+    // on that provider by itself ("Settings > Roles"). The reviewer role is set to the model Alpha runs, as a user would.
+    const tag = (await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+    if (tag === undefined || !tag.startsWith("anthropic/")) fail(`Alpha runs ${tag ?? "no model"}, not an Anthropic one the run's key can drive`);
+    // The home's settings.json (the daemon reads a change live): `reviewer.model`, merged into what the run already wrote there.
+    const file = join(ctx.home, "settings.json");
+    settingsBefore = existsSync(file) ? readFileSync(file, "utf8") : undefined;
+    const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
+    writeFileSync(file, `${JSON.stringify({ ...now, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
+    roleSet = true;
+    await until("the daemon to take the reviewer role", 30_000, async () => {
+      const v = await rpc.request<{ state: string; model?: string }>("plugin.review", { card: card.id, peek: true });
+      return v.state !== "unavailable" ? v : undefined;
+    }, async () => "plugin.review (peek) stayed unavailable after the reviewer role was set in settings.json");
     // The card's own page: the fallback window the app draws when no part shows the card.
     const url = `clover-sealed://card/${encodeURIComponent(card.id)}/own`;
     const page = await until("the card's own page", 45_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(url)));
@@ -103,6 +109,7 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
     if (!still) fail("the Review answered the card");
     return `pressed on the card's own page, the report "${done.report.slice(0, 60).replace(/\s+/g, " ")}…" showed under "${HEAD_TEXT}", the note named ${view.model}, and the card stayed the same and waiting`;
   } finally {
+    if (roleSet) { const file = join(ctx.home, "settings.json"); try { if (settingsBefore === undefined) rmSync(file, { force: true }); else writeFileSync(file, settingsBefore, { mode: 0o600 }); } catch { /* best effort */ } }
     if (cardId !== undefined) await ctx.denyCard(cardId).catch(() => undefined);
     if (installed) {
       const rm = await rpc.request<{ card?: string }>("plugin.remove", { id: PLUGIN_ID }).catch(() => undefined);
