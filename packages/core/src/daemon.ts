@@ -1,3 +1,4 @@
+import { ReadElements } from "./approvals/browser-words";
 import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
@@ -4101,6 +4102,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // the bot's conversation or routine run it came from, whatever kind it is.
     let sessionsOf: (() => { get(id: string): { kind: string; parent?: string } | undefined } | undefined) | undefined;
     // Before the bot side is up no root can be known: no budget then, never a fresh one.
+    const readElements = new ReadElements();
     const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
     // The conversations' shell grants (lane C's `SandboxGrants`, made with the drivers): a removed bot's go with it, and
     // a conversation's own when it ends.
@@ -4234,6 +4236,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           }),
           bundledTool,
           // The site a bot's own browser tab is on, for the one card its acting calls ask per bot and site.
+          browserElement: (ctx, ref) => readElements.get(ctx.sessionId, ref),
           browserHost: async (ctx) => {
             const svc = daemonParts?.browser?.service;
             if (svc === undefined) return undefined;
@@ -4300,7 +4303,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         observe: {
           turn: (ctx, origin) => { seenUrls.turnStarted(ctx.sessionId, origin); agentStarts.turnStarted(ctx.sessionId, origin, ctx.kind === "side-thread"); },
           input: (ctx, input) => seenUrls.input(ctx.sessionId, input),
-          toolResult: (ctx, tool, response) => { if (bundledTool(ctx, tool) === "web-search") seenUrls.searchResult(ctx.sessionId, response); },
+          toolResult: (ctx, tool, response) => {
+            const kind = bundledTool(ctx, tool);
+            if (kind === "web-search") seenUrls.searchResult(ctx.sessionId, response);
+            else if (kind === "browser") readElements.note(ctx.sessionId, response);
+          },
           tasks: (ctx, live) => { if (live > 0) liveTasks.set(ctx.sessionId, live); else liveTasks.delete(ctx.sessionId); },
         },
         // The core tools (lane D's, lane K's Agent and TaskStop), and lane C's `RequestAccess` where a broker can raise its cards.

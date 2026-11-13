@@ -63,7 +63,7 @@ test("the card names the bot and the site; Approve is remembered for that bot an
   const denied = answerNext(broker, "deny");
   expect((await click("alpha"))?.behavior).toBe("deny");
   const card = await denied;
-  expect(JSON.stringify(card.fields)).toContain("Let Alpha click and type on example.com");
+  expect(JSON.stringify(card.fields)).toContain("Browser: click and type on example.com");
   // Asks again after a Deny.
   const approved = answerNext(broker, "always");
   expect((await click("alpha"))?.behavior).toBe("allow");
@@ -112,7 +112,7 @@ test("a coding session with no bot: looking verbs no card, the acting card says 
   const click = () => check(codingCtx(), () => "user")(TOOL, { verb: "click", ref: "e1" }, run);
   const asked = answerNext(broker, "always");
   expect((await click())?.behavior).toBe("allow");
-  expect(JSON.stringify((await asked).fields)).toContain("Let your coding sessions click and type on example.com");
+  expect(JSON.stringify((await asked).fields)).toContain("Browser: click and type on example.com");
   expect(broker.rules()).toHaveLength(1);
   expect((await click())?.behavior).toBe("allow");
   expect(broker.cards()).toHaveLength(0);
@@ -127,10 +127,10 @@ test("a coding session with no bot: looking verbs no card, the acting card says 
 test("a bot's delegated agent has no Always of its own: it falls under its bot's kept rule, and without one it asks as the bot would", async () => {
   const agentCtx = () => ({ ...ctxOf("alpha"), sessionId: "s-alpha-agent", caller: { kind: "session", sessionId: "s-alpha-agent", sessionKind: "agent", bot: "alpha" } }) as unknown as BotSessionContext;
   const { broker, check } = setup(() => "ask-risky");
-  // No kept rule yet: the agent's click is a card for the bot ("Let Alpha ..."), and its Always is the bot's rule.
+  // No kept rule yet: the agent's click is a card for the bot ("Browser: click and type on ..."), and its Always is the bot's rule.
   const asked = answerNext(broker, "always");
   expect((await check(agentCtx(), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("allow");
-  expect(JSON.stringify((await asked).fields)).toContain("Let Alpha click and type on example.com");
+  expect(JSON.stringify((await asked).fields)).toContain("Browser: click and type on example.com");
   expect(broker.rules()).toHaveLength(1);
   // The bot's own session now runs with no card on that rule, and a second agent of the bot too.
   expect((await check(ctxOf("alpha"), () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("allow");
@@ -141,4 +141,23 @@ test("a bot's delegated agent has no Always of its own: it falls under its bot's
   const sol = answerNext(broker, "deny");
   expect((await check({ ...agentCtx(), botId: "sol" } as BotSessionContext, () => "user")(TOOL, { verb: "click", ref: "e1" }, run))?.behavior).toBe("deny");
   await sol;
+});
+
+
+test("the card's act is words from the session's last read, never a bare ref; a secure field's text is not shown", async () => {
+  const broker = new CloverApprovalBroker({ clock: new FakeClock(), levels: () => "ask", localComputer: "Studio" });
+  const elements = new Map([["e12", { role: "button", name: "Say hello", secure: false }], ["e3", { role: "textbox", name: "Password", secure: true }], ["e4", { role: "textbox", name: "Email", secure: false }]]);
+  const check = botApprovalCheck(broker, { bundledTool: (_c, tool) => (tool === TOOL ? "browser" : undefined), browserHost: async () => "example.com", browserElement: (_c, ref) => elements.get(ref), levelOf: () => "ask" });
+  const commandOf = async (input: Record<string, unknown>): Promise<string> => {
+    const asked = answerNext(broker, "deny");
+    await check(ctxOf("alpha"), () => "user")(TOOL, input, run);
+    const card = await asked;
+    expect(card.fields.what).toEqual({ type: "code", code: "Browser: click and type on example.com" });
+    return (card.fields.command as { code: string }).code;
+  };
+  expect(await commandOf({ verb: "click", ref: "e12" })).toBe('Click the button "Say hello"');
+  expect(await commandOf({ verb: "type", ref: "e4", text: "me@example.com" })).toBe('Type "me@example.com" into the field "Email"');
+  expect(await commandOf({ verb: "type", ref: "e3", text: "hunter2" })).toBe('Type into the field "Password"');
+  expect(await commandOf({ verb: "type", ref: "e99", text: "hunter2" })).toBe("Type into an element the page showed");
+  expect(await commandOf({ verb: "key", key: "Enter" })).toBe("Press Enter");
 });
