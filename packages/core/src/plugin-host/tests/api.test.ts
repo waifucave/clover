@@ -128,23 +128,26 @@ describe("the router: the one capability gate", () => {
     expect([e.code, e.message]).toEqual(["refused", "conversation.list needs the capability conversation.read, which this plugin's OK doesn't list"]);
   });
 
-  test("where a call exists: secrets.get only in a process of the plugin's own, desktop.* only in clover's, host.call only in components; keys.* nowhere yet", async () => {
+  test("where a call exists: secrets.get only in a process of the plugin's own, desktop.* and keys.* only in clover's, host.call only in components", async () => {
     const r = routerWith(registry(), [{ "secrets.get": () => "s", "desktop.show": () => "k", "keys.publicKey": () => "never", "host.call": () => 1 }]);
     expect(await code(call(r, "luna", "secrets.get", ["x"], { process: "shared" }))).toBe("refused");
     expect(await call(r, "luna", "secrets.get", ["x"], { process: "own" })).toBe("s");
     expect(await code(call(r, "luna", "desktop.show", ["f"], { process: "shared" }))).toBe("refused");
     expect(await call(r, "luna", "desktop.show", ["f"], { process: "clover" })).toBe("k");
-    // Marked not served yet (`notYet`): refused even from clover's process, even with a handler.
-    expect((await failure(call(r, "luna", "keys.publicKey", ["f"], { process: "clover" }))).message).toContain("keys.publicKey isn't available yet");
+    expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "own" }))).toBe("refused");
+    expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "shared" }))).toBe("refused");
+    expect(await call(r, "luna", "keys.publicKey", ["f"], { process: "clover" })).toBe("never");
     expect(await code(call(r, "luna", "host.call", ["x"]))).toBe("refused");
   });
 
-  test("commands.run isn't available yet: refused with why, whatever the plugin holds (its `call:` gate is apiCallAllowed's, the SDK's tests)", async () => {
+  test("commands.run is gated by call:<the command's plugin>, read from the plugin's own record; its own tree's need none", async () => {
     const r = routerWith(registry(), [{ "commands.run": (_c, a) => `ran ${String(a[0])}` }]);
     for (const id of ["luna", "quiet", "tarot"]) {
-      const e = await failure(call(r, id, "commands.run", ["tarot.shuffle"]));
-      expect([id, e.code, e.message]).toEqual([id, "refused", `commands.run isn't available yet: ${API_CALLS["commands.run"].notYet}`]);
+      const out = await call(r, id, "commands.run", ["tarot.shuffle"]).then((v) => v as string, (e: { code: string; message: string }) => e);
+      if (typeof out === "string") expect(out).toBe("ran tarot.shuffle");
+      else expect(out.message).toContain("call:tarot");
     }
+    expect(await call(r, "tarot", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
   });
 
   test("net.fetch reaches only the plugin's network: hosts; a call no area serves yet is refused, never guessed", async () => {

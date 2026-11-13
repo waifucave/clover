@@ -169,6 +169,8 @@ export interface DaemonParts {
   broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
+  /** Lane D's usage ledger, with the bot side: the plugin API's `usage.*` reads it. */
+  usage?: UsageLedger;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
   close(): Promise<void>;
 }
@@ -269,6 +271,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
   };
   try {
     let side: BotSide | undefined;
+    let usageLedger: UsageLedger | undefined;
     const nodeLinks = links ? computerNodeLinks(links) : undefined;
     const computer = nodeLinks?.self.name;
     // The lease's main computer, as lane D reads it; a lone computer (no links, or no lease here) is its own.
@@ -482,6 +485,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ledger.close();
       });
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
+      usageLedger = ledger;
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
@@ -490,7 +494,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => b.close());
     }
     const registry = input.bots ? input.bots.registry : undefined;
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
   } catch (err) {
     await close();
     throw err;

@@ -117,7 +117,7 @@
     {
       "name": "logs.read",
       "lets": "Read Clover's logs and every plugin's",
-      "ok": "reads Clover's logs",
+      "ok": "reads Clover's logs and every plugin's logs",
       "warns": false
     },
     {
@@ -147,8 +147,8 @@
     },
     {
       "name": "audio",
-      "lets": "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on",
-      "ok": "can hear your microphone",
+      "lets": "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices",
+      "ok": "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
       "warns": true
     },
     {
@@ -4005,8 +4005,7 @@
     },
     "commands.run": {
       "capability": "call:*",
-      "where": "both",
-      "notYet": "running another plugin's command from a plugin isn't served yet; the user runs commands from the composer"
+      "where": "both"
     },
     "commands.list": {
       "where": "both"
@@ -4043,16 +4042,13 @@
       "where": "own"
     },
     "keys.publicKey": {
-      "where": "clover",
-      "notYet": "the core keeps no key store for plugins yet"
+      "where": "clover"
     },
     "keys.open": {
-      "where": "clover",
-      "notYet": "the core keeps no key store for plugins yet"
+      "where": "clover"
     },
     "keys.delete": {
-      "where": "clover",
-      "notYet": "the core keeps no key store for plugins yet"
+      "where": "clover"
     },
     "settings.get": {
       "where": "both"
@@ -4092,14 +4088,10 @@
       "where": "ui"
     },
     "memory.list": {
-      "capability": "memory.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "memory.read": {
-      "capability": "memory.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "bots.list": {
       "capability": "bots.read",
@@ -4114,14 +4106,10 @@
       "where": "both"
     },
     "routines.list": {
-      "capability": "routines.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "routines.runs": {
-      "capability": "routines.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "computers.list": {
       "capability": "computers.read",
@@ -4371,33 +4359,25 @@
     },
     "usage.rows": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "usage.plans": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "usage.summary": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "usage.watch": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "logs.read": {
-      "capability": "logs.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "logs.follow": {
-      "capability": "logs.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "notify.send": {
       "capability": "notify",
@@ -4431,13 +4411,11 @@
     },
     "audio.play": {
       "capability": "audio",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "audio.onRecording": {
       "capability": "audio",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     }
   }
 }
