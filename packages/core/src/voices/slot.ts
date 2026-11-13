@@ -50,6 +50,8 @@ export interface VoiceSlotOptions {
   chosen?(): Promise<string | undefined> | string | undefined;
   /** Tells the user something in words (a notification): the fallback when their voice stops. */
   tell?(text: string): void;
+  /** Clears the user's choice (Clover Voice's `active` setting): their chosen voice mode was removed. */
+  forget?(): Promise<void> | void;
   log?(line: string): void;
   warn?(message: string): void;
   now?(): number;
@@ -130,7 +132,9 @@ export class VoiceSlot {
       chosen = undefined;
     }
     if (chosen === "") chosen = undefined;
-    const pick = (chosen !== undefined ? modes.find((m) => m.pluginId === chosen) : undefined) ?? modes.find((m) => m.pluginId === CLOVER_VOICE) ?? modes[0];
+    // The user's choice, else Clover Voice; never another mode the user didn't choose (only their click makes one
+    // active). Neither running: no voice, the bots are text-only.
+    const pick = (chosen !== undefined ? modes.find((m) => m.pluginId === chosen) : undefined) ?? modes.find((m) => m.pluginId === CLOVER_VOICE);
     // The user's choice stopped (off, removed, stopped, crashed): they hear of it once, in words.
     if (chosen !== undefined && pick?.pluginId !== chosen) {
       const key = `${chosen}\u0000${pick?.pluginId ?? ""}`;
@@ -279,6 +283,20 @@ export class VoiceSlot {
 
   #now(): number {
     return (this.#o.now ?? Date.now)();
+  }
+
+  /** A plugin was removed (uninstalled, not merely stopped): if it was the user's chosen voice, the choice goes with it,
+   *  so the same id installed again later isn't active without the user's click. A stop or a crash keeps the choice. */
+  async removed(pluginId: string): Promise<void> {
+    let chosen: string | undefined;
+    try {
+      chosen = (await this.#o.chosen?.()) ?? undefined;
+    } catch {
+      return;
+    }
+    if (chosen === undefined || chosen === "" || chosen !== pluginId) return;
+    await this.#o.forget?.();
+    for (const k of [...this.#told]) if (k.startsWith(`${pluginId}\u0000`)) this.#told.delete(k);
   }
 
   /** The user's stop on a bot (`voice.stop`): the core ends what it sounds whatever the mode does, and the mode drops
@@ -451,18 +469,19 @@ export class VoiceSlot {
         if (t === undefined || t.owner !== ctx.pluginId || t.kind !== "audio") throw new ContractError("not_found", "no such sound of yours to play (each ticket is used once, within 10 minutes)");
         if (t.playing) throw new ContractError("invalid", "that sound is already playing");
         t.playing = true;
-        let sent = 0;
         let bytes = 0;
         let seq = 0;
         let ended = false;
+        let format: VoicePlay["format"] = t.pieces[0]?.format ?? "pcm16-24k";
         const firstAt = this.#now();
         let played: Promise<boolean> | undefined;
         try {
           for (;;) {
             if (t.stopped) break;
-            const next = t.pieces[sent];
+            // Each piece leaves the ticket as it goes to the player: a long stream holds only what hasn't gone yet.
+            const next = t.pieces.shift();
             if (next !== undefined) {
-              sent++;
+              format = next.format;
               bytes += Math.floor(next.audio.length * 0.75);
               if (next.final) played = this.#awaitEnd(t.utterance, t.bot, firstAt, bytes);
               await this.#o.service.sendPiece({ ...next, seq: seq++ });
@@ -476,7 +495,7 @@ export class VoiceSlot {
         } finally {
           if (!ended) {
             played = this.#awaitEnd(t.utterance, t.bot, firstAt, bytes);
-            await this.#o.service.sendPiece({ bot: t.bot, session: t.session, utterance: t.utterance, seq: seq++, audio: "", format: t.pieces[0]?.format ?? "pcm16-24k", final: true }).catch(() => this.#ends.get(t.utterance)?.ended(false));
+            await this.#o.service.sendPiece({ bot: t.bot, session: t.session, utterance: t.utterance, seq: seq++, audio: "", format, final: true }).catch(() => this.#ends.get(t.utterance)?.ended(false));
           }
           this.#drop(t.id);
         }

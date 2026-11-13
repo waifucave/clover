@@ -4252,12 +4252,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       voicePlay: (p) => {
         for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
       },
-      // The voice slot (§6.6): the user's choice is Clover Voice's own `active` setting (read while it runs; with it off,
-      // the first voice mode that runs is active), and a voice that stops is said in words, as Clover Voice's notice.
+      // The voice slot (§6.6): the user's choice is Clover Voice's own `active` setting (their chosen mode, else Clover
+      // Voice; neither running, text-only), a voice that stops is said in words, as Clover Voice's notice, and a chosen
+      // mode that is removed clears the choice.
       voiceChosen: async () => {
         const v = await pluginHost?.settings.layerView(CLOVER_VOICE, "active").catch(() => undefined);
         return typeof v === "string" && v !== "" ? v : undefined;
       },
+      voiceForget: () => pluginHost?.settings.layerSet(CLOVER_VOICE, "active", null),
       voiceTell: (text) => {
         try {
           notifyService?.send(CLOVER_VOICE, { title: "Voice", body: text });

@@ -97,6 +97,8 @@ export interface BotSideOptions {
     chosen?(): Promise<string | undefined> | string | undefined;
     /** Tells the user, in words, that their voice stopped and which speaks now. */
     tell?(text: string): void;
+    /** Clears the user's choice of voice mode (its plugin was removed). */
+    forget?(): Promise<void> | void;
   };
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
@@ -239,12 +241,17 @@ export function createBotSide(o: BotSideOptions): BotSide {
     registry: o.voices.registry, host: o.voices.host as Pick<PluginHost, "invoke">, service: voices,
     ...(o.voices.chosen === undefined ? {} : { chosen: o.voices.chosen }),
     ...(o.voices.tell === undefined ? {} : { tell: o.voices.tell }),
+    ...(o.voices.forget === undefined ? {} : { forget: o.voices.forget }),
     ...(o.voices.listenIdleMs === undefined ? {} : { listenIdleMs: o.voices.listenIdleMs }),
     ...(o.warn === undefined ? {} : { warn: o.warn, log: o.warn }),
   });
   // Each reply of a bot's main conversation, spoken with its voice while the user's `voice.speakReplies` is on (unset is
   // on; read at each turn's end).
   let offReplies: (() => void) | undefined;
+  // A removed plugin that was the user's chosen voice takes the choice with it (a stop or a crash keeps it).
+  const registryWatch = (o.voices?.registry as Partial<Pick<PluginRegistry, "watch">> | undefined)?.watch;
+  const offVoiceRemovals = voiceSlot === undefined || registryWatch === undefined ? undefined
+    : registryWatch.call(o.voices!.registry, (change) => { if (change.type === "removed") void voiceSlot.removed(change.id).catch(() => undefined); });
   // Held by an update's restart: started again as the gate reopens.
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
@@ -315,6 +322,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     },
     close: async () => {
       offReplies?.();
+      offVoiceRemovals?.();
       offBusy?.();
       offQuestions?.();
       offReopen?.();

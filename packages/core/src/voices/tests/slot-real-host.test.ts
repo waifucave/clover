@@ -120,7 +120,8 @@ async function world(o: { reportMs?: number; graceMs?: number } = {}) {
       if (p.final && o.reportMs !== undefined) setTimeout(() => { reports.push({ utterance: p.utterance, at: Date.now() }); slot?.played(p.bot, p.utterance); }, o.reportMs);
     },
   });
-  slot = new VoiceSlot({ registry: opened.registry, host: ph.host, service, chosen: () => chosen, tell: (t) => void told.push(t), ...(o.graceMs === undefined ? {} : { playedGraceMs: o.graceMs }) });
+  let forgot = 0;
+  slot = new VoiceSlot({ registry: opened.registry, host: ph.host, service, chosen: () => chosen, tell: (t) => void told.push(t), forget: () => { chosen = undefined; forgot++; }, ...(o.graceMs === undefined ? {} : { playedGraceMs: o.graceMs }) });
   for (const id of ["acceptance-voice", "vmode", "narrator", "nosy"]) {
     const { card } = await opened.registry.installed(id, "app");
     const shown = broker.cards().find((c) => c.id === card)!;
@@ -131,8 +132,10 @@ async function world(o: { reportMs?: number; graceMs?: number } = {}) {
     for (let t = 0; t < ms / 20 && !f(); t++) await Bun.sleep(20);
     if (!f()) throw new Error(`not in time: ${what}`);
   };
-  const close = async () => { await ph.close(); opened.close(); };
-  return { home, opened, ph, played, reports, slot: slot!, service: service!, told, choose: (id: string | undefined) => { chosen = id; }, until, close };
+  // As the bot side wires it: a removed plugin that was the user's choice takes the choice with it.
+  const offRemovals = opened.registry.watch((c) => { if (c.type === "removed") void slot!.removed(c.id); });
+  const close = async () => { offRemovals(); await ph.close(); opened.close(); };
+  return { home, opened, ph, played, reports, slot: slot!, service: service!, told, choose: (id: string | undefined) => { chosen = id; }, chosen: () => chosen, forgot: () => forgot, until, close };
 }
 
 describe("the voice slot in a real plugin host", () => {
@@ -181,6 +184,48 @@ describe("the voice slot in a real plugin host", () => {
       const beta = w.played.find((p) => p.bot === "beta")!;
       // 0.6 s of tone and 1.2 s of grace from Alpha's first piece.
       expect(beta.at - alphaFirst.at).toBeGreaterThanOrEqual(1_700);
+    } finally {
+      await w.close();
+    }
+  });
+
+  test("Clover Voice off and a third party's voice mode not chosen: no voice at all (only the user's click makes a mode active); the mode is refused the player, nothing listens, a reply stays text", async () => {
+    const w = await world();
+    try {
+      await w.opened.registry.setEnabled(CLOVER_VOICE, false);
+      for (let i = 0; i < 200 && w.opened.registry.get(CLOVER_VOICE)?.state !== "off"; i++) await Bun.sleep(20);
+      expect(w.opened.registry.get("vmode")?.state).toBe("running");
+      expect(await w.slot.active()).toBeUndefined();
+      const invoke = (pluginId: string, handler: string) => w.ph.host.invoke<unknown>({ pluginId, handler, args: {}, caller: USER });
+      expect(await invoke("vmode", "trySink")).toContain("isn't the active voice");
+      expect(await w.slot.listens("alpha")).toBe(false);
+      await expect(w.slot.reply({ bot: "alpha", session: "b_alpha", text: "a reply" })).rejects.toThrow("no voice is on");
+      await Bun.sleep(300);
+      expect(w.played).toEqual([]);
+    } finally {
+      await w.close();
+    }
+  });
+
+  test("the chosen mode stopped keeps the choice (it comes back with the plugin); removed, the choice goes, so the same id installed again isn't active without a click", async () => {
+    const w = await world();
+    try {
+      w.choose("vmode");
+      expect((await w.slot.active())?.pluginId).toBe("vmode");
+      await w.opened.registry.setEnabled("vmode", false);
+      for (let i = 0; i < 200 && w.opened.registry.get("vmode")?.state !== "off"; i++) await Bun.sleep(20);
+      expect((await w.slot.active())?.pluginId).toBe(CLOVER_VOICE);
+      expect(w.chosen()).toBe("vmode");
+      await w.opened.registry.setEnabled("vmode", true);
+      for (let i = 0; i < 200 && w.opened.registry.get("vmode")?.state !== "running"; i++) await Bun.sleep(20);
+      expect((await w.slot.active())?.pluginId).toBe("vmode");
+      // Another plugin's removal leaves the choice alone; the chosen one's clears it.
+      await w.slot.removed("narrator");
+      expect(w.chosen()).toBe("vmode");
+      await w.slot.removed("vmode");
+      expect(w.chosen()).toBeUndefined();
+      expect(w.forgot()).toBe(1);
+      expect((await w.slot.active())?.pluginId).toBe(CLOVER_VOICE);
     } finally {
       await w.close();
     }
