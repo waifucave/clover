@@ -49,6 +49,7 @@ import { DEAD_LEGACY_TOP_LEVEL_FILES } from "./dead-legacy-files";
 import { LEGACY_INSTRUCTIONS_FILE } from "../legacy-names";
 import { settingsSplitMarkerPath, splitSettingsToSdk } from "./settings-split";
 import { legacyPluginDirNames } from "../plugins/convert-legacy";
+import { isAgentTranscriptFolder, isFolderNoise } from "../agents/transcript";
 import { isCoworkStorageRel, resolvesIntoCoworkStorage } from "./cowork-exclusion";
 
 export type MigrationCStep = "preflight" | "reconcile-official-roots" | "move-dirs" | "copy-files"
@@ -123,6 +124,9 @@ export function migrationCDir(home: string): string { return join(home, "migrati
 export function migrationCManifestPath(home: string): string { return join(migrationCDir(home), "manifest.json"); }
 export function migrationCCompletePath(home: string): string { return join(migrationCDir(home), "COMPLETE"); }
 export function migrationCRolledBackPath(home: string): string { return join(migrationCDir(home), "manifest.rolled-back.json"); }
+/** A home the current layout's daemon booted with nothing of the old layout in it (`markCurrentLayout`): never the old
+ *  layout again, whatever it holds later — Migration C never refuses or migrates it. */
+export function migrationCCurrentLayoutPath(home: string): string { return join(migrationCDir(home), "CURRENT_LAYOUT"); }
 
 function writeManifest(home: string, m: MigrationCManifest): void {
   mkdirSync(migrationCDir(home), { recursive: true, mode: 0o700 });
@@ -188,13 +192,58 @@ function hasLegacyPlugin(home: string): boolean {
  * A fresh home — bootstrap creates none of them — never matches.
  */
 export function isOldLayout(home: string): boolean {
-  if (existsSync(migrationCCompletePath(home))) return false;
-  if (SDK_COMPAT_LINKS.some(([name]) => hasFiles(join(home, name)))) return true;
-  if (hasLegacyPlugin(home)) return true;
-  if (existsSync(join(sdkHomeFor(home), "CLOVER.md"))) return false;
-  return [join(home, "CLOVER.md"), join(home, LEGACY_INSTRUCTIONS_FILE)].some((p) => {
-    try { return lstatSync(p).isFile(); } catch { return false; }
-  });
+  return oldLayoutMarkers(home).length > 0;
+}
+
+/** What makes `home` read as the old layout (`isOldLayout`), each named; `[]` when it doesn't (Migration C done, or a
+ *  home marked current). The boot refusal and the doctor say which. */
+export function oldLayoutMarkers(home: string): string[] {
+  if (existsSync(migrationCCompletePath(home)) || existsSync(migrationCCurrentLayoutPath(home))) return [];
+  const out: string[] = [];
+  for (const [name] of SDK_COMPAT_LINKS) if (name === "agents" ? hasAgentDefinitions(join(home, name)) : hasFiles(join(home, name))) out.push(`${name}/ (a real folder with files)`);
+  for (const p of legacyPluginDirs(home)) out.push(`plugins/${p} (a legacy plugin)`);
+  if (!existsSync(join(sdkHomeFor(home), "CLOVER.md"))) {
+    for (const name of ["CLOVER.md", LEGACY_INSTRUCTIONS_FILE]) {
+      try { if (lstatSync(join(home, name)).isFile()) out.push(`${name} (with no sdk/CLOVER.md)`); } catch { /* none */ }
+    }
+  }
+  return out;
+}
+
+/** The entries of `<home>/agents` that are the old layout's (agent definitions): everything but a botless agent's
+ *  transcript folder (`agents/transcript.ts`, `<home>/agents/<session>/`, the current layout's), an empty folder and
+ *  Finder's own files. `[]` when `dir` isn't a real folder (Migration C's link, or none). Preflight, move-dirs and the
+ *  old-layout check all read this one list: a transcript is never moved, linked or counted. */
+function agentDefinitionEntries(dir: string): string[] {
+  let entries;
+  try {
+    if (!lstatSync(dir).isDirectory()) return [];
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch { return []; }
+  return entries
+    .filter((e) => !isFolderNoise(e.name) && (!e.isDirectory() || (!isAgentTranscriptFolder(join(dir, e.name)) && hasFiles(join(dir, e.name)))))
+    .map((e) => e.name)
+    .sort();
+}
+
+function hasAgentDefinitions(dir: string): boolean {
+  return agentDefinitionEntries(dir).length > 0;
+}
+
+/** Marks `home` as the current layout (`migrationCCurrentLayoutPath`). The boot calls it on a run-home build when the
+ *  home is not the old layout and holds no Migration C manifest, before anything of this boot writes a folder the old
+ *  layout names (`agents/` takes botless agents' transcripts): a home this build made, or one it already runs, is
+ *  never read as the old layout later. False when the marker couldn't be written (the boot goes on; the check is the
+ *  same as before it). */
+export function markCurrentLayout(home: string): boolean {
+  try {
+    if (existsSync(migrationCCurrentLayoutPath(home))) return true;
+    mkdirSync(migrationCDir(home), { recursive: true, mode: 0o700 });
+    writeFileSync(migrationCCurrentLayoutPath(home), `${new Date().toISOString()}\n`, { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface MigrationCDeps {
@@ -254,6 +303,12 @@ function sdkPreflightProblem(home: string): string | undefined {
   for (const [name, target] of SDK_COMPAT_LINKS) {
     const from = join(home, name);
     const to = join(home, target);
+    if (name === "agents") {
+      // Moved entry by entry (move-dirs): only a definition whose name is taken in `sdk/agents` collides.
+      const taken = agentDefinitionEntries(from).find((e) => existsSync(join(to, e)) || isSymlink(join(to, e)));
+      if (taken !== undefined) return `${join(from, taken)} and ${join(to, taken)} both exist — merge them or move one aside by hand, then run \`clover migrate --sdk-home\` (or start Clover again)`;
+      continue;
+    }
     if (isSymlink(from) || !hasFiles(from)) continue;
     // No manifest exists at preflight, so there is nothing to `--resume`: the remedy is the pair itself.
     if (hasFiles(to)) return `${from} and ${to} both have content — merge them or move one aside by hand, then run \`clover migrate --sdk-home\` (or start Clover again)`;
@@ -388,6 +443,36 @@ function backupFile(src: string, dir: string, name: string): string | null {
   const dest = join(dir, name);
   copyFileSync(src, dest);
   return dest;
+}
+
+/** move-dirs for `agents`: each old agent definition (`agentDefinitionEntries`) renamed into `sdk/agents`, recorded
+ *  as its own move (`agents/<name>`; intent first, as every move), and NO link: `<home>/agents` stays a real folder,
+ *  where a botless agent's transcript lives (`agents/transcript.ts` writes nothing through a link). Its transcripts
+ *  are never moved. The readers of definitions read `sdk/agents` (the run home) or both. Rollback renames each back. */
+function moveAgentDefinitions(home: string, m: MigrationCManifest, inFlight: MigrationCManifest["moving"]): void {
+  const from = join(home, "agents");
+  const to = join(home, "sdk", "agents");
+  // A crash between the intent and the record: the rename landed when the old path is gone and the new one is there.
+  if (inFlight !== undefined && inFlight.from.startsWith("agents/") && !m.moved.some((mv) => mv.from === inFlight.from)) {
+    if (!existsSync(join(home, inFlight.from)) && existsSync(join(home, inFlight.to))) m.moved.push({ ...inFlight });
+    delete m.moving;
+    writeManifest(home, m);
+  }
+  if (isSymlink(from)) return;                   // an earlier build's link: nothing of the old layout is under it
+  for (const name of agentDefinitionEntries(from)) {
+    const rel = { from: `agents/${name}`, to: `sdk/agents/${name}` };
+    if (existsSync(join(to, name)) || isSymlink(join(to, name))) {
+      throw new MigrationCRefused("sdk_home_migration_refused", `${join(to, name)} and ${join(from, name)} both exist — resolve by hand, then \`clover migrate --sdk-home --resume\``);
+    }
+    mkdirSync(to, { recursive: true, mode: 0o700 });
+    m.moving = rel;
+    writeManifest(home, m);
+    renameSync(join(from, name), join(to, name));
+    if (existsSync(join(from, name)) || !existsSync(join(to, name))) throw new MigrationCRefused("sdk_home_half_migrated", `the rename of ${join(from, name)} into ${join(to, name)} did not land — nothing more was moved; \`clover migrate --sdk-home --rollback\``);
+    m.moved.push(rel);
+    delete m.moving;
+    writeManifest(home, m);
+  }
 }
 
 function isSymlink(p: string): boolean {
@@ -621,6 +706,7 @@ export async function runMigrationC(home: string, deps: MigrationCDeps): Promise
     for (const [name, target] of SDK_COMPAT_LINKS) {
       const from = join(home, name);
       const to = join(home, target);
+      if (name === "agents") { moveAgentDefinitions(home, m, inFlight); continue; }
       if (isSymlink(from)) continue;               // already a link (a resumed run, or never old)
       if (existsSync(from) && !hasFiles(from)) {
         // Review I1: an EMPTY old directory (bootstrap of an older build) — nothing to move; it gives way to
@@ -1030,6 +1116,7 @@ export async function rollbackMigrationC(home: string, deps: Pick<MigrationCDeps
     renameSync(src, back);
   }
   rmSync(migrationCCompletePath(home), { force: true });
+  rmSync(migrationCCurrentLayoutPath(home), { force: true });
   m.status = "rolled-back";
   m.finishedAt = now().toISOString();
   writeFileSync(migrationCRolledBackPath(home), `${JSON.stringify(m, null, 2)}\n`, { mode: 0o600 });
