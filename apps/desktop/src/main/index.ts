@@ -1628,19 +1628,21 @@ interface Surface {
  *  by CLOVER_TEST_MAIN_FRONT_FILE holds `front` or `back`, read every 100 ms. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
 let frontSeam: boolean | undefined;
 function startFrontSeam(): void {
-  if (!headless || (typeof __CLOVER_TEST_BUILD__ !== "string" && typeof __CLOVER_ACCEPTANCE_BUILD__ !== "string")) return;
-  const file = process.env.CLOVER_TEST_MAIN_FRONT_FILE;
-  if (file === undefined || file === "") return;
-  const read = () => {
-    let word = "";
-    try { word = readFileSync(file, "utf8").trim(); } catch { return; }
-    const next = word === "front" ? true : word === "back" ? false : undefined;
-    if (next === undefined || next === frontSeam) return;
-    frontSeam = next;
-    log(`window: the test seam says the main window is ${next ? "in front" : "not in front"}`);
-    followFront();
-  };
-  setInterval(read, 100).unref?.();
+  // The marks first and the whole seam inside them (as CLOVER_TEST_APPEARANCE_FILE's is): a release folds the test to
+  // false and drops the block, the variable's name with it. An early return on `!headless || …` left the name in.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_MAIN_FRONT_FILE) {
+    const file = process.env.CLOVER_TEST_MAIN_FRONT_FILE;
+    const read = () => {
+      let word = "";
+      try { word = readFileSync(file, "utf8").trim(); } catch { return; }
+      const next = word === "front" ? true : word === "back" ? false : undefined;
+      if (next === undefined || next === frontSeam) return;
+      frontSeam = next;
+      log(`window: the test seam says the main window is ${next ? "in front" : "not in front"}`);
+      followFront();
+    };
+    setInterval(read, 100).unref?.();
+  }
 }
 
 function mainState(): MainWindowState {
