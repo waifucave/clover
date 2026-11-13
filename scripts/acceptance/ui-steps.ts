@@ -169,10 +169,14 @@ async function until<T>(what: string, ms: number, probe: () => Promise<T | undef
 }
 
 /** A document's drawn text: `innerText`, plus the conversation rows that are drawn but scrolled out of view. A row off
- *  screen is skipped by `content-visibility: auto` (the conversation's styles.css), and `innerText` leaves a skipped row
- *  out, so a count or an absence over the transcript would miss it. Such a row is added back by its `textContent`. A row
- *  hidden for any other reason (a `display: none` tab, `checkVisibility()` false) stays out, as `innerText` keeps it. */
-export const DRAWN_TEXT_JS = "(() => { const b = document.body; if (!b) return ''; let t = b.innerText; for (const u of document.querySelectorAll('.cl-conv__unit')) if (typeof u.checkVisibility === 'function' && u.checkVisibility() && !u.checkVisibility({ contentVisibilityAuto: true })) t += '\\n' + u.textContent; return t; })()";
+ *  screen has its contents skipped by `content-visibility: auto` (the conversation's styles.css puts it on the row
+ *  itself), and `innerText` leaves skipped contents out, so a count or an absence over the transcript would miss it.
+ *  The row itself is not skipped (only what is inside it), so `checkVisibility({ contentVisibilityAuto: true })` is
+ *  asked of its first child: false there, with the row itself drawn, means its contents were skipped, and the row is
+ *  added back by its `textContent` (as is a row under a skipped ancestor). A row hidden for any other reason (a
+ *  `display: none` tab, the row's own `checkVisibility()` false) stays out, as `innerText` keeps it. The first reader
+ *  asked the row alone, which is never skipped itself: rows scrolled out stayed uncounted (rows 9 and 13's "3 to 3"). */
+export const DRAWN_TEXT_JS = "(() => { const b = document.body; if (!b) return ''; let t = b.innerText; for (const u of document.querySelectorAll('.cl-conv__unit')) { if (typeof u.checkVisibility !== 'function' || !u.checkVisibility()) continue; const k = u.firstElementChild; const skipped = !u.checkVisibility({ contentVisibilityAuto: true }) || (k !== null && typeof k.checkVisibility === 'function' && !k.checkVisibility({ contentVisibilityAuto: true })); if (skipped) t += '\\n' + u.textContent; } return t; })()";
 
 /** Text drawn in any tree document, rows scrolled out of view included (DRAWN_TEXT_JS). */
 export async function treeText(cdp: Cdp): Promise<string> {
@@ -181,6 +185,17 @@ export async function treeText(cdp: Cdp): Promise<string> {
 
 /** How many of the fake provider's replies the text holds: one per reply bubble (each carries the marker once). */
 export const replyCount = (text: string): number => (text.match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
+
+/** A document's reply bubbles: in a conversation, its rows that hold the fake's marker, one each, whether in view or
+ *  scrolled out (a row's `textContent` can hold its words more than once: a copy kept for its Copy button, a folded
+ *  detail), and never a row hidden with its tab (`checkVisibility()` false); in any other document, the marker in its
+ *  drawn text. Counting rows, not words, keeps a row that scrolls out from counting twice (the 4 -> 6 a text count gave). */
+export const REPLY_ROWS_JS = "(() => { const b = document.body; if (!b) return 0; const rows = [...document.querySelectorAll('.cl-conv__unit')]; if (rows.length === 0) return (b.innerText.match(/ACCEPTANCE-REPLY-OK/g) || []).length; return rows.filter((u) => (typeof u.checkVisibility !== 'function' || u.checkVisibility()) && (u.textContent || '').includes('ACCEPTANCE-REPLY-OK')).length; })()";
+
+/** The reply bubbles in every tree document (REPLY_ROWS_JS). */
+export async function replyRows(cdp: Cdp): Promise<number> {
+  return (await Promise.all((await treeDocs(cdp)).map(async (d) => Number(await cdp.evaluate(d.session, REPLY_ROWS_JS).catch(() => 0)) || 0))).reduce((a, b) => a + b, 0);
+}
 
 const STOPPED = "This part stopped.";
 const stoppedAnywhere = async (cdp: Cdp): Promise<boolean> => (await Promise.all((await cdp.documents()).map((d) => cdp.evaluate(d.session, DRAWN_TEXT_JS).catch(() => "")))).some((t) => String(t).includes(STOPPED));
@@ -335,7 +350,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // pass, and the reply bubbles on screen are counted before and after.
   await step(1, async () => {
     const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
-    const replies = async () => replyCount(await treeText(cdp));
+    const replies = () => replyRows(cdp);
     const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     const s = box.session;
     const before = await replies();
@@ -482,7 +497,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(5, async () => {
     const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
     const PILL_BOX = "textarea.clp-input";
-    const replies = async () => replyCount(await treeText(cdp));
+    const replies = () => replyRows(cdp);
     const box = await until("the pill's text box", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector('${PILL_BOX}')`), () => dumpFrames(cdp));
     const s = box.session;
     const before = await replies();
