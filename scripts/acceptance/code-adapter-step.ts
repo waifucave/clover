@@ -13,7 +13,7 @@ export const CODE_ADAPTER_STEP = "a turn on each kind of model plugin at the use
  *  path its catalog endpoint has (the user's endpoint keeps it). */
 export const OPENAI_WIRE_PROVIDERS = [
   { plugin: "clover/model-openai", provider: "openai", model: "openai/gpt-4.1-mini", wire: "responses", basePath: "/v1" },
-  { plugin: "clover/model-groq", provider: "groq", model: "groq/llama-3.3-70b-versatile", wire: "chat/completions", basePath: "/openai/v1" },
+  { plugin: "clover/model-groq", provider: "groq", model: "groq/qwen/qwen3.8-27b", wire: "chat/completions", basePath: "/openai/v1" },
 ] as const;
 export const OPENAI_REPLY = "ACCEPTANCE-OPENAI-WIRE-OK from the generic adapter";
 

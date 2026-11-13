@@ -28,6 +28,7 @@ import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
 import { browserAppHandlers } from "./browser/app-port";
+import { browserRpcHandlers } from "./browser/rpc-handlers";
 import { startBrowser, type DaemonBrowser, type StartBrowserOptions } from "./browser/daemon";
 import { DEFAULT_PROXY_SETTING } from "./browser/proxy";
 import type { AppTabPort, BrowserEvent } from "./browser/service";
@@ -84,6 +85,8 @@ export interface DaemonBotsInput {
   sideUp?(side: BotSide): () => void;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** Whether a model can be set as a bot's (`bot.setUserLayer`; models-list.ts `modelOffer`). */
+  modelOffer?: BotSideOptions["modelOffer"];
   /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
    *  nothing). */
   bundledChoice?: BotSideOptions["bundledChoice"];
@@ -439,6 +442,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.modelOffer ? { modelOffer: b.modelOffer } : {}),
         ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
         ...(b.workshop ? { workshop: b.workshop } : {}),
         ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
@@ -538,7 +542,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       closers.push(() => br.shutdown());
       browser = br;
-      Object.assign(input.handlers, browserAppHandlers(() => br.service));
+      Object.assign(input.handlers, browserAppHandlers(() => br.service), browserRpcHandlers(() => br.service, (id) => (input.bots === false ? undefined : input.bots)?.registry.get(id)?.source === "bundled"));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.

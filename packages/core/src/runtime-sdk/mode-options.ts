@@ -31,7 +31,7 @@ import type { Mode as SessionMode } from "../agent/tools/registry";
 import { CONTROL_PLANE_FILENAMES } from "./control-plane";
 import { hostStorageReadPatterns, hostStorageWriteRoots, type HostStorageFenceOptions } from "./host-storage-fence";
 import { providerFor, testProviderNameFor } from "./provider-selection";
-import { splitTag, CLOVER_TEST_PREFIX, type ModelTag } from "./model-tag";
+import { runtimeModelId, splitTag, CLOVER_TEST_PREFIX, type ModelTag } from "./model-tag";
 import { CLOVER_ADVERTISED_TOOLS_0_0_4, CLOVER_OWN_TOOL_NAMES } from "./tool-names";
 import type { CapabilityServerKey } from "../capabilities/names";
 import { coworkOfferedTools, coworkProfileWithheldTools, type CoworkGuestProfile, type CoworkGuestProfileTool, type CoworkToolInputs } from "../cowork/session-profile";
@@ -1505,7 +1505,7 @@ export function buildCloverOptions(input: CloverOptionsInput): Options {
   // the tag once, right here — the clover-test double is the one exception, passed through WHOLE
   // (it is not a tag at all, and splitting it would strip its own "winter-test/" identity).
   if (input.model !== undefined) {
-    options.model = input.model.startsWith(CLOVER_TEST_PREFIX) ? input.model : splitTag(input.model).modelId;
+    options.model = input.model.startsWith(CLOVER_TEST_PREFIX) ? input.model : runtimeModelId(input.model);
   }
   if (input.effort !== undefined) options.effort = input.effort;
   if (input.systemPrompt !== undefined) options.systemPrompt = input.systemPrompt;

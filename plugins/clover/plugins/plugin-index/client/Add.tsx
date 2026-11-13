@@ -6,6 +6,10 @@ import { useState } from "react";
 import { S } from "./strings";
 import type { AddProps, AddSource, PickKind } from "./types";
 
+function when(at: number, format: AddProps["format"]): string {
+  return new Date(at).toLocaleString(format?.locale, { ...(format?.timeZone ? { timeZone: format.timeZone } : {}), dateStyle: "short", timeStyle: "short" });
+}
+
 const PICKS: { kind: PickKind; file: boolean }[] = [
   { kind: "folder", file: false },
   { kind: "claude-plugin", file: false },
@@ -97,6 +101,52 @@ export function Add(props: AddProps) {
           </button>
         </form>
       </section>
+
+      {props.devFolders !== undefined && (
+        <section className="cl-plugin-index__section" aria-label={S.devFolders} data-dev-folders="">
+          <h2 className="cl-plugin-index__subhead">{S.devFolders}</h2>
+          <p className="cl-plugin-index__note">{S.devDetail}</p>
+          {props.devFolders.length === 0 ? <p className="cl-plugin-index__note">{S.devNone}</p> : (
+            <ul className="cl-plugin-index__indexes" aria-label={S.devFolders}>
+              {props.devFolders.map((f) => {
+                const now = props.now ?? Date.now();
+                const live = f.expiresAt > now;
+                return (
+                  <li key={f.path} className="cl-plugin-index__index cl-plugin-index__setting" data-dev-folder={f.path}>
+                    <span className="cl-plugin-index__name">{f.path}</span>
+                    <span className="cl-plugin-index__meta">
+                      {[S.devFolderLine(f.pluginId), live ? S.devExpires(when(f.expiresAt, props.format)) : S.devExpired, f.lastReloadAt ? S.devReloaded(when(f.lastReloadAt, props.format)) : S.devNeverReloaded].join(" · ")}
+                    </span>
+                    {props.onDevRenew && (
+                      <button type="button" className="cl-plugin-index__button" aria-label={S.devRenewName(f.path)} onClick={() => props.onDevRenew!(f.path)}>
+                        {S.devRenew}
+                      </button>
+                    )}
+                    {props.onDevRemove && (
+                      <button type="button" className="cl-plugin-index__button" data-tone="danger" aria-label={S.devRemoveName(f.path)} onClick={() => props.onDevRemove!(f.path)}>
+                        {S.devRemove}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="cl-plugin-index__row">
+            <button type="button" className="cl-plugin-index__button" disabled={busy} onClick={() => props.onDevPick?.()}>
+              {S.devPickFolder}
+            </button>
+            {props.devPicked && (
+              <>
+                <span className="cl-plugin-index__meta" data-dev-picked={props.devPicked.name}>{S.picked(props.devPicked.name)}</span>
+                <button type="button" className="cl-plugin-index__install" disabled={busy} onClick={() => props.onDevAdd?.(props.devPicked!.token)}>
+                  {S.devAddName(props.devPicked.name)}
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="cl-plugin-index__section" aria-label={S.addIndex}>
         <h2 className="cl-plugin-index__subhead">{S.addIndex}</h2>

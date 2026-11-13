@@ -33,8 +33,10 @@ const control = (): TurnControl => ({ origin: "user", signal: new AbortControlle
 const user = (text: string): TurnInput => ({ from: "user", text, device: "d_1", sentAt: Date.now(), clientMessageId: crypto.randomUUID() });
 const results = (end: { text?: string }) => JSON.parse(end.text ?? "[]") as { name: string | null; isError: boolean; content: string }[];
 const manifest = (id: string) => JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } });
-async function until(cond: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 500; i++) { if (cond()) return; await Bun.sleep(20); }
+/** Until `cond` holds: a bounded wait on the outcome, generous for a loaded machine (the watch can drop an event; the
+ *  registry's catch-up look reads the change anyway, within its interval). */
+async function until(cond: () => boolean, what: string, ms = 30_000): Promise<void> {
+  for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(20)) if (cond()) return;
   throw new Error(`never: ${what}`);
 }
 
@@ -67,12 +69,11 @@ darwinTest("a bot moves its plugin in with its shell: found, its card names it, 
   const store = fileRegistryStore(join(cloverHome, "plugins-state"));
   let folders!: PluginFolders;
   const core = new RegistryCore({ catalog: catalogPointDecl, store, cards, onOk: (id, hash) => folders.okGiven(id, hash) });
-  folders = new PluginFolders({ core, store, pluginsDir, settleMs: 300 });
+  folders = new PluginFolders({ core, store, pluginsDir, settleMs: 300, catchUpMs: 500 });
   folders.setBotNames((id) => (id === "alpha" ? "Alpha" : undefined));
   await folders.scan();
   folders.start();
   closers.push(() => folders.stop());
-  await Bun.sleep(300);
   // The fence follows the records and the bots' pending drops; the embedded host opens the bots' plugins.
   const fence = new CloverFence({ home: userHome, cloverHome });
   closers.push(fence.followWorkshop(core, { pending: (bot) => folders.pendingDrops(bot) }));

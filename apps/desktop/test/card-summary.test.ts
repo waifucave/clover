@@ -239,3 +239,30 @@ describe("a long path", () => {
     expect(s.asked!.length).toBe(80);
   });
 });
+
+describe("the Browser acting card", () => {
+  const browser = (bot: string | undefined, extra: Record<string, unknown> = {}) => ({
+    kind: "tool", ...(bot === undefined ? {} : { bot }),
+    options: [{ remember: "always" }],
+    fields: {
+      title: { type: "text" as const, text: "Use the screen" }, what: { type: "code" as const, code: "Browser: click and type on browser-other.test" },
+      detail: detail({ verb: "click", ref: "e12" }), command: { type: "code" as const, code: 'Click the button "Say hello"' },
+      rule: { type: "rows" as const, rows: [{ label: "kind", value: "plugin-tool" }, { label: "target", value: "mcp__browser__Browser(browser-other.test)" }, { label: "bot", value: bot ?? "" }, { label: "computers", value: "Delta" }] },
+      ...extra,
+    },
+  });
+  test("one sentence, the act in words on its own line, never the tool's name", () => {
+    const s = summarize(browser("alpha"), "Alpha", HOME)!;
+    expect(s.verb).toBe("click and type on browser-other.test");
+    expect(askHtml(s)).toContain("wants to click and type on browser-other.test");
+    expect(askHtml(s)).not.toContain("use ");
+    expect(s.preview).toEqual({ kind: "lines", lines: ['Click the button "Say hello"'], hidden: 0, mono: false });
+  });
+  test("a coding session has no bot: This coding session wants to ...", () => {
+    expect(summarize(browser(undefined), undefined, HOME)).toMatchObject({ who: "This coding session", verb: "click and type on browser-other.test" });
+  });
+  test("the kept rule is said without the tool's internal name", () => {
+    expect(summarize(browser("alpha"), "Alpha", HOME)!.always).toBe("Always allow Alpha to click and type on browser-other.test, on this computer (Delta) only.");
+    expect(summarize(browser(undefined), undefined, HOME)!.always).toBe("Always allow your coding sessions to click and type on browser-other.test, on this computer (Delta) only.");
+  });
+});

@@ -136,7 +136,7 @@ describe("a plugin not available in this build yet", () => {
   // Every plugin this build parks, from its own manifest in the repository, as an upgrade from a build that ran it.
   const PLUGINS = join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "clover", "plugins");
   const PARKED = [
-    "browser", "browser-view", "companion-ios", "companion-web", "forwarder", "provider-gcp", "provider-hetzner", "push", "relay-cloudflare", "trigger-webhook",
+    "companion-ios", "companion-web", "forwarder", "provider-gcp", "provider-hetzner", "push", "relay-cloudflare", "trigger-webhook",
   ];
   const real = (folder: string): Manifest => {
     const r = parseJsonc(readFileSync(join(PLUGINS, folder, "clover.json"), "utf8"));
@@ -181,7 +181,8 @@ describe("a plugin not available in this build yet", () => {
       reg.putAll([{ id: "clover", manifest: clover, treeHash: hash, approved: true, source: "bundled" }, { id: "clover/browser-view", manifest: m, treeHash: hash, approved: true, source: "bundled" }]);
     put(unmarked(real("browser-view")), "sha256:1");
     expect(reg.entries("ui").filter((e) => e.pluginId === "clover/browser-view").map((e) => [e.key, (e.value as { spot?: string }).spot])).toEqual([["browser", "panel"]]);
-    put(real("browser-view"), "sha256:2");
+    // (The shipped manifest carries no mark now that the browser is composed; a mark on it still parks the panel.)
+    put({ ...real("browser-view"), availability: { status: "not-yet", reason: "no-browser-composed" } } as unknown as Manifest, "sha256:2");
     expect(reg.entries("ui").filter((e) => e.pluginId === "clover/browser-view")).toEqual([]);
   });
 

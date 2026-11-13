@@ -72,7 +72,8 @@ describe("files.* from a host half (row 2.31)", () => {
       const grepped = await call<{ value: unknown }>("editor", "grep", "answer", { cwd: p });
       expect(JSON.stringify(grepped.value)).toContain("a.ts");
       // Clover's own folder on that computer, and a path outside the tree: refused, nothing read or written.
-      expect(await call("editor", "readText", "home/Studio/.clover/run/x")).toEqual({ error: expect.stringMatching(/^fenced: /) });
+      // Told in words that name it a plugin's refusal (not a bot's).
+      expect(await call("editor", "readText", "home/Studio/.clover/run/x")).toEqual({ error: expect.stringMatching(/^fenced: the fence keeps plugins out of /) });
       expect(await call("editor", "write", "home/Studio/.clover/planted", "x")).toEqual({ error: expect.stringMatching(/^fenced: /) });
       expect(existsSync(join(studio.home, ".clover", "planted"))).toBe(false);
       for (const outside of ["/etc/hosts", "home/Studio/../../etc/hosts", "elsewhere/x"]) {

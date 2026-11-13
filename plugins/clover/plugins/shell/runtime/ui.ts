@@ -104,6 +104,10 @@ export interface ComposerHost {
   commands?(): Promise<{ commands: ComposerCommand[] }>;
   /** Runs a command as the user, inside their key press or click (the SDK's `runCommand`). */
   runCommand?(name: string, args?: unknown): Promise<{ result: unknown }>;
+  /** Push-to-talk (the SDK's `listenStatus`, `listenStart`, `listenStop`): the bundled composer's only. The app records. */
+  listenStatus?(): Promise<{ listens: boolean }>;
+  listenStart?(): Promise<{ note?: string }>;
+  listenStop?(): Promise<{ text?: string; note?: string }>;
 }
 
 /** A command the slash menu lists (the SDK's `ComposerCommand`). */

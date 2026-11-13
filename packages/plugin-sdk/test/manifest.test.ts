@@ -151,7 +151,7 @@ describe("code, engines and platforms", () => {
   test("`availability: not-yet` is Clover's own mark: its parked plugins carry it; any other plugin is refused for it", () => {
     const parked = { status: "not-yet", reason: "webhook-keys" };
     // Clover's parked plugins, as they are in the tree, validate as its children.
-    for (const folder of ["browser-view", "companion-ios", "companion-web", "forwarder", "provider-gcp", "provider-hetzner", "push", "relay-cloudflare", "trigger-webhook"]) {
+    for (const folder of ["companion-ios", "companion-web", "forwarder", "provider-gcp", "provider-hetzner", "push", "relay-cloudflare", "trigger-webhook"]) {
       const text = readFileSync(join(import.meta.dir, "..", "..", "..", "plugins", "clover", "plugins", folder, "clover.json"), "utf8");
       const r = validateManifest(text, { folderName: folder, parent: { id: "clover", namespace: "clover" }, bundled: true });
       expect([folder, r.ok, r.issues.filter((i) => i.severity === "error").map((i) => i.code)]).toEqual([folder, true, []]);
@@ -678,6 +678,21 @@ describe("the OK names what a plugin's hooks see", () => {
   test("one line for a tree: a child's hooks count", () => {
     const top = validateManifest({ manifest: 1, id: "tree", name: "Tree" });
     expect(hookOkLines([top, withHooks([["message.out"]])])[0]).toBe("Its hooks see your conversations: the bots' replies; they can change messages.");
+  });
+  test("own-bot from the plugin: hooks without a scope take their plugin's, or their tree's top plugin's", () => {
+    const own = "Its hooks see only what its own bot does: your messages to it; they can change messages.";
+    const hooked = (id: string, scope?: string) => {
+      const child = id.includes("/");
+      const m = { manifest: 1, ...(child ? {} : { id }), name: id, engines: { clover: `^${PLUGIN_API_VERSION}` }, ...(scope === undefined ? {} : { scope }), host: { entry: "host/index.ts", runtime: "bun" }, contributes: { hooks: [{ id: "h", on: ["message.in"], handler: "onIn" }] } };
+      return child ? validateManifest(m, { parent: { id: id.split("/")[0]!, namespace: id.split("/")[0]! }, folderName: id.split("/")[1]! }) : validateManifest(m);
+    };
+    const r = hooked("mine", "own-bot");
+    expect(r.issues.filter((i) => i.path.includes("scope"))).toEqual([]);
+    expect(hookOkLines([r])[0]).toBe(own);
+    // A child's hooks take the top plugin's own-bot.
+    expect(hookOkLines([validateManifest({ manifest: 1, id: "mine", name: "Mine", scope: "own-bot" }), hooked("mine/child")])[0]).toBe(own);
+    // A plugin that says bots: every bot's conversations.
+    expect(hookOkLines([hooked("ours", "bots")])[0]).toContain("Its hooks see your conversations");
   });
 });
 

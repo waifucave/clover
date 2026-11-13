@@ -18,6 +18,12 @@
           "alwaysOnTop": true,
           "transparent": true,
           "placement": { "macos": "top-center", "windows": "top-center", "linux": "top-center" }
+        },
+        "declares": {
+          "island.tab": {
+            "shape": "list",
+            "props": { "type": "object", "properties": { "expanded": { "type": "boolean" } } }
+          }
         }
       },
       {

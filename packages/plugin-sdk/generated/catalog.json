@@ -2103,7 +2103,7 @@
       "context": [
         "bot"
       ],
-      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's. The default composer also lists the running plugins' commands and runs one as the user (its slash menu); another plugin's entry doesn't get those.",
+      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's. The default composer also lists the running plugins' commands and runs one as the user (its slash menu); another plugin's entry doesn't get those. It alone also gets push-to-talk (`listenStatus`, `listenStart`, `listenStop`): while the user holds the button or key the app records (never the plugin), hands the audio to the bot's listening voice, and the words heard come back as text for the box.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4232,51 +4232,48 @@
     },
     "browser.toolCaller": {
       "capability": "browser",
-      "where": "clover"
+      "where": "host"
     },
     "browser.tabs": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.open": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.close": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.navigate": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.show": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "where a tab shows is the person's: not served to plugins yet"
+      "where": "both"
     },
     "browser.hide": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "where a tab shows is the person's: not served to plugins yet"
+      "where": "both"
     },
     "browser.screenshot": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.cdp": {
       "capability": "browser",
-      "where": "clover"
-    },
-    "browser.onCdpEvent": {
-      "capability": "browser",
-      "where": "both",
-      "notYet": "a page's DevTools events aren't streamed to plugins yet"
+      "where": "both"
     },
     "browser.watch": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "tab changes aren't streamed to plugins yet"
+      "where": "ui"
+    },
+    "browser.onCdpEvent": {
+      "capability": "browser",
+      "where": "ui",
+      "notYet": "a page's DevTools events aren't streamed to components yet"
     },
     "terminal.open": {
       "capability": "terminal",

@@ -107,6 +107,28 @@ test("a host server's tools are listed with their loading and instructions, plac
   }
 });
 
+test("onlyBackends: a plugin that names backends is served to an agent on one of them, never to an agent on another or on none known; bots are unaffected", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "clover-onlyb-pmcp-"));
+  temps.push(folder);
+  const registry = fakeRegistry([
+    entry("cc", "kit", { type: "host", tools: { "*": "preload" } }),
+    entry("free", "kit", { type: "host", tools: { "*": "preload" } }),
+  ], { cc: folder, free: folder }, { cc: { onlyBackends: ["claude-code"] } });
+  const { host } = fakeHost();
+  const mcp = new PluginMcp({ registry, host, self: () => "Studio", computers: () => ["Studio"] });
+  try {
+    await mcp.refresh();
+    expect(mcp.servers("bot").map((s) => s.plugin).sort()).toEqual(["cc", "free"]);
+    expect(mcp.servers("agent", "claude-code").map((s) => s.plugin).sort()).toEqual(["cc", "free"]);
+    expect(mcp.servers("coding", "codex").map((s) => s.plugin)).toEqual(["free"]);
+    expect(mcp.servers("agent").map((s) => s.plugin)).toEqual(["free"]);
+    const call = `mcp__${mcp.servers("bot")[0]!.server}__WebSearch`;
+    expect(mcp.routedTool("agent", call, "codex")).toBeUndefined();
+  } finally {
+    mcp.close();
+  }
+});
+
 test("a per-computer server is placed on exactly the computers lane J's node says run it, and its process starts only where it's ticked", async () => {
   const registry = fakeRegistry([
     entry("acme", "blender", { type: "host", perComputer: true, tools: { "*": "preload" } }),
@@ -658,6 +680,47 @@ test("a worker that goes during the listing (its channel closes): listed again o
   mcp.close();
   mcp2.close();
 }, 20_000);
+
+test("a plugin the crash rules stopped, restarted (its builder's fix): listed again when its host half runs, with no other change", async () => {
+  const registry = fakeRegistry([entry("acme", "files", { type: "host", tools: { "*": "preload" } })], { acme: "/nonexistent" });
+  const real = fakeHost();
+  let stopped: string | undefined;
+  let state = "running";
+  const watchers = new Listeners<{ pluginId: string; state: string }>();
+  const host = {
+    openMcp: async (plugin: string, server: string) => {
+      if (stopped !== undefined) throw new ContractError("plugin_stopped", stopped);
+      return real.host.openMcp(plugin, server);
+    },
+    status: (pluginId: string) => ({ pluginId, crashes: 0, state, ...(stopped === undefined ? {} : { reason: stopped }) }) as never,
+    watch: (fn: (s: { pluginId: string; state: string }) => void) => watchers.add(fn),
+  };
+  const mcp = new PluginMcp({ registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
+  try {
+    await mcp.refresh();
+    expect(await mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).toEqual({ content: [{ type: "text", text: "ran WebSearch" }] });
+    // Stopped by the crash rules: the listing (made while it was stopped, as a tree change's is) keeps the stop.
+    real.opened[0]!.channel.kill();
+    stopped = "plugin stopped: crashed 3 times in 10 minutes: boom";
+    state = "stopped";
+    await mcp.refresh();
+    await expect(mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "plugin_stopped" });
+    // The host starts it again (the fix applied): nothing else changes, and its tools answer once it runs.
+    stopped = undefined;
+    state = "starting";
+    watchers.emit({ pluginId: "acme", state: "starting" });
+    state = "running";
+    watchers.emit({ pluginId: "acme", state: "running" });
+    let answer: unknown;
+    for (let i = 0; i < 100 && answer === undefined; i++) {
+      answer = await mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" }).catch(() => undefined);
+      if (answer === undefined) await Bun.sleep(20);
+    }
+    expect(answer).toEqual({ content: [{ type: "text", text: "ran WebSearch" }] });
+  } finally {
+    mcp.close();
+  }
+});
 
 test("a host server that can't work in this build (notServed): never started, listed or waited for; why is said once, in the log and its plugin's log", async () => {
   const folder = mkdtempSync(join(tmpdir(), "clover-a3-pmcp-"));

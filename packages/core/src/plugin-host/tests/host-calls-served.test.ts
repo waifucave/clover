@@ -98,7 +98,7 @@ describe("every call the catalog lists for host code is served", () => {
       const parts = call.split(".");
       expect([call, apiHas(parts.slice(0, -1), parts.at(-1)!)]).toEqual([call, info.notYet === undefined && info.where !== "ui"]);
     }
-    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["browser"], "show"), apiHas(["browser"], "watch"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([true, true, true, false, false, true, false]);
+    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["browser"], "show"), apiHas(["browser"], "watch"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([true, true, true, true, false, true, false]);
     expect([apiHas([], "settings"), apiHas([], "plugin"), apiHas([], "commands"), apiHas(["settings"], "get"), apiHas([], "env"), apiHas([], Symbol.iterator)]).toEqual([true, true, true, true, false, false]);
   });
 

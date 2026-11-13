@@ -49,6 +49,9 @@ export interface ModelPluginsOptions {
   host: PluginHost;
   /** The Clover home: the catalog file goes in `<home>/run/models/`. */
   home: string;
+  /** After each rebuild (the daemon's: `modelCatalogMaybeChanged`, which tells the sessions when what they are given
+   *  moved). */
+  changed?: () => void;
   /** Fills what a code adapter reads off its connection beside the key (a sign-in's account id), per plugin. */
   connectionFor?: (pluginId: string, connection: HostModelAdapterContextConnection) => HostModelAdapterContextConnection | Promise<HostModelAdapterContextConnection>;
   readFile?: (path: string) => string;
@@ -74,6 +77,29 @@ export interface ModelPluginsSnapshot {
 /** This build's own adapter ids: a provider whose code adapter isn't served stays on one of these (the agent SDK
  *  registers it for a host-catalog provider, 0.0.75). */
 const COMPILED_ADAPTER_IDS: ReadonlySet<string> = new Set(createShippedAdapters(loadCatalog()).map((a) => a.id));
+
+/**
+ * What a session on `provider` is given, as one string: its catalog entry and rows (hashed) and how its adapter is
+ * served (`host:<adapter>@<version>` by its plugin through the plugin host, `compiled:<adapter>` this build's own,
+ * `generic:<adapter>` a declarative provider's generic one), or `absent` when the catalog has no such provider. A
+ * session is replaced or reopened only when its own provider's key changes, so another plugin's install, update or
+ * restart leaves it alone.
+ */
+export function providerKeyIn(catalog: WinterCatalog, provider: string, served: ReadonlyMap<string, { provider: string; description: { version: string } }>): string {
+  const p = catalog.providers.find((x) => x.id === provider);
+  if (p === undefined) return "absent";
+  const rows = catalog.models.filter((m) => m.providerId === provider);
+  const hash = createHash("sha256").update(JSON.stringify({ p, rows })).digest("hex").slice(0, 24);
+  const host = served.get(p.adapterId);
+  const how = host !== undefined && host.provider === provider ? `host:${p.adapterId}@${host.description.version}`
+    : COMPILED_ADAPTER_IDS.has(p.adapterId) ? `compiled:${p.adapterId}` : `generic:${p.adapterId}`;
+  return `${how}:${hash}`;
+}
+
+/** `providerKeyIn` on the SDK's compiled catalog (no model plugin up). */
+export function compiledProviderKey(provider: string): string {
+  return providerKeyIn(loadCatalog(), provider, new Map());
+}
 
 /**
  * MERGE, never replace (#302's review, B3): the plugins' catalog, and
@@ -130,6 +156,11 @@ export class ModelPlugins {
     return this.#snapshot?.override === true;
   }
 
+  /** Whether a rebuild is running (a plugin just installed, turned on or off): its catalog isn't the sessions' yet. */
+  get rebuilding(): boolean {
+    return this.#pending !== undefined;
+  }
+
   /** The catalog the sessions resolve against; undefined (the SDK's own) while no model plugin is active. */
   get catalog(): WinterCatalog | undefined {
     return this.active ? this.#snapshot?.set.catalog : undefined;
@@ -163,6 +194,7 @@ export class ModelPlugins {
           snap = await this.#build();
         } while (this.#dirty);
         this.#snapshot = snap;
+        this.#o.changed?.();
         return snap;
       } finally {
         this.#pending = undefined;
@@ -217,6 +249,13 @@ export class ModelPlugins {
   }
 
   #written: string[] = [];
+
+  /** What a session on `provider` is given now (`providerKeyIn`): its catalog rows and how its adapter is served. */
+  providerKey(provider: string): string {
+    const snap = this.#snapshot;
+    if (snap === undefined || !this.active) return compiledProviderKey(provider);
+    return providerKeyIn(snap.set.catalog, provider, snap.served);
+  }
 
   /** What a session's `modelProviders` option is made of now: the catalog file and the code adapters served, or
    *  "compiled" while no model plugin is active (the SDK's own catalog). A runtime opened on another reopens (the bot

@@ -128,6 +128,9 @@ export function legacyPluginIdsNamedInSettings(home: string): Set<string> {
  *  converts as before. */
 export function isLegacyPluginDir(path: string, namedInSettings: ReadonlySet<string> = new Set()): boolean {
   if (!isDirectory(path)) return false;
+  // A Clover plugin (its `clover.json`) is the current layout's, whatever else it ships (`.mcp.json`, `skills/`):
+  // never a legacy plugin, never converted, never a reason for Migration C.
+  if (isFile(join(path, "clover.json"))) return false;
   if (namedInSettings.has(basename(path))) return true;
   return LEGACY_PLUGIN_MARKER_FILES.some((f) => isFile(join(path, f))) || hasLegacySkill(path);
 }
