@@ -1020,8 +1020,11 @@ export class AgentManager {
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }
-    // The plugins' tool.before hooks, before the broker (best effort: see the header).
-    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND) {
+    // The plugins' tool.before hooks, before the broker (best effort: see the header). A plugin's tool on the bridge
+    // meets them where it runs (plugin-reach.ts), under its own name, so not here a second time.
+    const pluginOnBridge = raw.mcp !== undefined && raw.mcp.server === e.serverName && e.bridgeTools.includes(raw.mcp.tool)
+      && !bridgeOwnTools(e.bot).some((t) => t.name === raw.mcp!.tool);
+    if (this.#o.hooks !== undefined && e.backend.id !== HOOKED_IN_RUNTIME_BACKEND && !pluginOnBridge) {
       const reject = (): AgentPermissionAnswer => {
         const r = raw.options.find((o) => o.kind === "reject_once");
         return r ? { outcome: "selected", optionId: r.optionId } : { outcome: "cancelled" };
