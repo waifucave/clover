@@ -221,7 +221,7 @@ export interface UiApi {
   useMountContext?(): MountContext;
   /** A spot this component declares, as a list of its entries, to draw one at a time with `<Spot entry>`. Only the
    *  declaring part lists a spot. */
-  useSpotEntries?(name: string, spotKey?: string): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe };
+  useSpotEntries?(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown }): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe };
   /** Shows a menu at a point in the part; resolves with the chosen item's id, or null. */
   useMenu?(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null>;
   /** Drags between parts, through the core: `offer` returns a token the drop target `claim`s. */

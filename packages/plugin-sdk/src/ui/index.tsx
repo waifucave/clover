@@ -1239,13 +1239,16 @@ export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined
 
 /** A spot this part declares, as its entries in the spot's order, kept current (lane B's `useSpotEntries`): for a part
  *  that draws one at a time with `<Spot entry>` (the island's tabs, the pill's targets). */
-export function useSpotEntries(name: string, spotKey?: string): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe } {
+export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown }): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe } {
   const part = usePart();
+  // The bot whose tab shows, by id or as the props a `<Spot>` there is given (`{ bot }`, a reference or an id): the spots a bot's own entries fill.
+  const b = typeof forProps === "string" ? forProps : forProps?.bot;
+  const forBot = typeof b === "string" ? b : typeof (b as { id?: unknown } | undefined)?.id === "string" ? (b as { id: string }).id : undefined;
   const [entries, setEntries] = useState<readonly SpotEntryView[]>([]);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => {
     let live = true;
-    const load = () => void rt().bridge.entries(part.mount, name, spotKey).then((e) => {
+    const load = () => void rt().bridge.entries(part.mount, name, spotKey, forBot).then((e) => {
       if (!live) return;
       setEntries((old) => (JSON.stringify(old) === JSON.stringify(e) ? old : e));
     }, () => undefined);
@@ -1257,7 +1260,7 @@ export function useSpotEntries(name: string, spotKey?: string): { readonly entri
       live = false;
       off();
     };
-  }, [part.mount, name, spotKey]);
+  }, [part.mount, name, spotKey, forBot]);
   useEffect(() => {
     for (const l of listeners.current) l();
   }, [entries]);

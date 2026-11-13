@@ -716,6 +716,15 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.header.action")).toEqual([]);
   });
 
+  test("a bot's own bot.side entry fills the shell's column for that bot's tab only (a third-party bot, no layout of its own)", () => {
+    const buddy = readUiPlugins([{ pluginId: "buddy", name: "Buddy", treeHash: `sha256:${"6".repeat(64)}`, layer: "buddy", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.side", id: "side", component: "BuddySide" }], themes: [], locales: [], bots: "all", bot: { name: "Buddy" } }] as never, { buddy: { enabledAt: 3, source: "installed" } })[0]!;
+    const s = setup([buddy, tabbed("vn", "Visual novel", 2)]);
+    const shell = mountShell(s);
+    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "buddy").map((e) => e.pluginId)).toEqual(["buddy"]);
+    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "alpha").map((e) => e.pluginId)).toEqual(["clover/panel"]);
+    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side").map((e) => e.pluginId)).toEqual(["clover/panel"]);
+  });
+
   test("a message action is data: the declaring part lists it, and nothing is ever mounted for it (no frame per message)", () => {
     const pin = readUiPlugins([{ pluginId: "pinner", name: "Pinner", treeHash: `sha256:${"5".repeat(64)}`, layer: "pinner", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "conversation.message.action", id: "pin", title: "Pin", icon: "assets/pin.png", call: "pinReply" }], themes: [], locales: [], bots: "all" }] as never, { pinner: { enabledAt: 3, source: "installed" } })[0]!;
     const s = setup([pin]);

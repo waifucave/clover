@@ -191,7 +191,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const side: ReactNode =
     kind && open.includes("session")
       ? kind === "bot" && botRef
-        ? <Spot name="bot.side" props={{ bot: botRef, session: tabSession, sessionKind: "bot", openAgent: agent, onOpenAgent: openAgent, navigate }} />
+        ? <Spot name="bot.side" forBot={botRef.id} props={{ bot: botRef, session: tabSession, sessionKind: "bot", openAgent: agent, onOpenAgent: openAgent, navigate }} />
         : <Spot name="panel" spotKey="session" props={{ app: "session", session: tabSession, sessionKind: kind, navigate }} />
       : undefined;
 

@@ -51,7 +51,7 @@ const frameKey = (f: Pick<FrameRef, "processId" | "routingId">) => `${f.processI
 /** The spots keyed by bot: the cell's context is that bot's tab. */
 const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
 /** The window's own spots that offer `when.bot`: the `clover` shell says which bot's tab shows (`forBot`). */
-const BOT_FROM_SHELL = new Set(["sidebar", "bar"]);
+const BOT_FROM_SHELL = new Set(["sidebar", "bar", "bot.side"]);
 
 interface Mount {
   id: string;
@@ -684,6 +684,8 @@ export class UiRuntime {
   private declares(m: Mount, spot: string): boolean {
     if (m.kind === "root") return m.rootSpots?.includes(spot) ?? false;
     if (spot === "bot.tab" && m.plugin?.topId === "clover") return true;
+    // The slim column of a bot's stock tab is the shell's own (it draws it beside the tab, for the bot that shows), though the tab declares it.
+    if (spot === "bot.side" && m.plugin?.topId === "clover" && m.plugin.source === "bundled") return true;
     const entry = m.plugin?.entries.find((e) => e.id === m.entryId);
     return entry?.declares[spot] !== undefined;
   }
@@ -726,11 +728,11 @@ export class UiRuntime {
   /** A spot the part declares, as its entries (lane B's `useSpotEntries`, lane G's ask): for a part that draws them
    *  one at a time with `<Spot entry>` (the island's tabs, the pill's targets). In the spot's order; only the
    *  declaring part lists it. */
-  entries(frame: FrameRef, mountId: string, spot: string, key?: string): SpotEntryView[] {
+  entries(frame: FrameRef, mountId: string, spot: string, key?: string, bot?: string): SpotEntryView[] {
     const doc = this.requireDoc(frame);
     const part = this.partIn(frame, mountId);
     if (!this.declares(part, spot)) return [];
-    const { cellKey, ctx } = this.cellOf(doc, part, spot, key, {});
+    const { cellKey, ctx } = this.cellOf(doc, part, spot, key, bot !== undefined ? { bot } : {});
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     return cell.shown.map((c) => ({
       ref: entryRef(c.entry),

@@ -286,8 +286,12 @@ function specificity(scope: "all" | readonly string[]): number {
 export function rank(cands: readonly Candidate[], cellNode: string, input: ResolveInput, tree: SpotTree): { ranked: Candidate[]; decidedBy: number } {
   const prefer = input.ctx.prefer?.[cellNode] ?? input.ctx.prefer?.[cellNode.replace(/\[.*$/, "")] ?? [];
   const facts = new Map<Candidate, number[]>();
+  // A bot's own plugin's entry for a spot of its own tab (no layout naming it) takes the spot from the shipped stock one
+  // (the `clover` tree's), though a plugin that fills one spot alone is a smaller part than the bot's whole tab.
+  const ownHere = cands.some((c) => c.plugin.isBot && c.plugin.topId !== "clover" && input.ctx.bot === c.plugin.id && c.entry.kind !== "style");
   for (const c of cands) {
-    const part = partOf(c.plugin, cellNode, input, tree);
+    const stock = ownHere && c.plugin.topId === "clover" && c.plugin.source === "bundled";
+    const part = stock ? undefined : partOf(c.plugin, cellNode, input, tree);
     const preferAt = prefer.findIndex((r) => refNames(r, c.entry));
     facts.set(c, [
       // Keys first: an exact key over a pattern over none ("after exact ones").
