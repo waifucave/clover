@@ -89,6 +89,41 @@ export function catalogModelListings(catalog: WinterCatalog, signedIn: ReadonlyS
   return out;
 }
 
+/** Whether a model can be set for a bot (`bot.setUserLayer`): `offered` when the picker lists it now, or when the user
+ *  set an endpoint of their own for its provider (`providers.<id>.baseUrl`) and that provider is on (a local server's
+ *  own model names, as the older provider door took them); `starting` when
+ *  it isn't listed yet but a plugin that is on contributes its provider and the model plugins haven't finished taking
+ *  it in (their start or a rebuild still running: the session reopens on their catalog once it lands); else `absent`. */
+export type ModelOffer = "offered" | "starting" | "absent";
+
+export function modelOffer(model: string, o: {
+  catalog: WinterCatalog;
+  /** Whether the model plugins are still starting or rebuilding (not installed yet, or a rebuild running). */
+  settling: boolean;
+  /** The providers the plugins that are on contribute, by their manifests. */
+  contributed(): Iterable<string>;
+  /** Whether the user's settings set an endpoint of their own for the provider (`providers.<id>.baseUrl`). */
+  userEndpoint?(provider: string): boolean;
+}): ModelOffer {
+  if (catalogModelListings(o.catalog, new Set()).some((m) => m.id === model)) return "offered";
+  const slash = model.indexOf("/");
+  const provider = slash > 0 ? model.slice(0, slash) : "";
+  if (provider !== "" && o.userEndpoint?.(provider) === true && o.catalog.providers.some((p) => p.id === provider)) return "offered";
+  if (o.settling && provider !== "" && [...o.contributed()].includes(provider)) return "starting";
+  return "absent";
+}
+
+/** The providers the plugins that are on contribute (`contributes.models[].provider`), by their records. */
+export function contributedProviders(records: Iterable<{ enabled?: boolean; manifest?: unknown }>): string[] {
+  const out: string[] = [];
+  for (const r of records) {
+    if (r.enabled === false) continue;
+    const models = (r.manifest as { contributes?: { models?: { provider?: unknown }[] } } | undefined)?.contributes?.models ?? [];
+    for (const m of models) if (typeof m.provider === "string") out.push(m.provider);
+  }
+  return out;
+}
+
 /** `models.list`'s answer. */
 export async function listModels(deps: ModelsListDeps, params: { session?: string }): Promise<ModelsListResult> {
   const def = deps.defaultModel?.();

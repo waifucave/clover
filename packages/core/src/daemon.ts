@@ -115,7 +115,7 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { loadSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -215,8 +215,9 @@ import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-hos
 import { HttpMcpOpener } from "./computers/http-mcp";
 import { DOWNLOAD_LIMITS, httpsFetch, INDEX_FETCH_TIMEOUT_MS } from "./registry/indexes/client";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
-import { evictSessionsForCredential } from "./runtime-sdk/credentials";
-import { modelsMethods } from "./runtime-sdk/models-list";
+import { evictSessionsForCredential, evictSessionsForModelCatalog } from "./runtime-sdk/credentials";
+import { activeCatalog, installedModelPlugins, modelProviderKey, onModelCatalogChange } from "./runtime-sdk/model-plugins";
+import { contributedProviders, modelOffer, modelsMethods } from "./runtime-sdk/models-list";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -2556,6 +2557,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Wiring 1: fills the forward reference `planBridge`'s `setPolicy` closes over (declared above,
   // before `cloverDrivers` existed) — see that block's own comment for why the cycle is broken here.
   cloverDriversForPlanBridge = cloverDrivers;
+  // A-M2: a coding session's child whose own provider changed since it opened (the model plugins coming up after it
+  // opened on the SDK's compiled catalog, its provider's plugin updated or turned off) is replaced, so its next turn
+  // resumes on what they give now; another plugin's change leaves it alone (credentials.ts
+  // `evictSessionsForModelCatalog`). Let go at stop.
+  const offModelCatalog = onModelCatalogChange((change) => {
+    void evictSessionsForModelCatalog({
+      list: () => cloverDrivers.list(),
+      modelProviderKeyOf: (sessionId) => cloverDrivers.modelProviderKeyOf?.(sessionId),
+      currentKey: (provider) => modelProviderKey(provider),
+      evict: (sessionId) => cloverDrivers.evict(sessionId),
+      log: (line) => console.error(line),
+    }, change.plugins).catch((err: unknown) => { console.error(`[model-plugins] replacing sessions on the new catalog failed (${err instanceof Error ? err.name : typeof err})`); });
+  });
   // Dispatch's children (`agent/dispatch-children.ts`): `session_spawn` mints them through the IPC
   // server's creation transaction, sends each its prompt through its own driver, mirrors their
   // approvals/questions and status onto the coordinator's log, and wakes the coordinator with a
@@ -4237,6 +4251,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       bundledChoice: (p) => p.source !== "bundled" || bundledStaged === undefined ? undefined
         : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      // A bot's model is one a plugin that is on offers (as the picker lists it), or one whose plugin is on while the
+      // model plugins are still taking it in (their start or a rebuild), which the session then reopens on.
+      modelOffer: (model) => modelOffer(model, {
+        catalog: activeCatalog(),
+        settling: installedModelPlugins() === undefined || installedModelPlugins()!.rebuilding,
+        contributed: () => contributedProviders(registry.list()),
+        userEndpoint: (provider) => providerBaseUrlFor(settings, provider) !== undefined,
+      }),
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence, agents }) => {
         sessionsOf = () => side()?.host;
@@ -4709,6 +4731,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         if (now - markAt > 200) console.error(`[stop] ${what} took ${Math.round(now - markAt)} ms`);
         markAt = now;
       };
+      offModelCatalog();
       modelPlugins?.stop(); // A-M2: the compiled catalog back, the registry watch let go
       // The app is told to quit (`app.quit`, written now; no wait for it), and the pair starts nothing
       // more: no app start from here on, and this run's app token goes.
