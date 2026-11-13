@@ -188,5 +188,9 @@ describe("the Review on the app's own card page (the owner's ruling, 2026-11-13)
     expect(script).toContain("b.review()");
     // The click must be the user's own.
     expect(script).toContain("if (!e.isTrusted) return;");
+    // A heading over the report, so its text can't pass for the card's own lines; the note names where the files go.
+    expect(p).toContain("A model&#39;s reading of the plugin&#39;s files");
+    expect(script).toContain("Review sends this plugin's files to {model}.");
+    expect(script).toContain("b.review(true)");
   });
 });

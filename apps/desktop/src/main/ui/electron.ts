@@ -416,7 +416,7 @@ export interface IpcHooks {
   /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
   sealedSize(token: string, height: number): void;
   /** The app's own card page asks for its card's Review (`plugin.review`): only that page, on its own token. */
-  sealedReview(token: string): Promise<{ state: string; report?: string; why?: string }>;
+  sealedReview(token: string, peek: boolean): Promise<{ state: string; report?: string; why?: string; model?: string }>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -915,7 +915,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const token = str(a.token, 128);
     const urlToken = new URL(f.url).searchParams.get("token");
     if (token === undefined || urlToken === null || urlToken !== token || runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) throw new LayerError("not the app's own card page");
-    return hooks.sealedReview(token);
+    return hooks.sealedReview(token, a.peek === true);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {

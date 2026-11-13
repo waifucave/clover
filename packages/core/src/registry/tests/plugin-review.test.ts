@@ -13,7 +13,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { pluginRegistryMethods } from "../../plugin-host/registry-methods";
 import type { InternalCall, InternalRefusal } from "../../providers/internal-router";
 import { openPluginRegistry } from "../open";
-import { cleanReport, PluginReviews, readReviewTree, REVIEW_DISCLAIMER, REVIEW_NO_MODEL, reviewInput } from "../plugin-review";
+import { cleanReport, PluginReviews, readReviewTree, REVIEW_CHANGED, REVIEW_DISCLAIMER, REVIEW_NO_MODEL, reviewInput } from "../plugin-review";
 import { filesChanged } from "../indexes/update";
 
 const temps: string[] = [];
@@ -130,10 +130,29 @@ describe("the Review on a plugin's OK card", () => {
     }
   });
 
+  test("a peek names the model and starts nothing; files changed since the card was made aren't reviewed", async () => {
+    const model = fakeModel();
+    const w = await world(model.source, { "a.js": "one" });
+    try {
+      expect(await w.m["plugin.review"]!({ card: w.card, peek: true }, APP)).toEqual({ state: "idle", pluginId: "tarot", model: "fake/fake-1" });
+      expect(model.asked).toHaveLength(0);
+      // The bot (or anyone) edits the folder after the card was raised: the card doesn't approve those files.
+      writeFileSync(join(w.home, "plugins", "tarot", "a.js"), "two");
+      // Before the registry reads the change: "changed"; after it, the card is withdrawn and nothing is reviewed either.
+      const r = await w.review().catch((e: Error) => ({ state: "gone", why: e.message }));
+      if (r.state === "gone") expect(r.why).toContain("isn't a plugin's OK card");
+      else expect([r.state, r.why]).toEqual(["changed", REVIEW_CHANGED]);
+      expect(model.asked).toHaveLength(0);
+    } finally {
+      w.opened.close();
+    }
+  });
+
   test("with no model for reviews, it says so at once instead of running", async () => {
     const w = await world(NO_MODEL, {});
     try {
       expect(await w.review()).toEqual({ state: "unavailable", pluginId: "tarot", why: REVIEW_NO_MODEL });
+      expect((await w.m["plugin.review"]!({ card: w.card, peek: true }, APP) as { state: string }).state).toBe("unavailable");
     } finally {
       w.opened.close();
     }

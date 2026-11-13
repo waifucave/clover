@@ -99,6 +99,6 @@ if (isRoot || isLayer) {
     size: (height: number) => void ipcRenderer.send("clover:sealed-size", { token, height }),
     // The Review on the app's own card page (a plugin's OK or update card): advice the app fetches for its own page,
     // never an answer.
-    review: () => ipcRenderer.invoke("clover:sealed-review", { token }),
+    review: (peek?: boolean) => ipcRenderer.invoke("clover:sealed-review", { token, ...(peek === true ? { peek: true } : {}) }),
   });
 }

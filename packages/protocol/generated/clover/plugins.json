@@ -1999,6 +1999,10 @@
           "card": {
             "type": "string",
             "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "peek": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2012,16 +2016,22 @@
           "state": {
             "type": "string",
             "enum": [
+              "idle",
               "running",
               "done",
               "failed",
-              "unavailable"
+              "unavailable",
+              "changed"
             ]
           },
           "pluginId": {
             "type": "string",
             "maxLength": 81,
             "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200
           },
           "report": {
             "type": "string",

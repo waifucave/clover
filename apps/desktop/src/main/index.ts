@@ -468,12 +468,12 @@ async function ready(): Promise<void> {
     // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
     // The Review on the app's own card page: the core's `plugin.review` for the card that page shows (its `own` token),
     // read back to that page alone, as text.
-    sealedReview: async (token: string) => {
+    sealedReview: async (token: string, peek: boolean) => {
       const cardId = sealed.cardOf(token);
       if (cardId === undefined || sealed.elementOf(token) !== "own") return { state: "failed", why: "This card can't be reviewed here." };
       const client = pair.client;
       if (client === undefined) return { state: "failed", why: "Clover isn't running." };
-      return client.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: cardId }, 15_000)
+      return client.request<{ state: string; report?: string; why?: string; model?: string }>("plugin.review", { card: cardId, ...(peek ? { peek: true } : {}) }, 15_000)
         .catch((err: unknown) => ({ state: "failed", why: err instanceof Error ? err.message.slice(0, 300) : "The review couldn't start." }));
     },
     sealedSize: (token: string, height: number) => {

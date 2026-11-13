@@ -138,7 +138,10 @@ export function cleanReport(text: string, skipped = 0): string {
   return `${t}${note}\n${REVIEW_DISCLAIMER}`;
 }
 
-export type ReviewState = "running" | "done" | "failed" | "unavailable";
+export type ReviewState = "idle" | "running" | "done" | "failed" | "unavailable" | "changed";
+
+/** What a review says when the plugin's files changed since its card was made. */
+export const REVIEW_CHANGED = "The plugin's files changed since this card was made, so a review would read files this card doesn't approve.";
 
 export interface ReviewView {
   card: string;
@@ -147,6 +150,8 @@ export interface ReviewView {
   state: ReviewState;
   report?: string;
   why?: string;
+  /** The model the review runs on (its tag). */
+  model?: string;
 }
 
 export interface PluginReviewsOptions {
@@ -171,6 +176,12 @@ export class PluginReviews {
     return this.#byCard.get(card);
   }
 
+  /** The model a review would run on now (its tag), or undefined when none can run. */
+  model(): string | undefined {
+    const r = this.#o.source();
+    return isInternalRefusal(r) ? undefined : String(r.tag);
+  }
+
   /** Starts a review of `tree` for `card`, or gives back the one it has (the same tree); a review that failed may be
    *  started again. Never waits for the model. */
   start(card: string, tree: () => ReviewTree, ids: { pluginId: string; treeHash: string }): ReviewView {
@@ -182,7 +193,8 @@ export class PluginReviews {
       this.#set(view);
       return view;
     }
-    const running: ReviewView = { card, ...ids, state: "running" };
+    const model = String(resolved.tag);
+    const running: ReviewView = { card, ...ids, state: "running", model };
     this.#set(running);
     void (async () => {
       const ac = new AbortController();
@@ -201,11 +213,11 @@ export class PluginReviews {
         }
         if (ac.signal.aborted) throw new Error("the review took too long");
         if (error !== undefined && text.trim() === "") throw new Error(error);
-        if (this.#byCard.get(card)?.treeHash === ids.treeHash) this.#set({ card, ...ids, state: "done", report: cleanReport(text, t.skipped.length) });
+        if (this.#byCard.get(card)?.treeHash === ids.treeHash) this.#set({ card, ...ids, state: "done", model, report: cleanReport(text, t.skipped.length) });
       } catch (err) {
         const why = (err instanceof Error ? err.message : String(err)).slice(0, 300);
         this.#o.log?.(`plugin review of ${ids.pluginId}: ${why}`);
-        if (this.#byCard.get(card)?.treeHash === ids.treeHash) this.#set({ card, ...ids, state: "failed", why: `The review didn't finish: ${why}` });
+        if (this.#byCard.get(card)?.treeHash === ids.treeHash) this.#set({ card, ...ids, state: "failed", model, why: `The review didn't finish: ${why}` });
       } finally {
         clearTimeout(timer);
       }

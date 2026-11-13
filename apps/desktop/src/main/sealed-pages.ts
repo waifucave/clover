@@ -367,7 +367,7 @@ export function ownCardPage(input: {
     : bits;
   const preview = input.summary !== undefined ? previewHtml(input.summary) : "";
   const review = input.reviewable === true
-    ? `<section class="review" data-review="idle"><div class="review-row"><button type="button" class="review-button">${esc(REVIEW_BUTTON_TEXT)}</button><span class="review-note">${esc(REVIEW_NOTE_TEXT)}</span></div><pre class="review-report" role="status" aria-live="polite"></pre></section>`
+    ? `<section class="review" data-review="idle"><div class="review-row"><button type="button" class="review-button">${esc(REVIEW_BUTTON_TEXT)}</button><span class="review-note">${esc(REVIEW_NOTE_TEXT)}</span></div><h3 class="review-head" hidden>${esc(REVIEW_HEAD_TEXT)}</h3><pre class="review-report" role="status" aria-live="polite"></pre></section>`
     : "";
   const script = `(() => {
   const b = window.cloverSealed;
@@ -425,16 +425,24 @@ export function ownCardPage(input: {
   const section = document.querySelector(".review");
   const reviewButton = document.querySelector(".review-button");
   const report = document.querySelector(".review-report");
+  const reportHead = document.querySelector(".review-head");
+  const note = document.querySelector(".review-note");
   if (section !== null && reviewButton !== null && report !== null && typeof b.review === "function") {
+    // Where the files go, by the model's name, before the click (a peek starts nothing).
+    const named = (r) => { if (note !== null && r !== null && typeof r === "object" && typeof r.model === "string") note.textContent = ${JSON.stringify(REVIEW_NOTE_MODEL_TEXT)}.replace("{model}", r.model); };
     const show = (r) => {
       const st = r !== null && typeof r === "object" && typeof r.state === "string" ? r.state : "failed";
       section.dataset.review = st;
+      named(r);
+      if (reportHead !== null) reportHead.hidden = st !== "done";
       if (st === "running") report.textContent = ${JSON.stringify(REVIEW_RUNNING_TEXT)};
       else if (st === "done") report.textContent = typeof r.report === "string" ? r.report : "";
+      else if (st === "idle") report.textContent = "";
       else report.textContent = typeof r.why === "string" ? r.why : ${JSON.stringify(REVIEW_FAILED_TEXT)};
-      reviewButton.disabled = st === "running" || st === "done";
+      reviewButton.disabled = st === "running" || st === "done" || st === "unavailable" || st === "changed";
       if (st === "running") setTimeout(() => { void b.review().then(show, () => show(null)); }, 1500);
     };
+    void b.review(true).then(show, () => undefined);
     reviewButton.addEventListener("click", (e) => {
       if (!e.isTrusted) return;
       reviewButton.disabled = true;
@@ -467,7 +475,11 @@ const SHIELD = `<svg class="shield" viewBox="0 0 16 16" width="18" height="18" a
 export const PRESS_AGAIN_TEXT = "Not ready yet — press again.";
 /** The Review on a plugin's OK or update card (the owner's ruling, 2026-11-13). */
 export const REVIEW_BUTTON_TEXT = "Review";
-export const REVIEW_NOTE_TEXT = "A model reads its files and writes what it finds. It's advice: it doesn't answer this card.";
+export const REVIEW_NOTE_TEXT = "Review sends this plugin's files to a model. It's advice: it doesn't answer this card.";
+/** The note once the model is known (`{model}`: its name). */
+export const REVIEW_NOTE_MODEL_TEXT = "Review sends this plugin's files to {model}. It's advice: it doesn't answer this card.";
+/** Over the report, so its text can't pass for the card's own lines. */
+export const REVIEW_HEAD_TEXT = "A model's reading of the plugin's files";
 export const REVIEW_RUNNING_TEXT = "Reviewing… you can answer the card meanwhile.";
 export const REVIEW_FAILED_TEXT = "The review didn't finish.";
 export const REFUSED_TEXT = "Couldn't confirm — try again.";
@@ -600,6 +612,7 @@ body:has(.seal-button.glyph) .state { display: none }
 .own .review-note { font-size: 0.85em; color: var(--seal-muted) }
 .own .review-report { margin: 8px 0 0; white-space: pre-wrap; font: inherit; font-size: 0.92em; color: var(--seal-text) }
 .own .review-report:empty { display: none }
+.own .review-head { margin: 10px 0 0; font-size: 0.78em; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--seal-muted) }
 `;
 
 /** A button's own words: the core's own table holds the language they shipped in (§5.5). The card's fields' and

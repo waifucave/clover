@@ -28,7 +28,8 @@ import { httpsUrl, type IndexClient } from "../registry/indexes/client";
 import { installFromIndex } from "../registry/indexes/install";
 import { installFromNpm } from "../registry/indexes/npm";
 import type { PluginUpdater } from "../registry/indexes/update";
-import { readReviewTree, type PluginReviews, type ReviewTree } from "../registry/plugin-review";
+import { readReviewTree, REVIEW_CHANGED, type PluginReviews, type ReviewTree } from "../registry/plugin-review";
+import { folderTreeHash } from "../registry/tree";
 import { homedir } from "node:os";
 import { installWrapped } from "../registry/wrap";
 import { forgetRemovedPlugin } from "../registry/leftovers";
@@ -418,24 +419,38 @@ export function pluginRegistryMethods(o: {
     }),
     // The Review on a waiting OK card or update card (the owner's ruling, 2026-11-13): advice for the user's side of
     // the card, from the `reviewer.model` role; it never answers, pre-selects or delays the card.
-    [M.pluginReview.name]: handler(M.pluginReview, ({ card }, ctx) => {
+    [M.pluginReview.name]: handler(M.pluginReview, async ({ card, peek }, ctx) => {
       requireUser(ctx, "review a plugin");
       if (o.reviews === undefined) notServed("plugin.review", "this computer runs no internal jobs");
+      const reviews = o.reviews!;
       const ok = registry.okCards().find((x) => x.card === card);
-      let target: { pluginId: string; treeHash: string; tree: () => ReviewTree } | undefined;
-      if (ok !== undefined) {
-        const r = registry.get(ok.id);
-        if (r !== undefined) target = { pluginId: ok.id, treeHash: ok.treeHash, tree: () => readReviewTree(r.folder, { pluginId: ok.id, treeHash: ok.treeHash, okLines: folders.okText(ok.id, o.os ?? "macos").lines }) };
-      } else {
-        const u = updateTrees.get(card);
-        if (u !== undefined) target = { pluginId: u.pluginId, treeHash: u.treeHash, tree: () => u.tree };
+      const u = ok === undefined ? updateTrees.get(card) : undefined;
+      const pluginId = ok?.id ?? u?.pluginId;
+      if (pluginId === undefined) throw new ContractError("not_found", `${card} isn't a plugin's OK card or update card waiting for an answer`);
+      const answer = (v: { state: string; report?: string; why?: string; model?: string }) => ({
+        state: v.state as never, pluginId: pluginId as never,
+        ...(v.model !== undefined ? { model: v.model } : {}), ...(v.report !== undefined ? { report: v.report } : {}), ...(v.why !== undefined ? { why: v.why } : {}),
+      });
+      if (peek === true) {
+        const had = reviews.get(card);
+        if (had !== undefined) return answer(had);
+        const model = reviews.model();
+        return answer(model === undefined ? { state: "unavailable", why: "No model is set for reviews: choose one in Settings › Models (the reviewer role)." } : { state: "idle", model });
       }
-      if (target === undefined) throw new ContractError("not_found", `${card} isn't a plugin's OK card or update card waiting for an answer`);
-      const view = o.reviews!.start(card, target.tree, { pluginId: target.pluginId, treeHash: target.treeHash });
-      return {
-        state: view.state, pluginId: view.pluginId as never,
-        ...(view.report !== undefined ? { report: view.report } : {}), ...(view.why !== undefined ? { why: view.why } : {}),
-      };
+      const had = reviews.get(card);
+      if (had !== undefined && (had.state === "running" || had.state === "done")) return answer(had);
+      let target: { treeHash: string; tree: () => ReviewTree };
+      if (ok !== undefined) {
+        // An OK card is about the tree it was made for: the folder as it is now must still be that tree, before and
+        // after it is read (a bot's edit since the card was raised is a tree the card doesn't approve).
+        const r = registry.get(ok.id);
+        const hashNow = async () => (r === undefined ? undefined : await folderTreeHash(r.folder).catch(() => undefined));
+        if (r === undefined || (await hashNow()) !== ok.treeHash) return answer({ state: "changed", why: REVIEW_CHANGED });
+        const read = readReviewTree(r.folder, { pluginId: ok.id, treeHash: ok.treeHash, okLines: folders.okText(ok.id, o.os ?? "macos").lines });
+        if ((await hashNow()) !== ok.treeHash) return answer({ state: "changed", why: REVIEW_CHANGED });
+        target = { treeHash: ok.treeHash, tree: () => read };
+      } else target = { treeHash: u!.treeHash, tree: () => u!.tree };
+      return answer(reviews.start(card, target.tree, { pluginId, treeHash: target.treeHash }));
     }),
     [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: o.indexes?.list() ?? [] })),
     [M.pluginIndexSearch.name]: handler(M.pluginIndexSearch, ({ query, limit }) => {
