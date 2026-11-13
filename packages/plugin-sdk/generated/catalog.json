@@ -4232,7 +4232,7 @@
     },
     "browser.toolCaller": {
       "capability": "browser",
-      "where": "both"
+      "where": "host"
     },
     "browser.tabs": {
       "capability": "browser",

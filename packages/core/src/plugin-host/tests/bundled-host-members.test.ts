@@ -152,7 +152,7 @@ describe("bundled host halves reach only the plugin API's host members", () => {
     expect(memberProblem(["env", "CLOVER_HOOKS_ORIGIN"])).toBe("api.env doesn't exist in the plugin API");
     expect(memberProblem(["computer"])).toBe("api.computer doesn't exist in the plugin API");
     expect(memberProblem(["t"])).toBe("api.t is a component's alone");
-    expect(memberProblem(["browser", "open"])).toStartWith("api.browser.open isn't served yet");
+    // No call a host half can reach is marked not-yet any more (the last, browser.onCdpEvent, is a component's alone).
     expect(memberProblem(["settings", "get", "x"])).toBe("api.settings.get.x reaches past the call settings.get");
     expect(memberProblem(["device", "id"])).toBeDefined();
     for (const ok of [["net", "fetch"], ["settings"], ["settings", "get", "bind"], ["storage", "synced", "get"], ["plugin", "computer"], ["memory"], ["keys", "publicKey"]]) expect(memberProblem(ok)).toBeUndefined();

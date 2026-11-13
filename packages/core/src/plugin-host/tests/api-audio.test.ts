@@ -17,7 +17,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { VoiceService, type VoicePlay } from "../../voices/service";
 import { startPluginHost } from "../daemon-host";
-import { areasParts } from "../api/areas";
+import { AUDIO_UTTERANCES_PER_PLUGIN, areasParts } from "../api/areas";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -161,6 +161,25 @@ describe("audio.play when its plugin stops", () => {
     sent.length = 0;
     await handlers["audio.play"]!(ctx("luna"), [{ format: "opus", data: new Uint8Array(4) }, {}, { utterance: luna }]);
     expect(sent.map((p) => p.seq)).toEqual([0]);
+    await forget("luna");
+    await forget("sol");
+  });
+
+  test("one plugin's tree holds at most AUDIO_UTTERANCES_PER_PLUGIN utterances open; another plugin still plays", async () => {
+    const sent: VoicePlay[] = [];
+    const { handlers, forget } = areasParts({
+      bots: () => ({ bots: { has: () => true } }) as unknown as BotSide,
+      node: () => undefined, links: () => undefined, voicePlay: (p) => void sent.push(p),
+    });
+    const ctx = (pluginId: string) => ({ pluginId, process: "ui", caller: { kind: "plugin", pluginId }, record: { granted: ["audio"] }, path: "audio.play" }) as never;
+    const open = (pluginId: string) => handlers["audio.play"]!(ctx(pluginId), [{ format: "opus", data: new Uint8Array(2) }, { bot: "luna" }, { utterance: `pa_${crypto.randomUUID()}` }]);
+    // The tree's children share its count.
+    for (let i = 0; i < AUDIO_UTTERANCES_PER_PLUGIN; i++) await open(i % 2 === 0 ? "luna" : "luna/child");
+    expect(((await Promise.resolve(open("luna")).catch((e: unknown) => e)) as Error).message).toContain(`luna has ${AUDIO_UTTERANCES_PER_PLUGIN} utterances playing, the most one plugin may`);
+    await open("sol");
+    await forget("luna");
+    await forget("luna/child");
+    await open("luna");
     await forget("luna");
     await forget("sol");
   });

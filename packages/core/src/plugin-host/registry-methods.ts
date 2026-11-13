@@ -13,7 +13,7 @@
 import { CORE_VERSION } from "../version";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { PLUGINS_METHODS, PluginDetail, PluginSummary, topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol";
+import { PLUGINS_METHODS, PluginDetail, PluginSummary, topPluginIdOf, type InstallSource, type PluginProvenance } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord } from "../contracts/plugin-registry";
@@ -108,6 +108,9 @@ const notServed = (what: string, why: string): never => {
 
 export { forgetRemovedPlugin } from "../registry/leftovers";
 
+/** A component's install (`plugins.install`): the user's install door, the asking plugin its provenance. */
+export type ComponentInstallDoor = (pluginId: string, source: InstallSource) => Promise<{ id: string; state: string; treeHash: string; card?: string; more?: unknown[] }>;
+
 export function pluginRegistryMethods(o: {
   opened: OpenedRegistry;
   host: Pick<PluginHost, "restart">;
@@ -131,6 +134,9 @@ export function pluginRegistryMethods(o: {
   log?: (line: string) => void;
   /** The user restarted a plugin (`plugin.restart`): its builder may be told of its crash-stops again (crash-notice.ts). */
   onRestart?: (id: string) => void;
+  /** Hands out the install door for a component's `plugins.install` (api/install.ts): the same door, its provenance
+   *  the plugin that asked. */
+  componentInstalls?: (door: ComponentInstallDoor) => void;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   /** The plugins whose update card (from the Plugins page) is up, with the versions it names. */
@@ -141,6 +147,74 @@ export function pluginRegistryMethods(o: {
   const { registry, folders } = o.opened;
   const onYes = (card: string | undefined, change: string, allowed: Promise<boolean>, apply: () => Promise<string | undefined> | string | undefined) =>
     onCardYes({ ...(o.emit ? { emit: o.emit } : {}), ...(o.log ? { log: o.log } : {}) }, card, change, allowed, apply);
+  /** The one install door (`plugin.install` from the user, `plugins.install` from a component): whatever the source,
+   *  the folder lands found and waits behind its sealed OK card; `who` is its provenance (the card's "from" line). */
+  const installDoor = async (source: InstallSource, who: { by: "user-app" | "user-terminal" } | { by: "plugin"; plugin: string }) => {
+      if (source.from === "npm" && o.indexes === undefined) notServed("installing from npm", "this computer has no index client");
+      if (source.from === "index" && o.indexes === undefined) notServed("installing from a plugin index", "this computer has no index client");
+      const by = who.by;
+      const asker = who.by === "plugin" ? { plugin: who.plugin } : {};
+      const leftovers = o.opened.leftovers;
+      const target = {
+        pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
+        ...(o.os ? { os: o.os } : {}),
+        taken: (pluginId: string) => registry.get(pluginId) !== undefined,
+        // What an earlier plugin under the id left, settled before the folder lands (`leftovers.ts`).
+        ...(leftovers !== undefined ? { leftovers: (pluginId: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(pluginId, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by, at: 0, ...asker, ...from } }) } : {}),
+      };
+      const raise = async (id: string, treeHash: string) => {
+        if (registry.get(id) === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
+        const raised = await registry.installed(id, who.by === "user-terminal" ? "cli" : "app");
+        return { id: id as never, state: raised.state, treeHash, ...(raised.card !== undefined ? { card: raised.card } : {}) };
+      };
+      if (source.from === "index") {
+        // From an index (§5.1): its id and tree hash as the index lists them; its OK card decides.
+        const src = source as { from: "index"; id: string; version?: string; index?: string };
+        const done = await installFromIndex({
+          ...target, client: o.indexes!,
+          id: src.id, ...(src.version !== undefined ? { version: src.version } : {}), ...(src.index !== undefined ? { index: src.index } : {}),
+          adultConfirmed: registry.adultConfirmed,
+        });
+        await folders.installed(done.id, by, { ...asker, index: done.index });
+        return raise(done.id, done.treeHash);
+      }
+      if (source.from === "npm") {
+        // From npm (§5.1): unpacked as it is, its bytes checked against npm's integrity record; its OK card decides.
+        const src = source as { from: "npm"; name: string; version?: string };
+        const done = await installFromNpm({
+          ...target, client: o.indexes!,
+          name: src.name, ...(src.version !== undefined ? { version: src.version } : {}),
+        });
+        await folders.installed(done.id, by, { ...asker, npm: done.npm });
+        return raise(done.id, done.treeHash);
+      }
+      if (source.from === "wrap") {
+        // A bare item (§5.1): the core generates a plugin around it (one per server for an MCP config), and records what
+        // it was made from. Each gets its own OK card.
+        const made = await installWrapped({
+          ...target, kind: source.kind, value: source.value, by: "user",
+          homes: { user: o.userHome ?? homedir(), clover: o.home, os: target.os ?? (process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos") },
+          ...(o.secrets?.set !== undefined ? { secrets: { set: o.secrets.set.bind(o.secrets), delete: o.secrets.delete.bind(o.secrets) } } : {}),
+        });
+        const results = [];
+        for (const w of made) {
+          await folders.installed(w.id, by, {
+            ...asker,
+            wrapped: {
+              from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}),
+              ...(w.reads !== undefined ? { reads: w.reads } : {}), ...(w.unreadable !== undefined ? { unreadable: w.unreadable } : {}),
+            },
+          });
+          results.push(await raise(w.id, w.treeHash));
+        }
+        const [first, ...more] = results;
+        return { ...first!, ...(more.length > 0 ? { more } : {}) };
+      }
+      const { id, treeHash } = await installFromFolder({ ...target, source: (source as { from: "folder"; path: string }).path });
+      await folders.installed(id, by, asker);
+      return raise(id, treeHash);
+  };
+  o.componentInstalls?.((pluginId, source) => installDoor(source, { by: "plugin", plugin: pluginId }));
   const must = (id: string): PluginRecord => {
     const r = registry.get(id);
     if (r === undefined) throw new ContractError("not_found", `${id} isn't installed`);
@@ -306,67 +380,7 @@ export function pluginRegistryMethods(o: {
     // OK card raised at once (§5.1). The index and npm wait for their clients.
     [M.pluginInstall.name]: handler(M.pluginInstall, async ({ source }, ctx) => {
       const user = requireUser(ctx, "install a plugin");
-      if (source.from === "npm" && o.indexes === undefined) notServed("installing from npm", "this computer has no index client");
-      if (source.from === "index" && o.indexes === undefined) notServed("installing from a plugin index", "this computer has no index client");
-      const by = user.client === "cli" ? "user-terminal" : "user-app";
-      const leftovers = o.opened.leftovers;
-      const target = {
-        pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
-        ...(o.os ? { os: o.os } : {}),
-        taken: (pluginId: string) => registry.get(pluginId) !== undefined,
-        // What an earlier plugin under the id left, settled before the folder lands (`leftovers.ts`).
-        ...(leftovers !== undefined ? { leftovers: (pluginId: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(pluginId, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by, at: 0, ...from } }) } : {}),
-      };
-      const raise = async (id: string, treeHash: string) => {
-        if (registry.get(id) === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
-        const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");
-        return { id: id as never, state: raised.state, treeHash, ...(raised.card !== undefined ? { card: raised.card } : {}) };
-      };
-      if (source.from === "index") {
-        // From an index (§5.1): its id and tree hash as the index lists them; its OK card decides.
-        const src = source as { from: "index"; id: string; version?: string; index?: string };
-        const done = await installFromIndex({
-          ...target, client: o.indexes!,
-          id: src.id, ...(src.version !== undefined ? { version: src.version } : {}), ...(src.index !== undefined ? { index: src.index } : {}),
-          adultConfirmed: registry.adultConfirmed,
-        });
-        await folders.installed(done.id, by, { index: done.index });
-        return raise(done.id, done.treeHash);
-      }
-      if (source.from === "npm") {
-        // From npm (§5.1): unpacked as it is, its bytes checked against npm's integrity record; its OK card decides.
-        const src = source as { from: "npm"; name: string; version?: string };
-        const done = await installFromNpm({
-          ...target, client: o.indexes!,
-          name: src.name, ...(src.version !== undefined ? { version: src.version } : {}),
-        });
-        await folders.installed(done.id, by, { npm: done.npm });
-        return raise(done.id, done.treeHash);
-      }
-      if (source.from === "wrap") {
-        // A bare item (§5.1): the core generates a plugin around it (one per server for an MCP config), and records what
-        // it was made from. Each gets its own OK card.
-        const made = await installWrapped({
-          ...target, kind: source.kind, value: source.value, by: "user",
-          homes: { user: o.userHome ?? homedir(), clover: o.home, os: target.os ?? (process.platform === "win32" ? "windows" : process.platform === "linux" ? "linux" : "macos") },
-          ...(o.secrets?.set !== undefined ? { secrets: { set: o.secrets.set.bind(o.secrets), delete: o.secrets.delete.bind(o.secrets) } } : {}),
-        });
-        const results = [];
-        for (const w of made) {
-          await folders.installed(w.id, by, {
-            wrapped: {
-              from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}),
-              ...(w.reads !== undefined ? { reads: w.reads } : {}), ...(w.unreadable !== undefined ? { unreadable: w.unreadable } : {}),
-            },
-          });
-          results.push(await raise(w.id, w.treeHash));
-        }
-        const [first, ...more] = results;
-        return { ...first!, ...(more.length > 0 ? { more } : {}) };
-      }
-      const { id, treeHash } = await installFromFolder({ ...target, source: (source as { from: "folder"; path: string }).path });
-      await folders.installed(id, by);
-      return raise(id, treeHash);
+      return installDoor(source, user.client === "cli" ? { by: "user-terminal" } : { by: "user-app" });
     }),
     [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id, list, card }, ctx) => {
       const user = requireUser(ctx, "update a plugin");
@@ -544,7 +558,7 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
   "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
-  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "notify.send", "plugin.iconSource",
+  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "plugin.layer.watch", "plugin.layer.unwatch", "notify.send", "plugin.iconSource",
   "plugin.review",
 ];
 

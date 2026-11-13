@@ -42,7 +42,7 @@ import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type Mc
 import { isBundledClover } from "../model-plugins/load";
 import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
-import { servesBackend } from "./only-backends";
+import { scopeOf, servesBackend, servesScope, type PluginScope } from "./only-backends";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
 export const PLUGIN_MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -246,7 +246,7 @@ export interface PluginMcpOptions {
   computers?(server: string): readonly string[];
   /** Per-computer servers another computer runs and lists (lane J's node, `mcpRemoteServers`), ready for the prompt:
    *  placement fields, scope applied, `load` set. They fill only names this computer doesn't list itself. */
-  remoteServers?(kind: "bot" | "side-thread" | "agent" | "coding"): readonly BotMcpServer[];
+  remoteServers?(kind: "bot" | "side-thread" | "agent" | "coding", bot?: string): readonly BotMcpServer[];
   /** The door to the plugins' `stdio` servers (lane J's `StdioMcpLauncher`: each open spawns the server fenced, a close
    *  stops it and releases what it held). Left out, `stdio` entries aren't served here. */
   stdio?: Pick<PluginHost, "openMcp">;
@@ -344,7 +344,12 @@ export class PluginMcp {
     const offTrees = o.registry.watchTrees?.(({ id }) => this.#treeChanged(id));
     const offHost = o.host.watch?.((s) => {
       const w = this.#treeWaits.get(s.pluginId);
-      if (w === undefined) return;
+      if (w === undefined) {
+        // Running again after its listing failed or found it stopped (the crash rules' stop, then its builder's fix
+        // restarting it): listed again now, or its tools keep answering the old stop until something else changes.
+        if (s.state === "running" && this.#stale(s.pluginId)) this.#relistPlugin(s.pluginId);
+        return;
+      }
       if (s.state !== "running") w.went = true;
       else if (w.went) this.#relistPlugin(s.pluginId);
     });
@@ -366,6 +371,15 @@ export class PluginMcp {
     const timer = setTimeout(() => this.#relistPlugin(pluginId), TREE_RELIST_WAIT_MS);
     (timer as { unref?: () => void }).unref?.();
     this.#treeWaits.set(pluginId, { went: false, timer });
+  }
+
+  /** Whether a server of `pluginId` this computer serves holds a failed or stopped listing. */
+  #stale(pluginId: string): boolean {
+    for (const [key, c] of this.#want) {
+      if (c.pluginId !== pluginId) continue;
+      if (this.#failed.has(key) || this.#listed.get(key)?.stopped !== undefined) return true;
+    }
+    return false;
   }
 
   /** Every server of `pluginId` this computer serves: its channel closed and listed again. */
@@ -753,15 +767,14 @@ export class PluginMcp {
    *  name served exactly once routes anywhere. A server
    *  another computer lists isn't one (its plugin's tree is that computer's). For the approval policy's declared
    *  lists (`pluginToolReadOnly`, `pluginToolContained`), asked at each call. */
-  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string, backend?: string): { plugin: string; server: string; tool: string } | undefined {
+  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string, backend?: string, bot?: string): { plugin: string; server: string; tool: string } | undefined {
     const { clashes } = this.#bundledTools();
     // Every full name this computer serves, wherever it routes: a name served twice (two servers, or one listing a
     // tool twice) routes to none, so a declared list never answers for a call that could reach something else.
     let found: { plugin: string; server: string; tool: string } | undefined;
     let times = 0;
     for (const [key, l] of this.#listed) {
-      const scope = this.#scopeOf(l.plugin, l.entry);
-      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
+      const serves = servesScope(this.#scopeOf(l.plugin, l.entry), { kind, ...(bot === undefined ? {} : { bot }) }, l.plugin);
       if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const served = this.#exposed(key, l.bundled);
       const shared = l.bundled && this.#o.bundledServer !== undefined;
@@ -777,12 +790,11 @@ export class PluginMcp {
 
   /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
    *  coding session's only from plugins whose `onlyBackends` name its `backend` (default Clover's own). */
-  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string): BotMcpServer[] {
+  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string, bot?: string): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     const { clashes } = this.#bundledTools();
     for (const [key, l] of this.#listed) {
-      const scope = this.#scopeOf(l.plugin, l.entry);
-      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
+      const serves = servesScope(this.#scopeOf(l.plugin, l.entry), { kind, ...(bot === undefined ? {} : { bot }) }, l.plugin);
       if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
       const server = this.#exposed(key, l.bundled);
       const p = this.#placementOf(key, server)!;
@@ -806,7 +818,7 @@ export class PluginMcp {
     // names no bundled server listed here gives.
     const declared = new Map(this.#keys().served.map(({ key, c }) => [key, c.pluginId] as const));
     const ownBundled = new Set([...this.#listed.values()].filter((l) => l.bundled).flatMap((l) => l.tools.map((t) => t.name)));
-    for (const r of this.#o.remoteServers?.(kind) ?? []) {
+    for (const r of this.#o.remoteServers?.(kind, bot) ?? []) {
       if (this.#o.bundledServer !== undefined && r.server === this.#o.bundledServer) {
         const record = this.#o.registry.get(r.plugin);
         if (record === undefined || !isBundledClover(record)) continue;
@@ -835,7 +847,10 @@ export class PluginMcp {
     if (!this.#okd(record)) return undefined;
     const hit = this.#keys().served.find(({ c }) => c.pluginId === plugin && this.#nameOf(c) === name);
     if (hit === undefined || !isLocal(hit.c.value as HostServerEntry)) return undefined;
-    return { server: hit.key, exposed: this.#exposed(hit.key, isBundledClover(record)), scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
+    // A server scoped to its own bot isn't another computer's to serve: a listing can't carry whose bot it is.
+    const scope = this.#scopeOf(plugin, hit.c.value as HostServerEntry);
+    if (scope === "own-bot") return undefined;
+    return { server: hit.key, exposed: this.#exposed(hit.key, isBundledClover(record)), scope };
   }
 
   /** Whether the user's OK covers the plugin's folder as it is now: a bundled one is the core's own; a child carries
@@ -846,8 +861,9 @@ export class PluginMcp {
     return own !== undefined && own.okHash !== undefined && own.okHash === own.treeHash;
   }
 
-  #scopeOf(plugin: string, entry: HostServerEntry): "bots" | "agents" | "both" {
-    return entry.scope ?? (this.#o.registry.get(plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope ?? "both";
+  /** A server's scope: its entry's, else its plugin's, else its tree's (`scopeOf`, the one rule's). */
+  #scopeOf(plugin: string, entry: HostServerEntry): PluginScope {
+    return scopeOf(this.#o.registry, plugin, entry.scope);
   }
 
   /** The per-computer servers listed here, for lane J's node to serve to the other computers (`mcp.list`; the node
@@ -856,13 +872,16 @@ export class PluginMcp {
     const out: PluginMcpListing[] = [];
     for (const [server, l] of this.#listed) {
       if (!isLocal(l.entry)) continue;
+      const scope = this.#scopeOf(l.plugin, l.entry);
+      // Scoped to its own bot: served here only (a listing can't carry whose bot it is).
+      if (scope === "own-bot") continue;
       const loads = l.entry.tools ?? {};
       out.push({
         server, plugin: l.plugin, name: l.name, exposed: this.#exposed(server, l.bundled),
         tools: l.tools.map((t) => ({ ...t, load: loads[t.name] ?? loads["*"] ?? "on-demand" })),
         ...(l.instructions === undefined ? {} : { instructions: l.instructions }),
         // Always stated: a remote listing with no scope serves no one (lane J's node).
-        scope: this.#scopeOf(l.plugin, l.entry),
+        scope,
       });
     }
     return out;

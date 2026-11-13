@@ -118,6 +118,9 @@ export function shortenPath(path: string): string {
   return [...out, ...tail].join("/");
 }
 
+/** The start of a Browser acting card's `what`, from the core (`browserKnown`). */
+const BROWSER_WHAT = "Browser: ";
+
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
 /** The rule an "always" on a card would store, as the broker wrote it into the card's `rule` rows from the record it saves
@@ -138,6 +141,13 @@ export function ruleOf(card: { fields: Readonly<Record<string, unknown>> }): Sto
  *  it runs; the one file; every call of a tool whatever it touches), the bot (only the bot it was saved for, or requests
  *  naming no bot), and the computers (only those it was saved on). Nothing narrower is claimed and nothing wider. */
 export function ruleSentence(rule: StoredRule, botName?: string, home?: string): string {
+  // The Browser tool's kept rule, without the tool's internal name: "Always allow Alpha to click and type on <site>, on this computer (Delta) only."
+  const site = rule.kind === "plugin-tool" ? /^mcp__browser__Browser\((.+)\)$/.exec(rule.target)?.[1] : undefined;
+  if (site !== undefined) {
+    const who = rule.bot === "" ? "your coding sessions" : botName ?? nameFromId(rule.bot);
+    const where = rule.computers.length === 0 ? "no computer" : `this computer (${rule.computers.join(", ")})`;
+    return `Always allow ${who} to click and type on ${site}, on ${where} only.`;
+  }
   // A cut text says how much is hidden, so a cut command never reads as whole.
   const clip = (t: string) => (t.length > 70 ? `${t.slice(0, 70)}… (${t.length - 70} more characters)` : t);
   const what = rule.kind === "command" ? `this exact command (${clip(rule.target.replace(/\s+/g, " "))}), in any folder`
@@ -163,7 +173,8 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
   const f = card.fields as Record<string, SealedValue | undefined>;
   const what = textOf(f.what);
   if (what === undefined || what === "") return undefined;
-  const who = botName ?? (card.bot !== undefined ? nameFromId(card.bot) : "A bot");
+  const browserCard = what.startsWith(BROWSER_WHAT);
+  const who = botName ?? (card.bot !== undefined ? nameFromId(card.bot) : browserCard ? "This coding session" : "A bot");
   const title = textOf(f.title);
   const input = asRecord(textOf(f.detail));
   const command = textOf(f.command);
@@ -181,6 +192,13 @@ export function summarize(card: { kind: string; fields: Readonly<Record<string, 
     return { target, ...(resolved.length > 1 ? { count: resolved.length } : {}), ...(differs ? { asked: askedAs!.length > 80 ? `${askedAs!.slice(0, 79)}…` : askedAs! } : {}) };
   };
 
+  // A Browser acting card ("Browser: click and type on <site>"): one sentence, and the act in words on a line of its own
+  // (the core's `command` line, from the element the session's read listed; the raw call stays under "show everything").
+  if (browserCard) {
+    const out: CardSummary = { ...base, verb: what.slice(BROWSER_WHAT.length), shortened: false };
+    if (command !== undefined && command !== "") out.preview = { kind: "lines", lines: [clipLine(command.replace(/\s+/g, " ")).text], hidden: 0, mono: false };
+    return out;
+  }
   switch (what) {
     case "Edit": {
       const p = place(input?.file_path);

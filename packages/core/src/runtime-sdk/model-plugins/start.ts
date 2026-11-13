@@ -15,7 +15,7 @@ import type { SecretStore as ContractSecretStore } from "../../contracts/secret-
 import type { PluginSecrets } from "../../plugin-host/daemon-host";
 import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
 import type { ProviderRefresher } from "../host-credentials";
-import { installModelPlugins } from "./index";
+import { installedModelPlugins, installModelPlugins, modelCatalogMaybeChanged } from "./index";
 import { keychainModelPluginCredentials } from "./keychain-tokens";
 import { modelPluginApiHandlers, secretStoreCredentials } from "./plugin-api";
 import { ModelPlugins } from "./service";
@@ -99,6 +99,8 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
     host: opts.host,
     home: opts.home,
     connectionFor: (pluginId, connection) => credentials.connectionFor(pluginId, connection),
+    // Once installed, a rebuild that moves what the sessions are given tells them (the sessions reopen on it).
+    changed: () => { if (installedModelPlugins() === plugins) modelCatalogMaybeChanged(); },
     ...(serve ? {} : { serveCodeAdapters: false }),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });

@@ -998,6 +998,8 @@ function makePair(): Pair {
   p.handle("app.notify.close", (params) => {
     const id = (params as { id?: unknown } | undefined)?.id;
     notifications.close(typeof id === "string" ? id : undefined);
+    // Said as the show is (its id, never its words): a headless run reads that the notifier took the banner down.
+    log(`notify: closed (${typeof id === "string" ? id : "all"})`);
     return { ok: true };
   });
   // A bot's speech (§6.6): each piece goes on, as it came, to the main window's shell, which plays it. No file, no route.

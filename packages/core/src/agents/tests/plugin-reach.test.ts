@@ -20,6 +20,8 @@ import type { BotSessionContext } from "../../bots/service";
 import { thisPlatform } from "../../registry/core";
 import { openPluginRegistry } from "../../registry/open";
 import type { TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
+import { glossaryIndex } from "../../runtime-sdk/turn-loop/glossary";
+import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
 import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
 import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, type AgentPluginReachDeps } from "../plugin-reach";
@@ -84,6 +86,12 @@ async function plugins(broker: FakeApprovalBroker) {
     "kit/clover.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, scope: "agents", contributes: { skills: ["skills/*/SKILL.md"], agents: ["agents/review.md"] } },
     "kit/skills/haiku/SKILL.md": "---\nname: haiku\ndescription: Write a haiku about the code.\n---\nCount five, seven, five.\n",
     "kit/agents/review.md": "---\nname: reviewer\ndescription: Reviews a diff.\n---\nRead the diff and list the bugs.\n",
+    // Two bots' own plugins (`own-bot`: a bot's id is its plugin's), each with a server and a persona skill.
+    ...Object.fromEntries(["luna", "nova"].flatMap((b) => [
+      [`${b}/clover.json`, plugin(b, { scope: "own-bot", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } })],
+      [`${b}/host/index.js`, "export {};\n"],
+      [`${b}/skills/persona/SKILL.md`, `---\nname: persona\ndescription: How ${b} talks.\n---\nTalk like ${b}.\n`],
+    ])),
   };
   for (const [path, value] of Object.entries(files)) {
     mkdirSync(dirname(join(home, "plugins", path)), { recursive: true });
@@ -91,7 +99,7 @@ async function plugins(broker: FakeApprovalBroker) {
   }
   const okBroker = new FakeApprovalBroker({ clock: new FakeClock() });
   const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
-  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit"]) {
+  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit", "luna", "nova"]) {
     for (let i = 0; i < 250 && opened.registry.get(id) === undefined; i++) await Bun.sleep(20);
     const { card } = await opened.registry.installed(id, "app");
     if (card !== undefined) {
@@ -105,7 +113,7 @@ async function plugins(broker: FakeApprovalBroker) {
   closers.push(() => { mcp.close(); opened.close(); });
   const check = botApprovalCheck(broker, {});
   const deps: AgentPluginReachDeps = {
-    servers: (kind, backend) => mcp.servers(kind, backend), runner: localMcpRunner(mcp, () => "Studio"),
+    servers: (kind, backend, bot) => mcp.servers(kind, backend, bot), runner: localMcpRunner(mcp, () => "Studio"),
     judge: agentToolJudge(check), registry: opened.registry, watch: (fn) => opened.registry.watch(() => fn()),
   };
   return { home, registry: opened.registry, mcp, deps, check };
@@ -152,7 +160,7 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(listed.tools[1]!.description).toBe("The toolbox tool. (from the plugin toolbox)");
   });
 
-  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, Clover's own runtime (clover-code, clover) the Clover-only one, a bot's agent the agents' plugins; one not for this computer, none", async () => {
+  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, Clover's own runtime (clover-code, clover) the Clover-only one, a bot's agent the agents' and the bots' plugins; one not for this computer, none", async () => {
     const { p } = await setup();
     expect(p.registry.get("elsewhere")?.state).toBe("off");
     const tools = agentPluginTools(p.deps);
@@ -161,7 +169,7 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(await names({ backend: "claude-code" })).toEqual(["cconly-tools__cconly", TOOL]);
     expect(await names({ backend: "clover-code" })).toEqual(["cloveronly-tools__cloveronly", TOOL]);
     expect(await names({ backend: "clover" })).toEqual(["cloveronly-tools__cloveronly", TOOL]);
-    expect(await names({ kind: "agent", bot: "alpha" })).toEqual([TOOL]);
+    expect(await names({ kind: "agent", bot: "alpha" })).toEqual(["botsonly-tools__botsonly", TOOL]);
   });
 
   test("needs a card: at ask the call raises one naming the agent's session; the user's coding session's card offers always, and its yes runs the call", async () => {
@@ -282,8 +290,88 @@ describe("a plugin's skills and agent definitions for an agent", () => {
   });
 });
 
+describe("one scope rule (servesScope) at every call site", () => {
+  /** The bots' Glossary index for a bot's own session, as the driver builds it (`partsServe` on the registry). */
+  const botIndex = (registry: Parameters<typeof partsServe>[0] & Parameters<typeof glossaryIndex>[0]["registry"], bot: string, kind: "bot" | "side-thread" = "bot") =>
+    glossaryIndex({ tools: () => [], registry: registry!, serves: (id) => partsServe(registry!, id, { kind, bot }), bot }).map((i) => i.name);
+
+  test("a bots-scoped plugin: its tools and its skills both reach a bot's delegated agent; never the user's coding session", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const parts = agentPluginParts(p.deps);
+    const agent = facts({ id: "s_agent", kind: "agent", bot: "nova" });
+    expect((await tools.tools("s", agent)).map((t) => t.name)).toContain("botsonly-tools__botsonly");
+    expect((await parts.parts("s", agent)).skills.map((x) => x.name)).toContain("botsonly-limerick");
+    const g = await agentGlossary(p.deps)("s", { load: "botsonly:limerick" }, agent);
+    expect(g.loaded).toEqual([expect.objectContaining({ name: "botsonly:limerick", kind: "skill" })]);
+    // The routed call the daemon's approvals read: the same server for the agent.
+    expect(p.mcp.routedTool("agent", "mcp__botsonly-tools__botsonly", undefined, "nova")?.plugin).toBe("botsonly");
+    // The user's own coding session: none of it.
+    expect((await tools.tools("s", facts())).map((t) => t.name)).not.toContain("botsonly-tools__botsonly");
+    expect((await parts.parts("s", facts())).skills.map((x) => x.name)).not.toContain("botsonly-limerick");
+    expect(p.mcp.routedTool("coding", "mcp__botsonly-tools__botsonly")).toBeUndefined();
+  });
+
+  test("an agents-scoped plugin reaches both kinds of agent (a bot's, the user's) and no bot's own session", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const parts = agentPluginParts(p.deps);
+    for (const f of [facts(), facts({ id: "s_agent", kind: "agent", bot: "nova" })]) {
+      expect((await tools.tools("s", f)).map((t) => t.name)).toContain(TOOL);
+      expect((await parts.parts("s", f)).skills.map((x) => x.name)).toContain("kit-haiku");
+    }
+    // A bot's conversation and side thread: neither the agents' server nor the agents' skill and agent definition;
+    // the bots' plugin's are there.
+    for (const kind of ["bot", "side-thread"] as const) {
+      const servers = p.mcp.servers(kind, undefined, "nova").map((sv) => sv.plugin);
+      expect(servers).not.toContain("toolbox");
+      expect(servers).toContain("botsonly");
+      expect(p.mcp.routedTool(kind, `mcp__${TOOL}`, undefined, "nova")).toBeUndefined();
+      const index = botIndex(p.registry, "nova", kind);
+      expect(index).not.toContain("kit:haiku");
+      expect(index).not.toContain("kit:reviewer");
+      expect(index).toContain("botsonly:limerick");
+    }
+  });
+});
+
+describe("two bots on one computer: each one's own-bot parts are its own", () => {
+  test("a bot's delegated agent and its own sessions get only their bot's own-bot server and skill, never the other bot's; a coding session neither", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const parts = agentPluginParts(p.deps);
+    const glossary = agentGlossary(p.deps);
+    for (const [bot, other] of [["luna", "nova"], ["nova", "luna"]] as const) {
+      const agent = facts({ id: `s_${bot}_agent`, kind: "agent", bot });
+      const names = (await tools.tools("s", agent)).map((t) => t.name);
+      expect(names).toContain(`${bot}-tools__${bot}`);
+      expect(names).not.toContain(`${other}-tools__${other}`);
+      const skills = (await parts.parts("s", agent)).skills.map((x) => x.name);
+      expect(skills).toContain(`${bot}-persona`);
+      expect(skills).not.toContain(`${other}-persona`);
+      expect((await glossary("s", { load: [`${bot}:persona`, `${other}:persona`] }, agent)).loaded).toEqual([
+        expect.objectContaining({ name: `${bot}:persona`, kind: "skill" }), { name: `${other}:persona`, found: false },
+      ]);
+      // A call to the other bot's tool is no tool of this agent's, and is routed for no one but its own bot.
+      expect(p.mcp.routedTool("agent", `mcp__${other}-tools__${other}`, undefined, bot)).toBeUndefined();
+      expect(p.mcp.routedTool("agent", `mcp__${bot}-tools__${bot}`, undefined, bot)?.plugin).toBe(bot);
+      // The bot's own conversation: the same split.
+      const servers = p.mcp.servers("bot", undefined, bot).map((sv) => sv.plugin);
+      expect(servers).toContain(bot);
+      expect(servers).not.toContain(other);
+      const index = glossaryIndex({ tools: () => [], registry: p.registry, serves: (id) => partsServe(p.registry, id, { kind: "bot", bot }), bot }).map((i) => i.name);
+      expect(index).toContain(`${bot}:persona`);
+      expect(index).not.toContain(`${other}:persona`);
+    }
+    // The user's coding session: neither bot's.
+    const coding = (await tools.tools("s", facts())).map((t) => t.name);
+    expect(coding.some((n) => n.startsWith("luna-") || n.startsWith("nova-"))).toBe(false);
+    expect((await parts.parts("s", facts())).skills.some((x) => x.pluginId === "luna" || x.pluginId === "nova")).toBe(false);
+  });
+});
+
 describe("Alpha's persona stays hers", () => {
-  test("her skills and agent definitions (her own and her extras') reach bots, never a coding session or another agent", async () => {
+  test("her skills and agent definitions (her own and her extras') reach her sessions and her delegated agents; never another bot, another bot's agent or a coding session", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b-alpha-"));
     temps.push(home);
     // Alpha as Clover ships her: from a bundled folder (a copy of the repository's), which asks for no OK.
@@ -294,11 +382,24 @@ describe("Alpha's persona stays hers", () => {
     for (let i = 0; i < 250 && !["running", "enabled"].includes(String(opened.registry.get("alpha")?.state)); i++) await Bun.sleep(20);
     await opened.registry.setEnabled("alpha/extras", true);
     const active = (point: string) => opened.registry.entries(point).filter((c) => c.state === "active").map((c) => c.pluginId);
-    // They are there for a bot (her own Glossary and Agent read them unscoped by agents).
     expect(active("skills")).toEqual(expect.arrayContaining(["alpha", "alpha/extras"]));
     expect(active("agents")).toContain("alpha");
+    // Her own sessions: her Glossary has them all.
+    for (const kind of ["bot", "side-thread"] as const) {
+      const index = glossaryIndex({ tools: () => [], registry: opened.registry, serves: (id) => partsServe(opened.registry, id, { kind, bot: "alpha" }), bot: "alpha" }).map((i) => i.name);
+      expect(index).toEqual(expect.arrayContaining(["alpha:explain-like-a-friend", "alpha:plan-my-day", "alpha/extras:morning-check-in", "alpha:study-buddy"]));
+    }
+    // Another bot's: none of them (a point she declares, `alpha.scenes`, is a contract any plugin may fill, not hers).
+    const other = glossaryIndex({ tools: () => [], registry: opened.registry, serves: (id) => partsServe(opened.registry, id, { kind: "bot", bot: "nova" }), bot: "nova" }).map((i) => i.name);
+    expect(other.filter((n) => n.startsWith("alpha:") || n.startsWith("alpha/"))).toEqual([]);
     const deps = { registry: opened.registry, servers: () => [] };
-    for (const f of [facts(), facts({ backend: "claude-code" }), facts({ kind: "agent", bot: "alpha", backend: "clover-code" })]) {
+    // Her own delegated agent (on Clover's runtime): placed and in its Glossary.
+    const hers = facts({ kind: "agent", bot: "alpha", backend: "clover-code" });
+    const own = await agentPluginParts(deps).parts("s", hers);
+    expect(own.skills.map((x) => x.name)).toEqual(expect.arrayContaining(["alpha-explain-like-a-friend", "alpha-plan-my-day"]));
+    expect(own.agents.map((x) => x.name)).toContain("alpha-study-buddy");
+    expect((await agentGlossary(deps)("s", { load: "alpha:study-buddy" }, hers)).loaded).toEqual([expect.objectContaining({ name: "alpha:study-buddy", kind: "agent" })]);
+    for (const f of [facts(), facts({ backend: "claude-code" }), facts({ kind: "agent", bot: "nova", backend: "clover-code" })]) {
       const parts = await agentPluginParts(deps).parts("s", f);
       expect([parts.skills, parts.agents]).toEqual([[], []]);
       const g = await agentGlossary(deps)("s", { query: ["study", "morning"], load: "alpha:study-buddy" }, f);
