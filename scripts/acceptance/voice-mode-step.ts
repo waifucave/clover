@@ -4,7 +4,7 @@
 // chosen, the core refuses it the player. Its `chime` (a plugin's sound as Alpha's voice, the `audio` capability) goes
 // to Clover Voice's one queue while Alpha's reply sounds, and waits its turn: it reaches the player only after her reply
 // (and, where the player's audio clock runs, it never cuts her reply and no two bots sound at once). Chosen in Settings › Voice
-// (the section's select, the user's way), the third party's mode says Alpha's next reply through her provider; choosing
+// (the section's list, the user's click), the third party's mode says Alpha's next reply through her provider; choosing
 // Clover Voice again takes it back. A plain plugin with `voices.use` (`acceptance-narrator`) gets the provider's audio
 // back as its own data with nothing played; its child, with no `voices.use`, is refused.
 import { resolve } from "node:path";
@@ -64,18 +64,12 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
   const choose = async (name: string) => {
     await clickTree(cdp, "the Settings button", "button[aria-label=Settings]");
     await clickTree(cdp, "the Settings window's Voice section", "button.cl-settings__section", "Voice");
-    const picked = await until(`the Active voice select offering ${name}`, 20_000, async () => {
+    // The user's click on the voice's choice in the Active voice list.
+    await clickTree(cdp, `${name} in the Active voice list`, '[role=radiogroup][aria-label="Active voice"] [role=radio]', name);
+    const picked = await until(`${name} checked in the Active voice list`, 10_000, async () => {
       for (const d of await treeDocs(cdp)) {
-        const r = await cdp.evaluate(d.session, `(() => {
-          const s = document.querySelector('select[aria-label="Active voice"]');
-          if (!s) return null;
-          const o = [...s.options].find((x) => x.textContent === ${JSON.stringify(name)});
-          if (!o) return null;
-          Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value);
-          s.dispatchEvent(new Event('change', { bubbles: true }));
-          return o.value;
-        })()`).catch(() => null);
-        if (typeof r === "string") return r;
+        const r = await cdp.evaluate(d.session, `(() => { const c = document.querySelector('[role=radiogroup][aria-label="Active voice"] [role=radio][aria-checked=true]'); return c ? c.textContent : null; })()`).catch(() => null);
+        if (r === name) return r;
       }
       return undefined;
     });

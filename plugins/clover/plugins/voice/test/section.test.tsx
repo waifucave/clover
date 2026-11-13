@@ -1,7 +1,7 @@
 // The Voice section of Settings: the running voice modes, the choice kept in Clover Voice's own `active` setting (empty
 // is Clover Voice), and a chosen mode that stopped shown as not running.
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { UiRuntimeProvider } from "../../shell/client/sdk";
@@ -35,16 +35,17 @@ async function section(modes: Mode[], active = "", speakReplies?: boolean) {
 describe("Settings › Voice", () => {
   test("lists the running voice modes with Clover Voice chosen while the setting is empty; choosing another stores its id, choosing Clover Voice stores empty", async () => {
     const api = await section([CLOVER, OTHER]);
-    const select = screen.getByRole("combobox", { name: "Active voice" }) as HTMLSelectElement;
-    expect([...select.options].map((o) => o.textContent)).toEqual(["Clover Voice", "Acme Voice"]);
-    expect(select.value).toBe("clover/voice");
+    const group = screen.getByRole("radiogroup", { name: "Active voice" });
+    const radios = () => within(group).getAllByRole("radio");
+    expect(radios().map((o) => o.textContent)).toEqual(["Clover Voice", "Acme Voice"]);
+    expect(radios().map((o) => o.getAttribute("aria-checked"))).toEqual(["true", "false"]);
     await act(async () => {
-      fireEvent.change(select, { target: { value: "acme-voice" } });
+      fireEvent.click(within(group).getByRole("radio", { name: "Acme Voice" }));
       await settle(4);
     });
     expect(api.stored.get("active")).toBe("acme-voice");
     await act(async () => {
-      fireEvent.change(select, { target: { value: "clover/voice" } });
+      fireEvent.click(within(group).getByRole("radio", { name: "Clover Voice" }));
       await settle(4);
     });
     expect(api.stored.get("active")).toBe("");
@@ -53,9 +54,8 @@ describe("Settings › Voice", () => {
 
   test("a chosen voice that isn't running is shown as not running", async () => {
     await section([CLOVER], "acme-voice");
-    const select = screen.getByRole("combobox", { name: "Active voice" }) as HTMLSelectElement;
-    expect(select.value).toBe("acme-voice");
-    expect(select.selectedOptions[0]!.textContent).toBe("acme-voice (not running)");
+    const checked = screen.getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true");
+    expect(checked.map((r) => r.textContent)).toEqual(["acme-voice (not running)"]);
   });
 
   test("Speak replies: on while unset; the user's click writes voice.speakReplies through ui.set", async () => {
@@ -77,7 +77,7 @@ describe("Settings › Voice", () => {
 
   test("no voice running: the section says the bots are text-only and offers no choice", async () => {
     await section([]);
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.getByText(/your bots are text-only/)).toBeTruthy();
   });
 });

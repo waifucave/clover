@@ -92,12 +92,18 @@ export function VoiceSection() {
         </div>
         {modes.length > 0 && (
           <div className="cl-settings__control">
-            <select className="cl-settings__select" aria-label={S.active} data-testid="voice-active" value={selected} onChange={(e) => void choose(e.target.value)}>
+            <div className="cl-settings__segmented" role="radiogroup" aria-label={S.active} data-testid="voice-active">
               {modes.map((m) => (
-                <option key={m.pluginId} value={m.pluginId}>{m.name}</option>
+                <button key={m.pluginId} type="button" role="radio" aria-checked={m.pluginId === selected} className="cl-settings__segment" onClick={() => void choose(m.pluginId)}>
+                  {m.name}
+                </button>
               ))}
-              {!running && <option value={selected}>{S.activeOff(selected)}</option>}
-            </select>
+              {!running && (
+                <button type="button" role="radio" aria-checked={true} className="cl-settings__segment" disabled>
+                  {S.activeOff(selected)}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
