@@ -17,8 +17,10 @@ import { dirname, join } from "node:path";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { setRunHomeSupportForTests } from "../src/runtime-sdk/run-home-support";
-import { MigrationCRefused, migrationCCompletePath, migrationCCurrentLayoutPath, migrationCManifestPath, migrationCState, oldLayoutMarkers, repairAgentsLink, rollbackMigrationC, runMigrationC, type MigrationCManifest } from "../src/migration/migrate-c";
+import { MigrationCRefused, migrationCCompletePath, migrationCCurrentLayoutPath, migrationCManifestPath, migrationCState, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink, rollbackMigrationC, runMigrationC, type MigrationCManifest } from "../src/migration/migrate-c";
 import { LocalHolder } from "../src/tree/holder";
+import { loadUserAgentDefinitions } from "../src/agent/agent-definitions";
+import { builtinSkillsRecordPath } from "../src/migration/builtin-skills";
 import { hostOs } from "../src/tree/names";
 import { AgentTranscript } from "../src/agents/transcript";
 import { openRuntimeStateDb } from "../src/runtime-state/db";
@@ -75,7 +77,7 @@ async function migratedTheOldWay(home: string): Promise<void> {
   seedOldLayout(home);
   writeTranscript(home, "agent-1");
   writeTranscript(home, "agent-2");
-  writeFileSync(join(home, "agents", "reviewer.md"), "---\nname: reviewer\n---\n");
+  writeFileSync(join(home, "agents", "reviewer.md"), "---\nname: reviewer\ndescription: Reviews a change.\n---\nReview the change.\n");
   await runMigrationC(home, { log: () => undefined, reconcileAvailable: true });
   // Back to the old move-dirs' shape: everything under sdk/agents, a link at agents.
   for (const name of readdirSync(join(home, "agents"))) renameSync(join(home, "agents", name), join(home, "sdk", "agents", name));
@@ -141,6 +143,91 @@ describe("Migration C at boot (run-home router)", () => {
     expect(existsSync(join(home, "agents", "reviewer.md"))).toBe(true);
     expect(existsSync(join(home, "agents", "agent-1", "agent.json"))).toBe(true);
     expect(existsSync(join(home, "sdk", "agents", "reviewer.md"))).toBe(false);
+  });
+
+  test("a rollback caught between the repair's intent and its unlink finishes the repair first: each definition back in a real agents folder beside the transcripts", async () => {
+    const parent = parentDir();
+    const home = join(parent, ".clover");
+    await migratedTheOldWay(home);
+    const m = JSON.parse(readFileSync(migrationCManifestPath(home), "utf8")) as MigrationCManifest;
+    m.moved = [...m.moved.filter((mv) => mv.from !== "agents"), { from: "agents/reviewer.md", to: "sdk/agents/reviewer.md" }];
+    m.agentsLinkRepair = { at: "then", transcripts: ["agent-1", "agent-2"] };
+    writeFileSync(migrationCManifestPath(home), JSON.stringify(m, null, 2)); // the intent; the link is still there
+    await rollbackMigrationC(home, { log: () => undefined });
+    expect(lstatSync(join(home, "agents")).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(home, "agents", "reviewer.md"))).toBe(true);
+    expect(existsSync(join(home, "agents", "agent-2", "calls.ndjson"))).toBe(true);
+    expect(existsSync(join(home, "sdk", "agents", "reviewer.md"))).toBe(false);
+  });
+
+  test("the repair: an empty folder in sdk/agents stays where it is, unrecorded; the definitions' reader finds them in sdk/agents", async () => {
+    setRunHomeSupportForTests(true);
+    const parent = parentDir();
+    const home = join(parent, ".clover");
+    await migratedTheOldWay(home);
+    mkdirSync(join(home, "sdk", "agents", "empty"));
+    expect(repairAgentsLink(home, () => undefined)).toEqual({ transcripts: ["agent-1", "agent-2"] });
+    expect(existsSync(join(home, "sdk", "agents", "empty"))).toBe(true);
+    const m = (migrationCState(home) as { manifest: MigrationCManifest }).manifest;
+    expect(m.moved.map((mv) => mv.from).filter((f) => f.startsWith("agents"))).toEqual(["agents/reviewer.md"]);
+    const loaded = loadUserAgentDefinitions(home);
+    expect(loaded.rejected).toEqual([]);
+    expect(Object.keys(loaded.definitions)).toContain("reviewer");
+  });
+
+  test("the repair refuses when sdk/agents is itself a link, or the manifest names something that isn't one folder", async () => {
+    for (const bad of ["sdk-link", "manifest"] as const) {
+      const parent = parentDir();
+      const home = join(parent, ".clover");
+      await migratedTheOldWay(home);
+      if (bad === "sdk-link") {
+        renameSync(join(home, "sdk", "agents"), join(parent, "moved-agents"));
+        symlinkSync(join(parent, "moved-agents"), join(home, "sdk", "agents"));
+      } else {
+        const m = JSON.parse(readFileSync(migrationCManifestPath(home), "utf8")) as MigrationCManifest;
+        m.agentsLinkRepair = { at: "then", transcripts: ["../../outside"] };
+        writeFileSync(migrationCManifestPath(home), JSON.stringify(m, null, 2));
+      }
+      const lines: string[] = [];
+      expect(repairAgentsLink(home, (l) => lines.push(l))).toBeUndefined();
+      expect(lstatSync(join(home, "agents")).isSymbolicLink()).toBe(true);
+      expect(lines.join("\n")).toContain(bad === "sdk-link" ? "is itself a link" : "isn't one folder name");
+    }
+  });
+
+  for (const evidence of [true, false]) {
+    test(`an earlier build's home with a bot's half-written plugin drop (skills/x/SKILL.md, no clover.json) on a non-default home: ${evidence ? "a run-home build's record there → marked current, boots" : "no record → still refused"}`, async () => {
+      setRunHomeSupportForTests(true);
+      const parent = parentDir();
+      const home = join(parent, "custom-home");
+      mkdirSync(join(home, "plugins", "half", "skills", "x"), { recursive: true });
+      writeFileSync(join(home, "plugins", "half", "skills", "x", "SKILL.md"), "---\nname: x\n---\n");
+      if (evidence) {
+        mkdirSync(join(home, "migration"), { recursive: true });
+        writeFileSync(builtinSkillsRecordPath(home), "{}\n");
+      }
+      expect(oldLayoutMarkers(home)).toEqual(["plugins/half (a legacy plugin)"]);
+      expect(ranOnRunHomeBuild(home)).toBe(evidence);
+      if (evidence) {
+        daemon = await boot(home, parent);
+        expect(existsSync(migrationCCurrentLayoutPath(home))).toBe(true);
+        expect(migrationCState(home).kind).toBe("absent");
+      } else {
+        let caught: unknown;
+        try { daemon = await boot(home, parent); } catch (err) { caught = err; }
+        expect((caught as MigrationCRefused).code).toBe("sdk_home_migration_required");
+        expect((caught as Error).message).toContain("plugins/half");
+      }
+    });
+  }
+
+  test("a home rolled back for an older build is not evidence of the current layout, record or not", () => {
+    const parent = parentDir();
+    const home = join(parent, ".clover");
+    mkdirSync(join(home, "migration", "c"), { recursive: true });
+    writeFileSync(builtinSkillsRecordPath(home), "{}\n");
+    writeFileSync(join(home, "migration", "c", "manifest.rolled-back.json"), "{}\n");
+    expect(ranOnRunHomeBuild(home)).toBe(false);
   });
 
   test("a link at agents that Migration C didn't make is left alone", async () => {

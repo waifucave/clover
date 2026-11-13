@@ -320,7 +320,7 @@ export { rekeySettings, type RekeyChange, type RekeyResult } from "./migration/r
 export {
   MIGRATION_C_PHASE1, MIGRATION_C_PHASE2, MigrationCRefused, finishMigrationC, isOldLayout,
   migrationCCompletePath, migrationCManifestPath, migrationCRolledBackPath, migrationCState,
-  markCurrentLayout, migrationCCurrentLayoutPath, oldLayoutMarkers, repairAgentsLink,
+  markCurrentLayout, migrationCCurrentLayoutPath, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink,
   planMigrationC, rollbackMigrationC, runMigrationC,
   type MigrationCManifest, type MigrationCState, type MigrationCStep,
 } from "./migration/migrate-c";
