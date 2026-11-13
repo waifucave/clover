@@ -349,6 +349,12 @@ describe("the Plugins page: what is installed", () => {
     }
   });
 
+  test("a plugin's detail lists its child plugins' tools after its own", () => {
+    const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { mcpServers: { own: { tools: { own_tool: "preload" } } } } } } as never;
+    expect(toDetail(d, { childTools: ["kid_tool"] }).tools).toEqual(["own_tool", "kid_tool"]);
+    expect(toDetail(d, {}).tools).toEqual(["own_tool"]);
+  });
+
   test("an agent definition given as a file shows its name, cut like a named one", () => {
     const long = "x".repeat(200);
     const d = { ...installedDetail("tarot-panel"), manifest: { ...installedDetail("tarot-panel").manifest, contributes: { agents: [`agents/${long}.md`, { id: "r", name: long }] } } } as never;
