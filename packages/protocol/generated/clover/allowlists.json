@@ -87,6 +87,7 @@
       "plugin.remove",
       "plugin.renameFolder",
       "plugin.restart",
+      "plugin.review",
       "plugin.setComputers",
       "plugin.setEnabled",
       "plugin.setScope",
@@ -181,6 +182,7 @@
       "app.tab.open",
       "app.window.capture",
       "app.window.open",
+      "app.window.render",
       "voice.play"
     ]
   },
@@ -351,6 +353,7 @@
       "plugin.pin",
       "plugin.remove",
       "plugin.restart",
+      "plugin.review",
       "plugin.setComputers",
       "plugin.setEnabled",
       "plugin.setScope",

@@ -73,6 +73,14 @@ with no card. The status tool says when a card is waiting. So:
 3. Check the folder first if you're unsure: the check tool's last line says whether a change applies at once or asks.
 4. If they say no, offer to take the request back out, and do it.
 
+### Look at what you built
+
+The status tool says whether it runs; only a picture says whether it looks right. After a change to a page, a panel
+or anything the user sees, take the screenshot tool of it (`app:<your plugin id or page key>`) both `"wide"` and
+`"narrow"`, and look: is it the size of its space, is anything cut, overlapping or empty, does it read in the app's
+colours? Fix what you see, then look again. When the user says something looks wrong, take `window` first, to see
+what they see. The picture is a fresh draw of the page, so what your page does when it opens runs again for it.
+
 ## 6. Finding what's wrong
 
 - **Check findings**: fix exactly what each says; the place is a JSON pointer into the manifest or a file path.
@@ -81,7 +89,8 @@ with no card. The status tool says when a card is waiting. So:
 - **The host half failed**: the status tool's log lines hold the thrown error; a handler named in the manifest must
   be an export of `host.entry` with that exact name.
 - **Nothing shows**: the spot's part isn't on screen yet (open it), `when` doesn't match, a bot's plugin drew outside
-  its tab, or the entry's `component` isn't exported.
+  its tab, or the entry's `component` isn't exported. The screenshot tool shows the page as drawn, its frames (is
+  your plugin's there, and how big?) and your plugin's console errors.
 - **A tool isn't there**: on-demand tools are loaded with `Glossary`; the session sees `mcp__<server>__<tool>`.
 - **A "… stopped" note in your conversation**: a plugin you built crashed until Clover stopped it (the note names it,
   a child by its own id such as `reel/fx`, and why). Read the status tool for that id (its log says what threw), fix

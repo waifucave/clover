@@ -2131,6 +2131,10 @@
                     "bot-removed"
                   ]
                 },
+                "pausedWhy": {
+                  "type": "string",
+                  "maxLength": 300
+                },
                 "lastRunAt": {
                   "type": "integer",
                   "minimum": 0,

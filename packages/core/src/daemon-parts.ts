@@ -87,6 +87,8 @@ export interface DaemonBotsInput {
   workshop?: BotSideOptions["workshop"];
   /** The drop: the folders a bot made in the plugins folder that the registry hasn't recorded yet. */
   drops?: { pending(bot: string): readonly string[] };
+  /** The bots' `AppScreenshot`: this computer's app draws a place for them. */
+  appScreenshot?: BotSideOptions["appScreenshot"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
   /** The URL the app loads a plugin's file from (a bot's portrait). */
   assetUrl?: BotSideOptions["assetUrl"];
@@ -105,6 +107,9 @@ export interface DaemonBotsInput {
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
+  /** Lane B's plugin triggers' arm and disarm, where the daemon gives no `pluginHost` (whose webhook ingress this
+   *  leaves off): a routine file that names a plugin's trigger type is armed through that plugin. */
+  pluginTriggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
@@ -167,6 +172,8 @@ export interface DaemonParts {
   broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
+  /** Lane D's usage ledger, with the bot side: the plugin API's `usage.*` reads it. */
+  usage?: UsageLedger;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
   close(): Promise<void>;
 }
@@ -267,6 +274,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
   };
   try {
     let side: BotSide | undefined;
+    let usageLedger: UsageLedger | undefined;
     const nodeLinks = links ? computerNodeLinks(links) : undefined;
     const computer = nodeLinks?.self.name;
     // The lease's main computer, as lane D reads it; a lone computer (no links, or no lease here) is its own.
@@ -405,6 +413,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
         ...(b.workshop ? { workshop: b.workshop } : {}),
+        ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
@@ -479,6 +488,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ledger.close();
       });
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
+      usageLedger = ledger;
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
@@ -487,7 +497,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => b.close());
     }
     const registry = input.bots ? input.bots.registry : undefined;
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
   } catch (err) {
     await close();
     throw err;
@@ -523,6 +533,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
       writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
     } : {}),
     ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
+    ...(!host?.triggers && b.pluginTriggers ? { pluginTriggers: b.pluginTriggers } : {}),
   };
   return {
     ...(relay ? { relay } : {}),

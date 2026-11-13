@@ -8,7 +8,7 @@
 import { shownCode } from "../approvals/strings";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
@@ -183,6 +183,7 @@ export function treeOkLines(folder: string, tree: TreeReport): string[] {
   return [
     ...describeOk(tree.top, { restylesCards: tree.restylesCards, treeCapabilities: all.flatMap((m) => m.capabilities) }),
     ...hookOkLines(all),
+    ...backgroundOkLines(all),
     ...agentEnvLines(folder, tree),
   ];
 }
@@ -480,6 +481,8 @@ export class PluginFolders {
         }),
         // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
+        // What it runs without being asked: its routine triggers, and where its host code runs in the background.
+        ...backgroundOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
         ...gainsNetworkLines(this.#o.store.loadOk(id), [r.tree.top, ...r.tree.children.map((c) => c.report)]),

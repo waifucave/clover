@@ -125,7 +125,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "codex-mini",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-4",
@@ -197,7 +198,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-4.1",
@@ -274,7 +276,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4.1",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-4.1-mini",
@@ -345,7 +348,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4.1-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-4.1-nano",
@@ -416,7 +420,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4.1-nano",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-4o",
@@ -487,7 +492,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4o",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-4o-mini",
@@ -553,7 +559,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4o-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-5",
@@ -650,7 +657,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5-codex",
@@ -746,7 +754,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5-codex",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5-mini",
@@ -843,7 +852,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-5-nano",
@@ -940,7 +950,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5-nano",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-5-pro",
@@ -1033,7 +1044,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5-pro",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.1",
@@ -1130,7 +1142,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.1",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.1-codex",
@@ -1225,7 +1238,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.1-codex",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.1-codex-max",
@@ -1320,7 +1334,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.1-codex-max",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.1-codex-mini",
@@ -1415,7 +1430,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.1-codex-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-5.2",
@@ -1512,7 +1528,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.2",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.2-codex",
@@ -1608,7 +1625,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.2-codex",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.3-codex",
@@ -1703,7 +1721,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.3-codex",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.4",
@@ -1801,7 +1820,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.4",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.4-mini",
@@ -1899,7 +1919,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.4-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-5.4-nano",
@@ -1997,7 +2018,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.4-nano",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/gpt-5.4-pro",
@@ -2087,7 +2109,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.4-pro",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.5",
@@ -2185,7 +2208,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.5",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.6-luna",
@@ -2284,7 +2308,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-5.6-sol",
@@ -2383,7 +2408,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-5.6-terra",
@@ -2482,7 +2508,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-5.6-terra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-6-astra",
@@ -2561,7 +2588,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-6-astra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-6-luna",
@@ -2634,7 +2662,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-6-sol",
@@ -2707,7 +2736,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/gpt-chat-latest",
@@ -2780,7 +2810,8 @@
       ],
       "status": "experimental",
       "canonicalModelId": "gpt-chat-latest",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-oss-120b",
@@ -2849,7 +2880,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/gpt-oss-20b",
@@ -2918,7 +2950,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gpt-oss-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/o1",
@@ -2989,7 +3022,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "o1",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/o1-mini",
@@ -3059,7 +3093,8 @@
       ],
       "status": "experimental",
       "canonicalModelId": "o1-mini",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "weak"
     },
     {
       "key": "azure-openai/o3",
@@ -3151,7 +3186,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "o3",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/o3-mini",
@@ -3221,7 +3257,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "o3-mini",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "medium"
     },
     {
       "key": "azure-openai/o3-pro",
@@ -3291,7 +3328,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "o3-pro",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "strong"
     },
     {
       "key": "azure-openai/o4-mini",
@@ -3388,7 +3426,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "o4-mini",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "medium"
     }
   ]
 }

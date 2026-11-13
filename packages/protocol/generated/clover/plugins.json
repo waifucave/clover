@@ -1983,6 +1983,72 @@
         ]
       }
     },
+    "plugin.review": {
+      "doc": "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "peek": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "card"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "failed",
+              "unavailable",
+              "changed"
+            ]
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "report": {
+            "type": "string",
+            "maxLength": 6000
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 400
+          }
+        },
+        "required": [
+          "state",
+          "pluginId"
+        ],
+        "additionalProperties": false
+      }
+    },
     "plugin.update": {
       "doc": "Checks the indexes now and lists the newer versions of plugins that aren't pinned, forward only, applying none (§5.1; the owner's ruling, 2026-11-13: nothing updates on its own). With an id, the user's click on that plugin's update applies it; one that adds to its OK card asks for the OK again.",
       "owner": "B",

@@ -1634,7 +1634,30 @@ export function Card({ id, tokens, className, children }: CardElementProps) {
   return (
     <div data-clover-card={id} className={className}>
       <CardOwner.Provider value={{ mount: part.mount, cardId: id, tokens: given }}>{children as never}</CardOwner.Provider>
+      <CardReview mount={part.mount} cardId={id} />
     </div>
+  );
+}
+
+/** A plugin's OK card's Review (the owner's ruling, 2026-11-13): a plain control that asks the app to open its own page
+ *  for the card, where the Review, its report and the sealed buttons are. It reads and answers nothing. */
+function CardReview({ mount, cardId }: { mount: string; cardId: string }) {
+  const meta = useApprovals().cards.find((c) => c.id === cardId);
+  const [opened, setOpened] = useState<"idle" | "opening" | "no">("idle");
+  if (meta?.kind !== "plugin-ok" || rt().bridge.cardPage === undefined) return null;
+  return (
+    <button
+      type="button"
+      className="clover-card-review"
+      data-clover-card-review={opened}
+      title="Opens this card in Clover's own window, where a model can read the plugin's files and say what it finds"
+      onClick={() => {
+        setOpened("opening");
+        void rt().bridge.cardPage!(mount, cardId).then((ok) => setOpened(ok ? "idle" : "no"), () => setOpened("no"));
+      }}
+    >
+      Review…
+    </button>
   );
 }
 

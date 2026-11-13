@@ -19,6 +19,8 @@ import { NotifyService } from "../../notify/service";
 import { modelPluginApiHandlers } from "../../runtime-sdk/model-plugins/plugin-api";
 import { areasParts } from "../api/areas";
 import { confirmApi } from "../api/confirm";
+import { keysApi } from "../api/keys";
+import { logsApi } from "../api/logs";
 import { pointsApi } from "../api/points";
 import { settingsApi } from "../api/settings";
 import { storageApi } from "../api/storage";
@@ -36,9 +38,11 @@ const INLINE = ["host.call", "ui.send"] as const;
 function served(): Set<string> {
   const f = {} as never;
   const lists = [
-    pointsApi(f), storageApi(f), settingsApi(f), commandsApi(f),
+    pointsApi(f), storageApi(f), settingsApi(f), commandsApi(f, f),
     areasParts({ bots: () => undefined, node: () => undefined, links: () => undefined }).handlers,
     confirmApi(f),
+    logsApi({ home: "/nonexistent" }).handlers,
+    keysApi(f),
     new AvatarService(() => undefined).handlers(),
     new NotifyService({ registry: { entries: () => [] }, home: "/nonexistent" } as never).apiHandlers(),
     modelPluginApiHandlers(f),
@@ -64,7 +68,7 @@ describe("every call the catalog lists for host code is served", () => {
   test("the router refuses a marked call with its reason, whatever the plugin holds", async () => {
     const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
     const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
-    for (const path of ["memory.list", "keys.open", "browser.watch", "browser.tabs", "browser.cdp", "commands.run", "audio.play"]) {
+    for (const path of ["memory.list", "keys.open", "browser.watch", "browser.tabs", "browser.cdp", "commands.run", "audio.play"].filter((p) => (API_CALLS as Record<string, ApiCallInfo>)[p]!.notYet !== undefined)) {
       const err = await router({ pluginId: "luna", process: path === "keys.open" || path === "browser.tabs" || path === "browser.cdp" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
     }
@@ -94,7 +98,7 @@ describe("every call the catalog lists for host code is served", () => {
       const parts = call.split(".");
       expect([call, apiHas(parts.slice(0, -1), parts.at(-1)!)]).toEqual([call, info.notYet === undefined && info.where !== "ui"]);
     }
-    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([false, false, false, false, false]);
+    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([true, false, false, true, false]);
     expect([apiHas([], "settings"), apiHas([], "plugin"), apiHas([], "commands"), apiHas(["settings"], "get"), apiHas([], "env"), apiHas([], Symbol.iterator)]).toEqual([true, true, true, true, false, false]);
   });
 
@@ -107,8 +111,9 @@ describe("every call the catalog lists for host code is served", () => {
     const host = read("plugin-host/daemon-host.ts");
     const list = host.slice(host.indexOf("const handlers: ApiHandlers[] = ["), host.indexOf("const recordOf ="));
     const factories = [...list.matchAll(/\b([a-z][A-Za-z]*Api)\(/g)].map((m) => m[1]);
-    expect(factories.sort()).toEqual(["commandsApi", "confirmApi", "pointsApi", "settingsApi", "storageApi"]);
+    expect(factories.sort()).toEqual(["commandsApi", "confirmApi", "keysApi", "pointsApi", "settingsApi", "storageApi"]);
     expect(list).toContain("areas.handlers");
+    expect(list).toContain("logs.handlers");
     expect(list).toContain("...(o.handlers ?? [])");
     expect([...list.matchAll(/^\s+"([a-z.]+[A-Za-z]*)": /gm)].map((m) => m[1]).sort()).toEqual([...INLINE].sort());
     const daemon = read("daemon.ts");

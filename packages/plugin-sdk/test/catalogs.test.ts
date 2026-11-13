@@ -20,7 +20,7 @@ describe("capabilities", () => {
       "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "can hear your microphone",
+      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
       "connects to any public website, through Clover's web safeguards",
     ]);
   });
@@ -101,7 +101,9 @@ describe("the plugin API's gating", () => {
     // network:public gates the core's fetch, as network:<host> does, not an API call; project.write gates the
     // plugin-process fence (its hooks' and MCP servers' writes to project folders); plugins.watch gates events only
     // (the controller's ruling: nothing callable).
-    const notCalls = ["project.write", "plugins.watch"];
+    // logs.read widens what `logs.*` reads (Clover's log and every plugin's, beyond the plugin's own), which the core
+    // checks per source: the calls themselves need no capability.
+    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read"];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });

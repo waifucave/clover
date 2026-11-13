@@ -110,6 +110,12 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // itself is 20 crypto-random bytes, so no header gate is needed.
   ses.protocol.handle(SEALED_SCHEME, (request) => {
     const url = new URL(request.url);
+    // A render window's placeholder (`clover-sealed://placeholder/<id>`, runtime.ts): served once, a page with no
+    // token and no answer bridge.
+    if (url.host === "placeholder") {
+      const served = runtime.servePlaceholder(url.pathname.replace(/^\//, "").slice(0, 64));
+      return served === undefined ? notFound() : new Response(served.html, { headers: served.headers });
+    }
     // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
     // single use is the real gate.
     if (url.host !== "card") {
@@ -418,6 +424,8 @@ export interface IpcHooks {
   sealedPress(token: string, what: string): void;
   /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
   sealedSize(token: string, height: number): void;
+  /** The app's own card page asks for its card's Review (`plugin.review`): only that page, on its own token. */
+  sealedReview(token: string, peek: boolean): Promise<{ state: string; report?: string; why?: string; model?: string }>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -809,6 +817,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
+  // The app's own page for a plugin's OK card a part places, for its Review: navigation the user's click asks for, never an
+  // answer (the runtime holds the same placing rule as for its frames).
+  handle("clover:card-page", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const cardId = str(a.cardId, 64);
+    if (mount === undefined || cardId === undefined) throw new LayerError("bad card page");
+    if (a.active !== true) throw new LayerError("opening a card's page takes the user's click");
+    return runtime.cardPageOf(s.frame, mount, cardId);
+  });
   // A sealed frame's own single-use URL: its part asks, the runtime mints (the plugin's `approvals` capability's own
   // gate), and the scheme's handler serves once from the store's own copy of the card's sealed content.
   handle("clover:sealed-frame", (event, a) => {
@@ -832,10 +850,14 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // The sealed frames' answer: the sender is the sealed page itself (its own scheme), and the sender's key is what the
   // mint bound (a part's channel, its document's own frame; the fallback's `own`, its window's main frame). The app
   // signs it out of doors and takes the core's answer, with the gate first (B3, B4).
+  // Nothing a render window's page says about a card counts (an answer, a visibility, a press): it has placeholders, never
+  // a minted frame, and this holds even if one ever got a token.
+  const inRender = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => runtime.isRenderWindow(BrowserWindow.fromWebContents(event.sender)?.id);
   handle("clover:sealed-answer", (event, a) => {
     try {
       const f = event.senderFrame;
       if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+      if (inRender(event)) throw new LayerError("a render window answers no card");
       const token = str(a.token, 128);
       const option = str(a.option, 64);
       const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
@@ -861,6 +883,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   on("clover:sealed-visible", (event, a) => {
     const f = event.senderFrame;
     if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    if (inRender(event)) return;
     const token = str(a.token, 128);
     const visible = typeof a.visible === "boolean" ? a.visible : undefined;
     if (token === undefined || visible === undefined) throw new LayerError("bad sealed visibility");
@@ -877,7 +900,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // Checked like the visibility report: the sender is the sealed frame its token was served to, on the channel the mint bound.
   on("clover:sealed-press", (event, a) => {
     const f = event.senderFrame;
-    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) return;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://") || inRender(event)) return;
     const token = str(a.token, 128);
     const what = str(a.what, 24);
     if (token === undefined || what === undefined || !SEALED_PRESS_WORDS.includes(what)) return;
@@ -891,7 +914,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // mint bound to that frame, so a plugin's sealed frame can't size a card window.
   on("clover:sealed-size", (event, a) => {
     const f = event.senderFrame;
-    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) return;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://") || inRender(event)) return;
     const token = str(a.token, 128);
     const height = typeof a.height === "number" && Number.isFinite(a.height) ? Math.min(4000, Math.max(0, Math.round(a.height))) : undefined;
     if (token === undefined || height === undefined) return;
@@ -899,6 +922,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (urlToken === null || urlToken !== token) return;
     if (runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) return;
     hooks.sealedSize(token, height);
+  });
+  // The Review on the app's own card page: like the size, only its own window's main frame, on its own token, bound to
+  // that frame (a plugin's sealed frame, a part's, can't ask for a review's report).
+  handle("clover:sealed-review", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) throw new LayerError("not the app's own card page");
+    const token = str(a.token, 128);
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (token === undefined || urlToken === null || urlToken !== token || runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) throw new LayerError("not the app's own card page");
+    return hooks.sealedReview(token, a.peek === true);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {

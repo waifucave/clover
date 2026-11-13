@@ -43,7 +43,9 @@ export interface ExampleCtx {
   /** The user's home, where an agent's folder may be. */
   userHome: string;
   appLog(): string;
-  requests(): { lastUserText: string; toolUse?: string; toolResult?: { text: string; isError: boolean }; tools: string[] }[];
+  requests(): { lastUserText: string; toolUse?: string; toolResult?: { text: string; isError: boolean; images?: number }; tools: string[] }[];
+  /** The user's own `clover-core app <words>` (the target's CLI), where the run has it. */
+  appCli?(words: string[]): Promise<{ code: number; stdout: string; stderr: string }>;
   /** Points main's picker (the test build's) at a folder for the next pick. */
   pick(folder: string): void;
   /** Waits for a pending card `match` picks and presses its Approve in the window; its id. */

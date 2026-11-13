@@ -50,11 +50,12 @@ export interface ModelPluginsOptions {
   /** The Clover home: the catalog file goes in `<home>/run/models/`. */
   home: string;
   /** Fills what a code adapter reads off its connection beside the key (a sign-in's account id), per plugin. */
-  connectionFor?: (pluginId: string, connection: HostModelAdapterContextConnection) => HostModelAdapterContextConnection;
+  connectionFor?: (pluginId: string, connection: HostModelAdapterContextConnection) => HostModelAdapterContextConnection | Promise<HostModelAdapterContextConnection>;
   readFile?: (path: string) => string;
   log?: (line: string) => void;
-  /** False while the plugin API can't carry a code plugin's keyed `net.fetch` (no `addApiHandlers` on the host yet):
-   *  no code adapter is served, so every code provider stays on the compiled path (`mergeWithCompiled`). */
+  /** False when the plugin API can't carry a code plugin's keyed `net.fetch` (a host without `addApiHandlers`) or
+   *  serving is turned off: no code adapter is served, so every code provider stays on the compiled path
+   *  (`mergeWithCompiled`). */
   serveCodeAdapters?: boolean;
 }
 
@@ -76,8 +77,8 @@ const COMPILED_ADAPTER_IDS: ReadonlySet<string> = new Set(createShippedAdapters(
 
 /**
  * MERGE, never replace (#302's review, B3): the plugins' catalog, and
- * - a provider whose code plugin's adapter isn't served (its host can't start here: Bedrock and Vertex run on Node)
- *   keeps the compiled catalog's provider and rows, on this build's own adapter; a third party's has no compiled
+ * - a provider whose code plugin's adapter isn't served (serving is off, or its plugin couldn't start or describe
+ *   itself) keeps the compiled catalog's provider and rows, on this build's own adapter; a third party's has no compiled
  *   adapter, so its rows go: never a row without a working adapter;
  * - a compiled provider no plugin brings (its plugin failed to load, or there is none) stays, unless the user turned
  *   its bundled plugin off.
@@ -177,13 +178,8 @@ export class ModelPlugins {
     const served = new Map<string, ServedModelAdapter>();
     for (const [provider, a] of set.adapters) {
       if (a.handler === undefined || this.#o.serveCodeAdapters === false) continue;
-      const trusted = set.byProvider.get(provider)?.input.trusted === true;
-      // A third party's code adapter is not even described until the plugin API's fence and network rules (lane B's
-      // 2f and 2g) land: its keyed fetch would be refused, so it gets no rows rather than rows that error.
-      if (!trusted) {
-        refused.push({ pluginId: a.pluginId, provider, code: "adapter-unavailable", message: "a third party's code model adapter waits for the plugin API's fence and network rules" });
-        continue;
-      }
+      // A third party's code adapter is served as a bundled one's: its keyed fetch reaches only its own declared hosts
+      // with only its own stored keys (plugin-api.ts), and its processes are fenced to those hosts (B's 2f, 2g).
       try {
         const description = await describeModelAdapter(this.#o.host, { pluginId: a.pluginId, handler: a.handler });
         if (description.id !== a.adapterId) throw new Error(`its adapter says it is ${description.id}, and its catalog file names ${a.adapterId}`);
@@ -238,17 +234,19 @@ export class ModelPlugins {
     const server = createHostModelAdapterServer((id) => {
       const s = served.get(id);
       if (s === undefined) return undefined;
-      const adapter = pluginHostModelAdapter(this.#o.host, { pluginId: s.pluginId, handler: s.handler }, { caller: opts.caller, ...(opts.session !== undefined ? { session: opts.session } : {}), countTokens: s.description.countTokens });
+      const named = this.#o.registry.get(s.pluginId)?.manifest?.name;
+      const name = (typeof named === "string" ? named : named?.en) ?? s.pluginId;
+      const adapter = pluginHostModelAdapter(this.#o.host, { pluginId: s.pluginId, handler: s.handler }, { caller: opts.caller, ...(opts.session !== undefined ? { session: opts.session } : {}), countTokens: s.description.countTokens, name });
       if (connectionFor === undefined) return adapter;
-      const fill = <C extends { connection: HostModelAdapterContextConnection }>(ctx: C): C => ({ ...ctx, connection: connectionFor(s.pluginId, ctx.connection) });
+      const fill = async <C extends { connection: HostModelAdapterContextConnection }>(ctx: C): Promise<C> => ({ ...ctx, connection: await connectionFor(s.pluginId, ctx.connection) });
       const filled: HostModelAdapter = {
-        streamTurn: (req, ctx) => adapter.streamTurn(req, fill(ctx)),
-        listModels: (ctx) => adapter.listModels(fill(ctx)),
-        validateCredential: (ctx) => adapter.validateCredential(fill(ctx)),
+        streamTurn: (req, ctx) => (async function* () { yield* adapter.streamTurn(req, await fill(ctx)); })(),
+        listModels: async (ctx) => adapter.listModels(await fill(ctx)),
+        validateCredential: async (ctx) => adapter.validateCredential(await fill(ctx)),
       };
       if (adapter.countTokens !== undefined) {
         const count = adapter.countTokens.bind(adapter);
-        filled.countTokens = (req, ctx) => count(req, fill(ctx));
+        filled.countTokens = async (req, ctx) => count(req, await fill(ctx));
       }
       return filled;
     });

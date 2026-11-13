@@ -92,7 +92,7 @@ export function readState(dir: string): KeptState {
 
 /** The home's settings with Anthropic's endpoint set to this run's fake, everything else as the earlier build left it
  *  (an upgrade keeps the user's settings). A missing file starts empty; one that isn't a JSON object throws. */
-export function settingsWithFake(existing: string | undefined, fakeUrl: string): string {
+export function settingsWithFake(existing: string | undefined, fakeUrl: string, googleUrl?: string): string {
   let s: Record<string, unknown> = { schemaVersion: 1 };
   if (existing !== undefined && existing.trim() !== "") {
     const parsed = JSON.parse(existing) as unknown;
@@ -101,7 +101,9 @@ export function settingsWithFake(existing: string | undefined, fakeUrl: string):
   }
   const providers = (typeof s.providers === "object" && s.providers !== null && !Array.isArray(s.providers) ? s.providers : {}) as Record<string, unknown>;
   const anthropic = (typeof providers.anthropic === "object" && providers.anthropic !== null && !Array.isArray(providers.anthropic) ? providers.anthropic : {}) as Record<string, unknown>;
-  return `${JSON.stringify({ ...s, providers: { ...providers, anthropic: { ...anthropic, baseUrl: fakeUrl } } }, null, 2)}\n`;
+  // Google's endpoint is the run's Gemini fake too (the code-adapter clause), when the run has one.
+  const google = (typeof providers.google === "object" && providers.google !== null && !Array.isArray(providers.google) ? providers.google : {}) as Record<string, unknown>;
+  return `${JSON.stringify({ ...s, providers: { ...providers, anthropic: { ...anthropic, baseUrl: fakeUrl }, ...(googleUrl === undefined ? {} : { google: { ...google, baseUrl: googleUrl } }) } }, null, 2)}\n`;
 }
 
 /** The daemon's lines that say it distrusts state an earlier build signed (the registry's MAC, the device key). */
@@ -114,7 +116,7 @@ export const OLD_HALF_STATE_STEPS: readonly string[] = [
   "first start: the app pairs and finishes setup",
   "a model key added through the app's methods",
   "a bot turn gets the fake provider's reply",
-  "a plugin installs from a folder, its OK card approved",
+  "a plugin installs from a folder, its Review reports on its card, its OK card approved; a plugin whose host.start says each starts at once with no call; a plugin trigger arms a routine and fires it",
   "the bot calls the plugin's MCP tool",
   "the daemon restarts on the same home and boots",
 ];

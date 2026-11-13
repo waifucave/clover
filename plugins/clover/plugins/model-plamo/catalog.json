@@ -104,7 +104,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "plamo-3.0-prime",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

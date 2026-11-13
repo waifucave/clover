@@ -114,7 +114,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash-202605",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/deepseek-v4-pro-202606",
@@ -195,7 +196,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro-202606",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "tencent-token-plan-anthropic/glm-5",
@@ -275,7 +277,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "tencent-token-plan-anthropic/glm-5.1",
@@ -355,7 +358,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "tencent-token-plan-anthropic/glm-5.2",
@@ -435,7 +439,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "tencent-token-plan-anthropic/glm-5.3",
@@ -515,7 +520,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "tencent-token-plan-anthropic/glm-5.3-flash",
@@ -593,7 +599,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/hy3",
@@ -688,7 +695,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hy3",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/hy4-preview",
@@ -780,7 +788,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hy4-preview",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/kimi-k2.7-code",
@@ -858,7 +867,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/kimi-k3",
@@ -936,7 +946,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "tencent-token-plan-anthropic/minimax-m2.7",
@@ -1016,7 +1027,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/minimax-m3",
@@ -1089,7 +1101,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "tencent-token-plan-anthropic/tc-code-latest",
@@ -1135,7 +1148,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "tc-code-latest",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

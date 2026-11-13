@@ -53,8 +53,8 @@ export class FakePluginHost implements PluginHost {
   /** Installs a plugin's host module, with what its install record says (default: a local plugin on Bun). For a
    *  plugin already running, the new module takes over at its next start (a reload, a restart, or after a crash), as
    *  a new worker would; the running one keeps serving until then. */
-  define(pluginId: string, module: HostModule, record: { source?: PluginSource; runtime?: "bun" | "node" } = {}): void {
-    const process = hostProcessFor({ id: pluginId, source: record.source ?? "local", ...(record.runtime ? { runtime: record.runtime } : {}) });
+  define(pluginId: string, module: HostModule, record: { source?: PluginSource; runtime?: "bun" | "node"; process?: "own" } = {}): void {
+    const process = hostProcessFor({ id: pluginId, source: record.source ?? "local", ...(record.runtime ? { runtime: record.runtime } : {}), ...(record.process ? { process: record.process } : {}) });
     const h = this.#hosted.get(pluginId);
     if (!h) this.#hosted.set(pluginId, { module, process, state: "idle", crashTimes: [], calls: new Set(), waiters: [] });
     else if (h.state === "idle" || h.state === "stopped") [h.module, h.process] = [module, process];

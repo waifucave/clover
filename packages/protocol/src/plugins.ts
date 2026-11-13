@@ -486,6 +486,27 @@ export const PLUGINS_METHODS = {
     result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
     doc: "Removes a top-level plugin everywhere; its keys and settings on this computer are deleted, its data set aside, or deleted with `deleteData` (§5.1). With `card`, only after the user's yes on a sealed card, which says which.",
   }),
+  pluginReview: defineMethod({
+    name: "plugin.review", owner: "B", roles: ["app", "cli"], userOnly: true,
+    params: z.object({
+      card: CardId,
+      /** Only say where a review would go (`idle` and the model, or the review already there), starting nothing. */
+      peek: z.literal(true).optional(),
+    }),
+    result: z.object({
+      /** `idle` (a peek, nothing asked yet), `running` (ask again for its report), `done`, `failed` (asking again starts
+       *  it over), `unavailable` (no model can run a review; `why` says what to set) or `changed` (the plugin's files
+       *  changed since the card was made: the card doesn't approve what a review would read). */
+      state: z.enum(["idle", "running", "done", "failed", "unavailable", "changed"]),
+      pluginId: AnyPluginId,
+      /** The model a review sends the plugin's files to (the `reviewer.model` role's), by its tag. */
+      model: utf16(200).optional(),
+      /** Plain text, Clover's own last line saying it is a model's reading of the plugin's files. */
+      report: utf16(6000).optional(),
+      why: utf16(400).optional(),
+    }),
+    doc: "Reviews the plugin a waiting OK card or update card is about (the owner's ruling, 2026-11-13): an internal job (the `reviewer.model` role) reads its tree and writes a short report for the user's side of the card. Advice only: it never answers, pre-selects or delays the card. One review per card and tree; asking again gives its state or report.",
+  }),
   pluginUpdate: defineMethod({
     name: "plugin.update", owner: "B", roles: ["app", "cli"], userOnly: true,
     params: z.object({

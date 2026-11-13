@@ -45,6 +45,8 @@ export interface OpenRegistryOptions {
   indexes?: {
     cacheDir: string;
     fetch?: IndexFetch;
+    /** The fetch for plugin downloads (default: `fetch` when given, else the pinned https fetch with the download limits). */
+    download?: IndexFetch;
     /** The updater's folder renames: tests make one fail. */
     rename?: (from: string, to: string) => void;
   };
@@ -137,7 +139,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
   if (o.indexes !== undefined) {
     const io = o.indexes;
     indexes = new IndexClient({
-      store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}),
+      store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}), ...(io.download ? { download: io.download } : {}),
       ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}),
     });
     indexes.loadCached();

@@ -192,7 +192,7 @@ export const MCP_INVOCATION_META = "clover/invocation";
  *  plugin-host link (plugin-host/tests/net-fetch-link.test.ts, and the web plugin's WebSearch and WebFetch in
  *  web-net-fetch.test.ts), so the `host` MCP servers of a plugin that declares a `network:` capability are offered.
  *  Set it back to false only if that stops holding: such servers are then not offered, and say why (`NET_FETCH_GAP`).
- *  The model plugins' code adapters are a separate switch (`serveCodeAdapters`). */
+ *  The model plugins' code adapters ride it too (`serveCodeAdapters`, on; runtime-sdk/model-plugins/start.ts). */
 export const NET_FETCH_CROSSES_PLUGIN_HOST: boolean = true;
 export const NET_FETCH_GAP = "its tools need net.fetch, which can't cross the plugin host in this build (a fetch's RequestInit and Response don't survive the worker's link)";
 

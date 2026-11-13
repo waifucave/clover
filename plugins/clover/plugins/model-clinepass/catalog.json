@@ -102,7 +102,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "clinepass/cline-pass/minimax-m3",
@@ -166,7 +167,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     }
   ]
 }

@@ -46,6 +46,7 @@ export const PLUGIN_USAGE = [
   "       clover plugin enable <id> | disable <id> | restart <id> | remove <id> [--delete-data] [--yes]",
   "       clover plugin update [<id>] | pin <id> | unpin <id>",
   "       clover plugin index list | index add <url> | index remove <url>",
+  "       clover plugin review <card id>",
   "       clover plugin dev <folder> | dev add <folder> | dev list | dev remove <folder> | dev renew <folder>",
   "       clover plugin logs <id> [-n <lines>]",
   `       clover plugin new <${Object.keys(PLUGIN_TEMPLATES).join("|")}> [<folder>] [--name <name>]`,
@@ -54,7 +55,7 @@ export const PLUGIN_USAGE = [
 ].join("\n");
 
 /** The old manager's verbs that are now Clover's own (`install`, `remove`…): only the rest point at `claude`. */
-export const CLOVER_PLUGIN_VERBS = ["install", "wrap", "remove", "enable", "disable", "update", "pin", "unpin", "restart", "index", "info"] as const;
+export const CLOVER_PLUGIN_VERBS = ["install", "wrap", "remove", "enable", "disable", "update", "pin", "unpin", "restart", "index", "info", "review"] as const;
 
 /** A hint for a verb the old manager had, which moved under `clover plugin claude`. */
 export function movedVerbHint(verb: string): string | undefined {
@@ -425,6 +426,25 @@ async function runIndex(args: readonly string[], call: CloverPluginCall): Promis
   return fail(usage, 2);
 }
 
+/** The Review on a waiting plugin card (the owner's ruling, 2026-11-13): asks for it and waits for its report. Advice
+ *  only: it answers nothing. */
+export async function runReview(args: readonly string[], call: CloverPluginCall, o: { waitMs?: number; everyMs?: number } = {}): Promise<CliRun> {
+  if (args.length !== 1) return fail("usage: clover plugin review <card id>", 2);
+  const card = args[0]!;
+  const end = Date.now() + (o.waitMs ?? 200_000);
+  try {
+    for (;;) {
+      const r = (await call("plugin.review", { card })) as { state: string; pluginId: string; report?: string; why?: string };
+      if (r.state === "done") return { code: 0, output: `${r.pluginId}:\n${r.report ?? ""}` };
+      if (r.state !== "running") return fail(r.why ?? "the review didn't finish");
+      if (Date.now() > end) return fail("the review is still running; ask again in a moment");
+      await new Promise((res) => setTimeout(res, o.everyMs ?? 1500));
+    }
+  } catch (err) {
+    return fail(`couldn't review ${card}: ${message(err)}`);
+  }
+}
+
 async function runInfo(args: readonly string[], call: CloverPluginCall): Promise<CliRun> {
   const id = oneId(args, "usage: clover plugin info <id>");
   if (typeof id !== "string") return id;
@@ -489,6 +509,8 @@ export async function runPluginCommand(verb: string, args: readonly string[], ca
       return runIndex(args, call);
     case "info":
       return runInfo(args, call);
+    case "review":
+      return runReview(args, call);
     default:
       return fail(PLUGIN_USAGE, 2);
   }

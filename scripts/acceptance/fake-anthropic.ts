@@ -58,7 +58,8 @@ export interface FakeRequest {
   stream: boolean;
   tools: string[];
   lastUserText: string;
-  toolResult?: { text: string; isError: boolean };
+  /** The last tool result's text, whether it was an error, and how many images came with it (an `image` block). */
+  toolResult?: { text: string; isError: boolean; images?: number };
   answered: "text" | "tool_use" | "slow" | "stream" | "400" | "401" | "404" | "torn" | "failed";
   /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
    *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
@@ -271,7 +272,10 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const lastSaid = last?.role === "user" ? textOf(lastBlocks.filter((b) => b.type === "text")) : "";
       const carriesMessage = DIRECTIVE.test(lastSaid);
       const result = carriesMessage ? undefined : lastBlocks.find((b) => b.type === "tool_result");
-      if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
+      if (result !== undefined) {
+        const images = Array.isArray(result.content) ? (result.content as Block[]).filter((b) => b.type === "image").length : 0;
+        record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true, ...(images > 0 ? { images } : {}) };
+      }
       const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
       record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
       if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
@@ -340,7 +344,14 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const callInput = callWant?.input;
       const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
-      if (shell !== undefined) {
+      // A plugin's Review (the internal `reviewer.model` job, registry/plugin-review.ts): its report, naming the plugin
+      // it was given, so the run sees the job got that plugin's tree.
+      const reviewing = JSON.stringify((body as { system?: unknown }).system ?? "").includes("You review a plugin for Clover");
+      if (reviewing) {
+        const reviewed = /PLUGIN: (\S+)/.exec(record.lastUserText)?.[1] ?? /PLUGIN: (\S+)/.exec(textOf(messages[0]?.content))?.[1] ?? "unknown";
+        content = [{ type: "text", text: `${REVIEW_MARK} ${reviewed}: it echoes text back. Nothing odd found.` }];
+        stop = "end_turn";
+      } else if (shell !== undefined) {
         content = shell;
         stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
         if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
@@ -595,3 +606,6 @@ function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolea
   });
   return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }
+
+/** What the fake's plugin Review report starts with (the acceptance run's Review clause looks for it). */
+export const REVIEW_MARK = "ACCEPTANCE-REVIEW";

@@ -24,11 +24,11 @@ import { StringStore, stringTable } from "./strings";
 import { LayoutStore, type TabSpec } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
 import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
-import { fieldPage, buttonPage, ownCardPage, summaryFieldPage, labelOf } from "../sealed-pages";
+import { fieldPage, buttonPage, ownCardPage, placeholderPage, summaryFieldPage, labelOf } from "../sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "../card-summary";
 import { homedir } from "node:os";
 import { sealHeaders } from "./documents";
-import type { SealedFrames, SealedValue } from "../sealed";
+import type { SealedCard, SealedFrames, SealedValue } from "../sealed";
 
 /** A frame as Electron describes it. */
 export interface FrameRef {
@@ -101,6 +101,10 @@ export interface WindowInfo {
   material: Material;
   frame: FrameMetrics;
   narrow: boolean;
+  /** A render window (`app.window.render`, render.ts): a hidden offscreen copy of the main window a bot's AppScreenshot
+   *  draws a place in. It never gets a live sealed frame: each card element it would place is a plain placeholder of
+   *  the same size, and no card's mint, timing or visibility hears of it. */
+  render?: true;
 }
 
 export interface RuntimeOptions {
@@ -443,8 +447,8 @@ export class UiRuntime {
   // ----------------------------------------------------------------------------------------------
 
   /** A window's core root: `app.root` for the main window, one `app.surface` entry for a surface window. */
-  openWindow(windowId: number, input: { material: Material; surface?: { id: string; ref: string } }): string {
-    this.windows.set(windowId, { material: input.material, frame: defaultFrameMetrics(this.opts.platform ?? "darwin"), narrow: false });
+  openWindow(windowId: number, input: { material: Material; surface?: { id: string; ref: string }; render?: boolean }): string {
+    this.windows.set(windowId, { material: input.material, frame: defaultFrameMetrics(this.opts.platform ?? "darwin"), narrow: false, ...(input.render === true ? { render: true as const } : {}) });
     const id = this.mountId();
     const m: Mount = {
       id,
@@ -470,6 +474,13 @@ export class UiRuntime {
   closeWindow(windowId: number): void {
     for (const m of [...this.mounts.values()]) if (m.windowId === windowId) this.drop(m.id);
     this.windows.delete(windowId);
+    for (const [id, p] of this.#placeholders) if (p.windowId === windowId) this.#placeholders.delete(id);
+  }
+
+  /** Whether a window is a render window (`openWindow`'s `render`): its sealed-frame asks get placeholders, and what a
+   *  sealed page there would say (visible, pressed, an answer) counts for nothing. */
+  isRenderWindow(windowId: number | undefined): boolean {
+    return windowId !== undefined && this.windows.get(windowId)?.render === true;
   }
 
   /** Binds a window's root document to its main frame, the first time it asks (its URL must be the core's). */
@@ -1115,18 +1126,74 @@ export class UiRuntime {
     try {
       const part = this.actInThisLayer(frame, mountId);
       windowId = part.windowId;
+      // A render window's part gets a placeholder, never a minted frame, and its ask is no step of the card's timing.
+      if (this.isRenderWindow(windowId)) return this.#placeholderOf(part, cardId, element, look);
       const url = this.#sealedFrameOf(part, cardId, element, look, given);
       this.onSealedAsk?.(cardId, windowId, url === undefined ? "not yet" : url === "" ? "absent" : "made");
       return url;
     } catch (err) {
-      this.onSealedAsk?.(cardId, windowId, "refused");
+      if (!this.isRenderWindow(windowId)) this.onSealedAsk?.(cardId, windowId, "refused");
       throw err;
     }
+  }
+
+  /** Opens the app's own page for a card (index.ts's fallback window), for a part's Review control. */
+  onCardPage?: (cardId: string) => Promise<boolean>;
+
+  /** A part asks for the app's own page of a plugin's OK card it places (its Review): the same placing rule as its
+   *  frames (the `approvals` capability; a card with no bot is the clover tree's alone), and only a plugin's OK card. */
+  async cardPageOf(frame: FrameRef, mountId: string, cardId: string): Promise<boolean> {
+    const part = this.actInThisLayer(frame, mountId);
+    if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("opening a card's page takes the approvals capability");
+    const card = this.sealed?.get(cardId);
+    if (card === undefined) return false;
+    const owner = part.plugin.id.split("/")[0];
+    if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("opening a card's page takes a card of this plugin's own bot");
+    if (card.kind !== "plugin-ok" && !(card.kind === "change" && card.change === "plugin-update")) return false;
+    return (await this.onCardPage?.(cardId)) ?? false;
   }
 
   /** Hears what came of each sealed frame's ask (the app's timing lines): made, not yet (the app hasn't heard of the card,
    *  or it is past), absent (a field the card lacks), or refused. */
   onSealedAsk?: (cardId: string, windowId: number | undefined, outcome: SealedAskOutcome) => void;
+
+  /** Render windows' placeholders by id: the page each serves once (`servePlaceholder`), and its window. */
+  readonly #placeholders = new Map<string, { html: string; windowId: number }>();
+
+  /** A render window's placeholder for one card element: the same rules as a frame (the `approvals` capability, the
+   *  card's own bot's plugin, a field the card lacks is ""), the same page laid out with its words hidden under a plain
+   *  "approval button" or "card field" box, so it takes the room the real frame would; no token is minted, no answer
+   *  bridge reaches it (preload.ts gives `cloverSealed` to `clover-sealed://card/` alone), and it says nothing back. */
+  #placeholderOf(part: Mount, cardId: string, element: string, look?: string): string | undefined {
+    if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
+    if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
+    const card = this.sealed.get(cardId);
+    if (card === undefined) return undefined;
+    const owner = part.plugin.id.split("/")[0];
+    if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot");
+    if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
+    const tokens: Record<string, TokenValue> = {};
+    for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
+    let wears: "label" | "check" | "cross" | "open" | undefined;
+    if (element.startsWith("button:") && (look === "label" || look === "check" || look === "cross" || look === "open")) {
+      const option = card.options.find((o) => o.id === element.slice("button:".length));
+      wears = option !== undefined && isSealedLookAllowed(look, option, card.kind) ? look : "label";
+    }
+    const real = this.#sealedHtml(card, element, "", tokens, wears);
+    if (real === undefined) return "";
+    const id = randomBytes(12).toString("hex");
+    if (this.#placeholders.size >= 200) this.#placeholders.delete(this.#placeholders.keys().next().value!);
+    this.#placeholders.set(id, { html: placeholderPage(real, element.startsWith("button:") ? "button" : "field"), windowId: part.windowId });
+    return `clover-sealed://placeholder/${id}`;
+  }
+
+  /** A placeholder's page, served once (the sealed scheme's `placeholder` host). */
+  servePlaceholder(id: string): { html: string; headers: Readonly<Record<string, string>> } | undefined {
+    const p = this.#placeholders.get(id);
+    if (p === undefined) return undefined;
+    this.#placeholders.delete(id);
+    return { html: p.html, headers: sealHeaders() };
+  }
 
   #sealedFrameOf(part: Mount, cardId: string, element: string, look?: string, given?: Readonly<Record<string, string>>): string | undefined {
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
@@ -1191,29 +1258,35 @@ export class UiRuntime {
     const serving = this.sealed.serve(token);
     if (serving === undefined) return undefined;
     const { card, element, tokens, look } = serving;
+    const html = this.#sealedHtml(card, element, token, tokens, look);
+    return html === undefined ? undefined : { html, headers: sealHeaders() };
+  }
+
+  /** One sealed element's page for a card: a field's words, a button, or the fallback's own card (`own`). */
+  #sealedHtml(card: SealedCard, element: string, token: string, tokens: Readonly<Record<string, TokenValue>> | undefined, look: "label" | "check" | "cross" | "open" | undefined): string | undefined {
     if (element === "field:always") {
       const always = this.alwaysOf(card);
-      return always === undefined ? undefined : { html: summaryFieldPage({ cardId: card.id, token, field: "always", always, tokens }), headers: sealHeaders() };
+      return always === undefined ? undefined : summaryFieldPage({ cardId: card.id, token, field: "always", always, tokens });
     }
     if (element === "field:summary" || element === "field:preview") {
       const summary = this.summaryOf(card);
       if (summary === undefined || (element === "field:preview" && summary.preview === undefined)) return undefined;
-      return { html: summaryFieldPage({ cardId: card.id, token, field: element === "field:summary" ? "summary" : "preview", summary, tokens }), headers: sealHeaders() };
+      return summaryFieldPage({ cardId: card.id, token, field: element === "field:summary" ? "summary" : "preview", summary, tokens });
     }
     if (element.startsWith("field:")) {
       const value = card.fields[element.slice("field:".length)];
       if (value === undefined || typeof value !== "object") return undefined;
-      return { html: fieldPage({ cardId: card.id, token, field: element.slice("field:".length), tokens, value: value as { type: "text"; text: string } }), headers: sealHeaders() };
+      return fieldPage({ cardId: card.id, token, field: element.slice("field:".length), tokens, value: value as { type: "text"; text: string } });
     }
     if (element.startsWith("button:")) {
       const option = card.options.find((o) => o.id === element.slice("button:".length));
       if (option === undefined) return undefined;
-      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, ...(look !== undefined ? { look } : {}), ...(option.remember === "always" ? { remember: "always" as const } : {}), tokens }), headers: sealHeaders() };
+      return buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, ...(look !== undefined ? { look } : {}), ...(option.remember === "always" ? { remember: "always" as const } : {}), tokens });
     }
     if (element === "own") {
       const summary = this.summaryOf(card);
       const always = this.alwaysOf(card);
-      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, computer: card.computer, ...(summary !== undefined ? { summary } : {}), ...(always !== undefined ? { always } : {}), ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) }), headers: sealHeaders() };
+      return ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, computer: card.computer, ...(summary !== undefined ? { summary } : {}), ...(always !== undefined ? { always } : {}), ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}), ...(card.kind === "plugin-ok" || (card.kind === "change" && card.change === "plugin-update") ? { reviewable: true } : {}) });
     }
     return undefined;
   }

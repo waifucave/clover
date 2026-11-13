@@ -498,6 +498,27 @@ export interface BotsApi {
 export interface RoutinesApi {
   list(filter?: { bot?: string }): Promise<RoutineView[]>;
   runs(routine: string, page?: { cursor?: string; limit?: number }): Promise<{ runs: RoutineRunView[]; next?: string }>;
+  /** A trigger of this plugin's fired for a routine its handler was armed for (`TriggerHandler.arm`): the routine runs
+   *  on this computer. Host halves only, and only for a trigger `type` the plugin's own `triggers` entry has; needs no
+   *  capability (its card says it starts routines). `payload` (at most `ROUTINE_FIRE_PAYLOAD_MAX` characters) reaches
+   *  the run as text marked as the trigger's, never as the user's. */
+  fire(routine: string, type: string, payload?: string): Promise<void>;
+}
+
+/** The longest payload a trigger hands a routine's run (`RoutinesApi.fire`), in characters. */
+export const ROUTINE_FIRE_PAYLOAD_MAX = 64 * 1024;
+
+/** A `triggers` entry's handler (§7): an object the routine engine calls with `method`, as the core (never a user). A
+ *  routine file that names the trigger's `type` arms it with its fields; the plugin then watches whatever it watches
+ *  and calls `api.routines.fire(routine, type, payload?)` when it should run, with the API its `start` was given (a
+ *  call's own `ctx.api` ends with the call). The engine arms each such routine on the
+ *  computer that holds its file, and arms it again whenever the plugin's host half starts (a restart, an update, a
+ *  crash), so `arm` replaces what it had for that routine. */
+export interface TriggerHandler {
+  /** Start watching for a routine. Throws when the fields don't read; the engine notes it on the routine. */
+  arm(args: { routine: string; type: string; fields: Record<string, unknown> }, ctx: HandlerContext): Promise<void> | void;
+  /** Stop: the routine is gone, paused, changed (armed again after), or names the trigger no more. */
+  disarm(args: { routine: string; type: string }, ctx: HandlerContext): Promise<void> | void;
 }
 
 /** `computers.read` gives the registry; `computers.control` gives holds, the user-working mark, Clover's own windows
@@ -723,6 +744,9 @@ export interface UsageApi {
   watch(listener: (since: number) => void): Unsubscribe;
 }
 
+/** Logs: the last `lines` lines (default 200, at most 2,000), and each line from now on. A plugin's own tree's (its own
+ *  id or a child's, as its Settings page shows them) with no capability; with `logs.read`, Clover's own (`"core"`) and
+ *  any other plugin's. */
 export interface LogsApi {
   read(source: "core" | { plugin: string }, opts?: { lines?: number }): Promise<string[]>;
   follow(source: "core" | { plugin: string }, listener: (line: string) => void): Unsubscribe;
@@ -736,8 +760,9 @@ export interface NotifyApi {
   send(notification: { title: string; body?: string; session?: string }): Promise<void>;
 }
 
-/** `audio`: the app records and plays audio and hands it to plugins (§6.6). It records only while push-to-talk is
- *  held, unless the user turns listening on; the OK says it "can hear your microphone". Provisional for lanes D and E. */
+/** `audio`: the app plays a plugin's audio as a bot's speech (the plugin's own bot's unless `opts.bot` names another live
+ *  bot), and hands it the user's push-to-talk audio for every bot as it comes (§6.6). The OK says it "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices".
+ *  `play`'s `done` settles when the last piece is handed to the app, not when the app finishes playing it. */
 export interface AudioApi {
   play(audio: { format: "pcm16-24k" | "mp3" | "opus"; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }): Promise<{ stop(): void; done: Promise<void> }>;
   onRecording(listener: (chunk: { utterance: string; format: "pcm16-16k" | "opus"; data: Uint8Array; final: boolean }) => void): Unsubscribe;
@@ -755,8 +780,8 @@ export type NotYet<T, K extends keyof T = keyof T> = Omit<T, K> & { readonly [P 
 export interface PluginApi {
   readonly plugin: PluginSelf;
   readonly points: PointsApi;
-  /** `run` isn't served yet: a plugin doesn't run another's command (the user does, from the composer). */
-  readonly commands: NotYet<CommandsApi, "run">;
+  /** Its own tree's commands, and another plugin's with `call:<its top-level id>` (§5.4). */
+  readonly commands: CommandsApi;
   /** In components: their own host half. */
   readonly host: HostApi;
   /** In host halves: their components. */
@@ -765,8 +790,8 @@ export interface PluginApi {
   readonly net: NetApi;
   /** Only in a process of the plugin's own (§5.2). */
   readonly secrets?: SecretsApi;
-  /** The `clover` process's per-computer keys: not served yet. */
-  readonly keys?: NotYet<KeysApi>;
+  /** The `clover` process's per-computer keys: the plugin's own X25519 pairs, whose private half stays in the core. */
+  readonly keys?: KeysApi;
   readonly settings: SettingsApi;
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
    *  user's answer, and no plugin can read or answer it. Denied after 10 minutes unanswered. */
@@ -780,11 +805,12 @@ export interface PluginApi {
 
   /** `conversation.read`, `conversation.post`: each gives its own members. */
   readonly conversation?: Partial<ConversationApi>;
-  /** Not served yet. */
-  readonly memory?: NotYet<MemoryApi>;
+  /** Its own bot's memory with no capability (a bot plugin); every bot's with `memory.read`. Read-only. */
+  readonly memory: MemoryApi;
   readonly bots?: BotsApi;
-  /** Not served yet. */
-  readonly routines?: NotYet<RoutinesApi>;
+  /** Its own bot's routines with no capability (a bot plugin); every bot's with `routines.read`. Read-only, but for
+   *  `fire`, a host half's own triggers. */
+  readonly routines: RoutinesApi;
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
   readonly devices?: DevicesApi;
@@ -800,13 +826,13 @@ export interface PluginApi {
   readonly terminal?: TerminalApi;
   /** Components only, of the bundled `clover` tree. */
   readonly plugins?: PluginsApi;
-  /** Not served yet. */
-  readonly usage?: NotYet<UsageApi>;
-  /** Not served yet. */
-  readonly logs?: NotYet<LogsApi>;
+  /** `usage.read`: the usage rows and plan readings, read-only. */
+  readonly usage?: UsageApi;
+  /** Its own tree's logs with no capability; Clover's and every other plugin's with `logs.read`. */
+  readonly logs: LogsApi;
   readonly notify?: NotifyApi;
-  /** Not served yet. */
-  readonly audio?: NotYet<AudioApi>;
+  /** `audio`: the app plays its audio as a bot's speech (its own bot's unless `opts.bot`), and it hears push-to-talk. */
+  readonly audio?: AudioApi;
   /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
   readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */

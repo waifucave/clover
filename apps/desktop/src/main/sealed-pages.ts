@@ -318,6 +318,9 @@ export function ownCardPage(input: {
   /** The one sentence for what an "always" would store (card-summary.ts `ruleSentence`), from the card's `rule` rows. */
   always?: string;
   computer?: string | null;
+  /** A plugin's OK card or update card: the page offers a Review (the owner's ruling, 2026-11-13), advice the app
+   *  fetches for this page alone and shows as text; it never answers the card. */
+  reviewable?: boolean;
 }): string {
   // The fields in the core's own order (§5.5), read at once.
   const fields = CARD_FIELD_ORDER.filter((name) => {
@@ -363,6 +366,9 @@ export function ownCardPage(input: {
     ? `<details class="all"><summary>Show everything this approves</summary>\n${bits}\n</details>`
     : bits;
   const preview = input.summary !== undefined ? previewHtml(input.summary) : "";
+  const review = input.reviewable === true
+    ? `<section class="review" data-review="idle"><div class="review-row"><button type="button" class="review-button">${esc(REVIEW_BUTTON_TEXT)}</button><span class="review-note">${esc(REVIEW_NOTE_TEXT)}</span></div><h3 class="review-head" hidden>${esc(REVIEW_HEAD_TEXT)}</h3><pre class="review-report" role="status" aria-live="polite"></pre></section>`
+    : "";
   const script = `(() => {
   const b = window.cloverSealed;
   if (b === undefined) return;
@@ -415,11 +421,41 @@ export function ownCardPage(input: {
       else refused(r);
     }).catch(() => refused(null));
   }, { capture: true });
+  // The Review: the app's own fetch for this page; its report goes in as text, never markup, and it never answers.
+  const section = document.querySelector(".review");
+  const reviewButton = document.querySelector(".review-button");
+  const report = document.querySelector(".review-report");
+  const reportHead = document.querySelector(".review-head");
+  const note = document.querySelector(".review-note");
+  if (section !== null && reviewButton !== null && report !== null && typeof b.review === "function") {
+    // Where the files go, by the model's name, before the click (a peek starts nothing).
+    const named = (r) => { if (note !== null && r !== null && typeof r === "object" && typeof r.model === "string") note.textContent = ${JSON.stringify(REVIEW_NOTE_MODEL_TEXT)}.replace("{model}", r.model); };
+    const show = (r) => {
+      const st = r !== null && typeof r === "object" && typeof r.state === "string" ? r.state : "failed";
+      section.dataset.review = st;
+      named(r);
+      if (reportHead !== null) reportHead.hidden = st !== "done";
+      if (st === "running") report.textContent = ${JSON.stringify(REVIEW_RUNNING_TEXT)};
+      else if (st === "done") report.textContent = typeof r.report === "string" ? r.report : "";
+      else if (st === "idle") report.textContent = "";
+      else report.textContent = typeof r.why === "string" ? r.why : ${JSON.stringify(REVIEW_FAILED_TEXT)};
+      reviewButton.disabled = st === "running" || st === "done" || st === "unavailable" || st === "changed";
+      if (st === "running") setTimeout(() => { void b.review().then(show, () => show(null)); }, 1500);
+    };
+    void b.review(true).then(show, () => undefined);
+    reviewButton.addEventListener("click", (e) => {
+      if (!e.isTrusted) return;
+      reviewButton.disabled = true;
+      report.textContent = ${JSON.stringify(REVIEW_RUNNING_TEXT)};
+      void b.review().then(show, () => show(null));
+    });
+  }
 })();`;
   return page({ cardId: input.cardId, token: input.token, tokens: input.tokens }, `<main class="own">
 <header class="own-head">${SHIELD}<div class="own-words">${head}</div></header>
 ${preview}
 ${all}
+${review}
 <div class="own-foot">${input.options.some((o) => o.remember === "always") ? alwaysHtml(input.always) : ""}<div class="buttons">${buttons}</div>
 <p class="state" data-state="waiting" role="status"></p>${footnote}</div>
 </main>`, "seal-own", true, script);
@@ -437,6 +473,15 @@ const SHIELD = `<svg class="shield" viewBox="0 0 16 16" width="18" height="18" a
  *  registered yet): the card stays, and its buttons answer again. */
 /** Said on a card when a real press came before the page was ready to take it (shown a beat, then cleared). */
 export const PRESS_AGAIN_TEXT = "Not ready yet — press again.";
+/** The Review on a plugin's OK or update card (the owner's ruling, 2026-11-13). */
+export const REVIEW_BUTTON_TEXT = "Review";
+export const REVIEW_NOTE_TEXT = "Review sends this plugin's files to a model. It's advice: it doesn't answer this card.";
+/** The note once the model is known (`{model}`: its name). */
+export const REVIEW_NOTE_MODEL_TEXT = "Review sends this plugin's files to {model}. It's advice: it doesn't answer this card.";
+/** Over the report, so its text can't pass for the card's own lines. */
+export const REVIEW_HEAD_TEXT = "A model's reading of the plugin's files";
+export const REVIEW_RUNNING_TEXT = "Reviewing… you can answer the card meanwhile.";
+export const REVIEW_FAILED_TEXT = "The review didn't finish.";
 export const REFUSED_TEXT = "Couldn't confirm — try again.";
 
 /** What a card says when Clover holds a different answer key for this desktop than the app has (one made by an
@@ -446,6 +491,29 @@ export const KEY_CHANGED_TEXT = "Couldn't confirm: this computer's answer key is
 /** What a card says when Clover couldn't take this desktop's answer key at all (its answers told nothing, again and
  *  again): reconnecting starts a fresh registration, so the card says that may help. */
 export const KEY_FAULT_TEXT = "Couldn't confirm: Clover couldn't take this computer's key. Reconnecting may help: a reconnect registers it again.";
+
+/** What a render window (`app.window.render`: a bot's AppScreenshot) gets where a card's sealed frame would be: the
+ *  real page's layout with every word hidden and no script of its own, under a plain box that says "approval button"
+ *  or "card field", so it takes the room the frame would and the picture shows where the card goes. It has no token,
+ *  no answer bridge (the preload gives `cloverSealed` to `clover-sealed://card/` alone) and no visibility report: it
+ *  tells its frame its size (numbers only) and nothing else, so there is never a second live approval control. */
+export function placeholderPage(real: string, kind: "button" | "field"): string {
+  const words = kind === "button" ? "approval button" : "card field";
+  const size = kind === "button"
+    ? `const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); try { parent.postMessage({ cloverSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ }`
+    : `try { parent.postMessage({ cloverSealedSize: { height: Math.ceil(document.body.getBoundingClientRect().height) } }, "*"); } catch (e) { /* no parent */ }`;
+  const script = `(() => {
+  const send = () => { ${size} };
+  addEventListener("DOMContentLoaded", () => { new ResizeObserver(send).observe(document.body); send(); });
+  addEventListener("load", send);
+})();`;
+  const css = `body > *:not(.seal-placeholder) { visibility: hidden !important; }
+.seal-placeholder { position: fixed; inset: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px dashed var(--seal-muted); border-radius: 8px; background: color-mix(in srgb, var(--seal-muted) 12%, transparent); color: var(--seal-muted); font: 11px/1.2 system-ui, sans-serif; white-space: nowrap; pointer-events: none; user-select: none; }`;
+  return real
+    .replace(/<script>[\s\S]*?<\/script>/g, "")
+    .replace("</head>", `<style>${css}</style>\n<script>${script}</script>\n</head>`)
+    .replace(/<body[^>]*>/, `<body data-placeholder="${kind}">\n<div class="seal-placeholder" aria-hidden="true">${words}</div>`);
+}
 
 /** The fields in B's own order (§5.5), read at once. */
 export const CARD_FIELD_ORDER = ["title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires"] as const;
@@ -560,6 +628,14 @@ body:has(.seal-button.glyph) .state { display: none }
 .own .seal-button[data-kind="deny"] { background: var(--seal-control); color: var(--seal-text) }
 .own .seal-button[data-remember="always"] { background: var(--seal-control); color: var(--seal-text) }
 .own .who { margin: 6px 0 0; font-size: 0.85em; color: var(--seal-muted) }
+.own .review { margin: 4px 0 10px; border-top: 1px solid var(--seal-hairline); padding-top: 8px }
+.own .review-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap }
+.own .review-button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--seal-hairline); background: var(--seal-control); color: var(--seal-text); cursor: pointer }
+.own .review-button:disabled { opacity: 0.6; cursor: default }
+.own .review-note { font-size: 0.85em; color: var(--seal-muted) }
+.own .review-report { margin: 8px 0 0; white-space: pre-wrap; font: inherit; font-size: 0.92em; color: var(--seal-text) }
+.own .review-report:empty { display: none }
+.own .review-head { margin: 10px 0 0; font-size: 0.78em; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--seal-muted) }
 `;
 
 /** A button's own words: the core's own table holds the language they shipped in (§5.5). The card's fields' and

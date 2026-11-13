@@ -8,6 +8,9 @@
 //    Alpha can change its code later without asking, within what this card lists."; the row presses it in the window,
 //    and the plugin runs: its tool answers a call.
 // 3. `PluginStatus` reports it running.
+// 3b. `AppScreenshot` shows her the Plugins page (where her plugin is listed), wide and narrow: drawn in a render window
+//    the user never sees, saved in her scratch's shots/ at the size asked, the picture reaching the model as an image,
+//    the page's frames listed, no card; no window is shown, and the user's own window stays where it was.
 // 4. Alpha edits a file of the installed plugin in place, under `<home>/plugins/<id>/`, with `Edit` and no card; about
 //    two seconds later the change is live with no new OK card: the tool answers with the new text.
 // 5. An edit that adds a capability pauses the plugin behind its sealed OK card at once (the coordinator's ruling: the
@@ -19,6 +22,12 @@
 // 6. Another bot (a plain bot the row installs: `acceptance-workshop-peer`, the home has no other bot at this point)
 //    is refused `PluginStatus` on the plugin, and its `Edit` of the plugin's file is refused with no card (the fence:
 //    only the bot that built a plugin writes in it); the file is unchanged.
+// 6b. While her tool's card waits in her conversation, the peer bot's AppScreenshot of her tab draws the card as
+//    placeholders (clover-sealed://placeholder), never a live card frame, and the app logs no sealed ask for a render
+//    window; her card is then pressed in the user's own window.
+// 7. Alpha edits a throw into the plugin's host code: it reloads, crashes until the crash rules stop it, and Alpha (its
+//    builder) is told in her conversation ("… stopped: … PluginStatus ws-greeter has the log."); she edits the throw
+//    back out, and the changed tree starts it again with no card: running, and its tool answers.
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
 import { randomUUID } from "node:crypto";
@@ -27,7 +36,7 @@ import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { fail, installFromPage, leave, sleep, until, type ExampleCtx } from "./example-steps";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -226,6 +235,37 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     done.push("3 PluginStatus: running");
   });
 
+  // 3b. A look at the app, as she would after building a page.
+  await stepOf("3b. AppScreenshot draws the Plugins page wide and narrow, with no card and no window shown", async () => {
+    const whereOf = async () => {
+      if (ctx.appCli === undefined) return undefined;
+      const r = await ctx.appCli(["where"]);
+      try { return JSON.stringify((JSON.parse(r.stdout) as { where?: unknown }).where); } catch { return `no JSON (${r.code})`; }
+    };
+    const before = await whereOf();
+    const said: string[] = [];
+    for (const [size, w, h] of [["wide", 1280, 820], ["narrow", 860, 820]] as const) {
+      const seen = ctx.requests().length;
+      const s = await ok(ctx, session, "AppScreenshot", { target: "plugins", size });
+      const head = `plugins drawn at ${w}x${h} (${size})`;
+      if (!s.result.text.startsWith(head)) fail(`AppScreenshot ${size} answered "${s.result.text.slice(0, 200)}"`);
+      const file = /^Saved: (.+\.png)$/m.exec(s.result.text)?.[1];
+      if (file === undefined || !file.startsWith(join(scratch, "shots") + "/")) fail(`AppScreenshot ${size} saved nothing under her scratch's shots/ ("${s.result.text.slice(0, 300)}")`);
+      const png = (() => { try { return readFileSync(file!); } catch { return undefined; } })();
+      if (png === undefined || png.length < 1000 || png.readUInt32BE(0) !== 0x89504e47) fail(`${file} isn't a PNG (${png?.length ?? 0} bytes)`);
+      const [pw, ph] = [png!.readUInt32BE(16), png!.readUInt32BE(20)];
+      if (pw !== w || ph !== h) fail(`${file} is ${pw}x${ph}, not ${w}x${h}`);
+      if (!/^Frames \(\d+\):$/m.test(s.result.text) || !s.result.text.includes("clover-plugin://clover")) fail(`AppScreenshot ${size} listed no frames of the page ("${s.result.text.slice(0, 300)}")`);
+      if (!ctx.requests().slice(seen).some((r) => (r.toolResult?.images ?? 0) >= 1)) fail(`AppScreenshot ${size}'s picture didn't reach the model as an image`);
+      said.push(`${size} ${pw}x${ph} ${png!.length} bytes`);
+    }
+    if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (AppScreenshot)");
+    if (!/render: a render window 1280x820 opened/.test(ctx.appLog())) fail("the app logged no render window for AppScreenshot");
+    const after = await whereOf();
+    if (before !== after) fail(`the user's window moved: ${before} -> ${after}`);
+    done.push(`3b AppScreenshot plugins: ${said.join(", ")}, an image to the model, no card${before !== undefined ? ", the user's window where it was" : ""}`);
+  });
+
   // 4 to 6 don't hang on each other (1 to 3 make the plugin they use): each runs, and the row fails with every one that
   // failed, so one run reads them all.
   const failed: string[] = [];
@@ -303,10 +343,12 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   }));
 
   // 6. Another bot: no status, no edit.
+  let peerSession: string | undefined;
   await own(() => stepOf("6. another bot can't read its status or edit it", async () => {
     await installFromPage(ctx, join(FIXTURES, PEER_ID), PEER_ID);
     const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === PEER_ID && b.mainSession !== undefined));
     const other = peer.mainSession!;
+    peerSession = other;
     // The model the user gives it, as in the bot editor: Alpha's (the run's one keyed model). A new bot starts on the
     // user's default, which this home doesn't have signed in.
     const alphaModel = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
@@ -324,6 +366,78 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if (/not found|no match|did not find|must read/i.test(edit.result!.text)) fail(`the other bot's Edit failed for another reason than the fence: "${edit.result!.text.slice(0, 200)}"`);
     if (readFileSync(hostFile, "utf8") !== before) fail("the other bot's Edit changed the plugin's file");
     done.push("6 the peer bot: PluginStatus refused, its Edit refused with no card, file unchanged");
+  }));
+
+  // 6b. The render window's rule, on the real app: while her tool's card waits in her conversation, the peer bot's look
+  // at her tab draws the card as placeholders: every card frame in the render window is clover-sealed://placeholder,
+  // none clover-sealed://card, and the app logs no sealed ask for a render window. Then her card is pressed in the
+  // user's own window as usual.
+  await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
+    if (peerSession === undefined) fail("no peer session (step 6 didn't make one)");
+    let look: { text: string; isError: boolean } | undefined;
+    const looking: ExampleCtx = {
+      ...ctx,
+      pressCard: async (what, match) => {
+        look = (await callOnce(ctx, peerSession!, "AppScreenshot", { target: "bot:alpha" })).result;
+        return ctx.pressCard(what, match);
+      },
+    };
+    const g = await ok(looking, session, WORKSHOP_TOOL, { name: "Acceptance" }, () => true);
+    if (!g.result.text.includes(answerFor(GREETING.second))) fail(`its tool answered "${g.result.text.slice(0, 200)}"`);
+    if (look === undefined) fail("her tool raised no card to look at");
+    if (look!.isError) fail(`the peer's AppScreenshot failed: ${look!.text.slice(0, 300)}`);
+    const live = (look!.text.match(/^- live card frame\b/gm) ?? []).length;
+    const other = /^Card frames: \d+ placeholder\(s\), (\d+) other/m.exec(look!.text)?.[1];
+    if (live > 0 || other !== undefined) fail(`the render window drew a live card frame (${live} listed, ${other ?? 0} counted)`);
+    const held = Number(/^Card frames: (\d+) placeholder/m.exec(look!.text)?.[1] ?? 0);
+    if (held === 0) fail(`with her card waiting, the render of her tab drew no placeholder ("${look!.text.slice(0, 2500)}")`);
+    const renders = [...ctx.appLog().matchAll(/render: a render window \d+x\d+ opened \(hidden, offscreen\) as window (\d+)/g)].map((m) => m[1]!);
+    if (renders.length === 0) fail("the app logged no render window's id");
+    for (const id of new Set(renders)) {
+      const asked = new RegExp(`card: \\S+ (first ask|frames asked|a button visible) in window ${id}\\b[^\\n]*`).exec(ctx.appLog());
+      if (asked !== null) fail(`the app logged a sealed ask for render window ${id}: ${asked[0].slice(0, 200)}`);
+    }
+    done.push(`6b with her tool card waiting, the peer's AppScreenshot of her tab: ${held} placeholder card frame(s), no live card frame, no sealed ask for render windows ${[...new Set(renders)].join(", ")}`);
+  }));
+
+  // 7. A crash: the crash rules stop it, its builder is told, and her fix starts it again (lane B's crash notice).
+  await own(() => stepOf("7. made to crash, it stops and Alpha is told; her fix starts it again", async () => {
+    const hostFile = join(installed, "host", "index.ts");
+    const anchor = readFileSync(hostFile, "utf8").split("\n").find((l) => l.startsWith("import "));
+    if (anchor === undefined) fail("the plugin's host code has no import line to put the throw after");
+    const broken = `${anchor}\nthrow new Error("acceptance crash: the workshop's step 7");`;
+    const before = Math.max(0, ...(await ctx.history(session)).map((e: Ev) => (typeof e.seq === "number" ? e.seq : 0)));
+    await ok(ctx, session, "Read", { file_path: hostFile });
+    await ok(ctx, session, "Edit", { file_path: hostFile, old_string: anchor!, new_string: broken });
+    let last: string | undefined;
+    await until(`${WORKSHOP_ID} stopped by the crash rules`, 90_000, async () => {
+      last = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return last === "stopped" || last === "crashed" ? true : undefined;
+    }, async () => `it is ${last ?? "gone"}`).catch(() => undefined);
+    const told = await until("Alpha told it stopped", 90_000, async () => {
+      const text = JSON.stringify((await ctx.history(session)).filter((e: Ev) => typeof e.seq === "number" && e.seq > before));
+      return text.includes(`PluginStatus ${WORKSHOP_ID} has the log`) ? text : undefined;
+    }, async () => `its state is ${(await pluginOf(ctx, WORKSHOP_ID))?.state ?? "gone"}`);
+    if (!told.includes("stopped:")) fail("the notice in her conversation doesn't say it stopped");
+    // Her fix: the throw edited back out (read again first: the runtime edits only what this session read).
+    await ok(ctx, session, "Read", { file_path: hostFile });
+    await ok(ctx, session, "Edit", { file_path: hostFile, old_string: broken, new_string: anchor! });
+    let state: string | undefined;
+    await until(`${WORKSHOP_ID} running again after her fix`, 60_000, async () => {
+      if ((await cardsOf(ctx)).some((c) => c.pluginId === WORKSHOP_ID)) fail("her fix raised a card");
+      state = (await pluginOf(ctx, WORKSHOP_ID))?.state;
+      return state === "running" ? true : undefined;
+    }, async () => `it is ${state ?? "gone"}`);
+    // Its host half restarts from the changed tree a moment after the registry applies it: a few tries.
+    let answer = "";
+    for (let i = 0; i < 4; i++) {
+      const t = await callOnce(ctx, session, WORKSHOP_TOOL, { name: "Acceptance" }, () => true);
+      answer = t.result?.text ?? "";
+      if (t.result?.isError !== true && answer.includes(answerFor(GREETING.second))) break;
+      await sleep(3_000);
+    }
+    if (!answer.includes(answerFor(GREETING.second))) fail(`after her fix its tool answered "${answer.slice(0, 200)}"`);
+    done.push("7 a throw edited in: stopped by the crash rules, Alpha told in her conversation; her fix: running again with no card, tool answered");
   }));
 
   if (failed.length > 0) fail(`${failed.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ")})`);

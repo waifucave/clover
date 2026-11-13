@@ -1,0 +1,76 @@
+{
+  "catalog": 1,
+  "rows": [
+    {
+      "key": "acceptance-models/acceptance-fast",
+      "providerId": "acceptance-models",
+      "upstreamId": "acceptance-fast",
+      "displayName": "Acceptance Fast",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#llama-3.3-70b-versatile",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/groq/index.ts#llama-3.3-70b-versatile — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"llama-3.3-70b-versatile | Yes | Yes | Yes\" — Tool Use / Parallel Tool Use / JSON Mode all Yes",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/tool-use (read 2026-09-27): \"llama-3.3-70b-versatile | Yes | Yes | Yes\" — Tool Use / Parallel Tool Use / JSON Mode all Yes",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "deprecated",
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://console.groq.com/docs/models — current GroqCloud model table: context window, maximum completion tokens, and where published input/output price per million tokens (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://console.groq.com/docs/reasoning (read 2026-09-27): \"reasoning_effort ... GPT-OSS ... Qwen 3.8 27B\" — Groq's reasoning-effort docs list only gpt-oss and qwen3.8-27b as supporting it; llama-3.3-70b-versatile is a plain instruct model, absent from that list",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "llama-3.3-70b-versatile",
+      "modelFamily": "llama"
+    }
+  ]
+}
