@@ -192,5 +192,13 @@ describe("the Review on the app's own card page (the owner's ruling, 2026-11-13)
     expect(p).toContain("A model&#39;s reading of the plugin&#39;s files");
     expect(script).toContain("Review sends this plugin's files to {model}.");
     expect(script).toContain("b.review(true)");
+    // A peek refused before the window binds the page's channel is asked again.
+    expect(script).toContain("setTimeout(() => peek(n + 1), 400)");
+  });
+
+  test("the script is in the head, so the Review wires its elements only once the body is parsed", () => {
+    const p = ownCardPage({ ...base, reviewable: true });
+    expect(p.indexOf("<script>")).toBeLessThan(p.indexOf("<body"));
+    expect(p).toContain('addEventListener("DOMContentLoaded", wireReview)');
   });
 });
