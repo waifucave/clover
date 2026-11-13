@@ -64,7 +64,7 @@ describe("every call the catalog lists for host code is served", () => {
   test("the router refuses a marked call with its reason, whatever the plugin holds", async () => {
     const record = { id: "luna", enabled: true, state: "running", granted: ["memory.read", "usage.read", "logs.read", "audio", "approvals", "browser", "call:sol"] } as never;
     const router = createApiRouter({ registry: { get: () => record }, handlers: [] });
-    for (const path of ["memory.list", "keys.open", "browser.watch", "browser.show", "browser.onCdpEvent", "commands.run", "audio.play"]) {
+    for (const path of ["memory.list", "keys.open", "commands.run", "audio.play"]) {
       const err = await router({ pluginId: "luna", process: path === "keys.open" ? "clover" : "shared", path, args: ["x"], caller: { kind: "plugin", pluginId: "luna" } } as never).catch((e: Error) => e);
       expect([path, (err as Error).message]).toEqual([path, `${path} isn't available yet: ${(API_CALLS as Record<string, ApiCallInfo>)[path]!.notYet}`]);
     }
@@ -94,7 +94,7 @@ describe("every call the catalog lists for host code is served", () => {
       const parts = call.split(".");
       expect([call, apiHas(parts.slice(0, -1), parts.at(-1)!)]).toEqual([call, info.notYet === undefined && info.where !== "ui"]);
     }
-    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["browser"], "show"), apiHas(["browser"], "watch"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([false, true, true, false, false, false, false]);
+    expect([apiHas([], "memory"), apiHas([], "browser"), apiHas(["browser"], "tabs"), apiHas(["browser"], "show"), apiHas(["browser"], "watch"), apiHas(["commands"], "run"), apiHas([], "t")]).toEqual([false, true, true, true, true, false, false]);
     expect([apiHas([], "settings"), apiHas([], "plugin"), apiHas([], "commands"), apiHas(["settings"], "get"), apiHas([], "env"), apiHas([], Symbol.iterator)]).toEqual([true, true, true, true, false, false]);
   });
 

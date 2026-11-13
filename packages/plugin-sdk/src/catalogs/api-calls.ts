@@ -48,8 +48,9 @@ const both = (capability?: string): ApiCallInfo => (capability ? { capability, w
 /** A call the catalog lists that no side serves yet (`ApiCallInfo.notYet`). */
 const notYet = (info: ApiCallInfo, why: string): ApiCallInfo => ({ ...info, notYet: why });
 const NO_SERVICE = "no service of the core answers it for plugins yet";
-/** The bundled tree's browser calls (its Browser tool's), once served: the `clover` process only. */
-const BROWSER: ApiCallInfo = { capability: "browser", where: "clover" };
+/** The Clover Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
+ *  the bundled panel (its component, for the person). The core serves no other plugin's. */
+const BROWSER: ApiCallInfo = { capability: "browser", where: "both" };
 
 export const API_CALLS = {
   confirm: both(), confirmCard: both(),
@@ -97,14 +98,13 @@ export const API_CALLS = {
   "files.pickOpen": { capability: "files", where: "ui" }, "files.pickFolder": { capability: "files", where: "ui" }, "files.pickSave": { capability: "files", where: "ui" },
   "files.url": { capability: "files", where: "ui" }, "files.onDrop": { capability: "files", where: "ui" },
   /** The bundled `clover` tree's host halves only, for a tool call they serve (the Browser tool): the session that call
-   *  is for drives the Clover Browser, under its own rules. A third-party plugin's `browser` isn't served yet: raw
-   *  DevTools on the person's signed-in pages is more than an OK card's one line can carry. */
+   *  is for drives the Clover Browser, under its own rules; the bundled panel's component acts for the person and alone
+   *  places a tab in a view and hears the tabs change. A third-party plugin's `browser` isn't served: raw DevTools on the
+   *  person's signed-in pages is more than an OK card's one line can carry. */
   "browser.toolCaller": BROWSER, "browser.tabs": BROWSER, "browser.open": BROWSER,
   "browser.close": BROWSER, "browser.navigate": BROWSER,
-  "browser.show": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"),
-  "browser.hide": notYet(both("browser"), "where a tab shows is the person's: not served to plugins yet"), "browser.screenshot": BROWSER, "browser.cdp": BROWSER,
-  "browser.onCdpEvent": notYet(both("browser"), "a page's DevTools events aren't streamed to plugins yet"),
-  "browser.watch": notYet(both("browser"), "tab changes aren't streamed to plugins yet"),
+  "browser.show": BROWSER, "browser.hide": BROWSER, "browser.screenshot": BROWSER, "browser.cdp": BROWSER,
+  "browser.onCdpEvent": BROWSER, "browser.watch": BROWSER,
   /** Components only, of the bundled `clover` tree: what reaches a terminal the runtime derives from trusted events. */
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },

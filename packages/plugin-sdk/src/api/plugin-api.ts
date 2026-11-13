@@ -796,7 +796,7 @@ export interface PluginApi {
   readonly files?: FilesApi;
   /** The bundled `clover` tree's host halves only (its Browser tool, for the session a tool call serves): `tabs`, `open`,
    *  `close`, `navigate`, `screenshot`, `cdp` (the tool's own nine DevTools methods) and `caller`. `show`, `hide`,
-   *  `onCdpEvent` and `watch` aren't served yet; a third-party plugin's `browser` isn't either. */
+   *  `onCdpEvent` and `watch` are the person's panel's (a component's), not a host half's; a third-party plugin's `browser` isn't served. */
   readonly browser?: NotYet<BrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
   /** Components only. `shell.read`, `shell.control`: each gives its own members. */
   readonly shell?: Partial<ShellApi>;

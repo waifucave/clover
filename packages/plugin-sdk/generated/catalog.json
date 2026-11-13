@@ -4241,51 +4241,47 @@
     },
     "browser.toolCaller": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.tabs": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.open": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.close": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.navigate": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.show": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "where a tab shows is the person's: not served to plugins yet"
+      "where": "both"
     },
     "browser.hide": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "where a tab shows is the person's: not served to plugins yet"
+      "where": "both"
     },
     "browser.screenshot": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.cdp": {
       "capability": "browser",
-      "where": "clover"
+      "where": "both"
     },
     "browser.onCdpEvent": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "a page's DevTools events aren't streamed to plugins yet"
+      "where": "both"
     },
     "browser.watch": {
       "capability": "browser",
-      "where": "both",
-      "notYet": "tab changes aren't streamed to plugins yet"
+      "where": "both"
     },
     "terminal.open": {
       "capability": "terminal",

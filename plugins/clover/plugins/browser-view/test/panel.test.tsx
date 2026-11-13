@@ -99,6 +99,16 @@ describe("watching", () => {
     expect(screen.getAllByRole("tab")).toHaveLength(2);
   });
 
+  test("a tab the browser says is gone leaves the row", async () => {
+    const api = fakeBrowser([A]);
+    await mount(api);
+    await act(async () => api.emit(B));
+    expect(screen.getAllByRole("tab").length).toBeGreaterThan(1);
+    const before = screen.getAllByRole("tab").length;
+    await act(async () => api.emitClosed(B.id));
+    expect(screen.getAllByRole("tab").length).toBe(before - 1);
+  });
+
   test("another owner's tab never joins the row, and unmounting stops watching", async () => {
     const api = fakeBrowser([A]);
     const view = await mount(api);
