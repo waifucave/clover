@@ -1994,7 +1994,9 @@ function startBrowser(): void {
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
     headless,
-    ...(testNames !== undefined ? { network: { lookup: testNames.lookup, dial: testNames.dial } } : {}),
+    // The filter's own lines (a connection it closed, a socket table it couldn't read, no route) go to the app's log:
+    // they name ports and reasons, never a page or a host, and without them a tab that can't load says nothing of why.
+    network: { ...(testNames !== undefined ? { lookup: testNames.lookup, dial: testNames.dial } : {}), log: (line: string) => log(line) },
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
