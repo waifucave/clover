@@ -97,9 +97,10 @@ export function stepNumber(steps: readonly string[], name: string): number {
  *  number: a harness bug) reads FAIL and names every result, so the clash shows instead of one row silently replacing
  *  another; a result for a number outside the table is dropped. */
 export function finishTable(recorded: readonly Row[], steps: readonly string[], only?: number | readonly number[]): Row[] {
+  const keep = only === undefined ? undefined : new Set(typeof only === "number" ? [only] : only);
   const out: Row[] = [];
   for (let n = 1; n <= steps.length; n++) {
-    if (only !== undefined && !(typeof only === "number" ? n === only : only.includes(n))) continue;
+    if (keep !== undefined && !keep.has(n)) continue;
     const mine = recorded.filter((r) => r.n === n);
     const name = steps[n - 1]!;
     if (mine.length === 0) out.push({ n, name, status: "BLOCKED", detail: "not reached" });
@@ -108,3 +109,16 @@ export function finishTable(recorded: readonly Row[], steps: readonly string[], 
   }
   return out;
 }
+
+/** The first table row of the window steps (UI_STEPS[0]); the full run's UI phase records them from here. */
+export const UI_FIRST_ROW = 8;
+/** `--only-ui [indexes]`: which window steps run, by their place in UI_STEPS (comma-separated; default the Plugins page's, 12).
+ *  Throws on a number outside the list. */
+export function parseOnlyUi(arg: string | undefined): number[] {
+  const text = arg === undefined || arg.startsWith("--") ? "12" : arg;
+  const out = [...new Set(text.split(",").map((t) => Number(t.trim())))].sort((a, b) => a - b);
+  for (const n of out) if (!Number.isInteger(n) || n < 0 || n >= UI_STEPS.length) throw new Error(`--only-ui takes window step numbers 0 to ${UI_STEPS.length - 1}, not "${text}"`);
+  return out;
+}
+/** The table rows of those window steps. */
+export const uiRowNumbers = (indexes: readonly number[]): number[] => indexes.map((i) => UI_FIRST_ROW + i);

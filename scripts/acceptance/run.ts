@@ -20,6 +20,8 @@
 //                       row; the table has that row
 //   --only-tab-flash  only the tab-flash row (her tab sampled at every frame as the window starts and as the user
 //                       comes back to it from other pages): the daemon, the dummy key, then the app and the row
+//   --only-ui [n,n]   only those window steps (their place in UI_STEPS, default 12: the Plugins page, table row 20): the
+//                       daemon, the dummy key, Alpha's keyed bot, then the app and just those rows; the table has them
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
@@ -70,6 +72,7 @@ import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP, childStep, notifyStep } from "./child-notify-step";
+import { parseOnlyUi, uiRowNumbers } from "./steps";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -117,6 +120,9 @@ const tabFlashOnly = argv.includes("--only-tab-flash");
 // --only-kids: only the child-plugin and core-updates-to-notifiers rows (the daemon, the dummy key, the app, the two rows).
 const kidsOnly = argv.includes("--only-kids");
 if (kidsOnly && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-kids runs the child-plugin and notifier rows alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+// --only-ui [n,n]: the window steps given (default 12, the Plugins page), with only the setup they need.
+const onlyUi = argv.includes("--only-ui") ? (() => { try { return parseOnlyUi(argv[argv.indexOf("--only-ui") + 1]); } catch (e) { console.error(`acceptance: ${(e as Error).message}`); process.exit(2); } })() : undefined;
+if (onlyUi !== undefined && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-ui runs window steps alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -1485,6 +1491,7 @@ async function main(): Promise<void> {
   if (workshopOnly) { await workshopOnlyRun(app); return; }
   if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
   if (kidsOnly) { await kidsOnlyRun(app); return; }
+  if (onlyUi !== undefined) { await onlyUiRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -2114,6 +2121,38 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
 
 /** The tab-flash row alone (--only-tab-flash): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, the window's start sampled) and the row. */
+/** --only-ui: the daemon, the dummy key, Alpha on the keyed model, then the app over it and just the window steps asked for
+ *  (uiPhase with `onlyUi`: no quit and reopen, no example steps). */
+async function onlyUiRun(app: { exe: string; args: string[] }): Promise<void> {
+  const rowsWanted = uiRowNumbers(onlyUi!);
+  let c: CloverClient | undefined;
+  let session: string | undefined;
+  try {
+    await startDaemonProc();
+    c = (await appDriver()).client;
+    const plugin = "clover/model-anthropic";
+    const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: plugin });
+    const entry = auth.auth.find((a) => a.method === "api-key");
+    if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
+    const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
+    if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+    session = await until("the bot on the keyed model", 60_000, async () => {
+      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
+      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
+    }, 500);
+    // Her tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
+    const welcomeDone = join(home, "app-data", profile, "welcome-done");
+    mkdirSync(dirname(welcomeDone), { recursive: true });
+    if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
+  } catch (err) {
+    for (const n of rowsWanted) record(n, statusOf(err), `--only-ui setup: ${why(err)}`);
+    return;
+  } finally {
+    c?.close();
+  }
+  await uiPhase(app, true, session, pressing);
+}
+
 async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, TAB_FLASH_STEP);
   let c: CloverClient | undefined;
@@ -3200,6 +3239,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
       cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
+      ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : {}),
       pickFolder,
       setPick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       avatarFolder,
@@ -3217,6 +3257,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         },
       } : {}),
     }, (i, status, detail) => record(first + i, status, detail));
+    if (onlyUi !== undefined) return;
     // After quit and reopen (the owner's check 10): this app registers the SAME answer key the first one did (the run's
     // kept key file), and a card's Approve is pressed in its window, the real way.
     try {
@@ -3340,7 +3381,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : kidsOnly ? [stepNumber(FULL_STEPS, CHILD_STEP), stepNumber(FULL_STEPS, NOTIFY_STEP)] : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : kidsOnly ? [stepNumber(FULL_STEPS, CHILD_STEP), stepNumber(FULL_STEPS, NOTIFY_STEP)] : onlyUi !== undefined ? uiRowNumbers(onlyUi) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
