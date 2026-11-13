@@ -164,6 +164,7 @@ export const UNIQUE_ENTRY_FIELD: Readonly<Partial<Record<keyof CoreEntries, stri
   agentBackends: "id",
   triggers: "type",
   voices: "id",
+  voiceModes: "id",
   computerProviders: "id",
 };
 

@@ -1,0 +1,13 @@
+{
+  "manifest": 1,
+  "id": "acceptance-narrator",
+  "name": "Acceptance narrator",
+  "description": "The acceptance run's plain plugin with `voices.use`: its `narrate` command asks the run's tone voice to say a line and gets the audio back as its own data (nothing plays). Its child, `nosy`, has no `voices.use`: the same ask is refused.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "capabilities": ["voices.use"],
+  "contributes": {
+    "commands": [{ "name": "narrate", "description": "Asks the run's tone voice to say a line; answers with the bytes it got.", "handler": "narrate" }]
+  }
+}

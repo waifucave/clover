@@ -242,6 +242,16 @@ export const VoiceSchema = z.strictObject({
   ...declares,
 });
 
+/** A voice mode (§6.6): the one plugin, of those installed, that speaks the bots' replies, plays sound as their
+ *  voices and hears push-to-talk; the user chooses which is active (Settings › Voice). `handler` names the host
+ *  export the core calls (`reply`, `stop`, `listenStart`, `listenEnd`, `offer`: `VoiceModeHandler`). */
+export const VoiceModeSchema = z.strictObject({
+  id: EntryId,
+  name: Text,
+  handler: HandlerName,
+  ...declares,
+});
+
 export const ComputerProviderSchema = z.strictObject({
   id: EntryId,
   name: Text,
@@ -331,6 +341,7 @@ export const CORE_CONTRIBUTION_SCHEMAS = {
   commands: z.array(CommandSchema).max(512),
   triggers: z.array(TriggerSchema).max(64),
   voices: z.array(VoiceSchema).max(64),
+  voiceModes: z.array(VoiceModeSchema).max(1),
   computerProviders: z.array(ComputerProviderSchema).max(16),
   computer: ComputerSchema,
   relays: z.array(ServiceSchema).max(16),
@@ -358,6 +369,7 @@ export const ContributionsSchema = z.object({
   commands: CORE_CONTRIBUTION_SCHEMAS.commands.optional(),
   triggers: CORE_CONTRIBUTION_SCHEMAS.triggers.optional(),
   voices: CORE_CONTRIBUTION_SCHEMAS.voices.optional(),
+  voiceModes: CORE_CONTRIBUTION_SCHEMAS.voiceModes.optional(),
   computerProviders: CORE_CONTRIBUTION_SCHEMAS.computerProviders.optional(),
   computer: CORE_CONTRIBUTION_SCHEMAS.computer.optional(),
   relays: CORE_CONTRIBUTION_SCHEMAS.relays.optional(),

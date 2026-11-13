@@ -285,6 +285,16 @@ export const APP_METHODS = {
     result: Ok,
     doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
   }),
+  /** The app's player says an utterance it was sent has ended on this device: played out, stopped, cut by a newer one
+   *  of the same bot, or dropped while muted. The core ignores an utterance it didn't send to this app; the report only
+   *  lets the active voice mode's queue go on sooner (its next sound waits for it, or for a deadline when no report
+   *  comes), and never starts a sound. Sent by the app's own shell, never by a plugin. */
+  voicePlayed: defineMethod({
+    name: "voice.played", owner: "D", roles: ["app"],
+    params: z.object({ bot: BotId, utterance: utf16(128, 1) }),
+    result: Ok,
+    doc: "The app's player says an utterance it was sent has ended (§6.6): the voice mode's queue goes on.",
+  }),
   voiceStop: defineMethod({
     name: "voice.stop", owner: "D", roles: ["app"], userOnly: true,
     params: z.object({ bot: BotId }),

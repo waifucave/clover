@@ -152,6 +152,12 @@
       "warns": true
     },
     {
+      "name": "voices.use",
+      "lets": "Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back",
+      "ok": "can ask your voice providers to speak or transcribe, which may use your accounts with them",
+      "warns": true
+    },
+    {
       "name": "call:<plugin-id>",
       "lets": "Run that plugin's commands",
       "ok": "runs commands of {plugin}",
@@ -307,8 +313,18 @@
       "uniqueBy": "id",
       "kind": "code",
       "runsOn": "the computer the user is talking on",
-      "doc": "Speech-to-text and text-to-speech for the bot's voice choice (§6.6).",
+      "doc": "Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes.",
       "shipsWith": "Fish Audio"
+    },
+    {
+      "name": "voiceModes",
+      "side": "daemon",
+      "shape": "list",
+      "uniqueBy": "id",
+      "kind": "code",
+      "runsOn": "the computer the user is talking on",
+      "doc": "The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears push-to-talk. The others neither speak nor hear.",
+      "shipsWith": "Clover Voice"
     },
     {
       "name": "computerProviders",
@@ -4414,6 +4430,34 @@
     "audio.onRecording": {
       "capability": "audio",
       "where": "both"
+    },
+    "speech.piece": {
+      "where": "host"
+    },
+    "speech.play": {
+      "where": "host"
+    },
+    "speech.stop": {
+      "where": "host"
+    },
+    "speech.modes": {
+      "where": "both"
+    },
+    "voices.providers": {
+      "capability": "voices.use",
+      "where": "both"
+    },
+    "voices.speak": {
+      "capability": "voices.use",
+      "where": "host"
+    },
+    "voices.listen": {
+      "capability": "voices.use",
+      "where": "host"
+    },
+    "voices.feed": {
+      "capability": "voices.use",
+      "where": "host"
     }
   }
 }

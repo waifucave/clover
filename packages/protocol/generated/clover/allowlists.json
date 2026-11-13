@@ -127,6 +127,7 @@
       "usage.rows",
       "usage.summary",
       "voice.listen",
+      "voice.played",
       "voice.speak",
       "voice.status",
       "voice.stop"

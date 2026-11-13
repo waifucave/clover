@@ -1,6 +1,7 @@
 import { ReadElements } from "./approvals/browser-words";
 import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
+import { CLOVER_VOICE } from "./voices/slot";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings, runLaterByName } from "./fence/sandbox-settings";
@@ -4254,6 +4255,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       voicePlay: (p) => {
         for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
+      },
+      // The voice slot (§6.6): the user's choice is Clover Voice's own `active` setting (their chosen mode, else Clover
+      // Voice; neither running, text-only), a voice that stops is said in words, as Clover Voice's notice, and a chosen
+      // mode that is removed clears the choice.
+      voiceChosen: async () => {
+        const v = await pluginHost?.settings.layerView(CLOVER_VOICE, "active").catch(() => undefined);
+        return typeof v === "string" && v !== "" ? v : undefined;
+      },
+      voiceForget: () => pluginHost?.settings.layerSet(CLOVER_VOICE, "active", null),
+      voiceTell: (text) => {
+        try {
+          notifyService?.send(CLOVER_VOICE, { title: "Voice", body: text });
+        } catch (err) {
+          console.error(`[voice] ${text} (not shown: ${(err as Error).message})`);
+        }
       },
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its

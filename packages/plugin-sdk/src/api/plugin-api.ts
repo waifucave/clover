@@ -766,6 +766,79 @@ export interface NotifyApi {
 /** `audio`: the app plays a plugin's audio as a bot's speech (the plugin's own bot's unless `opts.bot` names another live
  *  bot), and hands it the user's push-to-talk audio for every bot as it comes (§6.6). The OK says it "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices".
  *  `play`'s `done` settles when the last piece is handed to the app, not when the app finishes playing it. */
+/** `speech`: the active voice mode's own door to this device's player, the one sink (§6.6). Any other plugin, an
+ *  inactive voice mode included, is refused (`modes` excepted). */
+export interface SpeechApi {
+  /** One piece of a bot's speech to the player: pcm16-24k (16-bit little-endian mono at 24 kHz), the last `final`.
+   *  `utterance` is the mode's own name for it (`[A-Za-z0-9_-]`, at most 64). The last piece's answer waits until the
+   *  player says the utterance ended (`ended: true`), or until its length and a few seconds have passed (`false`): when
+   *  it resolves, the next sound may start. Other pieces answer `null`. */
+  piece(p: { bot: string; session: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ ended: boolean } | null>;
+  /** Plays a sound a plugin offered as a bot's voice (`audio.play`; its ticket from `VoiceModeHandler.offer`): its
+   *  pieces so far and those still coming. Resolves once it ended on the player (or its deadline passed), with how long
+   *  it sounds. */
+  play(req: { ticket: string }): Promise<SpeechDone>;
+  /** Ends what an utterance (or everything a bot) is sounding now; its last piece goes, so the player knows. */
+  stop(req: { utterance?: string; bot?: string }): Promise<void>;
+  /** The voice modes on and running here, and which is active. */
+  modes(): Promise<{ pluginId: string; id: string; name: string; active: boolean }[]>;
+}
+
+export interface SpeechDone {
+  bytes: number;
+  /** How long it sounds (pcm16-24k: two bytes a sample at 24 kHz). */
+  seconds: number;
+  /** Stopped before its end. */
+  cut: boolean;
+  /** The player said it ended; `false` when its deadline passed with no word from it (no window, say). */
+  ended: boolean;
+}
+
+/** One provider on `voices` (§6.6), as a voice mode sees it. */
+export interface VoiceProviderView {
+  pluginId: string;
+  id: string;
+  name: string;
+  speak: boolean;
+  listen: boolean;
+}
+
+/** `voices`: the providers' endpoints (§6.6), for a plugin with `voices.use` and for any voice mode. A provider
+ *  plugin's `voices` entry is its endpoint; the core carries the calls (as it carries `points.call`) and places no key:
+ *  the provider's own keyed fetch does, and the caller sees only audio and text, its own data: nothing sounds through
+ *  these (the player is the active voice mode's, `speech`). At most VOICES_CALLS_PER_PLUGIN open at once a plugin;
+ *  each use is logged with the caller's id. */
+export interface VoicesApi {
+  providers(): Promise<VoiceProviderView[]>;
+  /** `text` (or, for the active voice mode, a reply's `ticket`, whose text stays in the core) said by `provider` with
+   *  `voice`. A ticket's bot gets the user's provider check first. Each piece of audio (pcm16-24k) comes to
+   *  `listener` as it is made, then `done` (or `error`); the returned function cancels. */
+  speak(provider: string, req: { ticket?: string; text?: string; voice?: string; model?: string }, listener: (e: { audio?: Uint8Array; done?: { bytes: number }; error?: string }) => void): Unsubscribe;
+  /** Opens `provider`'s listening under the caller's own `id` (for the active voice mode, a push-to-talk utterance's,
+   *  from `VoiceModeHandler.listenStart`); the caller feeds it (`feed`), and what it heard comes to `listener`. */
+  listen(provider: string, req: { id: string; format: "pcm16-16k" | "opus" }, listener: (e: { text?: string; error?: string }) => void): Unsubscribe;
+  /** One piece of an open listening, the last `final`. */
+  feed(id: string, data: Uint8Array, final: boolean): Promise<void>;
+}
+
+/** What the core calls on the active voice mode's handler (its `voiceModes` entry's `handler`, an exported object). */
+export interface VoiceModeHandler {
+  /** A bot's reply to say: at its turn's end, or `asked` by the user's speak button; `voice` is the bot's voice choice.
+   *  The text stays in the core: the ticket goes to `voices.speak`. `queued`: it waits its turn. */
+  reply(args: { ticket: string; bot: string; session: string; asked: boolean; voice: { provider: string; voice: string; model?: string } }): Promise<{ queued: boolean }>;
+  /** The user's stop on a bot: what it says ends, and what it has waiting goes. */
+  stop(args: { bot: string }): Promise<void>;
+  /** The user holds push-to-talk on this device: whatever sounds stops and nothing starts until the last piece.
+   *  `voice` is the bot's voice choice; the mode opens a provider's listening for `utterance` (`voices.listen`). */
+  listenStart(args: { bot: string; utterance: string; format: "pcm16-16k" | "opus"; voice: { provider: string; voice: string; model?: string } }): Promise<void>;
+  /** One push-to-talk piece; the mode feeds it on. On the last (`final`) it answers what the provider heard. */
+  listenPiece(args: { bot: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ text?: string }>;
+  /** A push-to-talk utterance ended without its last piece (the app went away): resume. */
+  listenEnd(args: { bot: string; utterance: string }): Promise<void>;
+  /** A plugin plays sound as a bot's voice (`audio.play`): its ticket, to play in its turn (`speech.play`). */
+  offer(args: { ticket: string; bot: string; from: string }): Promise<void>;
+}
+
 export interface AudioApi {
   play(audio: { format: "pcm16-24k" | "mp3" | "opus"; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }): Promise<{ stop(): void; done: Promise<void> }>;
   onRecording(listener: (chunk: { utterance: string; format: "pcm16-16k" | "opus"; data: Uint8Array; final: boolean }) => void): Unsubscribe;
@@ -837,6 +910,10 @@ export interface PluginApi {
   readonly notify?: NotifyApi;
   /** `audio`: the app plays its audio as a bot's speech (its own bot's unless `opts.bot`), and it hears push-to-talk. */
   readonly audio?: AudioApi;
+  /** The active voice mode's player door (§6.6); refused to every other plugin. */
+  readonly speech?: SpeechApi;
+  /** The voice providers' endpoints, for the active voice mode (§6.6). */
+  readonly voices?: VoicesApi;
   /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
   readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */

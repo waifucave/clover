@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "id": "acceptance-voice-mode",
+  "name": "Acceptance voice mode",
+  "description": "The acceptance run's third-party voice mode: chosen in Settings › Voice it says each reply at once through the bot's own voice provider (the run's tone voice) and plays offered sound; not chosen it can neither sound nor hear. Its commands: `chime` plays a short tone as Alpha's voice (the `audio` capability), `sink` tries the player itself, `report` says what it has said.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "capabilities": ["audio"],
+  "contributes": {
+    "voiceModes": [{ "id": "acceptance-voice-mode", "name": "Acceptance voice mode", "handler": "voice" }],
+    "commands": [
+      { "name": "chime", "description": "Plays a short tone as Alpha's voice.", "handler": "chime" },
+      { "name": "sink", "description": "Sends the player a piece itself: refused unless this is the active voice.", "handler": "sink" },
+      { "name": "report", "description": "What this voice mode has said and played.", "handler": "report" }
+    ]
+  }
+}

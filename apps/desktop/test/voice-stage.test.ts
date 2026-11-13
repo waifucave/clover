@@ -84,6 +84,34 @@ describe("the voice player", () => {
     expect(c.pieces).toBe(3);
     expect(c.frames).toBeGreaterThan(0);
     expect(c.speaking).toEqual([]);
+    expect(c.overlap).toBe(1);
+    expect(c.cut).toBe(0);
+  });
+
+  test("each utterance that ends here is said once: played out, cut by a newer one, stopped (all at once for push-to-talk), or dropped muted", () => {
+    const { ctx, stage } = make();
+    const ended: string[] = [];
+    stage.onEnded((bot, u) => ended.push(`${bot}:${u}`));
+    stage.piece(piece(0));
+    stage.piece(last(1));
+    expect(ended).toEqual([]);
+    (ctx.sources[0] as FakeSource).end();
+    expect(ended).toEqual(["luna:u1"]);
+    // Cut by a newer one of the same bot.
+    stage.piece(piece(0, { utterance: "u2" }));
+    stage.piece(piece(0, { utterance: "u3" }));
+    expect(ended).toEqual(["luna:u1", "luna:u2"]);
+    // Push-to-talk: every bot's sound stops at once.
+    stage.piece(piece(0, { bot: "mira", utterance: "m1" }));
+    stage.stopAll();
+    expect(ended.slice(2).sort()).toEqual(["luna:u3", "mira:m1"]);
+    expect(stage.speaking("luna") || stage.speaking("mira")).toBe(false);
+    // Muted: the last piece of one it never played ends it here.
+    stage.setMuted(true);
+    stage.piece(piece(0, { utterance: "u4" }));
+    stage.piece(last(1, { utterance: "u4" }));
+    expect(ended.at(-1)).toBe("luna:u4");
+    expect(ended.filter((e) => e === "luna:u1")).toHaveLength(1);
   });
 
   test("a stage that subscribes mid-sentence hears the frames still ahead", () => {
@@ -117,6 +145,10 @@ describe("the voice player", () => {
     expect(ctx.sources).toHaveLength(before);
     expect(stage.speaking("luna")).toBe(true);
     expect(stage.speaking("mira")).toBe(true);
+    // The player itself plays two bots at once; the voice mode's queue is what keeps it from happening.
+    expect(stage.counters().overlap).toBe(2);
+    // Luna's u1 was sounding when u2 came: one utterance cut.
+    expect(stage.counters().cut).toBe(1);
   });
 
   test("stop silences the bot at once and its late pieces are dropped", () => {

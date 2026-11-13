@@ -2132,6 +2132,48 @@
         "additionalProperties": false
       }
     },
+    "voice.played": {
+      "doc": "The app's player says an utterance it was sent has ended (§6.6): the voice mode's queue goes on.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "utterance": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "bot",
+          "utterance"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "voice.stop": {
       "doc": "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
       "owner": "D",

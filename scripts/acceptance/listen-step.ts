@@ -11,8 +11,9 @@
 import { resolve } from "node:path";
 import { composerDoc } from "./ui-steps";
 import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
+import { VOICE_MODE_CLAUSE, voiceModeClause } from "./voice-mode-step";
 
-export const LISTEN_STEP = "push-to-talk: the talk button shows only where the bot's voice listens; held, the app records a generated clip (never the microphone) and the numbered pieces reach the voice plugin whole and in order, and its words land in the composer's box";
+export const LISTEN_STEP = `push-to-talk: the talk button shows only where the bot's voice listens; held, the app records a generated clip (never the microphone) and the numbered pieces reach the voice plugin whole and in order, and its words land in the composer's box; ${VOICE_MODE_CLAUSE}`;
 
 const VOICE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice");
 const VOICE_ID = "acceptance-voice";
@@ -127,6 +128,8 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
       others.push(v.href.slice(0, 30));
     }
     done.push(`the recording document's Permissions-Policy allows the microphone for it (browser state ${String(mine.browser)}, page ${mine.page})${others.length > 0 ? `, and blocks it in ${others.length} other layer document(s)` : ""} (no prompt was raised)`);
+    // The voice slot's clause, with Alpha's voice still the run's tone voice.
+    done.push(...(await voiceModeClause(ctx)));
     return done.join("; ");
   } finally {
     if (voiced) await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: null } }).catch(() => undefined);

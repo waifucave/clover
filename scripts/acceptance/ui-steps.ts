@@ -1635,9 +1635,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const VOICE = { provider: "acceptance-voice", voice: "tone" };
     const installed: string[] = [];
     const voiced: string[] = [];
-    type Counters = { pieces: number; frames: number; speaking: string[] };
+    type Counters = { pieces: number; frames: number; speaking: string[]; overlap: number };
     const counters = async (): Promise<Counters | undefined> => {
-      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean) }); })()");
+      const r = await inTree<string>(cdp, "(() => { const d = document.documentElement.dataset; return d.voicePieces === undefined ? null : JSON.stringify({ pieces: +d.voicePieces, frames: +(d.voiceFrames || 0), speaking: (d.voiceSpeaking || '').split(',').filter(Boolean), overlap: +(d.voiceOverlap || 0) }); })()");
       return r === undefined ? undefined : JSON.parse(r.value) as Counters;
     };
     const mainOf = async (id: string) => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === id)?.mainSession ?? fail(`no bot ${id}`);
@@ -1684,6 +1684,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, () => dumpFrames(cdp));
       await cdp.evaluate(frame.session, "(() => { const e = document.querySelector('[data-pngtuber]'); window.__voiceSeen = [e.getAttribute('data-pngtuber')]; new MutationObserver(() => window.__voiceSeen.push(e.getAttribute('data-pngtuber'))).observe(e, { attributes: true, attributeFilter: ['data-pngtuber'] }); return true; })()");
       const before = await until("the shell's voice counters", 20_000, counters);
+      // A record of the player's counters as they change, for a failure's dump (who spoke when).
+      const voiceDoc = await inTree<boolean>(cdp, "(() => { const e = document.documentElement; if (e.dataset.voicePieces === undefined) return null; if (window.__vq) return true; const t0 = Date.now(); window.__vq = []; const note = () => { const d = e.dataset; window.__vq.push([Date.now() - t0, +d.voicePieces, d.voiceSpeaking || '-', +(d.voiceOverlap || 0)].join(' ')); if (window.__vq.length > 400) window.__vq.shift(); }; note(); new MutationObserver(note).observe(e, { attributes: true }); return true; })()");
+      const voiceRecord = async () => (voiceDoc === undefined ? "no record" : String(await cdp.evaluate(voiceDoc.session, "window.__vq ? window.__vq.join(' | ') : 'none'").catch(() => "?")).slice(-1500));
+      // The player's document as one the user has used: its AudioContext starts only after the user's activation there
+      // (a click in a third party's own frames, such as this bot's tab, gives it none), and a sound that can't start
+      // would sit in a suspended context and sound later over the next.
+      if (voiceDoc !== undefined) await cdp.send("Runtime.evaluate", { expression: "true", userGesture: true }, voiceDoc.session).catch(() => undefined);
       // A third party's bot: its first turn asks once for the provider its plugin chose (Notes keeper's does too).
       await turn(botId, "Say something.", true);
       const after = await until("the reply's speech counted and its frames made", 30_000, async () => {
@@ -1717,7 +1724,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const quiet = (await counters())!;
       if (quiet.pieces !== muted.pieces) fail(`muted, the next reply still sent ${quiet.pieces - muted.pieces} piece(s)`);
       await clickIn("the stage's chip again (unmute)", "button.cl-bot-stage__chip", undefined);
-      return `the fixture voice on ${botId} and Alpha (their user layers): ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; muted by the stage's chip, the next reply sent no piece`;
+      // Both bots' replies went through Clover Voice's one queue: never two at once on the player.
+      if (quiet.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${quiet.overlap}); the player (ms pieces speaking overlap): ${await voiceRecord()}`);
+      return `the fixture voice on ${botId} and Alpha (their user layers), spoken by Clover Voice: ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; never two bots at once (data-voice-overlap ${quiet.overlap}); muted by the stage's chip, the next reply sent no piece`;
     } finally {
       for (const id of voiced) await rpc.request("bot.setUserLayer", { id, patch: { voice: null } }).catch(() => undefined);
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);

@@ -107,6 +107,10 @@ export interface DaemonBotsInput {
   pluginHost?: BotPluginHost;
   /** Sends `voice.play` to the app (with `pluginHost`, or `voiceHost`). */
   voicePlay?: NonNullable<BotSideOptions["voices"]>["play"];
+  /** The user's choice of voice mode, and how they are told their voice stopped (§6.6, the voice slot). */
+  voiceChosen?: NonNullable<BotSideOptions["voices"]>["chosen"];
+  voiceTell?: NonNullable<BotSideOptions["voices"]>["tell"];
+  voiceForget?: NonNullable<BotSideOptions["voices"]>["forget"];
   /** The plugin host the bots' voices stream from, where the daemon gives no `pluginHost` (whose ingress and
    *  triggers this leaves off). */
   voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
@@ -592,7 +596,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
   return {
     ...(relay ? { relay } : {}),
     routines,
-    ...((host ?? b.voiceHost) && b.voicePlay ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, play: b.voicePlay } } : {}),
+    ...((host ?? b.voiceHost) && b.voicePlay ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, play: b.voicePlay, ...(b.voiceChosen ? { chosen: b.voiceChosen } : {}), ...(b.voiceTell ? { tell: b.voiceTell } : {}), ...(b.voiceForget ? { forget: b.voiceForget } : {}) } } : {}),
     ...(b.compaction ? { compaction: b.compaction } : {}),
     ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
   };

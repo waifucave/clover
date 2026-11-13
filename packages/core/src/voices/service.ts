@@ -9,6 +9,11 @@
 //   into the handler's `listen` as the call's input, and the last piece's answer is what it heard.
 // * A bot with no voice, or whose provider isn't installed or doesn't speak (or listen), is text-only: refused, with
 //   why, and nothing breaks.
+// * Since the voice slot (§6.6, `slot.ts`), the bots' replies and push-to-talk go through the active voice mode, which
+//   calls the providers itself (`voices.*`) and feeds this device's player (`speech.*`). What this keeps for that: the
+//   providers' streams (`providerSpeak`, `providerListen`), the player (`sendPiece`), the user's provider check, and
+//   the copy of push-to-talk to `audio.onRecording` (`hearRecording`). `speak` and `listen` stay for a core with no
+//   slot (a test of this alone).
 import type { TurnOrigin } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
@@ -43,7 +48,9 @@ export interface VoicePlay {
 
 export interface VoiceServiceOptions {
   registry: Pick<PluginRegistry, "entries">;
-  host: Pick<PluginHost, "stream">;
+  /** `stream` for the providers; `invoke` for the active voice mode (the voice slot), without which no voice mode is
+   *  reached and bots are text-only. */
+  host: Pick<PluginHost, "stream"> & Partial<Pick<PluginHost, "invoke">>;
   /** A bot's voice now; undefined for a text-only bot. */
   voiceOf(bot: string): BotVoice | undefined;
   /** Sends `voice.play` to the app. */
@@ -142,6 +149,95 @@ export class VoiceService {
 
   constructor(opts: VoiceServiceOptions) {
     this.#o = opts;
+  }
+
+  /** A bot's voice now, or undefined for a text-only bot. */
+  voiceOf(bot: string): BotVoice | undefined {
+    return this.#o.voiceOf(bot);
+  }
+
+  /** The `voices` entry of a provider (`not_installed` when none is on). */
+  entryOf(provider: string): { pluginId: string; speak: boolean; listen: boolean; name?: string } {
+    const e = this.#entry(provider);
+    return { pluginId: e.pluginId, speak: e.speak, listen: e.listen, ...(e.name === undefined ? {} : { name: e.name }) };
+  }
+
+  /** Every provider on `voices` that is on. */
+  providers(): { pluginId: string; id: string; name: string; speak: boolean; listen: boolean }[] {
+    const out: { pluginId: string; id: string; name: string; speak: boolean; listen: boolean }[] = [];
+    for (const c of this.#o.registry.entries("voices")) {
+      if (c.state !== "active" || c.entryId === undefined) continue;
+      const v = c.value as { handler?: unknown; speak?: unknown; listen?: unknown; name?: unknown };
+      if (typeof v.handler !== "string") continue;
+      const name = typeof v.name === "string" ? v.name : typeof (v.name as { en?: unknown } | undefined)?.en === "string" ? (v.name as { en: string }).en : c.entryId;
+      out.push({ pluginId: c.pluginId, id: c.entryId, name, speak: v.speak === true, listen: v.listen === true });
+    }
+    return out;
+  }
+
+  /** The user's provider check for a bot's voice (provider-consent.ts), as `speak` and `listen` run it. */
+  mayUse(bot: string, at: VoiceUse): Promise<{ ok: true } | { ok: false; reason: string }> {
+    return this.#o.mayUse?.(bot, at) ?? Promise.resolve({ ok: true as const });
+  }
+
+  /** One piece to this device's player (the active voice mode's `speech.*`). */
+  async sendPiece(p: VoicePlay): Promise<void> {
+    await this.#o.play(p);
+  }
+
+  /** A push-to-talk piece to `audio.onRecording`'s listeners (the slot's listening path). */
+  hearRecording(piece: RecordingPiece): void {
+    for (const fn of [...this.#recording]) {
+      try { fn(piece); } catch { /* a listener's failure is its own */ }
+    }
+  }
+
+  /** A provider's speech for `text`, each piece of audio (pcm16-24k) to `onAudio` as it is made (`voices.speak`).
+   *  Nothing goes to the player: the caller has the audio. Resolves with the bytes made. */
+  async providerSpeak(o: { provider: string; text: string; voice: string; model?: string; signal: AbortSignal }, onAudio: (audio: Uint8Array) => void): Promise<{ bytes: number }> {
+    const entry = this.#entry(o.provider);
+    if (!entry.speak) throw new ContractError("refused", `the voice plugin "${o.provider}" doesn't speak`);
+    const gen = this.#o.host.stream<{ audio: Uint8Array }, unknown>({
+      pluginId: entry.pluginId, handler: entry.handler, method: "speak", caller: { kind: "core" },
+      args: { text: o.text, voice: o.voice, ...(o.model === undefined ? {} : { model: o.model }), format: "pcm16-24k" },
+    });
+    let bytes = 0;
+    for (;;) {
+      if (o.signal.aborted) {
+        await gen.return(undefined);
+        break;
+      }
+      const next = await gen.next();
+      if (next.done) break;
+      if (o.signal.aborted) {
+        await gen.return(undefined);
+        break;
+      }
+      const audio = next.value?.audio;
+      if (!(audio instanceof Uint8Array)) continue;
+      bytes += audio.length;
+      onAudio(audio);
+    }
+    return { bytes };
+  }
+
+  /** A provider's listening (`voices.listen`): pieces in (`push`, `end`), what it heard out (`result`). */
+  providerListen(o: { provider: string; format: "pcm16-16k" | "opus" }): { push(piece: Uint8Array): void; end(): void; fail(err: Error): void; result: Promise<string> } {
+    const entry = this.#entry(o.provider);
+    if (!entry.listen) throw new ContractError("refused", `the voice plugin "${o.provider}" doesn't listen`);
+    const pieces = new Pieces();
+    const gen = this.#o.host.stream<unknown, { text?: unknown }>({
+      pluginId: entry.pluginId, handler: entry.handler, method: "listen", caller: { kind: "core" }, input: pieces,
+      args: { format: o.format },
+    });
+    const result = (async () => {
+      for (;;) {
+        const next = await gen.next();
+        if (next.done) return typeof next.value?.text === "string" ? next.value.text : "";
+      }
+    })();
+    result.catch(() => {});
+    return { push: (p) => pieces.push(p), end: () => pieces.end(), fail: (e) => pieces.fail(e), result };
   }
 
   #entry(provider: string): Entry {

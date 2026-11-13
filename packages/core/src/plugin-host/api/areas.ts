@@ -215,7 +215,18 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     return t;
   };
 
+  // ---- the voice slot's sink and the providers' endpoints (§6.6; `voices/slot.ts`) ----
+  let slotHandlers: { slot: unknown; handlers: ApiHandlers } | undefined;
+  const slotRoute = (path: keyof ApiHandlers) => (ctx: ApiCallContext, args: readonly unknown[]) => {
+    const slot = side().voiceSlot ?? notRunning("the voice slot");
+    if (slotHandlers?.slot !== slot) slotHandlers = { slot, handlers: slot.apiHandlers() };
+    const h = slotHandlers.handlers[path] ?? notRunning(`${path}`);
+    return h(ctx, args);
+  };
+
   const handlers: ApiHandlers = {
+    "speech.piece": slotRoute("speech.piece"), "speech.play": slotRoute("speech.play"), "speech.stop": slotRoute("speech.stop"), "speech.modes": slotRoute("speech.modes"),
+    "voices.providers": slotRoute("voices.providers"), "voices.speak": slotRoute("voices.speak"), "voices.listen": slotRoute("voices.listen"), "voices.feed": slotRoute("voices.feed"),
     "conversation.list": (_ctx, args) => {
       const f = opt(args[0]);
       const kinds = Array.isArray(f.kinds) ? (f.kinds as string[]) : undefined;
@@ -441,7 +452,10 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       if (a.format !== "pcm16-24k" && a.format !== "mp3" && a.format !== "opus") throw new ContractError("invalid", "audio.play's format is pcm16-24k, mp3 or opus");
       if (!(a.data instanceof Uint8Array)) throw new ContractError("invalid", "audio.play's data is bytes (a Uint8Array) or, from a host half, an async iterable of them");
       if (a.data.length > AUDIO_PIECE_MAX) throw new ContractError("invalid", `one piece of audio is at most ${AUDIO_PIECE_MAX} bytes`);
-      const send = s.voicePlay ?? notRunning("the app's player");
+      // Through the voice slot when there is one (§6.6): the active voice mode plays it in its turn, so nothing talks
+      // over it; a core with no slot (a test of this area alone) hands it to the player as before.
+      const slot = s.bots()?.voiceSlot;
+      const send = slot !== undefined ? (p: VoicePlay) => slot.offerPiece(ctx.pluginId, p) : s.voicePlay ?? notRunning("the app's player");
       const piece = opt(args[2]);
       const named = typeof piece.utterance === "string" && /^pa_[0-9a-f-]{36}$/.test(piece.utterance) ? piece.utterance : undefined;
       let u = named === undefined ? undefined : playing.get(named);
@@ -480,7 +494,11 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     "audio.onRecording": (ctx, args) => {
       const listener = listenerArg<{ utterance: string; format: string; data: Uint8Array; final: boolean }>(args, 0);
       const voices = side().voices ?? notRunning("the bots' voices");
-      return watch(ctx, () => voices.onRecording((p) => listener({ utterance: p.utterance, format: p.format, data: p.data, final: p.final })));
+      // An inactive voice mode hears nothing (§6.6: only the active voice hears the user), judged at each piece.
+      return watch(ctx, () => voices.onRecording((p) => {
+        if (s.bots()?.voiceSlot?.inactiveMode(ctx.pluginId) === true) return;
+        listener({ utterance: p.utterance, format: p.format, data: p.data, final: p.final });
+      }));
     },
 
     // ---- memory (lane D's memory folder, read-only) ----
@@ -689,7 +707,9 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         if (u.idle !== undefined) clearTimeout(u.idle);
         playing.delete(id);
         try {
-          await s.voicePlay?.({ bot: u.bot, session: u.session, utterance: u.utterance, seq: u.next++, audio: "", format: (u.format ?? "pcm16-24k") as never, final: true });
+          const piece = { bot: u.bot, session: u.session, utterance: u.utterance, seq: u.next++, audio: "", format: (u.format ?? "pcm16-24k") as never, final: true };
+          const slot = s.bots()?.voiceSlot;
+          await (slot !== undefined ? slot.offerPiece(u.pluginId, piece) : s.voicePlay?.(piece));
         } catch {
           // the app's player is gone: nothing is playing there
         }
