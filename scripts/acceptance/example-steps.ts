@@ -59,6 +59,8 @@ export interface ExampleCtx {
   inspectTurn?: (session: string, text: string, ms: number, inspect: () => Promise<void>) => Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   /** Answers a pending card no over RPC, as the app's sealed frame does (a step's clean-up of a card it left waiting). */
   denyCard(id: string): Promise<void>;
+  /** Sets the app's dark or light for a render (the run's appearance file); only a run that renders gives one. */
+  setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   history(session: string): Promise<Ev[]>;

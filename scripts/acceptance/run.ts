@@ -3286,6 +3286,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       inspectTurn: (s, text, ms, inspect) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log }, inspect: async () => inspect() }),
       history: (s) => history(rpc, s),
       appCli: (words) => appCli(words),
+      setAppearance: (scheme) => writeFileSync(appearanceFile, scheme),
     };
     for (const [name, run] of [
       [EXAMPLE_NOTES_STEP, () => exampleNotesStep(exampleCtx, session!)],
