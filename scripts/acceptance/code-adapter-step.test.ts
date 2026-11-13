@@ -24,3 +24,29 @@ test("the fake answers a keyed streamed turn, refuses a request without the key,
     fake.stop();
   }
 });
+
+test("the OpenAI-wire verdict: its wire's path, the key, its model and the reply; each missing part says what", async () => {
+  const { openAiWireWrong, OPENAI_REPLY } = await import("./code-adapter-step");
+  const base = { provider: "openai", wire: "responses", model: "openai/gpt-4.1-mini" };
+  const req = (o: Partial<{ path: string; model: string; keyMatched: boolean; keyPresent: boolean }> = {}) => ({ path: "/v1/responses", model: "gpt-4.1-mini", keyPresent: true, keyMatched: true, ...o });
+  expect(openAiWireWrong({ ...base, replyText: OPENAI_REPLY, requests: [req()] })).toBeUndefined();
+  expect(openAiWireWrong({ ...base, replyText: "", requests: [req({ path: "/v1/chat/completions" })] })).toContain("never reached its fake's responses");
+  expect(openAiWireWrong({ ...base, replyText: OPENAI_REPLY, requests: [req({ keyMatched: false })] })).toContain("without the key");
+  expect(openAiWireWrong({ ...base, replyText: OPENAI_REPLY, requests: [req({ model: "gpt-4o" })] })).toContain("not gpt-4.1-mini");
+  expect(openAiWireWrong({ ...base, replyText: "else", requests: [req()] })).toContain("isn't in the conversation");
+});
+
+test("the OpenAI-wire fake streams both wires to its key only, and records no key", async () => {
+  const { startFakeOpenAi } = await import("./fake-openai");
+  const fake = startFakeOpenAi({ key: "sk-test-only", reply: "R" });
+  try {
+    const post = (path: string, key?: string) => fetch(`${fake.url}${path}`, { method: "POST", headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify({ model: "m1" }) });
+    expect(await (await post("/v1/responses", "sk-test-only")).text()).toContain("response.output_text.delta");
+    expect(await (await post("/openai/v1/chat/completions", "sk-test-only")).text()).toContain("[DONE]");
+    expect((await post("/v1/responses")).status).toBe(401);
+    expect(fake.requests.map((r) => [r.path, r.model, r.keyMatched])).toEqual([["/v1/responses", "m1", true], ["/openai/v1/chat/completions", "m1", true], ["/v1/responses", "m1", false]]);
+    expect(JSON.stringify(fake.requests)).not.toContain("sk-test-only");
+  } finally {
+    fake.stop();
+  }
+});
