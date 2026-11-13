@@ -4092,14 +4092,10 @@
       "where": "ui"
     },
     "memory.list": {
-      "capability": "memory.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "memory.read": {
-      "capability": "memory.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "bots.list": {
       "capability": "bots.read",

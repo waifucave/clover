@@ -783,8 +783,8 @@ export interface PluginApi {
 
   /** `conversation.read`, `conversation.post`: each gives its own members. */
   readonly conversation?: Partial<ConversationApi>;
-  /** Not served yet. */
-  readonly memory?: NotYet<MemoryApi>;
+  /** Its own bot's memory with no capability (a bot plugin); every bot's with `memory.read`. Read-only. */
+  readonly memory: MemoryApi;
   readonly bots?: BotsApi;
   /** Not served yet. */
   readonly routines?: NotYet<RoutinesApi>;

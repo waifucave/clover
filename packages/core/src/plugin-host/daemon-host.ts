@@ -445,7 +445,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // A point's entries changed as its declaring tree sees them: that tree's own layers hear the point's name
   // (`plugin_point_changed`), and their `points.watch` reads the entries again.
   const offPointEvents = pointChanges({ registry: o.registry, assetUrl: o.assetUrl ?? defaultAssetUrl }, (pluginId, point) => o.emit?.({ type: "plugin_point_changed", pluginId, point }), STORE_CHANGED_MS);
-  const areas = o.areas !== undefined ? areasParts(o.areas) : undefined;
+  const areas = o.areas !== undefined ? areasParts({ home: o.home, ...o.areas }) : undefined;
   // `logs.*`: a plugin's own tree's log files, as `pluginLog` writes them.
   const logs = logsApi({ home: o.home });
   const handlers: ApiHandlers[] = [

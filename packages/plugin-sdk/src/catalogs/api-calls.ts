@@ -80,7 +80,9 @@ export const API_CALLS = {
   "conversation.note": both("conversation.post"), "conversation.send": both("conversation.post"), /** A component's only, and only as the user's own answer (the conversation part answers the question card the user filled
    *  in, through the app's `session.answer`): no host half answers a question as the user. */
   "conversation.answer": { capability: "conversation.post", where: "ui" },
-  "memory.list": notYet(both("memory.read"), NO_SERVICE), "memory.read": notYet(both("memory.read"), NO_SERVICE),
+  /** A bot plugin's own bot's memory needs no capability; any other bot's needs `memory.read`, which the core checks per
+   *  bot (the coordinator's ruling: what the OK card says decides). Read-only. */
+  "memory.list": both(), "memory.read": both(),
   "bots.list": both("bots.read"), "bots.get": both("bots.read"), "bots.watch": both("bots.read"),
   "routines.list": notYet(both("routines.read"), NO_SERVICE), "routines.runs": notYet(both("routines.read"), NO_SERVICE),
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),

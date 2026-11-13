@@ -24,8 +24,11 @@
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
 import { foldTitle } from "@waifucave/clover-plugin-sdk";
-import { USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading } from "@waifucave/clover-protocol";
+import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading } from "@waifucave/clover-protocol";
 import type { UsageLedger } from "../../usage/ledger";
+import { listMemory, readMemory } from "../../bots/memory";
+import { botPaths } from "../../bots/paths";
+import { existsSync } from "node:fs";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { BotSide } from "../../bots/wiring";
 import { computersApiRoutes, filesApiRoutes, filesWatch, type ApiRoute } from "../../computers/api";
@@ -49,6 +52,8 @@ export interface AreaServices {
   grants?(): ReturnType<typeof grantFiles> | undefined;
   /** `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings, each absent where not running. */
   usage?(): { ledger?: Pick<UsageLedger, "rows" | "summary" | "watch">; plans?(): Promise<PlanReading[]> };
+  /** The Clover home (`memory.*` reads `<home>/bots/<bot>/memory/`). */
+  home?: string;
 }
 
 const HISTORY_PAGE_MAX = 500;
@@ -93,6 +98,16 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const node = () => s.node() ?? notRunning("the computer node");
   const links = () => s.links() ?? notRunning("the device links");
   const ledger = () => s.usage?.().ledger ?? notRunning("the usage ledger");
+  /** The memory folder of `bot`, if the caller may read it: its own bot's always, any bot's with `memory.read`. */
+  const memoryOf = (ctx: ApiCallContext, bot: string): string => {
+    if (topPluginIdOf(ctx.pluginId) !== bot && !ctx.record.granted.includes("memory.read")) {
+      throw new ContractError("refused", `${bot}'s memory needs the capability memory.read, which this plugin's OK doesn't list (a bot's own plugin reads its bot's memory without it)`);
+    }
+    if (s.home === undefined) return notRunning("the bots' memory");
+    const dir = botPaths(s.home, bot).memory;
+    if (!(s.bots()?.bots.has(bot) ?? false) && !existsSync(dir)) throw new ContractError("not_found", `no bot ${bot}`);
+    return dir;
+  };
 
   // ---- conversation (D's session host) ----
   const sessionOf = (id: string) => {
@@ -371,6 +386,18 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         offLinks();
       };
       });
+    },
+
+    // ---- memory (lane D's memory folder, read-only) ----
+    // A bot plugin's own bot (the bot whose id is the plugin's top-level id) with no capability: its own data. Any other
+    // bot with `memory.read`, whose OK line says "reads your bots' memories" (the coordinator's ruling: the card decides).
+    "memory.list": (ctx, args) => {
+      const dir = memoryOf(ctx, stringArg(args, 0, "the bot", 64));
+      return listMemory(dir);
+    },
+    "memory.read": (ctx, args) => {
+      const dir = memoryOf(ctx, stringArg(args, 0, "the bot", 64));
+      return readMemory(dir, stringArg(args, 1, "the memory file's path", 4096));
     },
 
     // ---- usage (lane D's ledger, read-only; `usage.read`) ----
