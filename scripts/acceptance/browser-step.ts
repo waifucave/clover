@@ -110,7 +110,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     if (nav.isError) fail(`navigate ${url}: ${nav.text.slice(0, 200)}`);
     if (nav.cards.length > 0) fail(`navigate (a looking verb) raised ${nav.cards.join("; ")}`);
     const page = await browse(ctx, session, { verb: "read" });
-    const m = /\[?\b(e\d+)\b\]?[^\n]*Say hello/.exec(page.text) ?? /Say hello[^\n]*?\[?\b(e\d+)\b/.exec(page.text);
+    // A read lists each element as `<ref> <role> "<name>" at …`: the button's own line, not the first ref on the page (the link's).
+    const m = /\b(e\d+) button "Say hello"/.exec(page.text);
     if (page.isError || m === null) fail(`read of ${url} showed no "Say hello" element: ${page.text.slice(0, 300)}`);
     return m![1]!;
   };
@@ -120,7 +121,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   if (first.cards.length !== 1 || !first.cards[0]!.includes("Always allow")) fail(`the first click on a site raised ${first.cards.length} card(s) (${first.cards.join("; ") || "none"}), not the one card answered with Always allow`);
   // The click reached the button (the page says so), and the page is still the one that was read.
   const afterClick = await browse(ctx, session, { verb: "read" });
-  if (afterClick.isError || !/hello was clicked/.test(afterClick.text)) fail(`the first click did not reach the button: the page reads ${afterClick.text.slice(0, 300)}`);
+  if (afterClick.isError || !/hello was clicked/.test(afterClick.text)) fail(`the first click did not reach the button: the page reads ${afterClick.text.slice(0, 300)}; the click said: ${first.text.slice(0, 200)}; the fixture's last requests: ${fixture.seen.slice(-6).map((r) => r.path).join(" ")}`);
   const again = await browse(ctx, session, { verb: "click", ref });
   if (again.isError || again.cards.length > 0) fail(`the next click on the same site: ${again.cards.length} card(s) (${again.cards.join("; ")}), ${again.text.slice(0, 200)}`);
   const otherRef = await buttonRef(fixture.otherUrl);
