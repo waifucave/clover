@@ -367,6 +367,8 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's c
     const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":4}`);
     const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
     expect(card.fields["what"]).toEqual({ type: "code", code: real });
+    expect(card.fields["reason"]).toBeUndefined();
+    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "clover-code" }, { label: "Started by", value: "You" }, { label: "Folder" }] });
     await approve(w, card.id, "approve");
     await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
     expect(kinds(r.sessionId)).toEqual(["tool"]);
@@ -385,6 +387,33 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's c
     const allowed = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":6}`);
     await waitFor(() => wire(w, allowed.transcript).includes(`${tool} ran with`), "the tool's answer");
     expect(kinds(allowed.sessionId)).toEqual([]);
+  });
+
+  test("a bot's agent: one card, the judge's, saying it's her agent asking and not her, with no always", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask" });
+    const kinds = raised(w);
+    const r = await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
+      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Use it", model: CODE_MODEL, prompt: `CALL mcp__${CODE_BRIDGE}__${short} {"n":7}`,
+    });
+    const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
+    expect(card.bot).toBe("alpha");
+    expect(card.fields["what"]).toEqual({ type: "code", code: real });
+    expect(card.fields["reason"]).toEqual({ type: "text", text: "alpha's agent (clover-code) is asking, not alpha itself." });
+    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "clover-code" }, { label: "Started by", value: "alpha" }, { label: "Folder" }] });
+    expect(card.options.map((o) => o.remember)).toEqual([undefined, undefined]);
+    await approve(w, card.id, "approve");
+    await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
+    expect(kinds(r.sessionId)).toEqual(["tool"]);
+  });
+
+  test("read-only: the call is refused with no card of any kind", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "read-only" });
+    const kinds = raised(w);
+    const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":8}`);
+    await waitFor(() => wire(w, r.transcript).includes("stopReason"), "the turn's end");
+    expect(wire(w, r.transcript)).not.toContain(`${tool} ran with`);
+    expect(kinds(r.sessionId)).toEqual([]);
   });
 
   test("a tool that isn't a plugin's on the bridge still asks on the agent-permission card", async () => {
