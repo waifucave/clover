@@ -285,10 +285,15 @@ export function ordinaryTopFolders(userHome: string, o: {
  *  depth and in any letter case; or inside a fixed PATH folder. A bot's file write there is refused before
  *  any card (bot-check's `runsLater`): at the narrow levels a project outside the roots has none of these in the
  *  sandbox's `denyWrite` (on Linux none of the names; `.clover` nowhere), yet a card's yes would write a run-later file.
- *  Inside the Clover home it is false: the fence holds that. */
+ *  Inside the Clover home it is false: the fence holds that. The home is matched in the spelling it is given in and
+ *  in its real one (a home reached through a link: macOS's /var → /private/var, a linked volume), so a bot's write to
+ *  its scratch named either way isn't read as a project's `.clover`; the path itself is only ever taken as given (a
+ *  `.clover` that is a link into the home is still held). */
 export function runLaterByName(path: string, o: { userHome: string; cloverHome: string; os: Os }): boolean {
   const p = o.os === "windows" ? win32 : posix;
   if (isInsideOrSame(path, o.cloverHome, o.os)) return false;
+  const realHome = (() => { try { return realpathSync.native(o.cloverHome); } catch { return undefined; } })();
+  if (realHome !== undefined && isInsideOrSame(path, realHome, o.os)) return false;
   const segs = path.split(/[\\/]+/).filter((s) => s.length > 0);
   const runAt = (name: string) => {
     const want = name.split("/").filter((s) => s.length > 0);
