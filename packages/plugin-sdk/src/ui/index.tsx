@@ -22,6 +22,9 @@ import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 
 export * from "./bridge";
+// What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
+// React of its own (`clover plugin new`'s UI and point templates do).
+export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
 
 // -------------------------------------------------------------------------------------------------
