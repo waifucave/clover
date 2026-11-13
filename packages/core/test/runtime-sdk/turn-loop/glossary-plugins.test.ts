@@ -49,6 +49,33 @@ function world() {
   return { registry, servers, all };
 }
 
+describe("Glossary: a skills entry that names a folder", () => {
+  // A wrapped skill folder's generated manifest names its one skill's folder (`skills/<name>`); a hand-written one may
+  // name the folders by a glob (`skills/*`). Each folder's SKILL.md is the skill, as `skills/*/SKILL.md` gives it.
+  for (const value of ["skills/arrival-notes", "skills/arrival-notes/", "./skills/*", "skills/*/SKILL.md"]) {
+    test(`${JSON.stringify(value)}: the skill is listed and loads`, async () => {
+      const folder = mkdtempSync(join(tmpdir(), "clover-d-glossary-folder-"));
+      dirs.push(folder);
+      mkdirSync(join(folder, "skills", "arrival-notes", "scripts"), { recursive: true });
+      writeFileSync(join(folder, "skills", "arrival-notes", "SKILL.md"), "---\nname: Arrival notes\ndescription: Notes on what arrived\n---\nARRIVAL-BODY\n");
+      writeFileSync(join(folder, "skills", "arrival-notes", "scripts", "note.md"), "not a skill\n");
+      const record = { id: "skill-arrival-notes", name: "Arrival notes", state: "running", children: [], provenance: { by: "user-app" }, manifest: {} };
+      const registry = {
+        entries: (point: string) => (point === "skills" ? [{ point, pluginId: record.id, ref: "skills/0", value, state: "active" }] : []),
+        get: (id: string) => (id === record.id ? { ...record, folder } : undefined),
+        list: () => [record],
+        points: () => [],
+      } as never;
+      const tool = glossaryTool({ tools: () => [], registry, servers: () => [], bot: "alpha" });
+      const found = await tool.run({ query: "arrival notes" });
+      expect(found.text).toContain("skill-arrival-notes:Arrival notes");
+      expect(found.text).not.toContain("note.md");
+      const loaded = await tool.run({ load: "skill-arrival-notes:Arrival notes" });
+      expect(loaded.text).toContain("ARRIVAL-BODY");
+    });
+  }
+});
+
 describe("Glossary: a plugin is the way into what it offers", () => {
   test("loading the video editor answers its state, its instructions and an index, and makes its own 37 tools callable (not its children's)", async () => {
     const w = world();
