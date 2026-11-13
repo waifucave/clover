@@ -119,6 +119,7 @@ export function nodeParts(o: {
   return {
     terminals: approvals ? { confirmPaste: confirmPasteVia(approvals, o.computer) } : {},
     reviewer: peerReviewer(o.reviewer, o.log),
-    cardRecord: (id) => approvals?.get(id),
+    // A broker (or a late-bound proxy for one) without `get` finds no card: a clean "no such card", not a TypeError.
+    cardRecord: (id) => (typeof approvals?.get === "function" ? approvals.get(id) : undefined),
   };
 }
