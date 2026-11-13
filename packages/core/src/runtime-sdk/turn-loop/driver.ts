@@ -188,7 +188,7 @@ export interface BotDriverDeps {
   observe?: {
     turn?(ctx: BotSessionContext, origin: TurnOrigin): void;
     input?(ctx: BotSessionContext, input: TurnInput): void;
-    toolResult?(ctx: BotSessionContext, tool: string, response: unknown): void;
+    toolResult?(ctx: BotSessionContext, tool: string, response: unknown, input?: unknown): void;
     /** How many background commands and monitors the session's runtime runs now, at each change (0 when it closes):
      *  lane C's link-race interim (a file tool's write inside the shell's folders isn't contained while one runs). */
     tasks?(ctx: BotSessionContext, live: number): void;
@@ -726,7 +726,7 @@ export class BotSessionDriver implements SessionDriver {
         // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
         const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch, input.tool_input);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
-        try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response); } catch { /* an observer never fails the call */ }
+        try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response, input.tool_input); } catch { /* an observer never fails the call */ }
         // A core tool asked for the turn to end here (`#continueWith`): the runtime stops after this round, and `turn`
         // goes on in a new runtime turn.
         const stop = this.#continueWith !== undefined ? { continue: false, stopReason: "Clover continues this turn under a changed sandbox." } : {};

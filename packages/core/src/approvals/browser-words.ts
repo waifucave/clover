@@ -11,16 +11,27 @@ const MAX_ELEMENTS = 500;
 const NAME_COLUMNS = 60;
 const TEXT_COLUMNS = 60;
 
+/** The header the tool's `read` writes above its element list. */
+const ELEMENTS_HEADER = "Interactive elements: ref, role, name";
+
 /** One element line of the tool's `read`: ref, role, then the quoted name, then the rest (value, flags, box). */
 const ELEMENT_LINE = /^(e\d{1,9}) ([a-z][\w-]*)(?: "((?:[^"\\]|\\.)*)")?(?: |$)(.*)$/;
 
 export function parseReadElements(text: string): Map<string, ReadElement> {
   const out = new Map<string, ReadElement>();
-  for (const raw of text.split("\n")) {
+  const lines = text.split("\n");
+  // Only the element list the tool itself writes: after its header line and before the page's own text, which is the
+  // page's to word however it likes (a post saying `e12 button "Cancel"` is not an element).
+  const start = lines.findIndex((l) => l.startsWith(ELEMENTS_HEADER));
+  if (start < 0) return out;
+  for (const raw of lines.slice(start + 1)) {
+    if (raw === "Page text:" || raw === "") break;
     const m = ELEMENT_LINE.exec(raw.trim());
     if (m === null) continue;
+    // The first line for a ref stands.
+    if (out.has(m[1]!)) continue;
     const rest = m[4] ?? "";
-    out.set(m[1]!, { role: m[2]!, name: m[3] ?? "", secure: rest.includes("password or payment field") });
+    out.set(m[1]!, { role: m[2]!, name: (m[3] ?? "").replace(/\\(.)/g, "$1"), secure: rest.includes("password or payment field") });
     if (out.size >= MAX_ELEMENTS) break;
   }
   return out;
@@ -40,7 +51,7 @@ export class ReadElements {
     };
     walk(response, 0);
     const found = new Map<string, ReadElement>();
-    for (const t of texts) for (const [k, v] of parseReadElements(t)) found.set(k, v);
+    for (const t of texts) for (const [k, v] of parseReadElements(t)) if (!found.has(k)) found.set(k, v);
     if (found.size === 0) return;
     this.#bySession.delete(sessionId);
     this.#bySession.set(sessionId, found);

@@ -619,9 +619,9 @@ export function formatRead(tab: string, r: PageRead, shot: Shot | undefined): st
     lines.push(`Interactive elements: ref, role, name, then the box as x,y width×height in the view's pixels.${scale}`);
     for (const e of r.elements) {
       const parts = [e.ref, e.role];
-      if (e.name !== "") parts.push(`"${e.name}"`);
+      if (e.name !== "") parts.push(`"${e.name.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
       if (e.secure === true) parts.push("(password or payment field: never typed into or read)");
-      else if (e.value !== undefined) parts.push(`value "${e.value}"`);
+      else if (e.value !== undefined) parts.push(`value "${e.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
       if (e.checked === true) parts.push("checked");
       else if (e.checked === false) parts.push("not checked");
       else if (e.checked === "mixed") parts.push("partly checked");
