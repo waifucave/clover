@@ -22,7 +22,7 @@ const names = readdirSync(SKILLS).sort();
 const text = (name: string) => readFileSync(join(SKILLS, name, "SKILL.md"), "utf8");
 const calls = API_CALLS as Record<string, ApiCallInfo>;
 
-const TOOL_NAMES = ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus"];
+const TOOL_NAMES = ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "AppScreenshot"];
 /** The framing variables a bot's layout sets for Clover's own avatar renderers (plugin-ui, "Fitting the space you get"). */
 const AVATAR_FRAMING = ["--clover-avatar-framing", "--clover-avatar-crop", "--clover-avatar-headroom"];
 const ENTRY = "building-plugins";
@@ -290,4 +290,20 @@ test("plugin-loop's Glossary lines match what loading a plugin answers", () => {
   expect(flat).toContain("Give your plugin's MCP server an `instructions` file (`contributes.mcpServers.<name>.instructions`");
   expect(flat).toContain("a plugin with 50 tools or fewer has them callable at once");
   expect(flat).toContain("with its state and a line saying the status tool has its log");
+});
+
+// The screenshot tool as the skills give it, held to the core's (lane D's bots/app-screenshot.ts): its name, its sizes
+// and the targets it takes. Fails on a build without it.
+test("the screenshot tool's sizes and targets are the core's", () => {
+  const core = readFileSync(join(ROOT, "packages/core/src/bots/app-screenshot.ts"), "utf8");
+  expect(core).toContain('export const APP_SCREENSHOT_TOOL = "AppScreenshot";');
+  expect(core).toContain("SCREENSHOT_SIZES = { wide: { width: 1280, height: 820 }, narrow: { width: 860, height: 820 } }");
+  expect(core).toContain("SCREENSHOT_MAX = { width: 2560, height: 1640 }");
+  const render = readFileSync(join(ROOT, "apps/desktop/src/main/render.ts"), "utf8");
+  expect(render).toContain('export const RENDER_TARGETS = "app:<plugin id or page key>, bot:<id>, plugins, archive, code, window";');
+  const entry = text("building-plugins").replace(/\s+/g, " ");
+  expect(entry).toContain("`app:<plugin id or page key>`, `bot:<id>`, `plugins`, `archive`, `code`, or `window`");
+  expect(entry).toContain('`"wide"` (1280x820, the default), `"narrow"` (860x820) or `{ width, height }` up to 2560x1640');
+  const loop = text("plugin-loop").replace(/\s+/g, " ");
+  expect(loop).toContain("take the screenshot tool of it (`app:<your plugin id or page key>`) both `\"wide\"` and `\"narrow\"`");
 });
