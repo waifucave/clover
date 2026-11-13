@@ -50,11 +50,10 @@ export function VoiceSection() {
       const on = (settings as { voice?: { speakReplies?: boolean } } | null | undefined)?.voice?.speakReplies;
       if (live) setSpeak(on !== false);
     };
+    // Read when the section opens (a layer hears no settings events; the stage's chip changes it only outside Settings).
     void Promise.resolve(core.call("ui.settings", {})).then((r) => apply((r as { settings?: unknown } | undefined)?.settings ?? r), () => undefined);
-    const off = core.on("ui_settings_changed", (e) => apply((e as { settings?: unknown }).settings));
     return () => {
       live = false;
-      off();
     };
   }, [core]);
 
