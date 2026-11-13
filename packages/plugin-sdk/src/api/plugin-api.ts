@@ -803,8 +803,8 @@ export interface PluginApi {
   readonly terminal?: TerminalApi;
   /** Components only, of the bundled `clover` tree. */
   readonly plugins?: PluginsApi;
-  /** Not served yet. */
-  readonly usage?: NotYet<UsageApi>;
+  /** `usage.read`: the usage rows and plan readings, read-only. */
+  readonly usage?: UsageApi;
   /** Its own tree's logs with no capability; Clover's and every other plugin's with `logs.read`. */
   readonly logs: LogsApi;
   readonly notify?: NotifyApi;

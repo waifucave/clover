@@ -121,8 +121,9 @@ export const API_CALLS = {
   "shell.go": { capability: "shell.control", where: "ui" }, "shell.openSettings": { capability: "shell.control", where: "ui" }, "shell.dragWindow": { capability: "shell.control", where: "ui" }, "shell.provide": { capability: "shell.control", where: "ui" },
   /** Components only, of the bundled `clover` tree (the plugin index browser). */
   "plugins.install": { capability: "plugins.install", where: "ui" },
-  "usage.rows": notYet(both("usage.read"), NO_SERVICE), "usage.plans": notYet(both("usage.read"), NO_SERVICE),
-  "usage.summary": notYet(both("usage.read"), NO_SERVICE), "usage.watch": notYet(both("usage.read"), NO_SERVICE),
+  /** Lane D's usage rows and this computer's plan readings, read-only. */
+  "usage.rows": both("usage.read"), "usage.plans": both("usage.read"),
+  "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
   /** A plugin's own tree's logs need no capability; Clover's own (`"core"`) and any other plugin's need `logs.read`,
    *  which the core checks per source (the coordinator's ruling: what the OK card says decides). */
   "logs.read": both(), "logs.follow": both(),

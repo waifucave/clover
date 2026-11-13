@@ -4371,23 +4371,19 @@
     },
     "usage.rows": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "usage.plans": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "usage.summary": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "usage.watch": {
       "capability": "usage.read",
-      "where": "both",
-      "notYet": "no service of the core answers it for plugins yet"
+      "where": "both"
     },
     "logs.read": {
       "where": "both"

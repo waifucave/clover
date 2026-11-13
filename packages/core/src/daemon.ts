@@ -50,7 +50,7 @@ import { createCloverServer, laneMethodHandlers, type CloverHandler, type Clover
 import { appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
-import { usagePlansMethods } from "./usage/rpc";
+import { planReadings, usagePlansMethods } from "./usage/rpc";
 import { cardMethods } from "./approvals/card-methods";
 import { lateAgentMethods } from "./agents/rpc";
 import { commandMethods } from "./registry/commands";
@@ -3879,6 +3879,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined,
         emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
+        // `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings.
+        usage: () => ({
+          ...(daemonParts?.usage ? { ledger: daemonParts.usage } : {}),
+          ...(usage === undefined ? {} : { plans: () => planReadings({ readers: usage.service, computer: () => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "this-computer") }) }),
+        }),
       },
       // A host of its own that runs programs gets the picks in its fence, and starts again when they change.
       picked: (id) => pluginGrants.fencePaths(id),

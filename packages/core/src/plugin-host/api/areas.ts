@@ -24,7 +24,8 @@
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
 import { foldTitle } from "@waifucave/clover-plugin-sdk";
-import type { BotView, Caller, DeviceView } from "@waifucave/clover-protocol";
+import { USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading } from "@waifucave/clover-protocol";
+import type { UsageLedger } from "../../usage/ledger";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { BotSide } from "../../bots/wiring";
 import { computersApiRoutes, filesApiRoutes, filesWatch, type ApiRoute } from "../../computers/api";
@@ -46,6 +47,8 @@ export interface AreaServices {
   /** The files the user picked in a plugin's page (`grant:<uuid>` paths, `fence/plugin-grants.ts`): its host half's
    *  `files.*` on them, and `files.path`. Absent: such a path is refused. */
   grants?(): ReturnType<typeof grantFiles> | undefined;
+  /** `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings, each absent where not running. */
+  usage?(): { ledger?: Pick<UsageLedger, "rows" | "summary" | "watch">; plans?(): Promise<PlanReading[]> };
 }
 
 const HISTORY_PAGE_MAX = 500;
@@ -89,6 +92,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const side = () => s.bots() ?? notRunning("the bot side");
   const node = () => s.node() ?? notRunning("the computer node");
   const links = () => s.links() ?? notRunning("the device links");
+  const ledger = () => s.usage?.().ledger ?? notRunning("the usage ledger");
 
   // ---- conversation (D's session host) ----
   const sessionOf = (id: string) => {
@@ -367,6 +371,34 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         offLinks();
       };
       });
+    },
+
+    // ---- usage (lane D's ledger, read-only; `usage.read`) ----
+    "usage.rows": (_ctx, args) => {
+      const q = USAGE_METHODS.usageRows.params.safeParse(args[0] ?? {});
+      if (!q.success) throw new ContractError("invalid", "usage.rows takes { since, until?, computer?, source?, bot?, session?, cursor?, limit? }");
+      const d = q.data;
+      return ledger().rows({
+        since: d.since, ...(d.until === undefined ? {} : { until: d.until }), ...(d.computer === undefined ? {} : { computer: d.computer }),
+        ...(d.source === undefined ? {} : { source: d.source }), ...(d.bot === undefined ? {} : { bot: d.bot }), ...(d.session === undefined ? {} : { session: d.session }),
+        ...(d.cursor === undefined ? {} : { cursor: d.cursor }), ...(d.limit === undefined ? {} : { limit: d.limit }),
+      });
+    },
+    "usage.summary": (_ctx, args) => {
+      const q = USAGE_METHODS.usageSummary.params.safeParse(args[0] ?? {});
+      if (!q.success) throw new ContractError("invalid", "usage.summary takes { from, to, groupBy, bot?, session? }");
+      const d = q.data;
+      return ledger().summary({ from: d.from, to: d.to, groupBy: d.groupBy, ...(d.bot === undefined ? {} : { bot: d.bot }), ...(d.session === undefined ? {} : { session: d.session }) });
+    },
+    "usage.plans": async () => {
+      const plans = s.usage?.().plans;
+      if (plans === undefined) return notRunning("the usage service");
+      return plans();
+    },
+    "usage.watch": (ctx, args) => {
+      const listener = listenerArg<number>(args, 0);
+      const l = ledger();
+      return watch(ctx, () => l.watch((since) => listener(since)));
     },
 
     "files.stat": route(files, "files.stat"),
