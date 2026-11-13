@@ -5,6 +5,7 @@
 import { createPrivateKey, randomUUID, sign as nodeSign } from "node:crypto";
 import { fromBase64Url, toBase64Url, utf8 } from "./bytes";
 import { generateEd25519, verifyEd25519 } from "./keys";
+import { isStrictX25519PublicKey } from "./x25519-strict";
 import { deviceIdFor } from "../contracts/device-registry";
 import { mintStatement, registerStatement, type AccountDevice } from "./account";
 
@@ -63,6 +64,8 @@ export function startFakeAccountService(opts: { authUrl: string; anonKey: string
         if (!d || typeof d.id !== "string" || typeof d.publicKey !== "string" || typeof d.boxKey !== "string" || !fresh(b.t)) return Response.json({ error: "bad_request" }, { status: 400 });
         if ((await deviceIdFor(new Uint8Array(Buffer.from(d.publicKey, "base64")))) !== d.id) return Response.json({ error: "bad_request" }, { status: 400 });
         if (typeof d.name !== "string" || typeof d.kind !== "string") return Response.json({ error: "bad_request" }, { status: 400 });
+        const box = fromBase64Url(d.boxKey);
+        if (!box || !isStrictX25519PublicKey(box)) return Response.json({ error: "bad_request" }, { status: 400 });
         if (!sigOk(d.publicKey, registerStatement(sub, { id: d.id, publicKey: d.publicKey, boxKey: d.boxKey, name: d.name, kind: d.kind, ...(typeof d.os === "string" ? { os: d.os } : {}) }, b.t!), b.sig)) return Response.json({ error: "unauthorized" }, { status: 401 });
         const existing = list.find((x) => x.id === d.id);
         if (existing?.revokedAt !== undefined) return Response.json({ error: "revoked" }, { status: 403 });

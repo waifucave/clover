@@ -59,6 +59,12 @@ export interface TestDevice {
   sign(data: Uint8Array): Promise<string>;
 }
 
+/** A real X25519 public key, raw: the service refuses arbitrary bytes and the low-order points. */
+export async function x25519PublicKey(): Promise<Uint8Array> {
+  const pair = (await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as CryptoKeyPair;
+  return new Uint8Array((await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer);
+}
+
 export async function newDevice(): Promise<TestDevice> {
   const pair = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
   const raw = new Uint8Array((await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer);
@@ -66,7 +72,7 @@ export async function newDevice(): Promise<TestDevice> {
     id: await deviceIdFor(raw),
     publicKey: btoa(String.fromCharCode(...raw)),
     rawPublicKey: raw,
-    boxKey: b64u(crypto.getRandomValues(new Uint8Array(32))),
+    boxKey: b64u(await x25519PublicKey()),
     sign: async (data) => b64u(new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, pair.privateKey, data as Uint8Array<ArrayBuffer>))),
   };
 }

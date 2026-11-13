@@ -16,6 +16,7 @@
 
 import { b64u, concatBytes, fromB64u, sha256, utf8 } from "../../shared/encoding";
 import { pairStatement, signerFromSeed, type Signer } from "@waifucave/clover-service-handshake/client";
+import { isStrictX25519PublicKey } from "../../shared/x25519-strict";
 import { EFF_SHORT_WORDLIST } from "./words";
 
 // ---- invites ----
@@ -174,8 +175,11 @@ export async function pairingResult(
   transcript: Transcript,
   inviteSecret: Uint8Array,
 ): Promise<{ secret: Uint8Array; words: string[] }> {
-  const peer = await crypto.subtle.importKey("raw", fromB64u(theirs), { name: "X25519" }, false, []);
+  const raw = fromB64u(theirs);
+  if (!isStrictX25519PublicKey(raw)) throw new Error("not a usable X25519 key");
+  const peer = await crypto.subtle.importKey("raw", raw as Uint8Array<ArrayBuffer>, { name: "X25519" }, false, []);
   const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: peer } as unknown as AlgorithmIdentifier, own, 256));
+  if (shared.every((b) => b === 0)) throw new Error("not a usable X25519 key");
   const bytes = transcriptBytes(transcript);
   const digest = await sha256(bytes);
   const secret = await hkdf(concatBytes(shared, inviteSecret), digest, "clover web pair secret");

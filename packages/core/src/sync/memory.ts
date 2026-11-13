@@ -47,6 +47,7 @@ import type { DeviceRecord, DeviceChange } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { SecretStore } from "../contracts/secret-store";
 import { sealToBoxKey } from "../identity/box-key";
+import { isStrictX25519PublicKey } from "../identity/x25519-strict";
 import { type Bytes, fromBase64, fromBase64Url, fromUtf8, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { botSegment } from "../sessions/ids";
@@ -182,7 +183,8 @@ export class MemorySync {
     this.#limits = { ...MEMORY_LIMITS, ...o.limits };
     this.#ring = ring;
     const peers = readJson(this.#peersFile()) as { boxKeys?: Record<string, string> } | undefined;
-    this.#peerBoxKeys = { ...(peers?.boxKeys ?? {}) };
+    // A key kept before keys were checked, and not usable, is dropped: that peer's mail waits for its next hello.
+    this.#peerBoxKeys = Object.fromEntries(Object.entries(peers?.boxKeys ?? {}).filter(([, k]) => usableBoxKey(k) !== undefined));
   }
 
   static async start(o: MemorySyncOptions): Promise<MemorySync> {
@@ -379,8 +381,8 @@ export class MemorySync {
   }
 
   #learnBoxKey(peer: string, key: unknown): void {
-    if (typeof key !== "string" || fromBase64Url(key)?.length !== 32 || this.#peerBoxKeys[peer] === key) return;
-    this.#peerBoxKeys[peer] = key;
+    if (usableBoxKey(key) === undefined || this.#peerBoxKeys[peer] === key) return;
+    this.#peerBoxKeys[peer] = key as string;
     writeJsonAtomic(this.#peersFile(), { v: 1, boxKeys: this.#peerBoxKeys });
   }
 
@@ -758,20 +760,31 @@ export class MemorySync {
         continue;
       }
       if (!this.#isComputer(peer)) continue;
-      const kid = (await this.#ring.sealingKey([peer])).kid;
-      const keys = this.#ring.sharedWith(peer, [kid]);
-      for (const [bot, wanted] of bots) {
-        // Pieces are cut by their sealed size, measured (#232's review, B4): what isn't kept stays queued and goes
-        // again, so nothing is lost to a refused piece.
-        for (const piece of this.#mailPieces(peer, to, bot, [...wanted], kid, keys)) {
-          try {
-            await box.put({ to: peer, id: piece.id, sealed: piece.sealed, expiresAt: Date.now() + MAIL_TTL_MS });
-          } catch (e) {
-            this.#log(`memory mail for ${peer} wasn't kept (it goes again): ${errText(e)}`);
-            this.#queueMail(peer, bot, piece.keys);
-            retry = true;
+      // One peer's failure (its sealing key, a piece that won't seal) leaves the others their mail, and its own mail
+      // goes again: the queue was cleared above, so nothing it held may be dropped here.
+      const left = new Map([...bots].map(([bot, wanted]) => [bot, new Set(wanted)]));
+      try {
+        const kid = (await this.#ring.sealingKey([peer])).kid;
+        const keys = this.#ring.sharedWith(peer, [kid]);
+        for (const [bot, wanted] of bots) {
+          // Pieces are cut by their sealed size, measured (#232's review, B4): what isn't kept stays queued and goes
+          // again, so nothing is lost to a refused piece.
+          for (const piece of this.#mailPieces(peer, to, bot, [...wanted], kid, keys)) {
+            for (const k of piece.keys) left.get(bot)?.delete(k);
+            try {
+              await box.put({ to: peer, id: piece.id, sealed: piece.sealed, expiresAt: Date.now() + MAIL_TTL_MS });
+            } catch (e) {
+              this.#log(`memory mail for ${peer} wasn't kept (it goes again): ${errText(e)}`);
+              this.#queueMail(peer, bot, piece.keys);
+              retry = true;
+            }
           }
+          left.delete(bot);
         }
+      } catch (e) {
+        this.#log(`memory mail for ${peer} couldn't be sealed (it goes again): ${errText(e)}`);
+        for (const [bot, wanted] of left) if (wanted.size > 0) this.#queueMail(peer, bot, wanted);
+        retry = true;
       }
     }
     if (retry && !this.#closed && !this.#mailTimer) {
@@ -860,9 +873,8 @@ export class MemorySync {
   }
 
   #boxKeyOf(peer: string): Bytes | undefined {
-    const text = this.#o.registry.boxKey?.(peer) ?? this.#peerBoxKeys[peer];
-    const k = text ? fromBase64Url(text) : null;
-    return k && k.length === 32 ? k : undefined;
+    // A key that isn't usable counts as none (the registry's first, then the one the peer's hello gave).
+    return usableBoxKey(this.#o.registry.boxKey?.(peer)) ?? usableBoxKey(this.#peerBoxKeys[peer]);
   }
 
   // ---- state ----
@@ -1036,4 +1048,11 @@ function conflictPath(rel: string, tag: string): { names: string[]; rel: string;
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** A box key's bytes when it is base64url of a strict X25519 public key; undefined otherwise. */
+function usableBoxKey(key: unknown): Bytes | undefined {
+  if (typeof key !== "string") return undefined;
+  const raw = fromBase64Url(key);
+  return raw && isStrictX25519PublicKey(raw) ? raw : undefined;
 }

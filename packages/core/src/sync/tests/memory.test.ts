@@ -49,7 +49,7 @@ interface Computer {
   restart(): Promise<void>;
 }
 
-async function world(names: string[], opts: { limits?: Record<string, Partial<MemoryLimits>>; mail?: boolean; mailbox?: (relay: MemoryMailRelay, device: string) => SyncMailbox } = {}) {
+async function world(names: string[], opts: { limits?: Record<string, Partial<MemoryLimits>>; mail?: boolean; mailbox?: (relay: MemoryMailRelay, device: string) => SyncMailbox; keyFor?: (name: string, key: ClusterDevice["key"]) => { sign(data: Uint8Array): Uint8Array } } = {}) {
   const c = await makeLinkCluster(names, { clock });
   stops.push(() => c.close());
   const relay = new MemoryMailRelay();
@@ -64,7 +64,7 @@ async function world(names: string[], opts: { limits?: Record<string, Partial<Me
     const box = BoxKey.generate();
     const store = new MemorySecretStore();
     const start = () => MemorySync.start({
-      home, self: d.id, key: d.key, boxKey: box, store, transport: d.transport, registry: d.registry, now: () => now,
+      home, self: d.id, key: opts.keyFor?.(n, d.key) ?? d.key, boxKey: box, store, transport: d.transport, registry: d.registry, now: () => now,
       ...(opts.mail ? { mailbox: opts.mailbox?.(relay, d.id) ?? relay.for(d.id), mailDelayMs: 0, mailRetryMs: 100 } : {}),
       ...(opts.limits?.[n] ? { limits: opts.limits[n] } : {}),
     });
@@ -193,6 +193,56 @@ describe("a bot's memory across computers", () => {
     expect(await w.at("Laptop").sync.takeMail()).toBe(1);
     expect(w.at("Laptop").read("MEMORY.md")).toBe("a secret only the laptop may read\n");
     expect(w.relay.held(w.at("Laptop").d.id)).toEqual([]);
+  });
+
+  test("a peer's box key that isn't usable counts as none: its mail waits, and the others' still goes", async () => {
+    const w = await world(["Studio", "Laptop", "Server"], { mail: true });
+    await w.linkAll();
+    w.at("Studio").write("seed.md", "x\n");
+    await waitFor(() => w.at("Laptop").read("seed.md") === "x\n" && w.at("Server").read("seed.md") === "x\n");
+    // A key kept before keys were checked: the laptop's is a low-order point in the studio's peers file.
+    const peersFile = join(w.at("Studio").home, "sync", "memory-peers.json");
+    const peers = JSON.parse(readFileSync(peersFile, "utf8")) as { v: 1; boxKeys: Record<string, string> };
+    peers.boxKeys[w.at("Laptop").d.id] = Buffer.from("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800", "hex").toString("base64url");
+    writeFileSync(peersFile, JSON.stringify(peers));
+    for (const n of ["Laptop", "Server"]) w.c.net.partition(w.at(n).d.key.publicKey);
+    await waitFor(() => !w.at("Studio").d.transport.links().some((l) => l.up));
+    await w.at("Studio").restart();
+    w.at("Studio").write("MEMORY.md", "for the server\n");
+    await waitFor(() => w.relay.held(w.at("Server").d.id).length === 1);
+    expect(w.relay.held(w.at("Laptop").d.id)).toEqual([]);
+  });
+
+  test("mail that can't be sealed for one peer goes again, and the other peer's goes at once", async () => {
+    const fail = { next: false };
+    const w = await world(["Studio", "Laptop", "Server"], {
+      mail: true,
+      keyFor: (n, key) => n !== "Studio" ? key : {
+        sign: (data) => {
+          if (fail.next && fromUtf8(data).startsWith("clover-memory-v1 mail")) {
+            fail.next = false;
+            throw new Error("the signer is busy");
+          }
+          return key.sign(data);
+        },
+      },
+    });
+    await w.linkAll();
+    w.at("Studio").write("seed.md", "x\n");
+    await waitFor(() => w.at("Laptop").read("seed.md") === "x\n" && w.at("Server").read("seed.md") === "x\n");
+    for (const n of ["Laptop", "Server"]) w.c.net.partition(w.at(n).d.key.publicKey);
+    await waitFor(() => !w.at("Studio").d.transport.links().some((l) => l.up));
+    fail.next = true;
+    w.at("Studio").write("MEMORY.md", "for both\n");
+    // The first peer's piece fails to seal: re-queued, it goes on the retry timer; the other's isn't held back.
+    await waitFor(() => w.relay.held(w.at("Laptop").d.id).length === 1 && w.relay.held(w.at("Server").d.id).length === 1);
+    expect(fail.next).toBe(false);
+    w.c.net.partition(w.at("Studio").d.key.publicKey);
+    for (const n of ["Laptop", "Server"]) {
+      w.c.net.heal(w.at(n).d.key.publicKey);
+      expect(await w.at(n).sync.takeMail()).toBe(1);
+      expect(w.at(n).read("MEMORY.md")).toBe("for both\n");
+    }
   });
 
   test("mail its sender's key didn't sign is dropped", async () => {

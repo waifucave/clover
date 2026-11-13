@@ -18,6 +18,7 @@ import { bearerToken } from "../../shared/account-token";
 import { b64u, fromB64, fromB64u } from "../../shared/encoding";
 import { errorResponse, json, readJsonObject } from "../../shared/http";
 import { addressKey } from "../../shared/web";
+import { isStrictX25519PublicKey } from "../../shared/x25519-strict";
 import type { DeviceInput, Reply } from "./account-do";
 import type { Env } from "./env";
 import { memorySigner, NotConfigured, signerFor } from "./keys";
@@ -114,7 +115,7 @@ function standardB64(bytes: Uint8Array): string {
   return b64u(bytes).replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((3 - (bytes.length % 3)) % 3);
 }
 
-/** The device in a registration, checked: its id is its key's (lane B's deviceIdFor), its box key 32 bytes. */
+/** The device in a registration, checked: its id is its key's (lane B's deviceIdFor), its box key a usable X25519 key. */
 async function deviceInput(value: unknown): Promise<{ input: DeviceInput; key: Uint8Array; signed: RegisterFields } | { error: string }> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { error: "bad_request" };
   const d = value as Record<string, unknown>;
@@ -127,7 +128,7 @@ async function deviceInput(value: unknown): Promise<{ input: DeviceInput; key: U
   } catch {
     return { error: "bad_request" };
   }
-  if (boxKey.length !== 32) return { error: "bad_request" };
+  if (!isStrictX25519PublicKey(boxKey)) return { error: "bad_request" };
   const name = d.name;
   if (typeof name !== "string" || name.trim() === "" || [...name].length > LIMITS.maxName || /\p{Cc}/u.test(name)) return { error: "bad_request" };
   if (!(DEVICE_KINDS as readonly unknown[]).includes(d.kind)) return { error: "bad_request" };

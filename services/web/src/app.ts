@@ -177,12 +177,18 @@ export class Companion {
         const message = event.value as PairingMessage;
         chain = chain.then(async () => {
           if (message.type === "pair-words") {
-            const result = await pairingResult(
-              x25519.privateKey,
-              message.x25519,
-              { invitePair: invite.pair, pair, computerKey: invite.computerKey, browserKey: signer.key, computerX25519: message.x25519, browserX25519: x25519.publicKey, code: invite.code },
-              invite.secret,
-            );
+            let result: Awaited<ReturnType<typeof pairingResult>>;
+            try {
+              result = await pairingResult(
+                x25519.privateKey,
+                message.x25519,
+                { invitePair: invite.pair, pair, computerKey: invite.computerKey, browserKey: signer.key, computerX25519: message.x25519, browserX25519: x25519.publicKey, code: invite.code },
+                invite.secret,
+              );
+            } catch {
+              // The computer's X25519 key isn't one to agree a secret with.
+              return settle(() => reject(new PairingError("failed", "the computer's pairing key isn't usable")));
+            }
             secret = result.secret;
             handlers.onWords(result.words, computer);
           } else if (message.type === "paired") {
