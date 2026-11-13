@@ -70,6 +70,7 @@ import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { BROWSER_STEP, browserStep, startBrowserFixture, type BrowserFixture } from "./browser-step";
+import { pluginOnce } from "./plugin-once";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -2628,15 +2629,20 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
     const onIsland = await stageTurn(c, session!, "calm", { cdp, log: join(logs, "app.log"), onIsland: true });
     if (onIsland.cards.length === 0) fail("the island clause's tool turn raised no card");
     pressed += `; tool card on the island: ${onIsland.cards.join("; ")}`;
-    const echo = "acceptance-echo";
-    const installed = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: join(import.meta.dir, "fixtures", echo) } }, 60_000);
-    try {
-      const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
-      pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
-    } finally {
-      const gone = await c!.request<{ card?: string }>("plugin.remove", { id: installed.id }).catch(() => undefined);
-      if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
-    }
+    // The full table installed acceptance-echo in an earlier row (the hook and stdio rows); alone (`--only-stage`) the
+    // home is fresh. Installed here only when it isn't there: its OK card is pressed on the island, and it is removed
+    // after. Already installed, it is left as it is and the plugin-ok clause has no card to press (said in the row).
+    const echo = await pluginOnce(c, "acceptance-echo", join(import.meta.dir, "fixtures", "acceptance-echo"));
+    if (echo.installedHere) {
+      const installed = echo;
+      try {
+        const ok = await until(`${installed.id}'s OK card`, 30_000, async () => (await cards(c!)).find((k) => k.kind === "plugin-ok" && k.pluginId === installed.id), 300);
+        pressed += `; plugin-ok card on the island: ${await pressOnIsland(cdp, ok, join(logs, "app.log"))}`;
+      } finally {
+        const gone = await c!.request<{ card?: string }>("plugin.remove", { id: installed.id }).catch(() => undefined);
+        if (gone?.card !== undefined) { const k = await until("its removal card", 20_000, async () => (await cards(c!)).find((x) => x.id === gone.card), 300).catch(() => undefined); if (k !== undefined) await approve(c!, k).catch(() => undefined); }
+      }
+    } else pressed += `; plugin-ok card on the island: not pressed (${echo.id} was installed by an earlier row, so its install raises no card)`;
     pressedInHer = pressed;
     // Whole, outside the table (which cuts a long row): every reading and its timing.
     console.error(`acceptance: row ${n} readings: ${pressed}`);
