@@ -142,6 +142,13 @@ describe("plugin-ui and plugin-host name what is real", () => {
 describe("what the skills say isn't there yet is still not there", () => {
   test("the not-served list in the entry skill: each family still has a call the core doesn't serve", () => {
     const line = /These API calls are listed but answer "isn't available yet": ([^(]+)\(/.exec(text(ENTRY).replace(/\n\s*/g, " "));
+    // With every call served the entry skill says so instead, and carries no such list.
+    const unserved = Object.values(calls).some((i) => i.notYet !== undefined);
+    if (!unserved) {
+      expect(line).toBeNull();
+      expect(text(ENTRY)).toContain("Every API call in plugin-catalog is served in this build.");
+      return;
+    }
     expect(line).not.toBeNull();
     const families = [...line![1]!.matchAll(/`([a-z]+)(?:\.\*|\.[a-zA-Z]+)?`/g)].map((m) => m[0].slice(1, -1));
     expect(families.length).toBeGreaterThan(0);

@@ -93,9 +93,11 @@ the user.
 
 - A bot's plugin adds UI only in its own tab; UI anywhere else goes in a child plugin of it (plugin-manifest,
   "Children").
-- `commands[].key` shortcuts aren't bound yet.
+- A command's `key` (`mod+shift+k`) is a default shortcut while the Clover window has the focus; one that clashes with
+  the app's own or another plugin's stays unbound.
 - There is no point for an app page's own menu or context menu.
-- `helper` programs aren't started; `http` MCP servers aren't served (use a `host` or `stdio` server).
-- These API calls are listed but answer "isn't available yet": `browser.*` (plugin-catalog marks them NOT SERVED YET).
-  `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*`, `keys.*` (the clover tree's only) and `commands.run` are
-  served: a plugin's own data (its logs, its own bot's memory and routines, its own commands) needs no capability.
+- `helper` and `host.runtime: "node"` are refused by the check (run a program from the host half, and use
+  `process: "own"` for a process of its own).
+- Every API call in plugin-catalog is served in this build. `memory.*`, `routines.*`, `usage.*`, `logs.*`, `audio.*`,
+  `keys.*` (the clover tree's only) and `commands.run` among them: a plugin's own data (its logs, its own bot's memory
+  and routines, its own commands) needs no capability. `browser.onCdpEvent` is the Clover Browser panel's alone.
