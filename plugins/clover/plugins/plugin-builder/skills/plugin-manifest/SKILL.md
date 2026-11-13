@@ -32,7 +32,7 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 | `onlyBackends` | no | Only these agent backends receive it, e.g. `["claude-code"]`. Rarely needed. |
 | `host` | for host code | `{ "entry": "host/index.ts", "runtime": "bun" }`; see below. |
 | `client` | for components | `{ "entry": "client/index.ts", "css": ["client/style.css"], "isolated": true }`: `isolated` (default false) makes its pages cross-origin isolated, for `SharedArrayBuffer`; see plugin-ui. |
-| `helper` | no | A native program the host would supervise. Not started in this build: don't use it. |
+| `helper` | no | Refused by the check: don't use it. A host half with `programs: true` runs a program instead (plugin-host). |
 | `capabilities` | no | Strings from plugin-catalog ("Capabilities"); each is a line on the OK card. |
 | `settings` | no | The plugin's settings, by key; see below. |
 | `auth` | no | Sign-ins for the plugin's own service; see below. |
@@ -42,8 +42,8 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 
 ### `host`
 
-- `entry`: the module (TypeScript is fine). `runtime`: `bun` (a worker in the shared plugin host, the default) or
-  `node` (a process of its own).
+- `entry`: the module (TypeScript is fine). `runtime`: `bun`, the only one (a worker in the shared plugin host, the
+  default); the check refuses `node`: use `process: "own"` for a process of its own.
 - `process: "own"`: a process of its own under Bun too. Needed for `secrets.get` (plugin-host).
 - `programs: true` (with `process: "own"`, in a top-level plugin only): the host half may run programs on the computer,
   such as ffmpeg, within its own folders and the files the user picks (plugin-host, "Programs"). The OK card says so.

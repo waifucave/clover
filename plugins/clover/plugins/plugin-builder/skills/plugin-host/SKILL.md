@@ -6,7 +6,7 @@ description: The host half of a Clover plugin - what host/index.ts exports (star
 # The host half
 
 `host.entry` is a TypeScript module that Clover's plugin host runs under Bun (a worker, or a process of its own with
-`host.process: "own"` or `runtime: "node"`). It starts when something needs it (a tool call, a component's
+`host.process: "own"`; Bun is the only runtime, and the check refuses `runtime: "node"`). It starts when something needs it (a tool call, a component's
 `host.call`, a hook) unless `host.start` says to start at once.
 
 ## What it exports

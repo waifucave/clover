@@ -79,6 +79,7 @@ the user.
   "Children").
 - `commands[].key` shortcuts aren't bound yet.
 - There is no point for an app page's own menu or context menu.
-- `helper` programs aren't started; `http` MCP servers aren't served (use a `host` or `stdio` server).
+- `helper` and `host.runtime: "node"` are refused by the check (run a program from the host half, and use
+  `process: "own"` for a process of its own); `http` MCP servers aren't served (use a `host` or `stdio` server).
 - These API calls are listed but answer "isn't available yet": `memory.*`, `routines.*`, `usage.*`, `logs.*`,
   `audio.*`, `keys.*`, `commands.run`, `browser.*` (plugin-catalog marks them NOT SERVED YET).
