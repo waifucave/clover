@@ -35,6 +35,7 @@ import { VoiceService, type VoiceServiceOptions } from "../voices/service";
 import { speakReplies } from "../voices/replies";
 import { readUiSettings } from "../plugin-host/ui-settings";
 import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
+import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -71,6 +72,8 @@ export interface BotSideOptions {
   levelOf?: (computer: string) => Level | undefined;
   /** Lane B's plugin workshop (§5.6): `PluginValidate`, `PluginInstall` and `PluginStatus` in a bot's own sessions. */
   workshop?: PluginWorkshop;
+  /** `AppScreenshot` in a bot's own sessions: a look at a place in this computer's app (bots/app-screenshot.ts). */
+  appScreenshot?: AppScreenshotDeps;
   /** This computer's routines (§7): the engine runs when given. */
   routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">> & {
     /** The `webhook.ingress` entries and the plugin host that runs them (lane I's forwarder): webhooks.ts. */
@@ -254,6 +257,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
       // The plugin workshop's tools: a bot's own sessions (its conversation and side threads), never an agent's.
       if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(...workshopToolDefs(o.workshop, { bot, sessionId }));
+      // A look at this computer's app, for the same sessions (the bot builds and fixes what the user sees).
+      if (o.appScreenshot !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(appScreenshotToolDef(o.appScreenshot, { bot }));
       return defs;
     },
     methods: (deps) => {

@@ -79,10 +79,13 @@ async function framesOf(contents: ContentsLike, ms: number): Promise<NonNullable
   return Promise.all(contents.mainFrame.framesInSubtree.map(async (f) => {
     let mount: string | undefined;
     let surface: string | undefined;
+    let sealed: "card" | "placeholder" | undefined;
     try {
       const u = new URL(f.url);
       mount = u.searchParams.get("mount") ?? undefined;
       surface = u.searchParams.get("surface") ?? undefined;
+      // A card's frame says which kind it is (its origin is opaque, its address holds its token): never more.
+      if (u.protocol === "clover-sealed:") sealed = u.host === "placeholder" ? "placeholder" : "card";
     } catch {
       // A frame with no URL yet.
     }
@@ -95,6 +98,7 @@ async function framesOf(contents: ContentsLike, ms: number): Promise<NonNullable
       ...(surface !== undefined ? { surface: surface.slice(0, 128) } : {}),
       ...(sized ? { width: Math.max(0, Math.round(r[0])), height: Math.max(0, Math.round(r[1])), visibility: String(r[2]).slice(0, 32) } : { silent: true }),
       ...(f.osProcessId > 0 ? { pid: f.osProcessId } : {}),
+      ...(sealed !== undefined ? { sealed } : {}),
     };
   }));
 }
@@ -110,7 +114,9 @@ export function blit(base: Buffer, baseSize: Size, top: Buffer, topSize: Size, x
   }
 }
 
-async function captureOne(deps: CaptureDeps, name: string, win: WindowLike, params: AppCaptureParams): Promise<CapturedWindow> {
+/** One window's picture and frames. `fit`: the picture drawn at exactly that many pixels (a render window's asked size,
+ *  whatever the display's scale). */
+export async function captureOne(deps: CaptureDeps, name: string, win: WindowLike, params: AppCaptureParams, fit?: Size): Promise<CapturedWindow> {
   const bounds = win.getBounds();
   const visible = win.isVisible() && !win.isMinimized();
   const offscreen = win.webContents.isOffscreen();
@@ -147,6 +153,7 @@ async function captureOne(deps: CaptureDeps, name: string, win: WindowLike, para
     }
     image = deps.fromBitmap(bitmap, size);
   }
+  if (fit !== undefined && (image.getSize().width !== fit.width || image.getSize().height !== fit.height)) image = image.resize(fit);
   const max = deps.maxPngBytes ?? MAX_PNG_BYTES;
   let png = image.toPNG();
   let reduced = false;

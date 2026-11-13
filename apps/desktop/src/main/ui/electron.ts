@@ -110,6 +110,12 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // itself is 20 crypto-random bytes, so no header gate is needed.
   ses.protocol.handle(SEALED_SCHEME, (request) => {
     const url = new URL(request.url);
+    // A render window's placeholder (`clover-sealed://placeholder/<id>`, runtime.ts): served once, a page with no
+    // token and no answer bridge.
+    if (url.host === "placeholder") {
+      const served = runtime.servePlaceholder(url.pathname.replace(/^\//, "").slice(0, 64));
+      return served === undefined ? notFound() : new Response(served.html, { headers: served.headers });
+    }
     // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
     // single use is the real gate.
     if (url.host !== "card") {
@@ -827,10 +833,14 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // The sealed frames' answer: the sender is the sealed page itself (its own scheme), and the sender's key is what the
   // mint bound (a part's channel, its document's own frame; the fallback's `own`, its window's main frame). The app
   // signs it out of doors and takes the core's answer, with the gate first (B3, B4).
+  // Nothing a render window's page says about a card counts (an answer, a visibility, a press): it has placeholders, never
+  // a minted frame, and this holds even if one ever got a token.
+  const inRender = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => runtime.isRenderWindow(BrowserWindow.fromWebContents(event.sender)?.id);
   handle("clover:sealed-answer", (event, a) => {
     try {
       const f = event.senderFrame;
       if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+      if (inRender(event)) throw new LayerError("a render window answers no card");
       const token = str(a.token, 128);
       const option = str(a.option, 64);
       const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
@@ -856,6 +866,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   on("clover:sealed-visible", (event, a) => {
     const f = event.senderFrame;
     if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    if (inRender(event)) return;
     const token = str(a.token, 128);
     const visible = typeof a.visible === "boolean" ? a.visible : undefined;
     if (token === undefined || visible === undefined) throw new LayerError("bad sealed visibility");
@@ -872,7 +883,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // Checked like the visibility report: the sender is the sealed frame its token was served to, on the channel the mint bound.
   on("clover:sealed-press", (event, a) => {
     const f = event.senderFrame;
-    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) return;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://") || inRender(event)) return;
     const token = str(a.token, 128);
     const what = str(a.what, 24);
     if (token === undefined || what === undefined || !SEALED_PRESS_WORDS.includes(what)) return;
@@ -886,7 +897,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // mint bound to that frame, so a plugin's sealed frame can't size a card window.
   on("clover:sealed-size", (event, a) => {
     const f = event.senderFrame;
-    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) return;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://") || inRender(event)) return;
     const token = str(a.token, 128);
     const height = typeof a.height === "number" && Number.isFinite(a.height) ? Math.min(4000, Math.max(0, Math.round(a.height))) : undefined;
     if (token === undefined || height === undefined) return;

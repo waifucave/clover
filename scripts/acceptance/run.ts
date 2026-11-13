@@ -2096,6 +2096,7 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
       history: (s2) => history(rpc, s2),
+      appCli: (words) => appCli(words),
     };
     record(n, "PASS", await workshopStep(ctx, session));
   } catch (err) {
@@ -3180,6 +3181,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       // Its cards pressed in this app's window (the app that drew them logs to proc.log, not the first app's log).
       turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp: cdp!, log: proc.log } }),
       history: (s) => history(rpc, s),
+      appCli: (words) => appCli(words),
     };
     for (const [name, run] of [
       [EXAMPLE_NOTES_STEP, () => exampleNotesStep(exampleCtx, session!)],

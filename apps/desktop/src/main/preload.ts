@@ -86,7 +86,8 @@ if (isRoot || isLayer) {
       call: (name: string, params?: unknown) => ipcRenderer.invoke("clover:root-call", { name, params }),
     });
   }
-} else if (where === "clover-sealed:") {
+} else if (where === "clover-sealed:" && location.host === "card") {
+  // (A render window's placeholder, `clover-sealed://placeholder/…`, gets nothing: it answers no card.)
   // A sealed frame's page: the token is its own (a single-use channel the store minted), and its answer goes back
   // through the main process's own path — signed there with the answer key, never a plugin's connection's.
   const token = new URLSearchParams(location.search).get("token") ?? "";

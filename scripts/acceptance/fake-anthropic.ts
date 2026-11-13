@@ -58,7 +58,8 @@ export interface FakeRequest {
   stream: boolean;
   tools: string[];
   lastUserText: string;
-  toolResult?: { text: string; isError: boolean };
+  /** The last tool result's text, whether it was an error, and how many images came with it (an `image` block). */
+  toolResult?: { text: string; isError: boolean; images?: number };
   answered: "text" | "tool_use" | "slow" | "stream" | "400" | "401" | "404" | "torn" | "failed";
   /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
    *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
@@ -271,7 +272,10 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const lastSaid = last?.role === "user" ? textOf(lastBlocks.filter((b) => b.type === "text")) : "";
       const carriesMessage = DIRECTIVE.test(lastSaid);
       const result = carriesMessage ? undefined : lastBlocks.find((b) => b.type === "tool_result");
-      if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
+      if (result !== undefined) {
+        const images = Array.isArray(result.content) ? (result.content as Block[]).filter((b) => b.type === "image").length : 0;
+        record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true, ...(images > 0 ? { images } : {}) };
+      }
       const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
       record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
       if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
