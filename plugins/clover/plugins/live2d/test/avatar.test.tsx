@@ -169,7 +169,7 @@ describe("Live2dAvatar", () => {
     expect(errors).toEqual(["The avatar's textures can't be drawn here. | texture 0 is not a PNG"]);
   });
 
-  test("the mouth follows the speech feed, at most 60 frames a second while it speaks and 30 at rest", async () => {
+  test("the mouth follows the speech feed, at most 60 frames a second while it speaks and at rest", async () => {
     const v = fakeView();
     const clock = { t: 0 };
     const feed = new PushedSpeech(() => clock.t);
@@ -177,11 +177,11 @@ describe("Live2dAvatar", () => {
     render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={f.frames} speech={feed} />);
     await settle();
     const draws = () => v.log.filter((l) => l.startsWith("advance")).length;
-    // Quiet: 20 a second while someone is about.
+    // Quiet: every one of a 60 Hz display's frames while someone is about, never two in one.
     const before = draws();
     for (let i = 0; i < 60; i++) f.step(1000 / 60);
-    expect(draws() - before).toBeGreaterThanOrEqual(19);
-    expect(draws() - before).toBeLessThanOrEqual(21);
+    expect(draws() - before).toBeGreaterThanOrEqual(58);
+    expect(draws() - before).toBeLessThanOrEqual(61);
     // A bright, loud vowel for the next second.
     clock.t = 10;
     feed.push(Array.from({ length: 200 }, (_, i) => ({ t: 10 + i * 0.005, rms: 0.3, centroid: 3000 })));
@@ -274,10 +274,10 @@ describe("the entry the manifest names", () => {
 });
 
 describe("Live2dAvatar pace", () => {
-  test("the rest rates: 20 a second about, 6 once no one has touched the document for a while", async () => {
+  test("the rest rates: never under 30 a second (lower reads as a stutter), never over 60, calm no faster than about", async () => {
     const { AVATAR_FPS, CALM_AFTER_MS } = await import("../src/ui/Live2dAvatar");
-    expect(AVATAR_FPS.quiet).toBeLessThanOrEqual(20);
-    expect(AVATAR_FPS.calm).toBeLessThanOrEqual(2);
+    for (const rate of Object.values(AVATAR_FPS)) { expect(rate).toBeGreaterThanOrEqual(30); expect(rate).toBeLessThanOrEqual(60); }
+    expect(AVATAR_FPS.calm).toBeLessThanOrEqual(AVATAR_FPS.quiet);
     expect(CALM_AFTER_MS).toBeGreaterThanOrEqual(5000);
   });
 });

@@ -217,7 +217,7 @@ describe("the VRM avatar", () => {
     expect(fake.calls.disposed).toBe(1);
   });
 
-  test("draws at most 30 frames a second while quiet, and 60 while speech sounds", async () => {
+  test("draws 60 frames a second while the user is about and while speech sounds, never more", async () => {
     let audio = 0;
     const speech = new PushedSpeech(() => audio);
     const fake = fakeRenderer();
@@ -227,8 +227,8 @@ describe("the VRM avatar", () => {
     await waitFor(() => { expect(onReady).toHaveBeenCalled(); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
     let before = fake.calls.render;
     frames.run(1000);
-    expect(fake.calls.render - before).toBeLessThanOrEqual(21);
-    expect(fake.calls.render - before).toBeGreaterThanOrEqual(19);
+    expect(fake.calls.render - before).toBeLessThanOrEqual(63);
+    expect(fake.calls.render - before).toBeGreaterThanOrEqual(55);
     act(() => speech.push(speechFrames(vowel("a", 2), 48000, 0)));
     audio = 0.5;
     before = fake.calls.render;

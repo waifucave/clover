@@ -77,8 +77,9 @@ export interface VrmAvatarProps {
 
 type Status = { state: "loading" } | { state: "ready"; meta: VrmMeta } | { state: "error"; message: string };
 
-/** Frames a second: while the user is about (`quiet`), while they type (`typing`), with no one about for a while (`calm`), while speech plays. */
-export const AVATAR_FPS = { quiet: 20, typing: 6, calm: 2, speaking: 60 } as const;
+/** Frames a second: while the user is about (`quiet`), while they type (`typing`), with no one about for a while (`calm`), while speech plays.
+ *  None is under 30: below that the figure's breathing and sway read as a stutter (the owner's try 14g). Calm halves the cost, it doesn't freeze her. */
+export const AVATAR_FPS = { quiet: 60, typing: 30, calm: 30, speaking: 60 } as const;
 /** Seconds with no pointer input before the avatar goes calm, and how long a keystroke holds the typing rate. */
 export const CALM_AFTER_MS = 8000;
 export const TYPING_MS = 2500;

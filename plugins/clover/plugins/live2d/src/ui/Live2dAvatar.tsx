@@ -32,8 +32,9 @@ export const BROWSER_FRAMES: AvatarFrames = {
   cancelFrame: (id) => cancelAnimationFrame(id),
 };
 
-/** Frames a second: at rest while the user is about (`quiet`), with no one about for a while (`calm`, nearly still), while speech plays. */
-export const AVATAR_FPS = { quiet: 20, typing: 6, calm: 2, speaking: 60 } as const;
+/** Frames a second: at rest while the user is about (`quiet`), while they type (`typing`), with no one about for a while (`calm`), while speech plays.
+ *  None is under 30: below that the figure's breathing and sway read as a stutter (the owner's try 14g). Calm halves the cost, it doesn't freeze her. */
+export const AVATAR_FPS = { quiet: 60, typing: 30, calm: 30, speaking: 60 } as const;
 /** How long after a keystroke she keeps the typing rate (the glance), before settling back to calm. */
 export const TYPING_MS = 2500;
 /** How long with no input in this document before the avatar goes calm. */
