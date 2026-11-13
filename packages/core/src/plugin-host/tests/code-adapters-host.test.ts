@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bedrockFake, codexFake, geminiFake, openaiResponsesFake, startFake, sseResponse, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
+import { bedrockFake, codexFake, geminiFake, openaiResponsesFake, startFake, sseResponse, vertexFake, type FakeServer } from "@waifucave/clover-provider-conformance/fakes";
 import type { ProviderAdapter, ProviderEvent, TurnRequest } from "@waifucave/clover-provider-runtime";
 import { startXaiChatFake } from "@waifucave/clover-provider-runtime/testing";
 import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
@@ -191,6 +191,30 @@ describe("the bundled code adapters through a real plugin host", () => {
     expect(ph.host.status("clover/model-bedrock").state).toBeDefined();
     expect(await text(adapterOf("bedrock").streamTurn(turn("amazon.nova-lite-v1:0"), ctxOf("bedrock", { region: bedrockFake.FAKE_REGION })))).toBe("hello from bedrock");
     expect((fake as unknown as { signatures: { verified: boolean; accessKeyId: string }[] }).signatures.map((x) => [x.verified, x.accessKeyId])).toEqual([[true, bedrockFake.FAKE_ACCESS_KEY_ID]]);
+  }, 60_000);
+
+  test("Vertex: in a Bun process of its own, it reads its service account with secrets.get, signs its JWT, exchanges it at Google's token endpoint (a declared host) and streams the turn", async () => {
+    const { privateKeyPem, publicKey } = await vertexFake.generateTestKeyPair();
+    const tokenPath = new URL(vertexFake.vertexTokenUrl("http://127.0.0.1:1")).pathname;
+    const opts = {
+      publicKey, project: "clover-test-project", location: "us-central1", tokenUri: `https://oauth2.googleapis.com${tokenPath}`,
+      verified: [] as { header: Record<string, unknown>; claims: Record<string, unknown> }[],
+      stream: { "gemini-2.5-flash": [geminiFake.geminiStreamResponse([{ parts: [{ text: "hello from vertex" }], finishReason: "STOP" }])] },
+    };
+    const fake = await startFake({ routes: vertexFake.vertexFakeRoutes(opts) });
+    wires.set("us-central1-aiplatform.googleapis.com", fake);
+    wires.set("oauth2.googleapis.com", fake);
+    daemonStore.values.set("vertex:default", JSON.stringify({ kind: "gcp-service-account", clientEmail: "clover-test@clover-test-project.iam.gserviceaccount.com", privateKeyPem, tokenUri: opts.tokenUri }));
+    sent.length = 0;
+    expect(await text(adapterOf("vertex").streamTurn(turn("gemini-2.5-flash"), ctxOf("vertex", { project: opts.project, location: opts.location })))).toBe("hello from vertex");
+    // Its own process, apart from the clover process's workers.
+    expect(ph.pidOf("clover/model-vertex")).toBeDefined();
+    expect(ph.pidOf("clover/model-vertex")).not.toBe(ph.pidOf("clover/model-google"));
+    // The JWT it signed was verified against the service account's public key, and both hosts were its declared ones.
+    expect(opts.verified.length).toBeGreaterThan(0);
+    expect([...new Set(sent.map((x) => x.host))].sort()).toEqual(["oauth2.googleapis.com", "us-central1-aiplatform.googleapis.com"]);
+    // The private key never travelled in a request.
+    expect(JSON.stringify(sent)).not.toContain("PRIVATE KEY");
   }, 60_000);
 
   test("xAI (its subscription): a turn on its plugin with the slot's sign-in as the bearer", async () => {
