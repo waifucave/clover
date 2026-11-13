@@ -25,7 +25,7 @@ if (isRoot || isLayer) {
     token,
     describe: () => ipcRenderer.invoke("clover:describe", { token }),
     resolve: (mount, spot, key, hints) => ipcRenderer.invoke("clover:resolve", { mount, spot, key, hints }),
-    entries: (mount, spot, key) => ipcRenderer.invoke("clover:entries", { mount, spot, key }),
+    entries: (mount, spot, key, bot) => ipcRenderer.invoke("clover:entries", { mount, spot, key, ...(bot !== undefined ? { bot } : {}) }),
     setProps: (child, props) => ipcRenderer.send("clover:props", { child, props }),
     speech: (child, message) => ipcRenderer.send("clover:speech", { child, message }),
     avatar: (child, message) => ipcRenderer.send("clover:avatar", { child, message }),

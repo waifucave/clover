@@ -40,7 +40,7 @@ How to read it:
 | `computerProviders` | keyed | code | Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2). |
 | `computer` | single | data | A cloud computer, created after the user's OK (§9.2). |
 | `relays` | list | code | Carries encrypted traffic when two devices can't connect directly, or holds encrypted sync mail (§8.3). |
-| `notifiers` | list | code | Wakes companions when something happens (§10). |
+| `notifiers` | list | code | Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify th… |
 | `companions` | list | code | Serves a remote client within the fixed list of remote calls (§10). |
 | `themes` | list | data | Applies the base theme, the user's global theme and each bot's theme in its tab (§5.5). |
 | `locales` | keyed | data | Supplies strings for the core's own text and each plugin's keys, in the user's language (§5.5). |

@@ -3,7 +3,7 @@
 // the user's way, its OK card pressed in the window, and its page must draw in an isolated view of its own (a document
 // on `clover-web://`, never a plugin layer's or the app's origin) that reaches nothing of the app: no bridge, no Node.
 import { resolve } from "node:path";
-import { fail, sleep, until, type ExampleCtx } from "./example-steps";
+import { fail, sleep, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 
 export const WEB_STEP = "a web page part: a plugin whose ui entry is a web page installs from a folder, its OK card (which says it shows web pages) is pressed, and its page draws in a sealed view on clover-web:// with no bridge to the app and no Node";
 
@@ -22,6 +22,7 @@ export function sealedProblem(text: string): string | undefined {
 }
 
 export async function webStep(ctx: ExampleCtx, _session: string): Promise<string> {
+  await toAlphasTab(ctx);
   const { cdp, rpc } = ctx;
   const done: string[] = [];
   let installed = false;

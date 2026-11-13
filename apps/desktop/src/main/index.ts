@@ -63,7 +63,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { LAYER_SCHEME } from "./ui/documents";
 import { LISTEN_REQUEST_MS, ListenHolds, micPermission } from "./ui/listen";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
-import { PluginKeys } from "./plugin-keys";
+import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
@@ -2098,7 +2098,9 @@ function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void
   const which = appShortcut(input, process.platform);
   if (which === undefined) {
     // The app's own keys won above; a plugin command's default key runs that command as the user (the press is theirs).
-    const command = pluginKeys.match({ type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat });
+    // Not while a sealed card or the key dialog's secret field has the focus: the key goes where the focus is.
+    const frame = win.webContents.focusedFrame;
+    const command = !keysMayRun({ frameUrl: frame === null || frame.detached ? undefined : frame.url, secureOpen: keyTarget !== undefined }) ? undefined : pluginKeys.match({ type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat });
     // A test-marked or acceptance build says which chord an unbound press made (the harness reads it); a release never does.
     if (command === undefined && (input.type === "keyDown" || input.type === "rawKeyDown") && (input.meta || input.control) && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
       log(`keys: an unbound ${input.type} made ${pluginKeys.chordOf({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) ?? "no chord"}`);

@@ -5,6 +5,14 @@
 import { canonicalChord, chordOfPress, type KeyPress, type KeyPlatform } from "@waifucave/clover-plugin-sdk";
 import { liveCommands } from "./ui/composer-calls";
 
+/** Whether a press may run a plugin's command at all: not while a sealed frame (an approval or OK card, whose buttons and
+ *  fields are the user's alone) has the focus, and not while the app's own key dialog (a secret field) is open. The key
+ *  goes where the focus is and no command runs. */
+export function keysMayRun(focus: { frameUrl: string | null | undefined; secureOpen: boolean }): boolean {
+  if (focus.secureOpen) return false;
+  return !(typeof focus.frameUrl === "string" && focus.frameUrl.startsWith("clover-sealed://"));
+}
+
 export class PluginKeys {
   #table = new Map<string, string>();
   constructor(private readonly platform: KeyPlatform) {}

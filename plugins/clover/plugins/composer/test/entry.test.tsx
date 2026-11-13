@@ -14,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -174,6 +174,19 @@ describe("the composer entry", () => {
     expect(screen.getAllByRole("menuitemradio")).toHaveLength(4);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
     expect(host).toEqual([["setModel", "xai/grok-5", "medium"]]);
+  });
+
+  test("a model a third-party plugin brings names that plugin; Clover's own don't", async () => {
+    await mount(session({}), {
+      models: [
+        { id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI", plugin: "clover/openai", signedIn: true },
+        { id: "acme/zed-1", name: "Zed 1", providerName: "Acme", plugin: "acme-models", signedIn: true },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    const rows = screen.getAllByRole("menuitemradio").map((e) => e.textContent ?? "");
+    expect(rows.find((t) => t.includes("Zed 1"))).toContain("Acme · from acme-models");
+    expect(rows.find((t) => t.includes("GPT-6"))).not.toContain("from");
   });
 
   describe("the slash menu", () => {

@@ -339,11 +339,13 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
  *  composer. In `main`, the conversation runs up under the title bar (`--cl-inset-top` tells it how far down its content
  *  starts) and both follow the axis shift; with a stage, the stage takes the top instead. In the panel (an agent opened
  *  from a bot's slim column), neither applies. */
-export function BotTab({ stage, conversation, composer }: { stage?: ReactNode; conversation: ReactNode; composer: ReactNode }) {
+export function BotTab({ header, stage, conversation, controls, composer }: { header?: ReactNode; stage?: ReactNode; conversation: ReactNode; controls?: ReactNode; composer: ReactNode }) {
   return (
     <div className="cl-bot-tab">
+      {header && <div className="cl-bot-tab__header">{header}</div>}
       {stage && <div className="cl-bot-tab__stage">{stage}</div>}
       <div className="cl-bot-tab__conversation">{conversation}</div>
+      {controls && <div className="cl-bot-tab__controls">{controls}</div>}
       <div className="cl-bot-tab__composer">{composer}</div>
     </div>
   );

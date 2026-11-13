@@ -1110,32 +1110,29 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const cardsBefore = await cardCount();
       // The saved file is its manifest's description: the plugin's own record changes, with no card.
       const manifestPath = join(devDir, "clover.json");
-      // Saved again every 8 s until the core has read one: a miss of the first save (the OS's watch stream starts a moment after
-      // the folder is added) is named in the row, never hidden.
-      let saves = 0;
-      let edited = "";
-      const save = () => {
-        saves++;
-        edited = `Edited by the acceptance clause while it was a development folder (save ${saves}).`;
-        writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), description: edited }, null, 2));
-      };
-      save();
-      let lastSave = Date.now();
-      await until("the plugin's description loaded again from a saved file", 90_000, async () => {
+      // One save is enough: the core's watch, and its catch-up look every 5 s for an event the OS drops, read it within about
+      // 5 s plus the settle time. 20 s is the wait.
+      const edited = "Edited by the acceptance clause while it was a development folder.";
+      writeFileSync(manifestPath, JSON.stringify({ ...JSON.parse(readFileSync(manifestPath, "utf8")), description: edited }, null, 2));
+      await until("the plugin's description loaded again from the one saved file", 20_000, async () => {
         const r = await rpc.request<{ plugin: { description?: string } }>("plugin.get", { id: devId }).catch(() => undefined);
-        if (r?.plugin.description?.startsWith("Edited by the acceptance clause")) return true;
-        if (Date.now() - lastSave > 8_000) { save(); lastSave = Date.now(); }
-        return undefined;
+        return r?.plugin.description === edited ? true : undefined;
       }, async () => {
         const r = await rpc.request<{ plugin: { state: string; reason?: string; description?: string; dev: boolean } }>("plugin.get", { id: devId }).catch((e: Error) => ({ plugin: { state: `gone: ${e.message}`, dev: false } }));
-        return `after ${saves} saves, plugin.get: state ${r.plugin.state}${"reason" in r.plugin && r.plugin.reason ? ` (${r.plugin.reason})` : ""}, dev ${r.plugin.dev}, description ${JSON.stringify(("description" in r.plugin ? r.plugin.description : "")?.slice(0, 60))}; plugin.dev.list ${JSON.stringify(await devList())}; cards ${await cardCount()}`;
+        return `after one save, plugin.get: state ${r.plugin.state}${"reason" in r.plugin && r.plugin.reason ? ` (${r.plugin.reason})` : ""}, dev ${r.plugin.dev}, description ${JSON.stringify(("description" in r.plugin ? r.plugin.description : "")?.slice(0, 80))}`;
       });
-      const savesSaid = saves === 1 ? "the first save was read" : `the first save was NOT read (a core watcher miss): it took ${saves} saves`;
       const cardsAfter = await cardCount();
       if (cardsAfter > cardsBefore) fail("a saved file in the development folder raised a card");
-      const reloaded = (await mine()) ?? added;
-      // The page's "Loaded again" line comes from `lastReloadAt`, which the core's plugin.dev.list doesn't report yet.
-      const lineSaid = reloaded.lastReloadAt !== undefined ? "its list says Loaded again" : "the list's Loaded again line NOT PROVEN: plugin.dev.list reports no lastReloadAt yet";
+      // The core reports the reload (`lastReloadAt`), and the page's list says "Loaded again".
+      const reloaded = await until("plugin.dev.list's lastReloadAt", 15_000, async () => {
+        const m = await mine();
+        return m?.lastReloadAt !== undefined ? m : undefined;
+      });
+      await clickScrolled("the Installed tab, then the Add tab again", "[role=tab]", "Installed");
+      await clickScrolled("the Add tab, again", "[role=tab]", "Add");
+      await waitText("the list's Loaded again line", "Loaded again");
+      const lineSaid = "its list says Loaded again";
+      const savesSaid = "the one save was read";
       // Keep on for 24 hours…: a sealed card, pressed.
       await clickScrolled("Keep on for 24 hours…", "[data-dev-folder] button", "Keep on for 24 hours");
       const renewCard = await ctx.pressCard!("its renew card", (c) => c.kind === "change" && c.change === "dev-folder");

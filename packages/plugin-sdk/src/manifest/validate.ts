@@ -1167,6 +1167,9 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
 
 /** The OK card's line for host code that runs without being asked (§5.2): a `host.start`, or `triggers` (which start
  *  at once on each computer), by where it runs. */
+/** The OK card's line for a plugin that contributes a notifier: what the core tells it (§10). */
+export const NOTIFIER_OK_LINE = "It is told when your bots need you or have answered, so it can notify you; it does not get the words.";
+
 export const HOST_START_OK_LINES = {
   each: "It runs in the background from the moment Clover starts, on every computer it's installed on.",
   main: "It runs in the background from the moment Clover starts, on your main computer.",
@@ -1179,8 +1182,10 @@ export const HOST_START_OK_LINES = {
 export function backgroundOkLines(reports: readonly ManifestReport[]): string[] {
   const types: string[] = [];
   const where = new Set<keyof typeof HOST_START_OK_LINES>();
+  let notifies = false;
   for (const r of reports) {
-    const m = r.manifest as { host?: { start?: unknown }; contributes?: { triggers?: unknown } } | undefined;
+    const m = r.manifest as { host?: { start?: unknown }; contributes?: { triggers?: unknown; notifiers?: unknown } } | undefined;
+    if (Array.isArray(m?.contributes?.notifiers) && m.contributes.notifiers.length > 0) notifies = true;
     const triggers = Array.isArray(m?.contributes?.triggers) ? m.contributes.triggers : [];
     for (const t of triggers) if (typeof (t as { type?: unknown }).type === "string") types.push((t as { type: string }).type);
     if (triggers.length > 0) where.add("each");
@@ -1189,6 +1194,7 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   }
   const lines: string[] = [];
   if (types.length > 0) lines.push(`It adds routine triggers (${[...new Set(types)].sort().join(", ")}): a routine that uses one runs whenever the plugin says so.`);
+  if (notifies) lines.push(NOTIFIER_OK_LINE);
   for (const w of ["each", "main", "chosen"] as const) if (where.has(w)) lines.push(HOST_START_OK_LINES[w]);
   return lines;
 }

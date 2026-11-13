@@ -131,7 +131,19 @@ async function run(ctx: ExampleCtx): Promise<string> {
     return v === "yes" || v === "none" ? v : undefined;
   }, dumpPress);
   await sleep(400);
-  await cdp.click(sealed.session, press.x, press.y);
+  // The sealed frame can be drawn again between the lookup and the press (the debugging protocol then says its session is gone): the
+  // document is found again by its address and the press made on the new one.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const now = (await cdp.documents()).find((d) => d.url === approveSrc) ?? sealed;
+      const at = (await cdp.centerOf(now.session, ".seal-button[data-kind=approve]:not(.quiet):not([data-remember])")) ?? press;
+      await cdp.click(now.session, at.x, at.y);
+      break;
+    } catch (err) {
+      if (attempt >= 3 || !/Session with given id not found/.test(String((err as Error).message))) throw err;
+      await sleep(500);
+    }
+  }
   await until(`the app to accept the answer for ${card.id}`, 15_000, async () => {
     const text = ctx.appLog();
     if (text.includes(`sealed: answer accepted for ${card.id}`)) return true;

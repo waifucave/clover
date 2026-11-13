@@ -53,10 +53,13 @@ function modelsOf(catalog: unknown): ComposerModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
   return list.flatMap((m) => {
-    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown; signedIn?: unknown };
+    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown; plugin?: unknown; signedIn?: unknown };
     if (typeof o.id !== "string") return [];
     const label = typeof o.label === "string" ? o.label : typeof o.name === "string" ? o.name : o.id;
-    const detail = typeof o.providerName === "string" ? o.providerName : typeof o.provider === "string" ? o.provider : undefined;
+    const provider = typeof o.providerName === "string" ? o.providerName : typeof o.provider === "string" ? o.provider : undefined;
+    // A model a third-party plugin brings says which plugin it comes from; Clover's own (the `clover` tree) don't.
+    const from = typeof o.plugin === "string" && o.plugin.split("/")[0] !== "clover" ? o.plugin : undefined;
+    const detail = from === undefined ? provider : provider === undefined ? S.modelFrom(from) : `${provider} · ${S.modelFrom(from)}`;
     return [{ id: o.id, label, ...(detail !== undefined ? { detail } : {}), ...(typeof o.signedIn === "boolean" ? { signedIn: o.signedIn } : {}) }];
   });
 }

@@ -487,7 +487,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const mount = str(a.mount, 32);
     const spot = str(a.spot, 128);
     if (mount === undefined || spot === undefined) throw new LayerError("bad request");
-    return runtime.entries(s.frame, mount, spot, str(a.key));
+    return runtime.entries(s.frame, mount, spot, str(a.key), str(a.bot, 81));
   });
   handle("clover:reload", (event, a) => {
     const s = sender(event);

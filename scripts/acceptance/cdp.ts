@@ -124,8 +124,17 @@ export class Cdp {
 
   /** A trusted click at a point of a session's viewport (CSS pixels). */
   async click(session: string, x: number, y: number): Promise<void> {
-    for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
-      await this.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, session);
+    // A window under load (a shard at a high load average) can leave one of the three events unanswered for 20 s: the press is
+    // made again, twice at most, only for that answer's absence.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+          await this.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, session);
+        }
+        return;
+      } catch (err) {
+        if (attempt >= 2 || !/no answer/.test(String((err as Error).message))) throw err;
+      }
     }
   }
 

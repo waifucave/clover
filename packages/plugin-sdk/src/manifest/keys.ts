@@ -7,7 +7,8 @@
 // * The app's own chords win (`APP_CHORDS`, the shortcuts and menu accelerators the window already answers); a plugin
 //   chord that equals one is not bound.
 // * A chord with no ctrl, alt, meta or `mod` (a bare letter, `shift+a`, `enter`) would take typing from the composer: not
-//   bound. A function key stands alone.
+//   bound. A function key stands alone. On macOS `alt+<letter>` (and `alt+shift+<letter>`) types a character, so alt alone
+//   does not count there: the chord needs ctrl or meta (or is a function key).
 // * Two commands on one chord: neither is bound, and each says who it clashes with.
 
 export type KeyPlatform = "darwin" | "win32" | "linux" | NodeJS.Platform;
@@ -26,6 +27,18 @@ export const APP_CHORDS: readonly { chord: string; what: string; mac?: true }[] 
   { chord: "mod+m", what: "Minimise", mac: true },
   { chord: "mod+h", what: "Hide", mac: true },
   { chord: "mod+alt+h", what: "Hide others", mac: true },
+  // What a window of this app answers by itself on Windows and Linux (Chromium's own), reserved on every platform so a
+  // plugin's key never shadows them there.
+  { chord: "f5", what: "Reload" },
+  { chord: "mod+r", what: "Reload" },
+  { chord: "mod+shift+r", what: "Reload, skipping the cache" },
+  { chord: "f12", what: "Developer tools" },
+  { chord: "ctrl+shift+i", what: "Developer tools" },
+  { chord: "mod+alt+i", what: "Developer tools" },
+  { chord: "f11", what: "Full screen" },
+  { chord: "mod+0", what: "Reset zoom" },
+  { chord: "mod+=", what: "Zoom in" },
+  { chord: "mod+-", what: "Zoom out" },
 ];
 
 const ORDER = ["ctrl", "alt", "shift", "meta"] as const;
@@ -84,11 +97,13 @@ export function chordOfPress(p: KeyPress): string | undefined {
   return [...ORDER.filter((m) => mods.has(m)), key].join("+");
 }
 
-/** Whether a canonical chord has a modifier that keeps it from typing, or is a function key. */
-function hasRealModifier(canonical: string): boolean {
+/** Whether a canonical chord has a modifier that keeps it from typing, or is a function key. On macOS alt types characters
+ *  (`alt+e`, `alt+shift+k`), so there only ctrl or meta count. */
+function hasRealModifier(canonical: string, platform: KeyPlatform): boolean {
   const parts = canonical.split("+");
   const key = parts[parts.length - 1]!;
-  return parts.some((m) => m === "ctrl" || m === "alt" || m === "meta") || /^f([1-9]|1[0-2])$/.test(key);
+  const typing = platform === "darwin" ? ["ctrl", "meta"] : ["ctrl", "alt", "meta"];
+  return parts.some((m) => typing.includes(m)) || /^f([1-9]|1[0-2])$/.test(key);
 }
 
 /** The app's chords on `platform`, canonical, with what each does. */
@@ -120,7 +135,7 @@ export function resolveKeys(commands: readonly { name: string; key?: string }[],
     if (canon === undefined) continue;
     const what = app.get(canon);
     if (what !== undefined) out.set(c.name, { state: "app", what });
-    else if (!hasRealModifier(canon)) out.set(c.name, { state: "bare" });
+    else if (!hasRealModifier(canon, platform)) out.set(c.name, { state: "bare" });
     else byChord.set(canon, [...(byChord.get(canon) ?? []), c.name]);
   }
   for (const [chord, names] of byChord) {
