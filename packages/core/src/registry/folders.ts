@@ -6,7 +6,7 @@
 // Each top-level folder is read without running anything: its tree hash, `validateTree`'s report for it and its
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
 import { shownCode } from "../approvals/strings";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, watch, type Dirent, type FSWatcher } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
@@ -21,6 +21,7 @@ export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalog
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import { wrapperNetworkOpen } from "./wrap";
+import { FingerprintCache, fingerprint } from "./fingerprint";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
@@ -85,8 +86,6 @@ export const SETTLE_MS = 2_000;
  *  load and as a watch starts), so every few seconds the folders a change must reach are looked at too, and one that
  *  changed is read as a watched change is. */
 export const CATCH_UP_MS = 5_000;
-/** The most entries a catch-up fingerprint looks at in one folder (`node_modules` and `.git` are never walked). */
-const CATCH_UP_ENTRIES = 5_000;
 /** How long a development folder stays on unless renewed (§5.6). */
 export const DEV_FOLDER_MS = 24 * 60 * 60 * 1000;
 
@@ -255,6 +254,8 @@ export class PluginFolders {
   #catchUpTimer: ReturnType<typeof setInterval> | undefined;
   #seenNames: Set<string> | undefined;
   readonly #seenPrints = new Map<string, string>();
+  /** The catch-up look's walks of its folders, so an unchanged directory isn't listed again every few seconds. */
+  readonly #prints = new FingerprintCache();
   /** Each folder's read generation, and its newest read (`refresh`). */
   readonly #gens = new Map<string, number>();
   readonly #newest = new Map<string, Promise<void>>();
@@ -387,9 +388,9 @@ export class PluginFolders {
       // or a build step too, which no tool path tells the registry about).
       if (state === undefined || state === "found" || state === "invalid" || record?.provenance.by === "bot") looked.add(folder);
     }
-    for (const folder of [...this.#seenPrints.keys()]) if (!looked.has(folder)) this.#seenPrints.delete(folder);
+    for (const folder of [...this.#seenPrints.keys()]) if (!looked.has(folder)) { this.#seenPrints.delete(folder); this.#prints.forget(folder); }
     for (const folder of looked) {
-      const print = fingerprint(folder);
+      const print = this.#prints.print(folder);
       const was = this.#seenPrints.get(folder);
       this.#seenPrints.set(folder, print);
       if (was !== undefined && was !== print) changed.add(folder);
@@ -402,6 +403,7 @@ export class PluginFolders {
     this.#catchUpTimer = undefined;
     this.#seenNames = undefined;
     this.#seenPrints.clear();
+    this.#prints.clear();
     for (const w of this.#watchers.values()) w.close();
     this.#watchers.clear();
     for (const t of this.#timers.values()) clearTimeout(t);
@@ -856,25 +858,6 @@ function realPath(path: string): string {
   } catch {
     return resolve(path);
   }
-}
-
-/** A folder's files as they are now (each one's path, size and time), for the catch-up look: `node_modules` and `.git`
- *  aren't walked, links aren't followed, and it stops at `CATCH_UP_ENTRIES`. Empty when the folder isn't there. */
-function fingerprint(folder: string): string {
-  const out: string[] = [];
-  const walk = (dir: string, rel: string): void => {
-    let entries: Dirent[];
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (out.length >= CATCH_UP_ENTRIES) return;
-      if (e.name === "node_modules" || e.name === ".git") continue;
-      const path = join(dir, e.name);
-      if (e.isDirectory()) { out.push(`${rel}${e.name}/`); walk(path, `${rel}${e.name}/`); continue; }
-      try { const st = lstatSync(path); out.push(`${rel}${e.name}:${st.size}:${st.mtimeMs}`); } catch { /* gone meanwhile */ }
-    }
-  };
-  walk(folder, "");
-  return out.sort().join("\n");
 }
 
 function listDirs(dir: string): string[] {
