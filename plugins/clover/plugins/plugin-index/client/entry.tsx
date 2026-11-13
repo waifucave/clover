@@ -235,22 +235,10 @@ export function toDetail(
     agents,
     notifies: d.capabilities.includes("notify") && d.id.split("/")[0] !== CLOVER_TREE,
     muted: more.muted === true,
-    scope: d.scope,
     adult: d.adult,
     grants: more.grants ?? [],
-    computerTargets: computerTargets(d),
     commandKeys: commandKeys(d, more.commands),
   };
-}
-
-/** The things whose computers the user ticks: its host half when it starts on the chosen ones, a local server or command
- *  that runs on them, and any target the core already holds a tick list for. */
-function computerTargets(d: PluginDetail): { target: string; ticked: string[] }[] {
-  const m = d.manifest as { host?: { start?: unknown }; contributes?: { mcpServers?: Record<string, { runsOn?: unknown }>; commands?: { name?: unknown; runsOn?: unknown }[]; services?: { id?: unknown; runsOn?: unknown }[] } };
-  const targets = new Set<string>(Object.keys(d.computers ?? {}));
-  if (m.host?.start === "chosen") targets.add("*");
-  for (const [name, s] of Object.entries(m.contributes?.mcpServers ?? {})) if (s.runsOn === "chosen") targets.add(name);
-  return [...targets].sort().map((target) => ({ target, ticked: [...(d.computers?.[target] ?? [])] }));
 }
 
 /** "12 min ago" (the Find tab's words). */
@@ -297,7 +285,6 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [devFolders, setDevFolders] = useState<DevRow[] | undefined>(undefined);
   const [devPicked, setDevPicked] = useState<{ token: string; name: string } | undefined>(undefined);
   const [adultConfirmed, setAdultConfirmed] = useState<boolean | undefined>(undefined);
-  const [computerNames, setComputerNames] = useState<string[]>([]);
 
   // What is installed: `plugin.list` alone, never a call per plugin.
   useEffect(() => {
@@ -344,14 +331,6 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
     return () => {
       live = false;
     };
-  }, [core, open, revision]);
-
-  // The computers a plugin's server may be ticked onto (this one and the others).
-  useEffect(() => {
-    if (!core || open === undefined) return;
-    let live = true;
-    core.call("computer.list", {}).then((r) => live && setComputerNames(r.computers.map((c) => c.name)), () => undefined);
-    return () => { live = false; };
   }, [core, open, revision]);
 
   // The development folders, read when the Add tab shows and again after each change.
@@ -628,11 +607,8 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
             onPin={(pinned) => act(() => core.call("plugin.pin", { id, pinned }))}
             onMute={(muted) => act(() => core.call("notify.setMuted", { pluginId: id, muted }))}
             onSetting={(key, value, asks) => act(() => core.call("plugin.settings.set", { id, key, value }), asks ? S.settingAsked : undefined)}
-            computers={computerNames}
             {...(adultConfirmed !== undefined ? { adultConfirmed } : {})}
             onConfirmAdult={() => act(() => core.call("plugin.confirmAdult", {}))}
-            onScope={(scope) => act(() => core.call("plugin.setScope", { id, scope }))}
-            onComputers={(target, computers) => act(() => core.call("plugin.setComputers", { id, target, computers }))}
             onGrantRemove={(token) => act(() => core.call("plugin.grant.remove", { pluginId: id, token }))}
             {...(status ? { status } : {})}
           />

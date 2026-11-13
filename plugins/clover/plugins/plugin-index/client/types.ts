@@ -131,14 +131,10 @@ export interface PluginDetailView extends InstalledPlugin {
   notifies: boolean;
   /** Its notifications are muted (lane D's `notify.mutes`). */
   muted: boolean;
-  /** Where it works now (the user's choice, else the manifest's), and what the manifest says. */
-  scope?: "bots" | "agents" | "both";
   /** Self-declared adult content (§5.7). */
   adult?: boolean;
   /** The files and folders the user picked for it. */
   grants?: GrantRow[];
-  /** The things whose computers the user ticks (its host half, its local servers), each with the computers ticked now. */
-  computerTargets?: { target: string; ticked: string[] }[];
   /** Each command that names a default key, and what became of it (bound, or why not). */
   commandKeys?: { name: string; key: string; bound: boolean; note: string }[];
 }
@@ -192,15 +188,9 @@ export interface DetailProps {
   onMute?: (muted: boolean) => void;
   /** Changes one of its plain settings (`plugin.settings.set`; null puts the default back). */
   onSetting?: (key: string, value: unknown, asks: boolean) => void;
-  /** The names of this computer and the others, for ticking where a server runs. */
-  computers?: string[];
   /** The user said they are 18 or older already. */
   adultConfirmed?: boolean;
   onConfirmAdult?: () => void;
-  /** Sets where it works (`plugin.setScope`). */
-  onScope?: (scope: "bots" | "agents" | "both") => void;
-  /** Ticks the computers for a target (`plugin.setComputers`). */
-  onComputers?: (target: string, computers: string[]) => void;
   /** Takes a picked file or folder back (`plugin.grant.remove`). */
   onGrantRemove?: (token: string) => void;
   status?: DetailStatus;

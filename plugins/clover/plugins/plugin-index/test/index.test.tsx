@@ -231,7 +231,7 @@ describe("the Plugins page: what is installed", () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["command.list", "computer.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
+    expect(core.calls.map((c) => c.method).slice(2).sort()).toEqual(["command.list", "notify.mutes", "plugin.auth.list", "plugin.get", "plugin.grant.list", "plugin.logs", "plugin.settings.get"]);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
     expect(screen.getByText("You added it in the app.")).toBeTruthy();
     const what = screen.getByRole("region", { name: "What it may do" }).textContent;
@@ -535,13 +535,11 @@ describe("the Plugins page: updates and indexes", () => {
     expect(core.calls.find((c) => c.method === "plugin.dev.remove")?.params).toEqual({ path: "/Users/me/dev/reel" });
   });
 
-  test("a plugin's page: where it works, the files it may open (each can be taken back), and the adult confirm", async () => {
+  test("a plugin's page: the files it may open (each can be taken back), and the adult confirm", async () => {
     const { core } = await mount({});
     fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
     await act(() => settle());
-    fireEvent.click(screen.getByRole("radio", { name: "Agents" }));
-    await act(() => settle());
-    expect(core.calls.find((c) => c.method === "plugin.setScope")?.params).toEqual({ id: "tarot-panel", scope: "agents" });
+    expect(screen.queryByRole("radio", { name: "Agents" })).toBeNull();
     expect(document.querySelector('[data-grant="g1"]')?.textContent).toContain("/Users/me/clips/a.mov");
     expect(document.querySelector('[data-grant="g2"]')?.textContent).toContain("folder, to save");
     fireEvent.click(screen.getByRole("button", { name: "Take back /Users/me/clips/a.mov" }));
@@ -549,22 +547,16 @@ describe("the Plugins page: updates and indexes", () => {
     expect(core.calls.find((c) => c.method === "plugin.grant.remove")?.params).toEqual({ pluginId: "tarot-panel", token: "g1" });
   });
 
-  test("an adult plugin says so until the user confirms; the computers a server runs on are ticked one by one", () => {
+  test("an adult plugin says so until the user confirms", () => {
     const calls: unknown[] = [];
-    const view = { ...toDetail(installedDetail("tarot-panel"), {}), adult: true, computerTargets: [{ target: "tarot", ticked: ["Studio"] }] };
-    render(
-      <Detail
-        plugin={view} adultConfirmed={false} computers={["Studio", "Laptop"]}
-        onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined}
-        onConfirmAdult={() => calls.push(["adult"])} onComputers={(t, c) => calls.push([t, c])}
-      />,
-    );
+    const view = { ...toDetail(installedDetail("tarot-panel"), {}), adult: true };
+    const common = { onBack: () => undefined, onSwitch: () => undefined, onRestart: () => undefined, onRemove: () => undefined, onKey: () => undefined, onSignIn: () => undefined, onSignOut: () => undefined };
+    render(<Detail plugin={view} adultConfirmed={false} {...common} onConfirmAdult={() => calls.push(["adult"])} />);
     fireEvent.click(screen.getByRole("button", { name: "I am 18 or older" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Run on Laptop" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Run on Studio" }));
-    expect(calls).toEqual([["adult"], ["tarot", ["Studio", "Laptop"]], ["tarot", []]]);
+    expect(calls).toEqual([["adult"]]);
+    expect(screen.queryByRole("checkbox", { name: /Run on/ })).toBeNull();
     cleanup();
-    render(<Detail plugin={view} adultConfirmed computers={["Studio"]} onBack={() => undefined} onSwitch={() => undefined} onRestart={() => undefined} onRemove={() => undefined} onKey={() => undefined} onSignIn={() => undefined} onSignOut={() => undefined} onConfirmAdult={() => undefined} />);
+    render(<Detail plugin={view} adultConfirmed {...common} onConfirmAdult={() => undefined} />);
     expect(screen.queryByRole("button", { name: "I am 18 or older" })).toBeNull();
   });
 
