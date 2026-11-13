@@ -344,7 +344,12 @@ export class PluginMcp {
     const offTrees = o.registry.watchTrees?.(({ id }) => this.#treeChanged(id));
     const offHost = o.host.watch?.((s) => {
       const w = this.#treeWaits.get(s.pluginId);
-      if (w === undefined) return;
+      if (w === undefined) {
+        // Running again after its listing failed or found it stopped (the crash rules' stop, then its builder's fix
+        // restarting it): listed again now, or its tools keep answering the old stop until something else changes.
+        if (s.state === "running" && this.#stale(s.pluginId)) this.#relistPlugin(s.pluginId);
+        return;
+      }
       if (s.state !== "running") w.went = true;
       else if (w.went) this.#relistPlugin(s.pluginId);
     });
@@ -366,6 +371,15 @@ export class PluginMcp {
     const timer = setTimeout(() => this.#relistPlugin(pluginId), TREE_RELIST_WAIT_MS);
     (timer as { unref?: () => void }).unref?.();
     this.#treeWaits.set(pluginId, { went: false, timer });
+  }
+
+  /** Whether a server of `pluginId` this computer serves holds a failed or stopped listing. */
+  #stale(pluginId: string): boolean {
+    for (const [key, c] of this.#want) {
+      if (c.pluginId !== pluginId) continue;
+      if (this.#failed.has(key) || this.#listed.get(key)?.stopped !== undefined) return true;
+    }
+    return false;
   }
 
   /** Every server of `pluginId` this computer serves: its channel closed and listed again. */
