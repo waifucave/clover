@@ -131,6 +131,8 @@ export async function escape(cdp: Cdp): Promise<void> {
 /** The Plugins page from the sidebar, on a tab. */
 export async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
   await escape(cdp);
+  // A Settings dialog an earlier step left open, which the key didn't close: its own close button (the sidebar is under it).
+  for (const d of await treeDocs(cdp)) await cdp.evaluate(d.session, "document.querySelector('.cl-settings__close')?.click()").catch(() => undefined);
   // The window's document can load again just after a plugin with a layer is installed, which puts the route back to the
   // shell's first page: the sidebar's entry is pressed again until the page's tabs stand (the Plugins page step does the same).
   // The first press waits 30 s: the first thing a fresh app does in a shard of its own took ~20 s to open the page under load.

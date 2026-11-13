@@ -164,6 +164,21 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
       if (opener && opener.isConnected) opener.focus();
     };
   }, []);
+  // Escape with the focus outside the dialog closes it too. The focus leaves it without the user moving it when what held
+  // it goes away (a plugin's own section in Settings, removed with its plugin): the key then lands on the document, and the
+  // dialog stayed open until something in it was pressed.
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const onDocKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || close.current === undefined) return;
+      if (e.target instanceof Node && layer.current?.contains(e.target)) return;
+      e.preventDefault();
+      close.current();
+    };
+    document.addEventListener("keydown", onDocKey);
+    return () => document.removeEventListener("keydown", onDocKey);
+  }, []);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     // The dialog handled it itself (an inner menu closing, say).
     if (e.defaultPrevented) return;

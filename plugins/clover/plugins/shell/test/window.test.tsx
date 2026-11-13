@@ -147,6 +147,24 @@ describe("the dialog layer's keyboard (review minor)", () => {
   });
 });
 
+describe("the dialog layer's keyboard, the focus outside it", () => {
+  test("Escape closes the dialog when the focus has left it (what held it went away)", () => {
+    render(<Host cardPending={false} />);
+    act(() => screen.getByRole("button", { name: "Open settings" }).click());
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("another key on the document leaves it open", () => {
+    render(<Host cardPending={false} />);
+    act(() => screen.getByRole("button", { name: "Open settings" }).click());
+    fireEvent.keyDown(document.body, { key: "a" });
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+  });
+});
+
 describe("a bot's shell skin", () => {
   const tokens = { "shell.alpha.bar": "#F3EEFFCC", "shell.alpha.bar.text": "#221A33", "shell.alpha.bar.rule": "#C9BDEB", "shell.alpha.accent": "#6A45D4", "shell.other.sidebar": "#111111", "color.text": "#000000" };
 
