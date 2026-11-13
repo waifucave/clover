@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { appRestartPlan, DaemonPair, type AppStartOutcome, type AppStartWhy, type DaemonPairOptions, type PairStopReason } from "../../src/platform/pair/policy";
 
 /** A manual clock: timers fire only when the test advances time. */
-function harness(opts: Partial<DaemonPairOptions> = {}, outcome: () => AppStartOutcome = () => "started") {
+function harness(opts: Partial<DaemonPairOptions> = {}, outcome: () => AppStartOutcome = () => "started", onAppGone?: () => void) {
   let now = 0;
   let seq = 0;
   const timers = new Map<number, { at: number; fn: () => void }>();
@@ -10,12 +10,14 @@ function harness(opts: Partial<DaemonPairOptions> = {}, outcome: () => AppStartO
   const told: PairStopReason[] = [];
   const toldTo: string[][] = [];
   const stops: string[] = [];
+  let gone = 0;
   const pair: DaemonPair = new DaemonPair({
     now: () => now,
     after(ms, fn) { const id = ++seq; timers.set(id, { at: now + ms, fn }); return () => { timers.delete(id); }; },
     async startApp(why) { starts.push({ at: now, why, safeMode: pair.status().safeMode }); return outcome(); },
     tellAppQuit(reason, ids) { told.push(reason); toldTo.push([...ids]); },
     stopDaemon(why) { stops.push(why); },
+    onAppGone: onAppGone ?? (() => { gone++; }),
   }, { desktop: true, ...opts });
   async function advance(ms: number): Promise<void> {
     const end = now + ms;
@@ -29,7 +31,7 @@ function harness(opts: Partial<DaemonPairOptions> = {}, outcome: () => AppStartO
     }
     now = end;
   }
-  return { pair, starts, told, toldTo, stops, advance, pending: () => timers.size, now: () => now };
+  return { pair, starts, told, toldTo, stops, gone: () => gone, advance, pending: () => timers.size, now: () => now };
 }
 
 describe("appRestartPlan (S7 §5)", () => {
@@ -75,6 +77,27 @@ describe("DaemonPair", () => {
     await h.advance(60_000);
     expect(h.starts).toHaveLength(0);
     expect(h.stops).toHaveLength(0);
+  });
+
+  test("the last app connection leaving reports appGone once; an overlapping one holds it", () => {
+    const h = harness();
+    h.pair.appConnected("a");
+    h.pair.appConnected("b");
+    h.pair.appDisconnected("a");
+    expect(h.gone()).toBe(0); // "b" still up: the tabs keep their app
+    h.pair.appDisconnected("b");
+    expect(h.gone()).toBe(1); // lane E's appGone: whoever runs the tabs ends their streams
+    h.pair.appDisconnected("b"); // already gone: no second report
+    expect(h.gone()).toBe(1);
+  });
+
+  test("a throwing appGone is logged and ignored: the crash still schedules", async () => {
+    const h = harness({}, () => "started", () => { throw new Error("streams blew up"); });
+    h.pair.appConnected("a");
+    h.pair.appDisconnected("a");
+    expect(h.gone()).toBe(0);
+    await h.advance(1_000);
+    expect(h.starts.at(-1)).toEqual({ at: 1_000, why: "crash", safeMode: false });
   });
 
   test("a crashed app restarts after 1, 2, then 4 s, the third in safe mode", async () => {

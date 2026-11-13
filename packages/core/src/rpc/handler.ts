@@ -37,6 +37,10 @@ export function toMethodError(err: unknown): MethodError {
 export interface MethodContext {
   caller: Caller;
   stream?: { send(event: unknown): void; follows: Map<string, Unsubscribe> };
+  /** The calling connection's id, when the server wires one (the Clover server's `conn.connId`): handlers
+   *  that must ignore a replaced connection (lane E's browser `report`/`streamData`) compare it against
+   *  the current one. Absent in tests and servers that don't track it. */
+  connId?: number;
 }
 
 export type MethodHandler = (params: unknown, ctx: MethodContext) => Promise<unknown>;
