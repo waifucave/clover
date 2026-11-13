@@ -2,17 +2,17 @@
 // (`acceptance-voice`) is Alpha's voice. Clover Voice (the bundled `clover/voice`) is the active voice mode; a third
 // party's (`acceptance-voice-mode`) is installed the user's way and its OK card says it can replace Clover's voice. Not
 // chosen, the core refuses it the player. Its `chime` (a plugin's sound as Alpha's voice, the `audio` capability) goes
-// to Clover Voice's one queue while Alpha's reply sounds, and waits its turn: it never cuts her reply (the player's
-// `data-voice-cut` stays) and no two bots ever sound at once (`data-voice-overlap` at most 1). Chosen in Settings › Voice
+// to Clover Voice's one queue while Alpha's reply sounds, and waits its turn: it reaches the player only after her reply
+// (and, where the player's audio clock runs, it never cuts her reply and no two bots sound at once). Chosen in Settings › Voice
 // (the section's select, the user's way), the third party's mode says Alpha's next reply through her provider; choosing
 // Clover Voice again takes it back. A plain plugin with `voices.use` (`acceptance-narrator`) gets the provider's audio
 // back as its own data with nothing played; its child, with no `voices.use`, is refused.
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { VOICE_MODE_OK_LINE } from "../../packages/plugin-sdk/src/manifest/validate";
-import { clickTree, fail, leave, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { clickTree, fail, leave, SIDEBAR_ITEMS, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
-export const VOICE_MODE_CLAUSE = "a third party's voice mode: its OK says it can replace Clover's voice; not chosen it is refused the player; a plugin's sound waits behind Alpha's reply in Clover Voice's one queue, never cutting it, and no two bots sound at once; chosen in Settings › Voice it says Alpha's reply through her provider, and Clover Voice takes back over when chosen again; a plugin with voices.use gets a provider's audio as its own data, one without is refused";
+export const VOICE_MODE_CLAUSE = "a third party's voice mode: its OK says it can replace Clover's voice; not chosen it is refused the player; a plugin's sound waits behind Alpha's reply in Clover Voice's one queue, reaching the player only after it; chosen in Settings › Voice it says Alpha's reply through her provider, and Clover Voice takes back over when chosen again; a plugin with voices.use gets a provider's audio as its own data, one without is refused";
 
 const MODE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice-mode");
 const MODE_ID = "acceptance-voice-mode";
@@ -20,6 +20,9 @@ const NARRATOR_DIR = resolve(import.meta.dir, "fixtures", "acceptance-narrator")
 const NARRATOR_ID = "acceptance-narrator";
 /** What the run's tone voice yields for any text: 3 pieces of 0.2 s of pcm16-24k. */
 const TONE_BYTES = 28_800;
+/** Its `long` voice: 5 pieces of 0.5 s, which Clover Voice hands the player as 5 pieces and a last. */
+const REPLY_PIECES = 6;
+const REPLY_MS = 2_500;
 
 type Counters = { pieces: number; speaking: string[]; overlap: number; cut: number };
 type CardView = { id: string; kind: string; pluginId?: string };
@@ -83,8 +86,24 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
   /** A record of the player's counters as they change (the tree document's root), for a failure's dump. */
   const record = async () => {
     for (const d of await treeDocs(cdp)) {
-      await cdp.evaluate(d.session, "(() => { const e = document.documentElement; if (e.dataset.voicePieces === undefined || window.__vq) return false; const t0 = Date.now(); window.__vq = []; const note = () => { const d = e.dataset; window.__vq.push([Date.now() - t0, +d.voicePieces, d.voiceSpeaking || '-', +(d.voiceCut || 0)].join(' ')); if (window.__vq.length > 200) window.__vq.shift(); }; note(); new MutationObserver(note).observe(e, { attributes: true }); return true; })()").catch(() => undefined);
+      await cdp.evaluate(d.session, "(() => { const e = document.documentElement; if (e.dataset.voicePieces === undefined || window.__vq) return false; const t0 = Date.now(); window.__vq0 = t0; window.__vq = []; const note = () => { const d = e.dataset; window.__vq.push([Date.now() - t0, +d.voicePieces, d.voiceSpeaking || '-', +(d.voiceCut || 0)].join(' ')); if (window.__vq.length > 400) window.__vq.shift(); }; note(); new MutationObserver(note).observe(e, { attributes: true }); return true; })()").catch(() => undefined);
     }
+  };
+  /** The record, by the document's clock (ms since it began): each change of the counters. */
+  const timeline = async (): Promise<{ ms: number; pieces: number; speaking: string; cut: number }[]> => {
+    for (const d of await treeDocs(cdp)) {
+      const v = await cdp.evaluate(d.session, "window.__vq ? JSON.stringify(window.__vq) : null").catch(() => null);
+      if (typeof v === "string") return (JSON.parse(v) as string[]).map((x) => { const [ms, pieces, speaking, cut] = x.split(" "); return { ms: +ms!, pieces: +pieces!, speaking: speaking!, cut: +cut! }; });
+    }
+    return [];
+  };
+  /** Now, by the record's clock. */
+  const docNow = async (): Promise<number> => {
+    for (const d of await treeDocs(cdp)) {
+      const v = await cdp.evaluate(d.session, "window.__vq0 === undefined ? null : Date.now() - window.__vq0").catch(() => null);
+      if (typeof v === "number") return v;
+    }
+    return fail("the player's record is gone");
   };
   const dump = async () => {
     let seen = "";
@@ -105,44 +124,48 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     if (sink.refused === undefined || !sink.refused.includes("isn't the active voice")) fail(`not chosen, ${MODE_ID} reached the player itself: ${JSON.stringify(sink)}`);
     done.push(`not chosen, it was refused the player ("${sink.refused}")`);
 
-    // A plugin's sound offered while Alpha's reply sounds: Clover Voice plays it after, and her reply is never cut. Her
-    // voice is the tone's long one for this (2.5 s), so the sound is offered well inside her reply.
+    // A plugin's sound offered while Alpha's reply sounds: Clover Voice plays it after her reply. Her voice is the tone's
+    // long one for this (2.5 s), so the sound is offered well inside her reply. The proof is when the pieces reach the
+    // player (its counters' record, by the document's clock): the sound's first piece no sooner than her reply's length
+    // after her first. That holds whether or not the player's audio clock runs (an AudioContext waits for a gesture in its
+    // own document); where it ran, her reply also wasn't cut (`data-voice-cut`) and no two bots sounded at once.
     await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: "acceptance-voice", voice: "long" } } });
     long = true;
+    // A click in the window first, as the user's would be: the player's AudioContext runs only after a gesture.
+    await clickTree(cdp, "Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
     await record();
     const before = await until("the shell's voice counters", 20_000, counters);
     const replied = say("Say something for the queue.");
-    let offered: Counters | undefined;
-    for (let i = 0; i < 3 && offered === undefined; i++) {
-      const start = (await counters())!;
-      const deadline = Date.now() + 120_000;
-      let sounding = false;
-      while (Date.now() < deadline) {
-        const c = await counters();
-        if (c !== undefined && c.speaking.includes("alpha") && c.pieces > start.pieces) {
-          sounding = true;
-          break;
-        }
-        await sleep(25);
-      }
-      if (!sounding) fail(`Alpha's reply never sounded: ${await dump()}`);
-      await run(`${MODE_ID}.chime`);
-      const now = (await counters())!;
-      // The sound must have been offered while she still spoke, or the order proves nothing: again, with a new reply.
-      if (now.speaking.includes("alpha")) offered = now;
-      else if (i < 2) await say("Say something again.");
+    const deadline = Date.now() + 120_000;
+    while ((await counters())!.pieces === before.pieces) {
+      if (Date.now() > deadline) fail(`Alpha's reply never reached the player: ${await dump()}`);
+      await sleep(25);
     }
-    const offeredAt = offered ?? fail("Alpha's reply ended each time before the sound was offered: the queue went unproven");
+    await run(`${MODE_ID}.chime`);
+    const offeredMs = await docNow();
     await replied;
-    const after = await until("the sound played after her reply", 30_000, async () => {
-      const c = await counters();
-      return c !== undefined && c.pieces > offeredAt.pieces && c.speaking.length === 0 ? c : undefined;
-    }, dump);
+    await until("her reply's pieces and the sound's at the player", 30_000, async () => ((await counters())!.pieces >= before.pieces + REPLY_PIECES + 2 ? true : undefined), dump);
+    await sleep(500);
+    const line = await timeline();
+    const at = (n: number) => line.find((e) => e.pieces >= n);
+    const r0 = at(before.pieces + 1) ?? fail(`no record of her reply's first piece: ${await dump()}`);
+    const c0 = at(before.pieces + REPLY_PIECES + 1) ?? fail(`no record of the sound's first piece: ${await dump()}`);
+    if (offeredMs - r0.ms > REPLY_MS - 500) fail(`the sound was offered ${offeredMs - r0.ms} ms into her ${REPLY_MS} ms reply, too late to prove the queue`);
+    if (c0.ms - r0.ms < REPLY_MS - 150) fail(`the sound reached the player ${c0.ms - r0.ms} ms after her reply began, inside its ${REPLY_MS} ms: it didn't wait its turn; ${await dump()}`);
+    const clockRan = line.some((e) => e.ms > r0.ms && e.speaking === "-");
+    let played = `the sound, offered ${offeredMs - r0.ms} ms into Alpha's ${REPLY_MS} ms reply, reached the player ${c0.ms - r0.ms} ms after her first piece, after her reply`;
+    if (clockRan) {
+      const after = await until("the player quiet again", 30_000, async () => {
+        const c = await counters();
+        return c !== undefined && c.speaking.length === 0 ? c : undefined;
+      }, dump);
+      if (after.cut !== before.cut) fail(`the sound cut Alpha's reply off (data-voice-cut ${before.cut} → ${after.cut}); ${await dump()}`);
+      if (after.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${after.overlap})`);
+      played += `; her reply was never cut (data-voice-cut ${after.cut}) and no two bots sounded at once (data-voice-overlap ${after.overlap})`;
+    } else played += " (the player's audio clock didn't run in this document, so its cut and overlap counters say nothing here)";
     await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: "acceptance-voice", voice: "tone" } } });
     long = false;
-    if (after.cut !== before.cut) fail(`the sound cut Alpha's reply off (data-voice-cut ${before.cut} → ${after.cut}): it didn't wait its turn; ${await dump()}`);
-    if (after.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${after.overlap})`);
-    done.push(`a chime offered while Alpha's reply sounded played after it (${after.pieces - offeredAt.pieces} more piece(s)), her reply never cut (data-voice-cut ${after.cut}), and no two bots sounded at once (data-voice-overlap ${after.overlap})`);
+    done.push(played);
 
     // Chosen in Settings › Voice: the third party's mode says Alpha's next reply.
     const value = await choose("Acceptance voice mode");
@@ -157,7 +180,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     });
     const p1 = await until("its pieces at the player", 20_000, async () => {
       const c = await counters();
-      return c !== undefined && c.pieces > p0.pieces && c.speaking.length === 0 ? c : undefined;
+      return c !== undefined && c.pieces > p0.pieces ? c : undefined;
     });
     if (r.bytes < TONE_BYTES) fail(`${MODE_ID} got ${r.bytes} bytes from Alpha's provider, fewer than the tone's ${TONE_BYTES}`);
     done.push(`chosen in Settings › Voice, ${MODE_ID} said Alpha's reply through her provider (${r.bytes} bytes, ${p1.pieces - p0.pieces} piece(s) at the player)`);
