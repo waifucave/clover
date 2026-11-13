@@ -224,12 +224,14 @@ export function glossaryIndex(deps: GlossaryDeps): GlossaryItem[] {
   const records = reg.list();
   const sentence = (t: string) => (t === "" || /[.!?:]$/.test(t) ? t : `${t}.`);
   for (const p of records) {
-    if (!serves(p.id)) continue;
+    // Listed where any part of it reaches the session: its scope, or one of its servers' own (a bot plugin whose
+    // persona is its own bot's can still serve every bot a tool). Its builder's stopped plugin is listed below anyway.
+    const running = p.state === "running" || p.state === "waiting";
+    if (running && !serves(p.id) && !servers.some((sv) => sv.plugin === p.id)) continue;
     const name = textOf(p.name) || p.id;
     const manifest = p.manifest as { description?: unknown; addons?: { description?: unknown } } | undefined;
     const addons = textOf(manifest?.addons?.description);
     const description = textOf((p as { description?: unknown }).description ?? manifest?.description);
-    const running = p.state === "running" || p.state === "waiting";
     if (!running) {
       // A bot's own plugin that doesn't run (stopped by the crash rules or the user, or waiting for the user's OK):
       // listed to its builder alone, so it finds it exactly when it has to fix it. Nothing of it is loaded.

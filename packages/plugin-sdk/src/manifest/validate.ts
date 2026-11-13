@@ -1141,10 +1141,13 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
     for (const h of hooks) for (const e of (h as { on?: unknown }).on instanceof Array ? (h as { on: unknown[] }).on : []) if (typeof e === "string") events.add(e);
   }
   if (events.size === 0) return [];
-  // Hooks that all say `own-bot` see only their own bot's sessions (the host holds them to it).
+  // Hooks that all say `own-bot` see only their own bot's sessions (the host holds them to it). A hook without a scope
+  // takes its plugin's, else its tree's top plugin's, as the host reads it (`scopeOf`).
+  const scopeOf = (r: ManifestReport | undefined) => (r?.manifest as { scope?: unknown } | undefined)?.scope;
+  const top = reports.find((r) => { const id = (r.manifest as { id?: unknown } | undefined)?.id; return typeof id === "string" && !id.includes("/"); });
   const own = reports.every((r) => {
     const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
-    return !Array.isArray(hooks) || hooks.every((h) => (h as { scope?: unknown }).scope === "own-bot");
+    return !Array.isArray(hooks) || hooks.every((h) => ((h as { scope?: unknown }).scope ?? scopeOf(r) ?? scopeOf(top)) === "own-bot");
   });
   const sees: string[] = [];
   if (events.has("message.in")) sees.push("your messages");

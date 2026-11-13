@@ -12,7 +12,7 @@
 //   agent by that bot's level and rules, never more than its parent), and runs where its server runs (J's router), as
 //   the agent's own session.
 // * **Skills and agent definitions.** The parts source gives a session the plugins' skill folders and agent files in the
-//   same scope (`scopeServes`, `servesBackend`), for the backends that read their own folders (Claude Code's session
+//   same scope (`servesScope`, `servesBackend`), for the backends that read their own folders (Claude Code's session
 //   plugin, claude-code/placement.ts); `Glossary` on the bridge serves them to every agent. Command hooks are never
 //   given: an outside agent can't run one under its plugin's fence.
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -23,7 +23,7 @@ import type { BotSessionContext } from "../bots/service";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
 import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
-import { scopeServes, servesBackend } from "../runtime-sdk/turn-loop/only-backends";
+import { scopeOf, servesBackend, servesScope } from "../runtime-sdk/turn-loop/only-backends";
 import type { BotMcpServer, McpRunner } from "../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeCallContext, BridgeToolDef, BridgeToolSource } from "./bridge/tools";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -44,8 +44,9 @@ export type AgentToolVerdict = { allowed: true; input: Record<string, unknown> }
 export type AgentToolJudge = (session: AgentSessionFacts, ctx: BridgeCallContext, call: { served: string; input: Record<string, unknown>; callId: string }) => Promise<AgentToolVerdict>;
 
 export interface AgentPluginReachDeps {
-  /** This computer's PluginMcp: the servers a session of `kind` on `backend` gets (scope, `onlyBackends`, placement). */
-  servers(kind: "agent" | "coding", backend: string): readonly BotMcpServer[];
+  /** This computer's PluginMcp: the servers a session of `kind` on `backend`, delegated by `bot` (none: the user's own),
+   *  gets (scope, `onlyBackends`, placement). */
+  servers(kind: "agent" | "coding", backend: string, bot?: string): readonly BotMcpServer[];
   /** J's router: runs a call where its server is. */
   runner: McpRunner;
   judge: AgentToolJudge;
@@ -119,11 +120,11 @@ const text = (t: string) => ({ content: [{ type: "text", text: t }], isError: tr
 
 /** The bridge's plugin tools for one daemon. */
 export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
-  const listing = (s: AgentSessionFacts | undefined) => (s === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(s.kind, s.backend)));
+  const listing = (s: AgentSessionFacts | undefined) => (s === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(s.kind, s.backend, s.bot)));
   return {
     async tools(sessionId, session): Promise<BridgeToolDef[]> {
       const left: string[] = [];
-      const tools = session === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(session.kind, session.backend), (name, why) => left.push(`${name} (${why})`));
+      const tools = session === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(session.kind, session.backend, session.bot), (name, why) => left.push(`${name} (${why})`));
       if (left.length > 0) d.log?.(`${sessionId}: plugin tools left off its bridge: ${left.join(", ")}`);
       return [...tools.values()].map(({ server, tool, name }) => ({
         name,
@@ -137,7 +138,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
       if (session === undefined) return "";
       const seen = new Set<string>();
       const parts: string[] = [];
-      for (const s of d.servers(session.kind, session.backend)) {
+      for (const s of d.servers(session.kind, session.backend, session.bot)) {
         if (s.instructions === undefined || s.instructions.trim() === "" || seen.has(s.server)) continue;
         seen.add(s.server);
         parts.push(`Tools named ${s.server}__… (the plugin ${s.plugin}):\n${s.instructions.trim()}`);
@@ -181,10 +182,11 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
   };
 }
 
-/** Whether a plugin's skills and agent definitions reach the session: its `scope` covers the session's kind and its
- *  `onlyBackends` its backend. A plugin that isn't running here gives no active entry at all. */
+/** Whether a plugin's skills and agent definitions reach the session: its `scope` covers the session (`servesScope`:
+ *  a bot's delegated agent takes `bots` parts, its own bot's `own-bot` ones) and its `onlyBackends` its backend. A plugin
+ *  that isn't running here gives no active entry at all. */
 function servesSession(d: Pick<AgentPluginReachDeps, "registry">, s: AgentSessionFacts, pluginId: string): boolean {
-  return scopeServes(d.registry, pluginId, s.kind) && servesBackend(d.registry, pluginId, s.kind, s.backend);
+  return servesScope(scopeOf(d.registry, pluginId), { kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }) }, pluginId) && servesBackend(d.registry, pluginId, s.kind, s.backend);
 }
 
 /** `path` inside `folder`, by real paths: a link out of the plugin's folder is never followed. */
@@ -276,7 +278,7 @@ function agentMarkdown(registry: Pick<PluginRegistry, "entries" | "get">, plugin
 export function agentGlossary(d: Pick<AgentPluginReachDeps, "registry" | "servers">) {
   return async (_sessionId: string, q: { query?: string | string[]; load?: string | string[] }, session?: AgentSessionFacts): Promise<{ results: unknown[]; loaded: unknown[] }> => {
     if (session === undefined) return { results: [], loaded: [] };
-    const tools = [...bridgeToolsOf(d.servers(session.kind, session.backend)).values()];
+    const tools = [...bridgeToolsOf(d.servers(session.kind, session.backend, session.bot)).values()];
     const items: GlossaryItem[] = glossaryIndex({
       tools: () => tools.map(({ tool, name }) => ({ name, ...(tool.description === undefined ? {} : { description: tool.description }), inputSchema: tool.inputSchema })),
       registry: d.registry,
