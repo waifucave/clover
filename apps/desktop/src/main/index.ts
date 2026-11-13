@@ -1932,8 +1932,8 @@ function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void
     // The app's own keys won above; a plugin command's default key runs that command as the user (the press is theirs).
     const command = pluginKeys.match({ type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat });
     // A test-marked or acceptance build says which chord an unbound press made (the harness reads it); a release never does.
-    if (command === undefined && input.type === "keyDown" && (input.meta || input.control) && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
-      log(`keys: an unbound press made ${pluginKeys.chordOf({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) ?? "no chord"}`);
+    if (command === undefined && (input.type === "keyDown" || input.type === "rawKeyDown") && (input.meta || input.control) && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
+      log(`keys: an unbound ${input.type} made ${pluginKeys.chordOf({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) ?? "no chord"}`);
     }
     if (command !== undefined) {
       event.preventDefault();

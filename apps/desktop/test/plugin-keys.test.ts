@@ -56,3 +56,12 @@ describe("the app's own chords", () => {
     }
   });
 });
+
+describe("a press's type", () => {
+  test("a rawKeyDown is a key-down too (what some synthesized presses arrive as)", () => {
+    const k = new PluginKeys("darwin");
+    k.set(rows);
+    expect(k.match(press({ key: "K", code: "KeyK", meta: true, shift: true, type: "rawKeyDown" }))).toBe("a.go");
+    expect(k.match(press({ key: "K", code: "KeyK", meta: true, shift: true, type: "char" }))).toBeUndefined();
+  });
+});

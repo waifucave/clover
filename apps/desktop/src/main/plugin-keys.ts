@@ -36,7 +36,7 @@ export class PluginKeys {
   }
 
   match(press: KeyPress & { type: string; isAutoRepeat?: boolean }): string | undefined {
-    if (press.type !== "keyDown" || press.isAutoRepeat === true || this.#table.size === 0) return undefined;
+    if ((press.type !== "keyDown" && press.type !== "rawKeyDown") || press.isAutoRepeat === true || this.#table.size === 0) return undefined;
     const chord = chordOfPress(press);
     return chord === undefined ? undefined : this.#table.get(chord);
   }
