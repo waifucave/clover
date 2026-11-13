@@ -112,7 +112,7 @@ describe("startPluginHost", () => {
         method: "api.settings.nope doesn't exist in the plugin API (see API_CALLS in @waifucave/clover-plugin-sdk)",
         then: "undefined", sym: "undefined", json: "undefined", awaited: "other", bound: "The Fool",
         // Feature-tests answer without throwing; serialising the API gives nothing and inspecting it doesn't throw.
-        has: "true,true,false,true,false,false,false", stringified: "undefined", inspected: "string", keys: 0,
+        has: "true,true,false,true,false,true,true", stringified: "undefined", inspected: "string", keys: 0,
         // The API is calls, not data: cloning it fails as cloning any function does (as it always has).
         cloned: "The object can not be cloned.",
       });
