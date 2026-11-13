@@ -5,12 +5,13 @@
 // (`CLOVER_TEST_BROWSER_NAMES`, apps/desktop/src/main/browser/test-names.ts: a test or acceptance build only): the name
 // resolves to a public-kind address and is dialled to this server, so the network filter judges it as any web address.
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
-import { existsSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTurn, until, type ExampleCtx } from "./example-steps";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
-export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
+export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
 
 export const FIXTURE_NAME = "browser-fixture.test";
 /** A second name for the same server: another site, as the browser and the approval judge it. */
@@ -189,7 +190,8 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   // 9b. The terminal and files panels' own layers (rows 2.33, 4.16, 4.18): each reads the session as its component does
   // (`conversation.get`: the folder and the computer it runs on), then the files panel lists that folder and reads a file in
   // it through `files.*`, and the terminal panel opens a shell there, types a line and hears it come back as `terminal_output`.
-  // The diff panel (4.17) asks `session.diff`, which the daemon doesn't serve: that is reported, not passed over.
+  // The diff panel (4.17) reads a coding session's folder changes (`session.diff`), and the slim column its outputs, context
+  // and connectors (`session.outputs`/`context`/`connectors`), each from its own layer.
   if (openLayer === undefined) fail("panels: this run has no layer token door");
   else {
     const filesLayer = await openLayer("clover/panel-files");
@@ -229,12 +231,55 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     } finally {
       filesLayer.close();
     }
+    // The diff panel (4.17): a real coding session (Clover's own coding agent, started the app's way with no prompt) on a
+    // git folder in the user's home with one committed file changed and one new file; the panel's own layer reads its
+    // changes (`session.diff`) and gets both, with their hunks, the branch as the base.
+    const computerName = (await ctx.rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? fail("computer.list lists no computer");
+    const work = join(ctx.userHome, "diff-work");
+    rmSync(work, { recursive: true, force: true });
+    mkdirSync(work, { recursive: true });
+    const gitIn = (...args: string[]) => {
+      const r = spawnSync("git", args, { cwd: work, encoding: "utf8", env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: work, GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "Acceptance", GIT_AUTHOR_EMAIL: "acceptance@example.invalid", GIT_COMMITTER_NAME: "Acceptance", GIT_COMMITTER_EMAIL: "acceptance@example.invalid" } });
+      if (r.status !== 0) fail(`git ${args.join(" ")} in the diff folder: ${r.stderr.slice(0, 200)}`);
+    };
+    gitIn("init", "-q", "-b", "main");
+    writeFileSync(join(work, "notes.txt"), "first line\nsecond line\n");
+    gitIn("add", "notes.txt");
+    gitIn("commit", "-q", "-m", "the first commit");
+    writeFileSync(join(work, "notes.txt"), "first line\nSECOND LINE, changed\n");
+    writeFileSync(join(work, "fresh.txt"), "a new file\n");
+    const coding = (await ctx.rpc.request<{ session: string }>("agent.start", { backend: "clover-code", computer: computerName, root: `home/${computerName}/diff-work` }, 60_000)).session;
     const diffLayer = await openLayer("clover/panel-diff");
     try {
-      const d = await diffLayer.request("session.diff", { id: session }).then(() => "served", (e: unknown) => String(e instanceof Error ? e.message : e).slice(0, 120));
-      lines.push(`diff panel: session.diff is ${d === "served" ? "served" : `not served by the daemon (${d}), so the panel draws nothing`}`);
+      type DiffFile = { path: string; status: string; added: number; removed: number; hunks?: { lines: { kind: string; text: string }[] }[] };
+      const d = (await diffLayer.request("session.diff", { id: coding })) as { base: string; target: string; files: DiffFile[]; notice?: string };
+      const changed = d.files.find((f) => f.path === "notes.txt");
+      const added = d.files.find((f) => f.path === "fresh.txt");
+      const lineKinds = changed?.hunks?.flatMap((h) => h.lines.map((l) => `${l.kind}:${l.text}`)) ?? [];
+      if (d.base !== "main" || d.target !== "working tree") fail(`the diff panel's session.diff compared ${d.base} with ${d.target}, not main with the working tree`);
+      if (changed === undefined || changed.status !== "modified" || changed.added !== 1 || changed.removed !== 1 || !lineKinds.includes("del:second line") || !lineKinds.includes("add:SECOND LINE, changed")) fail(`the changed file read ${JSON.stringify(changed).slice(0, 300)}`);
+      if (added === undefined || added.status !== "added" || added.added !== 1 || added!.hunks?.[0]?.lines[0]?.text !== "a new file") fail(`the new file read ${JSON.stringify(added).slice(0, 300)}`);
+      if (d.files.length !== 2) fail(`session.diff listed ${d.files.map((f) => f.path).join(", ")}, not just the two files`);
+      lines.push(`diff panel: a coding session (${coding}) on a git folder; its layer's session.diff compared main with the working tree and gave notes.txt changed (+1 −1, its hunk) and fresh.txt added`);
     } finally {
       diffLayer.close();
+    }
+    // The column's reads (the slim column's context and outputs, a coding session's connectors), from the column's own
+    // layer: a file delivered to the coding session's outputs folder is listed by name and kind; Alpha's last measured
+    // turn against her model's window; the coding session's plugin MCP servers counted.
+    const column = await openLayer("clover/panel");
+    try {
+      mkdirSync(join(ctx.home, "outputs", coding), { recursive: true });
+      writeFileSync(join(ctx.home, "outputs", coding, "summary.md"), "# What changed\n");
+      const outs = (await column.request("session.outputs", { id: coding, limit: 4 })) as { items: { id: string; name: string; kind: string }[]; more: number };
+      if (JSON.stringify(outs) !== JSON.stringify({ items: [{ id: "summary.md", name: "summary.md", kind: "page" }], more: 0 })) fail(`the column's session.outputs gave ${JSON.stringify(outs).slice(0, 300)}`);
+      const ctxUse = (await column.request("session.context", { id: session })) as { used: number; tokens: number; window: number } | null;
+      if (ctxUse === null || !(ctxUse.used > 0 && ctxUse.used <= 1) || !(ctxUse.tokens > 0) || !(ctxUse.window > 0)) fail(`the column's session.context for Alpha gave ${JSON.stringify(ctxUse)}`);
+      const conns = (await column.request("session.connectors", { id: coding })) as { total: number; needSignIn: number };
+      if (!Number.isInteger(conns.total) || !Number.isInteger(conns.needSignIn) || conns.needSignIn > conns.total) fail(`the column's session.connectors gave ${JSON.stringify(conns)}`);
+      lines.push(`column: session.outputs lists summary.md (a page); session.context reads Alpha's last turn at ${ctxUse!.tokens} of ${ctxUse!.window} tokens; session.connectors counts ${conns.total} servers for the coding session, ${conns.needSignIn} waiting for a sign-in`);
+    } finally {
+      column.close();
     }
   }
   // 10. The same usage, as drawn: the Settings window's Usage section, and the island's Usage tab while a card keeps the island
