@@ -1,8 +1,7 @@
 // What the usage entries read from the app until lane E's runtime gives them `usePluginApi().usage`: one context, so
 // the gallery and the tests hand the in-memory fake (`memoryUsage`) and E-M1 hands the plugin API's.
 
-import { createContext, useContext, useMemo, type ReactElement } from "react";
-import { useCore, useT } from "../../client/sdk";
+import { createContext, useContext, type ReactElement } from "react";
 import type { CoreClient } from "../../../shell/runtime/types";
 import type { UsageApi } from "../model/usage";
 import { UsageTab } from "./UsageTab";
@@ -34,14 +33,10 @@ export function coreUsageApi(core: Pick<CoreClient, "call">): UsageApi {
   };
 }
 
-/** The host, with its translator installed for the usage plugin's words: the one a test or the gallery gives, else the app's
- *  own (the core's `usage.*` methods and the app's translator). */
-function useUsageHost(): UsageHost | null {
-  const given = useContext(UsageHostContext);
-  const core = useCore();
-  const t = useT();
-  const own = useMemo<UsageHost | null>(() => (core === undefined ? null : { usage: coreUsageApi(core), t: t as unknown as Translator }), [core, t]);
-  const host = given ?? own;
+/** The host, with its translator installed for the usage plugin's words: the one a test or the gallery gives, else `fallback`
+ *  (the app's own, `client/entries.tsx`, built from the layer's hooks). */
+export function useUsageHost(fallback: UsageHost | null = null): UsageHost | null {
+  const host = useContext(UsageHostContext) ?? fallback;
   setTranslator(host?.t ?? null);
   setLanguage(host?.lang);
   return host;

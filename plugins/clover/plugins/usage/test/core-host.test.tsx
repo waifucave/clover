@@ -4,7 +4,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
 import { fakeCore, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
-import { UsageSection, UsageTabEntry, coreUsageApi } from "../src/ui/host";
+import { coreUsageApi } from "../src/ui/host";
+import { UsageSection, UsageTabEntry } from "../client/entries";
 import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
