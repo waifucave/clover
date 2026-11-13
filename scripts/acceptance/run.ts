@@ -2266,6 +2266,10 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
     // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
     await modelPluginsUp();
     await until(`${THIRD_PARTY_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === THIRD_PARTY_MODEL) ? true : undefined), 500);
+    // A model no plugin that is on offers is refused in the picker's words (its model listed: the rebuild on its OK is done, nothing settles).
+    const bogus = `${THIRD_PARTY_PLUGIN}/not-a-model-it-offers`;
+    const refusedSet = await c.request("bot.setUserLayer", { id: "alpha", patch: { model: bogus } }).then(() => undefined, (e: unknown) => why(e));
+    if (refusedSet === undefined || !refusedSet.includes(`${bogus} isn't offered by any plugin that is on`)) fail(`bot.setUserLayer took ${bogus}, which no plugin offers (${refusedSet ?? "applied"})`);
     await until(`${THIRD_PARTY_MODEL} to be a model Alpha can run`, 60_000, async () => {
       const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: THIRD_PARTY_MODEL } }).catch(() => undefined);
       if (set === undefined) return undefined;

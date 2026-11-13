@@ -80,6 +80,8 @@ export interface DaemonBotsInput {
   sideUp?(side: BotSide): () => void;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** Whether a model can be set as a bot's (`bot.setUserLayer`; models-list.ts `modelOffer`). */
+  modelOffer?: BotSideOptions["modelOffer"];
   /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
    *  nothing). */
   bundledChoice?: BotSideOptions["bundledChoice"];
@@ -408,6 +410,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.modelOffer ? { modelOffer: b.modelOffer } : {}),
         ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
         ...(b.workshop ? { workshop: b.workshop } : {}),
         ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),

@@ -92,3 +92,21 @@ test("the internal jobs' provider is built again when the catalog moves (the mod
   expect(second).not.toBe(first);
   expect(providerOf()).toBe(second);
 });
+
+test("modelOffer: offered as the picker lists it; starting while the model plugins settle and a plugin that is on contributes its provider; else absent", async () => {
+  const { modelOffer, contributedProviders, catalogModelListings } = await import("../../../src/runtime-sdk/models-list");
+  const catalog = loadCatalog();
+  const listed = catalogModelListings(catalog, new Set())[0]!.id;
+  const records = [{ enabled: true, manifest: { contributes: { models: [{ provider: "acme" }] } } }, { enabled: false, manifest: { contributes: { models: [{ provider: "off" }] } } }, { manifest: undefined }];
+  expect(contributedProviders(records)).toEqual(["acme"]);
+  const o = (settling: boolean) => ({ catalog, settling, contributed: () => contributedProviders(records) });
+  expect(modelOffer(listed, o(false))).toBe("offered");
+  expect(modelOffer(listed, o(true))).toBe("offered");
+  expect(modelOffer("acme/fast", o(true))).toBe("starting");
+  expect(modelOffer("acme/fast", o(false))).toBe("absent");
+  expect(modelOffer("off/fast", o(true))).toBe("absent");
+  expect(modelOffer("nobody/fast", o(true))).toBe("absent");
+  // A deprecated row the picker leaves out isn't offered either.
+  const deprecated = catalog.models.find((m) => m.status === "deprecated");
+  if (deprecated !== undefined) expect(modelOffer(deprecated.key, o(false))).toBe("absent");
+});

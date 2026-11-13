@@ -208,8 +208,8 @@ import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin
 import { mappedNamesSeam, pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential, evictSessionsForModelCatalog } from "./runtime-sdk/credentials";
-import { onModelCatalogChange } from "./runtime-sdk/model-plugins";
-import { modelsMethods } from "./runtime-sdk/models-list";
+import { activeCatalog, installedModelPlugins, onModelCatalogChange } from "./runtime-sdk/model-plugins";
+import { contributedProviders, modelOffer, modelsMethods } from "./runtime-sdk/models-list";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -4193,6 +4193,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       bundledChoice: (p) => p.source !== "bundled" || bundledStaged === undefined ? undefined
         : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      // A bot's model is one a plugin that is on offers (as the picker lists it), or one whose plugin is on while the
+      // model plugins are still taking it in (their start or a rebuild), which the session then reopens on.
+      modelOffer: (model) => modelOffer(model, {
+        catalog: activeCatalog(),
+        settling: installedModelPlugins() === undefined || installedModelPlugins()!.rebuilding,
+        contributed: () => contributedProviders(registry.list()),
+      }),
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence, agents }) => {
         sessionsOf = () => side()?.host;

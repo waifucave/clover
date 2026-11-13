@@ -111,6 +111,7 @@ export interface Boot {
  *  would. */
 export async function boot(opts: {
   home: string; plugins: FakePluginInput[]; clock?: FakeClock; hasKeyFor?: (model: string) => boolean; computer?: string;
+  modelOffer?: (model: string) => "offered" | "starting" | "absent";
   main?: MainComputer; relay?: BotRelay; compaction?: BotSideOptions["compaction"]; approvals?: BotSideOptions["approvals"];
   reattach?: BotSideOptions["reattach"];
   userHome?: string;
@@ -134,6 +135,7 @@ export async function boot(opts: {
     home: opts.home, computer: opts.computer ?? "Studio", registry, drivers: drivers.factory, clock,
     defaultModel: () => ({ model: "fireworks/kimi-k3" }),
     ...(opts.hasKeyFor === undefined ? {} : { hasKeyFor: opts.hasKeyFor }),
+    ...(opts.modelOffer === undefined ? {} : { modelOffer: opts.modelOffer }),
     ...(opts.bundledChoice === undefined ? {} : { bundledChoice: opts.bundledChoice }),
     ...(opts.main === undefined ? {} : { main: opts.main }),
     ...(opts.relay === undefined ? {} : { relay: opts.relay }),

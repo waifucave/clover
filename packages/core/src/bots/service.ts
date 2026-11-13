@@ -180,6 +180,10 @@ export interface BotServiceOptions {
   defaultModel(): { model: string; effort?: string };
   /** Whether the user has a key for a model; default: for every model. */
   hasKeyFor?(model: string): boolean;
+  /** Whether a model can be set as a bot's (`models-list.ts` `modelOffer`): `absent` refuses `bot.setUserLayer` with
+   *  words the picker shows; `starting` is accepted (the session reopens on the plugins' catalog once it lands).
+   *  Default: every model is offered. */
+  modelOffer?(model: string): "offered" | "starting" | "absent";
   /** What Clover's own bundled plugin chose for a bot, read from its manifest's bytes as staging verified them (the
    *  daemon's: `source` `bundled`, its folder in the staged copy, the manifest's digest the staged one), or undefined
    *  for any other plugin. Asked once per bot load: a loaded tag (model or voice) equal to the verified bytes' asks
@@ -437,7 +441,12 @@ export class BotService {
     if (caller.kind === "plugin") throw new ContractError("refused", "only the user changes a bot's user layer; a plugin's change goes to the user as a sealed card", { rpc: CLOVER_ERR.NOT_THE_USER });
     if (caller.kind !== "user") throw new ContractError("refused", "only the user changes a bot's user layer", { rpc: CLOVER_ERR.NOT_THE_USER });
     const live = this.#must(id);
-    this.#layers.set(id, parseUserLayerPatch(patch));
+    const parsed = parseUserLayerPatch(patch);
+    const model = (patch as { model?: unknown } | null)?.model;
+    if (typeof model === "string" && this.#o.modelOffer?.(model) === "absent") {
+      throw new ContractError("invalid", `${model} isn't offered by any plugin that is on`);
+    }
+    this.#layers.set(id, parsed);
     this.#syncMainSession(live);
     this.#emitBot(live);
     return { applied: true };

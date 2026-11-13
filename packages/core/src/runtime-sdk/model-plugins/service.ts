@@ -133,6 +133,11 @@ export class ModelPlugins {
     return this.#snapshot?.override === true;
   }
 
+  /** Whether a rebuild is running (a plugin just installed, turned on or off): its catalog isn't the sessions' yet. */
+  get rebuilding(): boolean {
+    return this.#pending !== undefined;
+  }
+
   /** The catalog the sessions resolve against; undefined (the SDK's own) while no model plugin is active. */
   get catalog(): WinterCatalog | undefined {
     return this.active ? this.#snapshot?.set.catalog : undefined;

@@ -286,7 +286,7 @@ describe("bots from plugins", () => {
 });
 
 describe("the user layer", () => {
-  async function luna(opts: { hasKeyFor?: (m: string) => boolean } = {}) {
+  async function luna(opts: { hasKeyFor?: (m: string) => boolean; modelOffer?: (m: string) => "offered" | "starting" | "absent" } = {}) {
     const root = tempDir();
     const dir = writePlugin(root, "luna", {
       "clover.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5", effort: "high" }, voice: { provider: "fish-audio", voice: "v1", model: "s2.1-pro-free" } }),
@@ -328,6 +328,23 @@ describe("the user layer", () => {
     const b = await boot({ home, plugins: inputs });
     expect(b.bots.get("luna")).toMatchObject({ userLayer: ["avatar"], avatar: { src: "/_a/luna/k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } });
     expect(b.bots.list().find((x) => x.id === "luna")?.avatar?.format).toBe("live2d");
+    await b.shutdown();
+  });
+
+  test("a model no plugin that is on offers is refused in words the picker shows; one whose plugin is still starting is taken; clearing it is never checked", async () => {
+    const asked: string[] = [];
+    const offers: Record<string, "offered" | "starting" | "absent"> = { "openai/gpt-6.1-sol": "offered", "acme/fast": "starting", "gone/model": "absent" };
+    const { b } = await luna({ modelOffer: (m) => { asked.push(m); return offers[m] ?? "absent"; } });
+    const refused = await b.bots.setUserLayer("luna", { model: "gone/model" }, theUser).catch((e: unknown) => e);
+    expect(isContractError(refused, "invalid")).toBe(true);
+    expect((refused as Error).message).toBe("gone/model isn't offered by any plugin that is on");
+    expect(b.bots.get("luna")?.userLayer).toEqual([]);
+    expect(await b.bots.setUserLayer("luna", { model: "acme/fast" }, theUser)).toEqual({ applied: true });
+    expect(b.bots.get("luna")?.model).toBe("acme/fast");
+    expect(await b.bots.setUserLayer("luna", { model: "openai/gpt-6.1-sol", name: "Moon" }, theUser)).toEqual({ applied: true });
+    expect(await b.bots.setUserLayer("luna", { model: null }, theUser)).toEqual({ applied: true });
+    expect(await b.bots.setUserLayer("luna", { name: "Moonier" }, theUser)).toEqual({ applied: true });
+    expect(asked).toEqual(["gone/model", "acme/fast", "openai/gpt-6.1-sol"]);
     await b.shutdown();
   });
 
