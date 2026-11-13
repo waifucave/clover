@@ -145,6 +145,7 @@ describe("a child plugin of a bot-built tree", () => {
       await opened.registry.setEnabled("pack", false);
       await until("the child's entries gone", 15_000, () => (opened.registry.entries("ui").every((e) => e.pluginId !== "pack/kid" || e.state !== "active") ? true : undefined));
       expect(opened.registry.get("pack/kid")?.state).toBe("off");
+      await until("the child's server gone from the bots' list", 15_000, () => (mcp.servers("bot").every((s) => s.server !== key) ? true : undefined));
     } finally {
       mcp.close();
       await ph.close();
