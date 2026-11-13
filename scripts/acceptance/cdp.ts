@@ -138,13 +138,21 @@ export class Cdp {
     }
   }
 
-  /** The centre of the first element matching `selector` (or whose text contains `text`) in a session, in that session's viewport. */
+  /** The centre of the first element matching `selector` (or whose text contains `text`) in a session, in that session's viewport
+   *  (scrolled into view first when it lies outside it). */
   async centerOf(session: string, selector: string, text?: string): Promise<{ x: number; y: number } | undefined> {
     const v = await this.evaluate(session, `(() => {
       const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
       const el = ${text === undefined ? "els[0]" : `els.find((e) => (e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)}))`};
       if (!el) return null;
-      const r = el.getBoundingClientRect();
+      let r = el.getBoundingClientRect();
+      // Below the fold (a long list: the Installed tab on a home with many plugins), a press at its place would land
+      // outside the view and do nothing: it is scrolled into view first, as a person does.
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) {
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        r = el.getBoundingClientRect();
+      }
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
     })()`);
     return v === null || v === undefined ? undefined : (v as { x: number; y: number });

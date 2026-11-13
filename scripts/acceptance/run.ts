@@ -65,7 +65,7 @@
 // load guard under a dot-folder; a wrapped skill folder missing from Glossary), the last two in a shipped build.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync, lstatSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -78,7 +78,7 @@ import { CloverClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 import { checkPageReport } from "./layer-page-step";
-import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
+import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
@@ -546,14 +546,16 @@ function sourceApp(): { exe: string; args: string[] } {
     if (r.status !== 0 || !existsSync(join(pkgDir, "path.txt"))) throw new Error(`electron's install.js failed: ${(r.stderr ?? "").trim().slice(0, 300)}`);
   }
   const exe = join(pkgDir, "dist", readFileSync(join(pkgDir, "path.txt"), "utf8").trim());
-  return { exe, args: [DESKTOP] };
+  return { exe, args: [DESKTOP, "--mute-audio"] };
 }
 
 function packagedApp(bundle: string): { exe: string; args: string[] } {
   const plist = readFileSync(join(bundle, "Contents", "Info.plist"), "utf8");
   const name = /<key>CFBundleExecutable<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1];
   if (name === undefined) throw new Error("the bundle's Info.plist names no executable");
-  return { exe: join(bundle, "Contents", "MacOS", name), args: [] };
+  // `--mute-audio` on the command line as well as the app's own switch: an earlier build (an upgrade's old half) has no
+  // switch of its own, and no run may make a sound.
+  return { exe: join(bundle, "Contents", "MacOS", name), args: ["--mute-audio"] };
 }
 
 /** The packaged core, copied out with the bundled plugins beside it as the bundle lays them out
@@ -920,7 +922,9 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
     for (const b of bundledBoots) {
-      const failed = readLog(b.log).match(BUNDLED_FAILED)?.[0];
+      // A plugin a row crashes on purpose says so in the same line (the workshop's step 7, "acceptance crash: …"): that is
+      // the row's own doing on a home every row shares (a packaged run), not a listing that failed.
+      const failed = readLog(b.log).split("\n").map((l) => l.match(BUNDLED_FAILED)?.[0]).find((m) => m !== undefined && !/acceptance crash:/.test(m));
       if (failed !== undefined) fail(`daemon ${b.run}: ${failed.slice(0, 400)}`);
       const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
       // Without a turn on this boot, the listing's time stands in for the owner's first turn, at twice the wait.
@@ -2854,7 +2858,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
       try {
         record(n, "PASS", await run());
       } catch (err) {
-        record(n, statusOf(err), why(err));
+        record(n, statusOf(err), `${why(err)}${statusOf(err) === "FAIL" ? await failureShot(cdp!, n) : ""}`);
       }
     }
   } catch (err) {
@@ -2869,7 +2873,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
 /** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
 function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string): ExampleCtx {
   return {
-    cdp, rpc, home, root, userHome, childReport: CHILD_REPORT,
+    cdp, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
     // This app's own output and the home's app log, whichever it wrote to.
     appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
     requests: () => fake?.requests ?? [],
@@ -3367,7 +3371,7 @@ async function workshopOnlyRun(app: { exe: string; args: string[] }): Promise<vo
     await rpc.request("session.attach", { id: session });
     const log = proc.log;
     const ctx: ExampleCtx = {
-      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
+      cdp: cdp!, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
       appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
       requests: () => fake?.requests ?? [],
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
@@ -3467,7 +3471,7 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
     await rpc.request("session.attach", { id: session });
     const log = proc.log;
     const ctx: ExampleCtx = {
-      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
+      cdp: cdp!, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
       appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
       requests: () => fake?.requests ?? [],
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
@@ -3533,7 +3537,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
     await rpc.request("session.attach", { id: session });
     const log = proc.log;
     const ctx: ExampleCtx = {
-      cdp: cdp!, rpc, home, root, userHome, childReport: CHILD_REPORT,
+      cdp: cdp!, rpc, home, root, userHome, keychainFile: keychain, childReport: CHILD_REPORT,
       appLog: () => `${readLog(log)}\n${readLog(join(home, "logs", "app.log"))}`,
       requests: () => fake?.requests ?? [],
       pick: (folder) => writeFileSync(pickFile, `${folder}\n`),
@@ -4342,10 +4346,15 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
     const took = Date.now() - at;
     if (/Nothing fills this window/.test(readLog(appLog).slice(logFrom))) fail("the fallback note was drawn");
-    const migC = firstLine(daemon.log, /^migration C:/);
+    // No Migration C on a current home. One line is not a migration: an earlier build that did read its own home as the
+    // old layout left `agents` a link into sdk/, and this build puts the folder back ("is a real folder again").
+    const migLines = readLog(daemon.log).split("\n").filter((l) => /^migration C:/.test(l));
+    const migC = migLines.find((l) => !/ is a real folder again /.test(l))?.slice(0, 400);
     if (migC !== undefined) fail(`the old home (an earlier build's, with a botless agent's transcript) was read as Migration C's old layout: ${migC}`);
+    const putBack = migLines.length > 0;
+    if (putBack && lstatSync(join(home, "agents")).isSymbolicLink()) fail(`the daemon said it put the agents folder back, and ${join(home, "agents")} is still a link`);
     if (oldLayoutMarkers(home).length > 0 || !existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) fail(`the daemon didn't mark the old home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
-    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: marked current), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
+    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: marked current${putBack ? "; the agents folder an earlier build linked into sdk/ is a real folder again" : ""}), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -4600,7 +4609,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
   // A command's default key pressed in the window (CLOVER_TEST_KEY_FILE, test-marked and acceptance builds only): CDP key events never reach the window's before-input-event, so main presses it with sendInputEvent from this file.
   const keyFile = join(root, "press-key");
   let keyPresses = 0;
-  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  // The Browser row's fixture site by name too: on a run that isn't sharded (a packaged one) that row runs in this app.
+  const env = { ...baseEnv(), ...(browserFixture !== undefined ? { CLOVER_TEST_BROWSER_NAMES: browserFixture.names } : {}), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, CLOVER_TEST_PICK_AVATAR: avatarFolder, CLOVER_TEST_PICK_FILES: mediaPicks.answers, CLOVER_TEST_APPEARANCE_FILE: appearanceFile, CLOVER_TEST_KEY_FILE: keyFile, CLOVER_IPC_STATS: "1", ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
   const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
   let cdp: Cdp | undefined;
   try {
@@ -4658,7 +4668,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         if (!pressable || session === undefined) block("no plugin tool turn runs (steps 3-5), so no card to press");
         record(n, "PASS", await run());
       } catch (err) {
-        record(n, statusOf(err), why(err));
+        record(n, statusOf(err), `${why(err)}${statusOf(err) === "FAIL" ? await failureShot(cdp!, n) : ""}`);
       }
     }
   } catch (err) {
@@ -4724,6 +4734,8 @@ try {
     const started = lines.some((l) => l.trim() !== "");
     const loud = lines.find((l) => /audio: (NOT muted|played unmuted)/.test(l));
     if (loud !== undefined) { console.error(`acceptance: FAIL: the app could make sound during the run: ${loud.slice(0, 300)}`); code = code === 0 ? 1 : code; }
+    // An earlier build (the upgrade's old half) has no such line: it was started with `--mute-audio` (packagedApp, sourceApp).
+    else if (started && oldHalf && !lines.some((l) => /audio: muted/.test(l))) console.error("acceptance: audio: the old build doesn't say; every app start had --mute-audio on its command line");
     else if (started && !lines.some((l) => /audio: muted/.test(l))) { console.error("acceptance: FAIL: the app didn't say it started muted (no \"audio: muted\" line in app.log)"); code = code === 0 ? 1 : code; }
     else console.error(`acceptance: audio: ${lines.filter((l) => /audio: muted/.test(l)).length} app start(s) muted, none played unmuted`);
   }

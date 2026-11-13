@@ -39,13 +39,14 @@ export function fixtureWith(files: Record<string, string>, paths: { bun: string;
 
 /** The fake agent's config: the quirks file's quirks (the fake bends the protocol as they say), the script of its one
  *  turn, and where it reports what it saw. */
-export function agentConfig(quirksFile: string, o: { report: string; selection: string }): string {
+export function agentConfig(quirksFile: string, o: { report: string; selection: string; mcpEnv?: Record<string, string> }): string {
   const file = JSON.parse(quirksFile) as { quirks: unknown };
   return JSON.stringify({
     quirks: file.quirks,
     version: "fake-agent 1.0.0",
     report: o.report,
     selection: o.selection,
+    ...(o.mcpEnv !== undefined ? { mcpEnv: o.mcpEnv } : {}),
     // One turn: its reply, then the Clover server's Glossary (no permission asked of the client: the call is the
     // bridge's own, judged by the daemon), then its closing words.
     script: [[{ say: ACP_REPLY }, { mcp: { server: "$bridge", tool: "Glossary", input: { query: "tool" }, ask: false } }, { say: " Done." }]],
@@ -81,7 +82,9 @@ async function run(ctx: ExampleCtx): Promise<string> {
   cpSync(FIXTURE, folder, { recursive: true });
   const written = fixtureWith({ "clover.json": readFileSync(join(folder, "clover.json"), "utf8"), "quirks.json": readFileSync(join(folder, "quirks.json"), "utf8") }, { bun: process.execPath, fake: FAKE_ACP_AGENT, config });
   for (const [name, body] of Object.entries(written)) writeFileSync(join(folder, name), body);
-  writeFileSync(config, agentConfig(written["quirks.json"]!, { report, selection: join(work, "agent", "selection.json") }));
+  // The Clover server the agent starts is this core's own binary: a test-marked one (a packaged run's) refuses to start
+  // without the run's keychain file's variable, which no agent's environment carries.
+  writeFileSync(config, agentConfig(written["quirks.json"]!, { report, selection: join(work, "agent", "selection.json"), mcpEnv: { CLOVER_TEST_KEYCHAIN: ctx.keychainFile } }));
 
   // 1. Installed; its OK card pressed in the window; its backend listed.
   const installed = await rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);

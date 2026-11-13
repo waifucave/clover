@@ -181,7 +181,16 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     return `listed in bot.list as ${mine!.id}; on its tab its header ("${header.text.trim().slice(0, 30)}") and side panel ("${side.text.trim().slice(0, 40)}") drawn`;
   });
   await check("ex-theme", async () => {
-    const ui = (await rpc.request<{ plugins: { pluginId: string; themes: { id: string }[] }[] }>("plugin.ui", {})).plugins;
+    // `plugin.ui` is the app's own call: a packaged core's CLI-role connection may not make it, and the plugin's record
+    // (`plugin.get`: its manifest's themes) says the same of the theme there.
+    const ui = (await rpc.request<{ plugins: { pluginId: string; themes: { id: string }[] }[] }>("plugin.ui", {}).catch((e: unknown) => { if (/may not call plugin\.ui/.test(String((e as { message?: unknown })?.message ?? e))) return undefined; throw e; }))?.plugins;
+    if (ui === undefined) {
+      const got = (await rpc.request<{ plugin: { state: string; manifest?: { contributes?: { themes?: { id: string }[] } } } }>("plugin.get", { id: "ex-theme" })).plugin;
+      const themes = got.manifest?.contributes?.themes ?? [];
+      if (got.state !== "running" && got.state !== "enabled") fail(`it is ${got.state}`);
+      if (!themes.some((t) => t.id === "ex-theme")) fail(`its record's themes are ${JSON.stringify(themes)}`);
+      return `installed and ${got.state}, its record naming its theme (plugin.get; plugin.ui isn't this connection's to call on a packaged core)`;
+    }
     const mine = ui.find((p) => p.pluginId === "ex-theme");
     if (mine === undefined || !mine.themes.some((t) => t.id === "ex-theme")) fail(`plugin.ui has ${mine === undefined ? "no ex-theme" : `ex-theme with themes ${JSON.stringify(mine.themes)}`}`);
     return "listed as a theme (plugin.ui: ex-theme#ex-theme)";

@@ -157,6 +157,30 @@ export async function composerDoc(cdp: Cdp): Promise<{ session: string; value: t
 export async function shellDoc(cdp: Cdp): Promise<{ session: string; value: boolean } | undefined> {
   return inTree<boolean>(cdp, "!!document.querySelector('.cl-sidebar__top, .as')");
 }
+/** A failed row's evidence, where the run keeps renders (CLOVER_ACCEPT_RENDERS): the window's picture as it stood
+ *  (`failed-step-<n>.png`; a window step's own number as `window-<n>`) and every document's address, words and buttons
+ *  (`failed-step-<n>.txt`), the frames of plugins
+ *  outside Clover's tree included. Returns a note for the row's detail, or "" when nothing was kept. Never throws. */
+export async function failureShot(cdp: Cdp, n: number | string): Promise<string> {
+  const dir = process.env.CLOVER_ACCEPT_RENDERS;
+  if (!dir) return "";
+  const kept: string[] = [];
+  try {
+    writeFileSync(join(dir, `failed-step-${n}.png`), await cdp.screenshot());
+    kept.push(`failed-step-${n}.png`);
+  } catch { /* no main window to capture */ }
+  try {
+    const lines: string[] = [];
+    for (const d of await cdp.documents()) {
+      const seen = await cdp.evaluate(d.session, "JSON.stringify({ text: (document.body ? document.body.innerText : '').slice(0, 3000), buttons: [...document.querySelectorAll('button, [role=tab]')].slice(0, 120).map((b) => b.getAttribute('aria-label') || (b.innerText || '').trim().slice(0, 30)), frames: document.querySelectorAll('iframe').length, html: document.body ? document.body.innerHTML.length : 0, scroll: [window.scrollY, document.documentElement.scrollHeight, window.innerHeight] })").catch(() => "gone");
+      lines.push(`${d.url.slice(0, 120)} ${String(seen).slice(0, 8000)}`);
+    }
+    writeFileSync(join(dir, `failed-step-${n}.txt`), `${lines.join("\n")}\n`);
+    kept.push(`failed-step-${n}.txt`);
+  } catch { /* the window is gone */ }
+  return kept.length === 0 ? "" : ` [kept: ${kept.join(", ")}]`;
+}
+
 export async function dumpFrames(cdp: Cdp): Promise<string> {
   const out: string[] = [];
   for (const d of await treeDocs(cdp)) {
@@ -312,7 +336,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   const { cdp, rpc } = ctx;
   const step = async (n: number, run: () => Promise<string>) => {
     if (ctx.only !== undefined && !ctx.only.has(n)) return;
-    try { record(n, "PASS", await run()); } catch (err) { record(n, err instanceof Failed ? "FAIL" : "FAIL", err instanceof Error ? err.message : String(err)); }
+    try { record(n, "PASS", await run()); } catch (err) { const kept = await failureShot(cdp, `window-${n}`); record(n, err instanceof Failed ? "FAIL" : "FAIL", `${err instanceof Error ? err.message : String(err)}${kept}`); }
   };
 
   // The shell is up when the composer is.

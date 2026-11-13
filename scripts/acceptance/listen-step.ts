@@ -54,8 +54,10 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     await until(`${VOICE_ID} running`, 30_000, async () => ((await state()) === "running" ? true : undefined));
     await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: VOICE_ID, voice: "tone" } } });
     voiced = true;
-    const status = await rpc.request<{ listens: boolean }>("voice.status", { bot: "alpha" });
-    if (status.listens !== true) fail(`voice.status says ${JSON.stringify(status)} for Alpha with a listening voice`);
+    // The daemon's own answer, where this connection may ask (a packaged core's CLI role may not: the talk button
+    // below, which the composer draws from the same answer, then says it).
+    const status = await rpc.request<{ listens: boolean }>("voice.status", { bot: "alpha" }).catch((e: unknown) => { if (/may not call voice\.status/.test(String((e as { message?: unknown })?.message ?? e))) return undefined; throw e; });
+    if (status !== undefined && status.listens !== true) fail(`voice.status says ${JSON.stringify(status)} for Alpha with a listening voice`);
 
     // The talk button appears (the composer re-reads the daemon's answer when the voice changes, or when the window is focused).
     const at = await until("the composer's talk button", 60_000, async () => {

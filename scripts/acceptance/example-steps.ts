@@ -42,6 +42,8 @@ export interface ExampleCtx {
   root: string;
   /** The user's home, where an agent's folder may be. */
   userHome: string;
+  /** The run's throwaway keychain file (its path is the value of the variable a test-marked core needs to start). */
+  keychainFile: string;
   appLog(): string;
   requests(): { lastUserText: string; toolUse?: string; toolResult?: { text: string; isError: boolean; images?: number }; tools: string[] }[];
   /** The user's own `clover-core app <words>` (the target's CLI), where the run has it. */
@@ -340,13 +342,17 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
     return want(t) ? t : undefined;
   }, async () => String(await cdp.evaluate(page.session, "(document.querySelector('[data-notes=page]') || document.body).innerText.slice(0, 200)").catch(() => "")));
   const langBefore = (await rpc.request<{ language?: string }>("ui.settings", {}).catch(() => ({} as { language?: string }))).language;
+  // (A packaged core's CLI-role connection can't set the app's language, as in the third-party UI row: the page's
+  // English words, read above, are then all this row says of its locale files.)
+  const setLanguage = (language: string) => rpc.request("ui.set", { patch: { language } }).then(() => true, (e: unknown) => { if (/may not call ui\.set/.test(String((e as { message?: unknown })?.message ?? e))) return false; throw e; });
+  let japanese = false;
   try {
-    await rpc.request("ui.set", { patch: { language: "ja" } });
-    await wordsIn((t) => t.title === "ノート" && t.text.includes("ノート 2 件") && !/example-notes\./.test(t.text), "its page in its Japanese words (ノート, ノート 2 件)");
+    japanese = await setLanguage("ja");
+    if (japanese) await wordsIn((t) => t.title === "ノート" && t.text.includes("ノート 2 件") && !/example-notes\./.test(t.text), "its page in its Japanese words (ノート, ノート 2 件)");
   } finally {
-    await rpc.request("ui.set", { patch: { language: langBefore ?? "en" } }).catch(() => undefined);
+    if (japanese) await rpc.request("ui.set", { patch: { language: langBefore ?? "en" } }).catch(() => undefined);
   }
-  await wordsIn((t) => t.title === "Notes" && t.text.includes("2 notes"), "its page back in its English words");
+  if (japanese) await wordsIn((t) => t.title === "Notes" && t.text.includes("2 notes"), "its page back in its English words");
   if (!ctx.appLog().includes(`layers: ${id}'s layer connected to the core`)) fail("its layer has no connection of its own");
   const order = await cdp.centerOf(page.session, "[data-notes=order]");
   if (order === undefined) fail("the page has no order switch");
@@ -358,7 +364,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   if (flipped.n[0] !== "Buy oat milk") fail(`after the switch the page lists ${JSON.stringify(flipped.n)}, not the oldest first`);
   const stored = (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id })).settings.find((s) => s.key === "order")?.value;
   if (stored !== "oldest") fail(`the switch didn't reach its setting (it is ${JSON.stringify(stored)})`);
-  done.push(`its page (TSX, its own layer) listed the notes newest first in its locale's words with the hook's count; its switch set the order with no card and the page followed`);
+  done.push(`its page (TSX, its own layer) listed the notes newest first in its locale's words with the hook's count${japanese ? ", in its Japanese words with the app in Japanese and its English ones again" : " (the app's language couldn't be set on this core: its Japanese words not read)"}; its switch set the order with no card and the page followed`);
 
   // 7b. The same setting from the Plugins page: its detail's control (a choice, in the manifest's words), changed by the
   //     user with no card (it feeds nothing the plugin runs or reaches); the Notes page, opened again, follows.
