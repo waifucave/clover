@@ -7,6 +7,7 @@ import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
+import { LISTEN_STEP } from "./listen-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -60,6 +61,7 @@ export const FULL_STEPS = [
   TAB_FLASH_STEP,
   CHILD_STEP,
   NOTIFY_STEP,
+  LISTEN_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a page the user gave or a search hit with no card, asks for an address it made up or a link it found on a page, and is refused a private address",

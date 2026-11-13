@@ -70,6 +70,7 @@ import { CARDS_STEP, cardsStep } from "./cards-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP, childStep, notifyStep } from "./child-notify-step";
+import { LISTEN_STEP, listenStep } from "./listen-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -117,6 +118,9 @@ const tabFlashOnly = argv.includes("--only-tab-flash");
 // --only-kids: only the child-plugin and core-updates-to-notifiers rows (the daemon, the dummy key, the app, the two rows).
 const kidsOnly = argv.includes("--only-kids");
 if (kidsOnly && (tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-kids runs the child-plugin and notifier rows alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
+// --only-listen: only the push-to-talk row (the daemon, the dummy key, the app, the fixture voice, a held talk button).
+const listenOnly = argv.includes("--only-listen");
+if (listenOnly && (kidsOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined)) { console.error("acceptance: --only-listen runs the push-to-talk row alone; it takes no other --only-*, --cold-start, --cold-home, --keep-state or --upgrade-from"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -1485,6 +1489,7 @@ async function main(): Promise<void> {
   if (workshopOnly) { await workshopOnlyRun(app); return; }
   if (tabFlashOnly) { await tabFlashOnlyRun(app); return; }
   if (kidsOnly) { await kidsOnlyRun(app); return; }
+  if (listenOnly) { await listenOnlyRun(app); return; }
 
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
@@ -2182,8 +2187,21 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
 /** The child-plugin and notifier rows alone (--only-kids): the daemon, the dummy key through the app's own methods,
  *  Alpha on the keyed model, then the app over it (headless, its DevTools port, cards pressed in its window) and the two rows. */
 async function kidsOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
-  const n = stepNumber(FULL_STEPS, CHILD_STEP);
-  const n2 = stepNumber(FULL_STEPS, NOTIFY_STEP);
+  await appRowsRun(app, "kids-app", [
+    [CHILD_STEP, childStep],
+    [NOTIFY_STEP, notifyStep],
+  ]);
+}
+
+/** The push-to-talk row alone (--only-listen): the same setup as the kids rows, then the one row. */
+async function listenOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
+  await appRowsRun(app, "listen-app", [[LISTEN_STEP, listenStep]]);
+}
+
+/** The rows of a `--only-*` run that need the app over a keyed Alpha: the daemon, the dummy key through the app's own methods,
+ *  Alpha on the keyed model, then the app over it (headless, its DevTools port, cards pressed in its window) and the rows in order. */
+async function appRowsRun(app: { exe: string; args: string[] }, appName: string, only: readonly (readonly [string, (ctx: ExampleCtx, session: string) => Promise<string>])[]): Promise<void> {
+  const numbers = only.map(([name]) => stepNumber(FULL_STEPS, name));
   let c: CloverClient | undefined;
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
@@ -2211,7 +2229,7 @@ async function kidsOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     writeFileSync(pickFile, `${join(import.meta.dir, "fixtures", "acceptance-page")}\n`);
     const port = freePort();
     const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_TEST_SEALED_PRESS: "1", CLOVER_TEST_PICK: pickFile, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
-    proc = startChild("kids-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+    proc = startChild(appName, app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
@@ -2236,11 +2254,11 @@ async function kidsOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
       history: (s2) => history(rpc, s2),
     };
-    try { record(n, "PASS", await childStep(ctx, session)); } catch (err) { record(n, statusOf(err), why(err)); }
-    try { record(n2, "PASS", await notifyStep(ctx, session)); } catch (err) { record(n2, statusOf(err), why(err)); }
+    for (const [i, [, run]] of only.entries()) {
+      try { record(numbers[i]!, "PASS", await run(ctx, session)); } catch (err) { record(numbers[i]!, statusOf(err), why(err)); }
+    }
   } catch (err) {
-    record(n, statusOf(err), why(err));
-    record(n2, "BLOCKED", "setup failed");
+    numbers.forEach((n, i) => record(n, i === 0 ? statusOf(err) : "BLOCKED", i === 0 ? why(err) : "setup failed"));
   } finally {
     c?.close();
     cdp?.close();
@@ -3270,6 +3288,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
       [CHILD_STEP, () => childStep(exampleCtx, session!)],
       [NOTIFY_STEP, () => notifyStep(exampleCtx, session!)],
+      // The app records for a held talk button and hands the audio to Alpha's listening voice (a generated clip, never the microphone).
+      [LISTEN_STEP, () => listenStep(exampleCtx, session!)],
     ] as const) {
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
@@ -3340,7 +3360,7 @@ try {
   }
 }
 // One row per step (a --cold-start run: the cold-start row alone); a step recorded twice reads FAIL (steps.ts).
-rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : kidsOnly ? [stepNumber(FULL_STEPS, CHILD_STEP), stepNumber(FULL_STEPS, NOTIFY_STEP)] : undefined));
+rows.splice(0, rows.length, ...finishTable(rows, STEPS, coldOnly ? stepNumber(FULL_STEPS, COLD_START_STEP) : stageOnly ? stepNumber(FULL_STEPS, STAGE_STEP) : workshopOnly ? stepNumber(FULL_STEPS, WORKSHOP_STEP) : tabFlashOnly ? stepNumber(FULL_STEPS, TAB_FLASH_STEP) : kidsOnly ? [stepNumber(FULL_STEPS, CHILD_STEP), stepNumber(FULL_STEPS, NOTIFY_STEP)] : listenOnly ? stepNumber(FULL_STEPS, LISTEN_STEP) : undefined));
 // The old half leaves state behind; what it can't do of the new build's is not a failure of the upgrade.
 // A FAIL in any step but the ones whose state the upgrade reads (OLD_HALF_STATE_STEPS) is not asserted on the old build.
 if (oldHalf) rows.splice(0, rows.length, ...rows.map(oldHalfRow));
