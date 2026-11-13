@@ -591,9 +591,19 @@ describe("a host runs under Bun (#234's check 3)", () => {
     expect([has(own, "host_runtime_bundled_only"), own.ownPrograms]).toEqual([false, true]);
     const bun = validateManifest({ ...node, host: { entry: "host/index.ts" } });
     expect([bun.ok, bun.ownPrograms, describeOk(bun).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, false, false]);
-    for (const extra of [{ contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } }, { helper: { bin: { macos: "bin/helper" } } }]) {
-      const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra });
-      expect([r.ownPrograms, describeOk(r).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    const stdio = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } });
+    expect([stdio.ownPrograms, describeOk(stdio).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    // The refusal says what to do instead: Bun runs Node-style code; programs go through host.programs or a stdio server.
+    const why = validateManifest(node).issues.find((i) => i.code === "host_runtime_bundled_only")!.message;
+    expect([why.includes("Node-style code"), why.includes("host.programs"), why.includes("stdio"), why.includes("helper")]).toEqual([true, true, true, false]);
+  });
+  test("a helper is refused everywhere, saying what to use instead; the OK card never names one", () => {
+    for (const bundled of [false, true]) {
+      const r = validateManifest({ ...min(), ...(bundled ? { id: "clover" } : {}), engines: { clover: "^1.0.0" }, helper: { bin: { macos: "bin/helper" }, permissions: ["microphone"] } }, { bundled });
+      expect([r.ok, has(r, "helper_not_supported", "plugin")]).toEqual([false, true]);
+      const msg = r.issues.find((i) => i.code === "helper_not_supported")!.message;
+      expect([msg.includes("host.programs"), msg.includes("stdio")]).toEqual([true, true]);
+      expect(describeOk(r).some((l) => l.includes("helper"))).toBe(false);
     }
   });
 });

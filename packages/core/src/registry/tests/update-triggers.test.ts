@@ -46,12 +46,11 @@ describe("every OK-card line an update adds or alters asks again", () => {
       ["the hosts it reaches", withContrib({}, { capabilities: ["network:api.example.com"] })],
       ["this computer or the local network", withContrib({}, { capabilities: ["network:localhost:8080"] })],
       ["hosts from its settings", withContrib({}, { capabilities: ["network:${setting:region}.example.com"], settings: { region: { type: "string", title: "Region" } } })],
-      ["its helper's permissions", withContrib({}, { helper: { bin: { "darwin-arm64": "bin/helper" }, permissions: ["microphone"] } }), { "bin/helper": "#!/bin/sh\n" }],
       ["code fetched at run time", withContrib(srv({ command: "npx", args: ["-y", "some-server"] }))],
       ["read-only tools", withContrib(srv({ readOnly: ["search"] }))],
       ["keys in a server's environment", withContrib(srv({ env: { KEY: "${secret:key}" } }), { settings: { key: { type: "secret", title: "Key" } } })],
-      // "It runs its own programs" comes with a helper (the case above adds both lines) or a node host, which only a
-      // bundled plugin may have.
+      // "It runs its own programs" comes with a stdio server (the base has one) or a node host, which only a bundled
+      // plugin may have; a helper is refused, so it never reaches the card.
       ["add-ons of its own", withContrib({}, { addons: { description: "Effects" } })],
       ["adult content", withContrib({}, { adult: true })],
       // hookOkLines.

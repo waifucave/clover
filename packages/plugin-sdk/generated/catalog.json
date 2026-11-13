@@ -4123,6 +4123,9 @@
       "where": "both",
       "notYet": "no service of the core answers it for plugins yet"
     },
+    "routines.fire": {
+      "where": "host"
+    },
     "computers.list": {
       "capability": "computers.read",
       "where": "both"
