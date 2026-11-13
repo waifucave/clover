@@ -2,13 +2,17 @@
 // `plugin.layer.api`), over the real registry, a real plugin host's capability gate and the registry's own install door:
 // `confirm` and `confirmCard` raise the app's own sealed card naming the plugin, as a host half's do, and the component
 // gets only the answer (and the card's id); `plugins.install` (capability `plugins.install`, bundled-only in the
-// catalog) installs through the user's door, landing found behind its OK card, which says which plugin asked. Refused:
-// a plugin without the capability, a host half's call (components only), a source that isn't one, a plugin that's off.
+// catalog: "from the indexes and npm") installs from an index or npm through the user's door, landing found behind its OK
+// card, which says which plugin asked. Refused: a folder or a wrapped item (the user's own to bring), a plugin without
+// the capability, a host half's call (components only), a source that isn't one, a plugin that's off.
 // Temp homes, the fake approval broker and an in-memory secret store; nothing opens a window.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { IndexFetch } from "../../registry/indexes/client";
+import { tgz } from "../../registry/indexes/tests/tar-fixture";
+import { validatePluginFolder } from "../../registry/validate";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS, type Caller } from "@waifucave/clover-protocol";
 import { measureBundledTree } from "../../bundled-plugins-dir";
@@ -27,6 +31,7 @@ const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
 const APP: Caller = { kind: "user", client: "app" };
+const INDEX_URL = "https://plugins.example.test/index.json";
 
 function plugin(folder: string, manifest: Record<string, unknown>): void {
   mkdirSync(folder, { recursive: true });
@@ -41,14 +46,26 @@ async function world() {
   plugin(join(root, "clover"), { id: "clover", name: "Clover", capabilities: ["plugins.install"] });
   const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });
   plugin(join(home, "plugins", "deck"), { id: "deck", name: "Deck" });
-  // What a component asks to install: a folder of the user's.
+  // What a component asks to install: Tarot, listed in an index the user added (served by a fake fetch, as a download).
   plugin(join(home, "downloads", "tarot"), { id: "tarot", name: "Tarot" });
+  const tarotManifest = JSON.stringify({ manifest: 1, version: "1.0.0", engines: ENGINES, id: "tarot", name: "Tarot" });
+  const files = new Map<string, Uint8Array>([["https://plugins.example.test/tarot-1.0.0.tgz", tgz([{ path: "clover.json", data: tarotManifest }])]]);
+  const hash = (await validatePluginFolder(join(home, "downloads", "tarot"))).treeHash!;
+  files.set(INDEX_URL, new TextEncoder().encode(JSON.stringify({ index: 1, name: "Index", plugins: [{ id: "tarot", versions: [{ version: "1.0.0", hash, url: "https://plugins.example.test/tarot-1.0.0.tgz" }] }] })));
+  const fetch: IndexFetch = async (url, max) => {
+    const b = files.get(url);
+    if (b === undefined) throw new Error("it answered 404");
+    if (b.byteLength > max) throw new Error("too large");
+    return b;
+  };
   const broker = new FakeApprovalBroker({ clock: new FakeClock() });
   const secrets = new MemorySecretStore();
-  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+  const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50, indexes: { cacheDir: join(home, "plugins-state", "index-cache"), fetch } });
+  opened.indexes!.add(INDEX_URL);
+  await opened.indexes!.refresh();
   let door: ComponentInstallDoor | undefined;
   const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests, fence: false, approvals: broker, handlers: [pluginsInstallApi(() => door)] });
-  const methods = pluginRegistryMethods({ opened, host: ph.host, home, os: "macos", componentInstalls: (d) => { door = d; } });
+  const methods = pluginRegistryMethods({ opened, host: ph.host, home, os: "macos", indexes: opened.indexes!, componentInstalls: (d) => { door = d; } });
   const ui = pluginUi({ registry: opened.registry, router: ph.gate, emit: () => {} });
   const answer = async (cardId: string, optionId: "approve" | "deny") => {
     const shown = broker.cards().find((c) => c.id === cardId)!;
@@ -116,7 +133,7 @@ describe("plugins.install from a component", () => {
   test("installs through the user's door: the plugin lands found, nothing runs, and its OK card says which plugin asked", async () => {
     const w = await world();
     try {
-      const r = await w.own("clover", "plugins.install", [{ from: "folder", path: join(w.home, "downloads", "tarot") }]);
+      const r = await w.own("clover", "plugins.install", [{ from: "index", id: "tarot" }]);
       const got = r.result as { id: string; state: string; card?: string };
       expect([got.id, got.state, typeof got.card]).toEqual(["tarot", "found", "string"]);
       const card = w.broker.cards().find((c) => c.id === got.card)!;
@@ -134,8 +151,8 @@ describe("plugins.install from a component", () => {
   test("refused: without the capability, from the app's entry for a plugin without it, a source that isn't one", async () => {
     const w = await world();
     try {
-      const folder = { from: "folder", path: join(w.home, "downloads", "tarot") };
-      for (const got of [await error(w.own("deck", "plugins.install", [folder])), await error(w.viaApp("deck", "plugins.install", [folder]))]) {
+      const fromIndex = { from: "index", id: "tarot" };
+      for (const got of [await error(w.own("deck", "plugins.install", [fromIndex])), await error(w.viaApp("deck", "plugins.install", [fromIndex]))]) {
         expect(got?.message).toBe("plugins.install needs the capability plugins.install, which this plugin's OK doesn't list");
       }
       expect((await error(w.own("clover", "plugins.install", [{ from: "nowhere" }])))?.message).toContain("plugins.install takes a source");
@@ -145,10 +162,29 @@ describe("plugins.install from a component", () => {
     }
   });
 
+  test("only from an index or npm: a folder or a wrapped item from a component is refused, plainly; the user's own install keeps them", async () => {
+    const w = await world();
+    try {
+      const folder = { from: "folder", path: join(w.home, "downloads", "tarot") };
+      const wrap = { from: "wrap", kind: "mcp-config", value: JSON.stringify({ mcpServers: { x: { command: "/bin/echo" } } }) };
+      for (const source of [folder, wrap]) {
+        expect((await error(w.own("clover", "plugins.install", [source])))?.message).toBe("a plugin can add plugins only from an index or npm");
+      }
+      expect(w.opened.registry.get("tarot")).toBeUndefined();
+      expect(w.opened.registry.list().filter((r) => r.provenance.by === "plugin")).toEqual([]);
+      // The user's own install from the same folder still goes (its card says the user added it).
+      const mine = (await w.methods["plugin.install"]!({ source: folder }, { caller: APP } as never)) as { id: string; state: string };
+      expect([mine.id, mine.state]).toEqual(["tarot", "found"]);
+      expect(w.opened.registry.get("tarot")!.provenance.by).toBe("user-app");
+    } finally {
+      await w.close();
+    }
+  });
+
   test("a host half can't install: plugins.install is a component's call only", async () => {
     const w = await world();
     try {
-      const got = await error(w.ph.gate({ pluginId: "clover", process: "clover", path: "plugins.install", args: [{ from: "folder", path: join(w.home, "downloads", "tarot") }], caller: { kind: "plugin", pluginId: "clover" } }));
+      const got = await error(w.ph.gate({ pluginId: "clover", process: "clover", path: "plugins.install", args: [{ from: "index", id: "tarot" }], caller: { kind: "plugin", pluginId: "clover" } }));
       expect(got?.message).toBe("plugins.install exists only in components");
     } finally {
       await w.close();
