@@ -55,6 +55,8 @@ export interface ExampleCtx {
   approveCard(id: string): Promise<void>;
   /** A turn whose cards are answered with "Always allow" over RPC (the browser row's kept answer); only the runs that need it give one. */
   alwaysTurn?: (session: string, text: string, ms?: number) => ReturnType<ExampleCtx["turn"]>;
+  /** A turn that runs `inspect` while its card is pending (the island open), then presses the card as `turn` does; only the browser row's run gives one. */
+  inspectTurn?: (session: string, text: string, ms: number, inspect: () => Promise<void>) => Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   /** Answers a pending card no over RPC, as the app's sealed frame does (a step's clean-up of a card it left waiting). */
   denyCard(id: string): Promise<void>;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */

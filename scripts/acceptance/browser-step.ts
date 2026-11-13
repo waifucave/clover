@@ -6,8 +6,9 @@
 // resolves to a public-kind address and is dialled to this server, so the network filter judges it as any web address.
 // Loopback itself stays refused to a bot's tab, and a row below holds that.
 import { callTurn, type ExampleCtx } from "./example-steps";
+import { islandUsageText, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
-export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens";
+export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
 
 export const FIXTURE_NAME = "browser-fixture.test";
 /** A second name for the same server: another site, as the browser and the approval judge it. */
@@ -171,6 +172,24 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     } finally {
       usage.close();
     }
+  }
+  // 10. The same usage, as drawn: the Settings window's Usage section, and the island's Usage tab while a card keeps the island
+  // open (the click on the other site raises one; it is pressed after the tab is read). Offscreen, in the app's own frames.
+  if (ctx.inspectTurn === undefined) lines.push("usage drawn: not run here (this run has no inspected turn)");
+  else {
+    const settings = await settingsUsageText(ctx.cdp).catch((e: unknown) => fail(`the Settings Usage section: ${(e as Error).message}`));
+    const settingsProblem = usageDrawnProblem(settings);
+    if (settingsProblem !== undefined) fail(`the Settings Usage section drew, but ${settingsProblem}`);
+    const otherButton = await buttonRef(fixture.otherUrl);
+    let island: string | undefined;
+    let islandError: string | undefined;
+    await ctx.inspectTurn(session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "click", ref: otherButton })}`, 150_000, async () => {
+      try { island = await islandUsageText(ctx.cdp); } catch (e) { islandError = (e as Error).message; }
+    });
+    if (islandError !== undefined || island === undefined) fail(`the island's Usage tab: ${islandError ?? "the click raised no card to hold the island open"}`);
+    const islandProblem = usageDrawnProblem(island!);
+    if (islandProblem !== undefined) fail(`the island's Usage tab drew, but ${islandProblem}`);
+    lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Today's Clover tokens");
   }
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);
