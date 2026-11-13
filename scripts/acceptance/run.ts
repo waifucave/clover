@@ -51,6 +51,11 @@
 // home but a temp one (`CLOVER_HOME`, and `HOME` for every process it starts); no keychain but a throwaway FILE,
 // never added to the search list (checked before and after). Every process it starts runs in its own process group
 // and is ended, and the temp folder and the keychain file are deleted, on every way out.
+//
+// The Clover home is DELIBERATELY `<temp user home>/.clover`, inside the user home as on a real Mac. Don't move it back
+// to a sibling folder: on 2026-11-13 the inside home turned rows 48, 50 and 55 red on three product bugs a sibling home
+// had hidden (a bot's Write into its scratch refused as a project's `.clover`; a pasted `bun -e` server refused by the
+// load guard under a dot-folder; a wrapped skill folder missing from Glossary), the last two in a shipped build.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, closeSync } from "node:fs";
@@ -71,7 +76,7 @@ import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
 import { WORKSHOP_STEP, workshopStep } from "./workshop-step";
-import { TAB_FLASH_STEP, launchSamples, tabFlashStep } from "./tab-flash-step";
+import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { pluginOnce } from "./plugin-once";
 import { parseOnlyUi, uiRowNumbers } from "./steps";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
@@ -132,6 +137,10 @@ const shardUnits = flag("--units")?.split(",").filter((u) => u !== "") as UnitId
   if (shardUnits !== undefined && (shardUnits.length === 0 || bad.length > 0)) { console.error(`acceptance: --units takes unit ids (${known.join(", ")})${bad.length > 0 ? `, not ${bad.join(", ")}` : ""}`); process.exit(2); }
 }
 /** Whether this run runs a unit's rows: every unit, unless it is a shard. */
+// The tab-flash row alone (its own serial unit, or --only-tab-flash): its app's frames out of sight sleep after
+// TAB_FLASH_SLEEP_MS (the test/acceptance build's seam), so its "a minute away" waits just past that, not a minute. A
+// run that holds other rows in the same app keeps the layer's own minute (a row there may count on a frame staying awake).
+const tabFlashAlone = tabFlashOnly || (shardUnits !== undefined && shardUnits.length === 1 && shardUnits[0] === "tab-flash");
 const runs = (u: UnitId | undefined): boolean => shardUnits === undefined || (u !== undefined && shardUnits.includes(u));
 // --no-build: the desktop app is the one apps/desktop/out already holds (the sharded run built it once for its shards).
 const noBuild = argv.includes("--no-build");
@@ -297,6 +306,7 @@ function baseEnv(): Record<string, string> {
     // The test app's answer key, kept beside the keychain file (a test-marked or unpackaged headless app only): every
     // app of the run, and an upgrade's, registers the same key.
     CLOVER_TEST_ANSWER_KEY: answerKeyFile,
+    ...(tabFlashAlone ? { CLOVER_TEST_SLEEP_AFTER_MS: String(TAB_FLASH_SLEEP_MS) } : {}),
   };
 }
 mkdirSync(join(root, "tmp"), { recursive: true, mode: 0o700 });
@@ -2272,7 +2282,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
     [WORKSHOP_STEP, () => workshopStep(ctx, session)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
-    [TAB_FLASH_STEP, () => (launch !== undefined ? tabFlashStep(ctx, session, launch) : tabFlashStep(ctx, session))],
+    [TAB_FLASH_STEP, () => tabFlashStep(ctx, session, launch, tabFlashAlone ? TAB_FLASH_SLEEP_MS : undefined)],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
   ] as const;
@@ -2475,7 +2485,7 @@ async function tabFlashOnlyRun(app: { exe: string; args: string[] }): Promise<vo
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
       history: (s2) => history(rpc, s2),
     };
-    record(n, "PASS", await tabFlashStep(ctx, session, launch));
+    record(n, "PASS", await tabFlashStep(ctx, session, launch, TAB_FLASH_SLEEP_MS));
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
@@ -2521,7 +2531,20 @@ async function idleStep(app: { exe: string; args: string[] }): Promise<void> {
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
     }, 500);
     await until("the shell to fill the window", 60_000, () => shellDoc(cdp!));
-    await sleep(15_000);
+    // The start-up settles first: until two 2.5 s slices running are each under the bar for both processes, at most the
+    // 15 s it used to wait (measured 2026-11-13: quiet within ~5 s). The 15 s window that judges the row is unchanged.
+    const SLICE = 2.5, SETTLE_MAX = 15;
+    const settleT0 = Date.now();
+    let quiet = 0;
+    while (quiet < 2 && (Date.now() - settleT0) / 1000 < SETTLE_MAX) {
+      const s0 = { sup: cpuSeconds(supervisor), core: cpuSeconds(daemon) };
+      await sleep(SLICE * 1000);
+      const s1 = { sup: cpuSeconds(supervisor), core: cpuSeconds(daemon) };
+      const under = [s0.sup, s0.core, s1.sup, s1.core].every((x) => x !== undefined)
+        && ((s1.sup! - s0.sup!) / SLICE) * 100 < IDLE_CPU_MAX && ((s1.core! - s0.core!) / SLICE) * 100 < IDLE_CPU_MAX;
+      quiet = under ? quiet + 1 : 0;
+    }
+    const settled = (Date.now() - settleT0) / 1000;
     const WINDOW = 15;
     const a = { sup: cpuSeconds(supervisor), core: cpuSeconds(daemon) };
     await sleep(WINDOW * 1000);
@@ -2530,7 +2553,7 @@ async function idleStep(app: { exe: string; args: string[] }): Promise<void> {
     if (a.core === undefined || b.core === undefined) fail("the daemon exited while idle");
     const pct = (x: number, y: number) => ((y - x) / WINDOW) * 100;
     const supPct = pct(a.sup!, b.sup!), corePct = pct(a.core!, b.core!);
-    const said = `over ${WINDOW} s quiet: the supervisor ${supPct.toFixed(1)}% of a core, the daemon ${corePct.toFixed(1)}%`;
+    const said = `over ${WINDOW} s quiet (after ${settled.toFixed(1)} s settling): the supervisor ${supPct.toFixed(1)}% of a core, the daemon ${corePct.toFixed(1)}%`;
     if (supPct >= IDLE_CPU_MAX || corePct >= IDLE_CPU_MAX) fail(`${said} (each must stay under ${IDLE_CPU_MAX}%)`);
     record(n, "PASS", said);
   } catch (err) {

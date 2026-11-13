@@ -127,6 +127,9 @@ export interface RuntimeOptions {
   builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
   /** Whether a plugin's tree hash matches the official index's, for the strings of sealed cards (lane B's registry). */
   official?: (plugin: UiPlugin) => boolean;
+  /** How long a frame stays away from the screen before it sleeps, told to every document (a test or acceptance
+   *  build's seam: the acceptance's tab-flash row waits just past it, not a minute). Unset: the layer's own minute. */
+  sleepAfterMs?: number;
 }
 
 export class LayerError extends Error {
@@ -668,6 +671,7 @@ export class UiRuntime {
       css: a.css,
       ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
       ...(this.styledOf(m) ? { styled: true } : {}),
+      ...(this.opts.sleepAfterMs !== undefined ? { sleepAfterMs: this.opts.sleepAfterMs } : {}),
     };
   }
 

@@ -253,6 +253,10 @@ async function ready(): Promise<void> {
       webViews.drop(mount);
     },
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
+    // The acceptance's tab-flash row (a headless test-marked or acceptance build only, compiled out of a release; the
+    // marker gate's TEST_ONLY_APP_STRINGS checks it): frames out of sight sleep after this many ms, not a minute.
+    ...((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && /^\d+$/.test(process.env.CLOVER_TEST_SLEEP_AFTER_MS ?? "")
+      ? { sleepAfterMs: Math.min(60_000, Math.max(1_000, Number(process.env.CLOVER_TEST_SLEEP_AFTER_MS))) } : {}),
   });
   runtime.botName = (id) => botNames.get(id);
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
