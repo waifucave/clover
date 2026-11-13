@@ -72,6 +72,7 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
+import { pageProbe } from "./layer-page-step";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
@@ -687,6 +688,9 @@ let thirdPartyOutcome: { status: Status; detail: string } | undefined;
 let oauthOutcome: { status: Status; detail: string } | undefined;
 let routineOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
+/** The loopback site the acceptance-points fixture's component fetches (`net.fetch`), for its row only. */
+let pageSite: ReturnType<typeof Bun.serve> | undefined;
+const PAGE_SITE_BODY = "ACCEPTANCE-POINTS-PAGE-SITE";
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
 const OPEN_NETWORK_LINE = "It can reach any host on the network";
@@ -1982,6 +1986,11 @@ async function main(): Promise<void> {
     try {
       const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-points");
       cpSync(join(import.meta.dir, "fixtures", "acceptance-points"), folder, { recursive: true });
+      // The run's own loopback site its component fetches (its port on the fixture's OK, written in at install).
+      pageSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/page" ? new Response(PAGE_SITE_BODY) : new Response("not here", { status: 404 })) });
+      const fixtureManifest = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { capabilities: string[] };
+      fixtureManifest.capabilities.push(`network:127.0.0.1:${pageSite.port}`);
+      writeFileSync(join(folder, "clover.json"), JSON.stringify(fixtureManifest, null, 2));
       const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
       const id = installed.id;
       const card = await until(`${id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === id));
@@ -2002,11 +2011,35 @@ async function main(): Promise<void> {
       if (JSON.stringify(probe.keys) !== JSON.stringify(["acceptance-a", "acceptance-b"]) || JSON.stringify(probe.keysAfter) !== JSON.stringify(["acceptance-b"])) wrong.push(`the store's keys were ${JSON.stringify(probe.keys)}, then ${JSON.stringify(probe.keysAfter)} after a delete`);
       if (probe.mood !== "calm") wrong.push(`settings.get gave ${JSON.stringify(probe.mood)}, not the default`);
       if (probe.posted !== "posted") wrong.push(`conversation.note/send: ${String(probe.posted)}`);
+      // Its component, on its layer's own connection (the route `usePluginApi` takes): one member of each area a
+      // component reaches since components got the whole catalog, each answer checked. Only where the run holds the
+      // app's `layer.token` door (from source); a packaged run says so.
+      const openLayer = panelOpener(c);
+      let pageSaid = "its component's route: not run here (this target has no layer token door)";
+      if (openLayer !== undefined) {
+        const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
+        if (computer === "") fail("computer.list lists no computer");
+        mkdirSync(join(userHome, "acceptance-points-page"), { recursive: true });
+        const link = await openLayer(id);
+        try {
+          const page = await pageProbe({
+            layer: { request: ((m: string, p: unknown) => link.request(m, p)) as never, apiEvents: () => link.heard("plugin_api_event") as never },
+            pluginId: id, computer, watchFolder: `home/${computer}/acceptance-points-page`, session, bot: "alpha",
+            site: { url: `http://127.0.0.1:${pageSite.port}`, body: PAGE_SITE_BODY },
+            setMuted: async (muted) => { await c.request("notify.setMuted", { pluginId: id, muted }); },
+            sleep: (ms) => sleep(ms).then(() => undefined),
+          });
+          wrong.push(...page.wrong.map((w) => `its component: ${w}`));
+          pageSaid = `its component reached ${page.said.join(", ")}`;
+        } finally {
+          link.close();
+        }
+      }
       if (wrong.length > 0) fail(wrong.join("; "));
       // Its note and its message reach Alpha's conversation; the message starts a turn the fake answers.
       await until("its note and its message's turn in Alpha's conversation", 120_000, async () => {
         const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
-        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") ? true : undefined;
+        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") && (openLayer === undefined || text.includes("ACCEPTANCE-POINTS-PAGE-NOTE")) ? true : undefined;
       });
       // Its child's hooks: a turn with a tool call runs six of its events, and the user's compaction of Alpha's
       // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
@@ -2031,11 +2064,14 @@ async function main(): Promise<void> {
       await c.request("plugin.remove", { id, deleteData: true });
       await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined));
       if (existsSync(join(home, "plugin-data", id))) fail(`${id} was removed with deleteData, but its data folder is still there`);
-      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); removed with deleteData, its data folder gone` };
+      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); ${pageSaid}; removed with deleteData, its data folder gone` };
     } catch (err) {
       pointsOutcome = { status: statusOf(err), detail: why(err) };
       // Its hooks would run on every later turn: it goes, whatever failed.
       await c.request("plugin.remove", { id: "acceptance-points", deleteData: true }).catch(() => undefined);
+    } finally {
+      pageSite?.stop(true);
+      pageSite = undefined;
     }
   }
 

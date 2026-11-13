@@ -3,17 +3,24 @@
 // wiring, no test-built router or caller), a temp home and a throwaway secret store. Four times the daemon's real
 // composition missed a handler its unit tests had (each built its own router or caller); this walks the catalog instead.
 //
-// A third-party fixture holding every capability a third party may hold runs a host half in a process of its own:
-// - host members (`host`, `own`, `both`) are called by its host half, as the app's page would reach it (`host.call`
-//   through `plugin.layer.api`);
+// Two fixtures, each walked on both sides:
+// - a third party holding every capability a third party may hold, its host half in a process of its own;
+// - a child of the bundled `clover` tree (`clover/truth`, staged as the dev stage `<home>/run/dev-bundled/` a daemon
+//   with its own store reads), holding every capability, its host half in the `clover` process: the bundled-only
+//   capabilities and the `clover`-process members (`keys.*`, `desktop.*`) are called for real.
+// On each side:
+// - host members (`host`, `own`, `clover`, `both`) are called by its host half, as the app's page would reach it
+//   (`host.call` through `plugin.layer.api`);
 // - component members (`ui`, `both`) are called through the SDK's own component API (`usePluginApi`, the code a plugin's
 //   page runs), its bridge routed as the app's main process routes it: the pickers to main's dialog, every other call
-//   on the plugin's own layer connection to the core (role `layer`, `layer.token` as the app gets it).
-// The bundled tree's own members (`clover`) can't be called by a third party: listed as not checked here.
+//   on the plugin's own layer connection to the core (role `layer`, `layer.token` as the app gets it), whose
+//   notifications reach the page as the app relays them (`api-event`), so a watch (`plugin.layer.watch`) is opened and
+//   heard for real.
 //
 // A member not marked `notYet` must not answer "not served", "isn't available", "no handler", a missing method, or be
 // absent; a refusal for a real reason (a bad argument, a fence, a capability) counts as served. A member marked
-// `notYet` must say it isn't available. The test fails naming each member, where, and what it answered.
+// `notYet` must say it isn't available, or be absent from the API. The test fails naming each member, where, and what
+// it answered.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,6 +32,7 @@ import { configureLayer, usePluginApi } from "../../plugin-sdk/src/ui/index";
 // @ts-expect-error: the SDK's own React (the instance its hooks dispatch through), which this package doesn't type
 import * as React from "../../plugin-sdk/node_modules/react/index.js";
 import { FileSecretStore } from "../src/auth/secret-store";
+import { BUNDLED_MANIFEST_FILE, formatBundledManifest, measureBundledTree } from "../src/bundled-plugins-dir";
 import { Drivers } from "../src/bots/tests/fixtures";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
@@ -50,7 +58,9 @@ async function rpc(path: string) {
     data(_s, chunk) {
       for (const l of decoder.push(chunk)) {
         const m = JSON.parse(l) as Record<string, unknown>;
-        if (typeof m["id"] === "number") { pending.get(m["id"])?.(m); pending.delete(m["id"]); } else if (typeof m["method"] === "string") for (const n of notes) n(m["method"], m["params"]);
+        // The daemon's own requests (`app.ping`, which an app that doesn't answer is restarted for): answered at once.
+        if (typeof m["method"] === "string" && m["id"] !== undefined) writer.enqueue(encodeLine({ jsonrpc: "2.0", id: m["id"], result: {} }));
+        else if (typeof m["id"] === "number") { pending.get(m["id"])?.(m); pending.delete(m["id"]); } else if (typeof m["method"] === "string") for (const n of notes) n(m["method"], m["params"]);
       }
     },
     drain() { writer.onDrain(); },
@@ -91,7 +101,7 @@ const ARGS: Record<string, unknown[]> = {
   "files.stat": ["home/Studio/truth.txt"], "files.readText": ["home/Studio/truth.txt"], "files.readBytes": ["home/Studio/truth.txt"],
   "files.write": ["home/Studio/truth.txt", "truth"], "files.list": ["home/Studio"], "files.remove": ["home/Studio/truth-none.txt"],
   "files.move": ["home/Studio/truth-none.txt", "home/Studio/truth-none2.txt"], "files.glob": ["*.txt", { cwd: "home/Studio" }],
-  "files.grep": ["truth", { cwd: "home/Studio" }], "files.watch": ["home/Studio", FN], "files.path": [GRANT],
+  "files.grep": ["truth", { cwd: "home/Studio" }], "files.watch": ["home/Studio/watched", FN], "files.path": [GRANT],
   "files.pickOpen": [{}], "files.pickFolder": [{}], "files.pickSave": [{}], "files.url": [GRANT], "files.onDrop": [FN],
   "browser.open": [{ owner: { kind: "plugin", plugin: PLUGIN } }], "browser.close": ["tab_none"], "browser.navigate": ["tab_none", "about:blank"],
   "browser.show": ["tab_none"], "browser.hide": ["tab_none"], "browser.screenshot": ["tab_none"], "browser.cdp": ["tab_none", "Page.reload", {}],
@@ -141,7 +151,7 @@ const SAYS_NOT_YET = /isn't available|not available|not served/i;
 
 function verdict(path: string, info: ApiCallInfo, a: Answer): string | undefined {
   const said = a.absent !== undefined ? `absent (${a.absent})` : a.error !== undefined ? `error: ${a.error}` : a.app !== undefined ? `app: ${a.app}` : `value: ${JSON.stringify(a.value)?.slice(0, 120)}`;
-  if (info.notYet !== undefined) return a.error !== undefined && SAYS_NOT_YET.test(a.error) ? undefined : `marked notYet, but answered ${said}`;
+  if (info.notYet !== undefined) return (a.error !== undefined && SAYS_NOT_YET.test(a.error)) || a.absent !== undefined ? undefined : `marked notYet, but answered ${said}`;
   if (a.absent !== undefined) return `absent from the API (${a.absent})`;
   if (a.error !== undefined && NOT_SERVED.test(a.error)) return `not served: ${a.error.slice(0, 300)}`;
   if (a.error !== undefined && WIRING.test(a.error)) return `wiring error: ${a.error.slice(0, 300)}`;
@@ -167,15 +177,18 @@ function componentApi(part: { mount: string; pluginId: string }): Record<string,
   }
 }
 
+const BUNDLED = "clover/truth";
+
 darwinTest("every API member the catalog lists is served where it says, on the daemon's own composition", async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-a-api-truth-")));
   const home = join(root, "clover-home");
   const userHome = join(root, "home");
   mkdirSync(userHome, { recursive: true });
   writeFileSync(join(userHome, "truth.txt"), "truth\n");
-  // The fixture: every capability a third party may hold (a capability the validator keeps from third parties is
-  // left out, and its members named below), a host half in a process of its own. Its layer connection needs no UI
-  // entry (`layer.token` is minted for any plugin).
+  mkdirSync(join(userHome, "watched"));
+  // The third party: every capability a third party may hold (a capability the validator keeps from third parties is
+  // left out; the bundled fixture calls its members), a host half in a process of its own. Its layer connection needs
+  // no UI entry (`layer.token` is minted for any plugin).
   const folder = join(home, "plugins", PLUGIN);
   mkdirSync(join(folder, "host"), { recursive: true });
   const all = CAPABILITIES.map((c) => c.name).filter((n) => !n.includes("*"));
@@ -192,6 +205,20 @@ darwinTest("every API member the catalog lists is served where it says, on the d
   if (keptOut.length > 0) writeFileSync(join(folder, "clover.json"), JSON.stringify(manifest(all.filter((c) => !keptOut.includes(c)))));
   const again = await validatePluginFolder(folder, { os: "macos" });
   expect(again.issues.filter((i) => i.severity === "error")).toEqual([]);
+  // The bundled child: the dev stage a daemon with its own store reads (`devBundledSource`), the `clover` tree with one
+  // child holding every capability, its host half in the `clover` process.
+  const devRoot = join(home, "run", "dev-bundled", "plugins");
+  mkdirSync(join(devRoot, "clover"), { recursive: true });
+  writeFileSync(join(devRoot, "clover", "clover.json"), JSON.stringify({ manifest: 1, id: "clover", name: "Clover", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` } }));
+  const child = join(devRoot, "clover", "plugins", "truth");
+  mkdirSync(join(child, "host"), { recursive: true });
+  writeFileSync(join(child, "clover.json"), JSON.stringify({
+    manifest: 1, name: "Truth (bundled)", engines: { clover: `^${PLUGIN_API_VERSION}` },
+    host: { entry: "host/index.js" }, capabilities: [...all.filter((c) => !c.includes("<")), "network:truth.invalid", "call:clover"],
+  }));
+  writeFileSync(join(child, "package.json"), JSON.stringify({ type: "module" }));
+  writeFileSync(join(child, "host", "index.js"), HOST_JS);
+  writeFileSync(join(home, "run", "dev-bundled", BUNDLED_MANIFEST_FILE), formatBundledManifest(measureBundledTree(devRoot)));
 
   const net = new MemoryNetwork();
   daemon = await startDaemon({
@@ -210,17 +237,24 @@ darwinTest("every API member the catalog lists is served where it says, on the d
   await daemon.cloverParts.ready;
   const app = await rpc(daemon.socketPath);
   expect((await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] }))["error"]).toBeUndefined();
+  // A component's watch values go to its own layer connection alone: the app's connection, subscribed to every area,
+  // never hears one.
+  expect((await app.request("events.subscribe", { areas: ["plugins", "computers", "sessions"] }))["error"]).toBeUndefined();
+  const appHeard: string[] = [];
+  app.onNotification((_m, params) => { const t = (params as { type?: unknown } | undefined)?.type; if (t === "plugin_api_event") appHeard.push(JSON.stringify(params).slice(0, 200)); });
 
-  // The user's OK for it: it runs.
-  const stateOf = async () => ((await app.request("plugin.get", { id: PLUGIN }))["result"] as { plugin: { state: string } } | undefined)?.plugin.state;
-  for (let i = 0; i < 300 && (await stateOf()) === undefined; i++) await Bun.sleep(10);
+  // The user's OK for the third party: it runs. The bundled child runs with no card.
+  const stateOf = async (id: string) => ((await app.request("plugin.get", { id }))["result"] as { plugin: { state: string } } | undefined)?.plugin.state;
+  for (let i = 0; i < 300 && (await stateOf(PLUGIN)) === undefined; i++) await Bun.sleep(10);
   const switched = (await app.request("plugin.setEnabled", { id: PLUGIN, enabled: true }))["result"] as { applied: boolean; card: string };
   const broker = daemon.cloverParts.broker()!;
   for (let i = 0; i < 300 && broker.cards().find((c) => c.id === switched.card) === undefined; i++) await Bun.sleep(10);
   const okCard = broker.cards().find((c) => c.id === switched.card)!;
   expect(await broker.answer(okCard.id, { optionId: "approve", hash: okCard.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(okCard.id)!, input: "click", at: Date.now() } }, { role: "app" })).toBe("accepted");
-  for (let i = 0; i < 1000 && (await stateOf()) !== "running"; i++) await Bun.sleep(10);
-  if ((await stateOf()) !== "running") throw new Error(`the fixture isn't running: ${JSON.stringify((await app.request("plugin.get", { id: PLUGIN }))["result"]).slice(0, 1500)}`);
+  for (const id of [PLUGIN, BUNDLED]) {
+    for (let i = 0; i < 1000 && (await stateOf(id)) !== "running"; i++) await Bun.sleep(10);
+    if ((await stateOf(id)) !== "running") throw new Error(`the fixture ${id} isn't running: ${JSON.stringify((await app.request("plugin.get", { id }))["result"]).slice(0, 1500)}`);
+  }
   // Any card a call raises (confirm, a change) is answered no, so nothing waits on the user.
   const denier = setInterval(() => {
     for (const c of broker.cards()) {
@@ -234,39 +268,50 @@ darwinTest("every API member the catalog lists is served where it says, on the d
   const notChecked: string[] = [];
   /** Every answer, written where `CLOVER_TRUTH_DUMP` says (to read what each member answered). */
   const seen: { path: string; where: string; a: Answer }[] = [];
-  try {
+  const layerMethods = allowedMethods("layer");
+  const PICKS = new Set(["files.pickOpen", "files.pickFolder", "files.pickSave"]);
+
+  /** One fixture's walk, both sides. */
+  const walk = async (pluginId: string) => {
+    const bundled = pluginId.startsWith("clover/");
     // The host half: each host member through `host.call` (`plugin.layer.api`), as the app's page reaches it.
     for (const [path, info] of entries) {
       if (info.where === "ui") continue;
-      if (info.where === "clover") { notChecked.push(`${path} (host, the bundled clover process only)`); continue; }
-      const r = await app.request("plugin.layer.api", { pluginId: PLUGIN, call: "host.call", args: ["api", { path, args: ARGS[path] ?? [] }, { timeoutMs: 20_000 }] });
+      if (info.where === "clover" && !bundled) { notChecked.push(`${path} [${pluginId}] (host, the bundled clover process only: the bundled fixture calls it)`); continue; }
+      const r = await app.request("plugin.layer.api", { pluginId, call: "host.call", args: ["api", { path, args: ARGS[path] ?? [] }, { timeoutMs: 20_000 }] });
       const a: Answer = r["error"] !== undefined ? { error: `host.call failed: ${JSON.stringify(r["error"]).slice(0, 300)}` } : (r["result"] as { result: Answer }).result;
       const why = verdict(path, info, a);
-      seen.push({ path, where: "host", a });
-      if (why !== undefined) wrong.push(`${path} [host]: ${why}`);
+      seen.push({ path, where: `${pluginId} host`, a });
+      if (why !== undefined) wrong.push(`${path} [${pluginId} host]: ${why}`);
     }
 
-    // The component side: the SDK's own `usePluginApi`, its bridge routed as the app's main process routes it.
-    const { token } = (await app.request("layer.token", { pluginId: PLUGIN }))["result"] as { token: string };
-    const layer = await rpc(daemon.socketPath);
-    const hello = await layer.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "layer", token, clientName: "test-layer", pluginId: PLUGIN });
+    // The component side: the SDK's own `usePluginApi`, its bridge routed as the app's main process routes it, the
+    // layer connection's notifications relayed to the page as the app relays them.
+    const { token } = (await app.request("layer.token", { pluginId }))["result"] as { token: string };
+    const layer = await rpc(daemon!.socketPath);
+    const hello = await layer.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "layer", token, clientName: "test-layer", pluginId });
     expect(hello["error"]).toBeUndefined();
-    const layerMethods = allowedMethods("layer");
-    const PICKS = new Set(["files.pickOpen", "files.pickFolder", "files.pickSave"]);
+    const pageListeners = new Set<(m: unknown) => void>();
+    layer.onNotification((method, params) => { for (const l of pageListeners) l({ type: "api-event", pluginId, method, params }); });
     const bridgeApi = async (_mount: string, method: string, params: unknown): Promise<unknown> => {
       if (PICKS.has(method)) return { app: `main's own dialog (${method})` };
-      if (!layerMethods.has(method)) throw new Error(`a layer doesn't call ${method} (the app's layer links refuse it)`);
-      const r = await layer.request(method, params ?? {});
+      // The bundled tree's parts: main's tree table takes what a layer doesn't call (`plugin.settings.get` …) on the
+      // app's own connection; everything else goes on the layer's, as any part's.
+      const viaApp = bundled && !layerMethods.has(method);
+      if (!layerMethods.has(method) && !viaApp) throw new Error(`a layer doesn't call ${method} (the app's layer links refuse it)`);
+      const r = await (viaApp ? app : layer).request(method, params ?? {});
       if (r["error"] !== undefined) { const e = r["error"] as { code?: number; message?: string }; throw Object.assign(new Error(e.message ?? "error"), { code: e.code }); }
       return r["result"];
     };
     const mainOnly = (what: string) => () => Promise.resolve({ app: what });
-    configureLayer({ bridge: new Proxy({ api: bridgeApi, onMessage: () => {} } as Record<string, unknown>, {
+    configureLayer({ bridge: new Proxy({ api: bridgeApi, onMessage: (l: (m: unknown) => void) => { pageListeners.add(l); return () => pageListeners.delete(l); } } as Record<string, unknown>, {
       get: (t, k: string) => (k in t ? t[k] : k === "shell" ? (_m: string, method: string) => Promise.resolve({ app: `main's shell.${method}` }) : mainOnly(`main's ${k}`)),
     }) as never });
-    const api = componentApi({ mount: "m_truth", pluginId: PLUGIN });
+    const api = componentApi({ mount: `m_${pluginId.replace("/", "_")}`, pluginId });
     for (const [path, info] of entries) {
       if (info.where !== "ui" && info.where !== "both") continue;
+      // Paced under the layer's calls-per-second cap (LAYER_CALLS_PER_SECOND), so no answer is the cap's.
+      await Bun.sleep(60);
       const parts = path.split(".");
       const holder = parts.slice(0, -1).reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], api) as Record<string, unknown> | undefined;
       const fn = parts.length === 1 ? api[path] : holder?.[parts.at(-1)!];
@@ -274,9 +319,17 @@ darwinTest("every API member the catalog lists is served where it says, on the d
       if (typeof fn !== "function") a = { absent: typeof fn };
       else {
         try {
-          const args = (ARGS[path] ?? []).map((x) => (x === FN ? () => {} : x));
-          const out = await Promise.race([Promise.resolve().then(() => (fn as (...x: unknown[]) => unknown).apply(holder ?? api, args)), Bun.sleep(6_000).then(() => { throw Object.assign(new Error("no answer in 6 s"), { code: "hung" }); })]);
-          if (typeof out === "function") (out as () => void)();
+          const args = (ARGS[path] ?? []).map((x) => (x === FN ? () => {} : path === "audio.play" && typeof x === "object" && x !== null ? { ...x, data: new Uint8Array(0) } : x));
+          const hung = () => Bun.sleep(6_000).then(() => { throw Object.assign(new Error("no answer in 6 s"), { code: "hung" }); });
+          const out = await Promise.race([Promise.resolve().then(() => (fn as (...x: unknown[]) => unknown).apply(holder ?? api, args)), hung()]);
+          // A watch the core opens (`plugin.layer.watch`): its answer is the opening's.
+          if (typeof out === "function" && (out as { opened?: unknown }).opened instanceof Promise) {
+            try {
+              await Promise.race([(out as unknown as { opened: Promise<void> }).opened, hung()]);
+            } finally {
+              (out as () => void)();
+            }
+          } else if (typeof out === "function") (out as () => void)();
           const app = (out as { app?: string } | undefined)?.app;
           a = app !== undefined ? { app } : { value: out };
         } catch (e) {
@@ -285,15 +338,41 @@ darwinTest("every API member the catalog lists is served where it says, on the d
         }
       }
       const why = verdict(path, info, a);
-      seen.push({ path, where: "component", a });
-      if (why !== undefined) wrong.push(`${path} [component]: ${why}`);
+      seen.push({ path, where: `${pluginId} component`, a });
+      if (why !== undefined) wrong.push(`${path} [${pluginId} component]: ${why}`);
     }
+
+    // What a component now reaches, for real: its answers are the core's, the bytes as bytes, and a watch is heard.
+    await Bun.sleep(1_100);
+    const files = api["files"] as { readText(p: string): Promise<string>; readBytes(p: string): Promise<Uint8Array>; write(p: string, d: string | Uint8Array): Promise<unknown>; watch(p: string, fn: (c: unknown) => void): Promise<() => void> };
+    const heard: unknown[] = [];
+    const off = await files.watch("home/Studio/watched", (c) => heard.push(c));
+    const name = `watched/${pluginId.replace("/", "-")}.txt`;
+    // Written again while unheard: a folder watch can miss a change made the moment it starts.
+    for (let i = 0; i < 1000 && !JSON.stringify(heard).includes(name.slice("watched/".length)); i++) {
+      if (i % 200 === 0) await files.write(`home/Studio/${name}`, new TextEncoder().encode("seen\n"));
+      await Bun.sleep(10);
+    }
+    off();
+    expect(JSON.stringify(heard)).toContain(name.slice("watched/".length));
+    expect(readFileSync(join(userHome, name), "utf8")).toBe("seen\n");
+    expect(await files.readText(`home/Studio/${name}`)).toBe("seen\n");
+    const bytes = await files.readBytes(`home/Studio/${name}`);
+    expect(bytes instanceof Uint8Array && new TextDecoder().decode(bytes)).toBe("seen\n");
+    // `secrets.get` stays a host half's in a process of its own: never on a component's path.
+    expect((await layer.request("plugin.layer.call", { call: "secrets.get", args: ["api-key"] }))["error"]).toMatchObject({ message: expect.stringContaining("host code") });
     layer.close();
+  };
+
+  try {
+    await walk(PLUGIN);
+    await walk(BUNDLED);
   } finally {
     clearInterval(denier);
     app.close();
   }
   if (process.env.CLOVER_TRUTH_DUMP) writeFileSync(process.env.CLOVER_TRUTH_DUMP, seen.map((x) => `${x.where}\t${x.path}\t${JSON.stringify(x.a).slice(0, 300)}`).join("\n"));
-  console.log(`not checked here (the bundled tree's own): ${notChecked.join("; ")}`);
+  if (notChecked.length > 0) console.log(`not checked on the third party (the bundled fixture's): ${notChecked.join("; ")}`);
   expect(wrong).toEqual([]);
+  expect(appHeard).toEqual([]);
 });

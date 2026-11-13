@@ -2,13 +2,18 @@
   "manifest": 1,
   "id": "acceptance-points",
   "name": "Acceptance points",
-  "description": "The acceptance run's fixture for a host half's own API: it declares a point its child fills, keeps a synced store, watches a setting and posts a note and a message into a conversation (its probe command); its child notes six hook events in its data folder.",
+  "description": "The acceptance run's fixture for a plugin's own API: it declares a point its child fills, keeps a synced store, watches a setting and posts a note and a message into a conversation (its probe command); its child notes six hook events in its data folder. Its component's route (its layer's own connection) reaches files, memory, routines, usage, logs, notify, the conversation, commands, its point and the run's loopback site (added to its OK at install).",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
   },
   "capabilities": [
-    "conversation.post"
+    "conversation.post",
+    "files",
+    "memory.read",
+    "routines.read",
+    "usage.read",
+    "notify"
   ],
   "settings": {
     "mood": {
