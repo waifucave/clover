@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import { botPaths } from "../../bots/paths";
-import { workshopAdds } from "../changes";
+import { codeFieldsFrom, updateAddsTrigger, workshopAdds } from "../changes";
 import { RegistryCore, type OkCardRaiser } from "../core";
 import { PluginFolders, builtByText, readPluginFolder } from "../folders";
 import { fileRegistryStore } from "../state";
@@ -317,5 +317,142 @@ describe("a workshop change that asks for more (the controller's ruling)", () =>
     expect(w.core.get("tarot")?.state).toBe("running");
     expect(second.signal?.aborted).toBe(true);
     expect(w.live()).toEqual([]);
+  });
+});
+
+describe("a bot's edit to its own plugin that declares its own points (the owner's reel, 14f)", () => {
+  /** The registry as `openPluginRegistry` wires it: point declarations from the catalog, else the registry's. */
+  function reelWorld() {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-")));
+    temps.push(home);
+    const pluginsDir = join(home, "plugins");
+    mkdirSync(pluginsDir, { recursive: true });
+    const store = fileRegistryStore(join(home, "plugins-state"));
+    const lines: string[] = [];
+    let folders: PluginFolders;
+    const core = new RegistryCore({ catalog: catalogPointDecl, store, onOk: (id, hash) => folders.okGiven(id, hash) });
+    folders = new PluginFolders({
+      core, store, pluginsDir, settleMs: 2_000, log: (l) => lines.push(l),
+      codeFieldsOf: (point) => codeFieldsFrom(catalogPointDecl(point) ?? core.points().find((p) => p.name === point)?.decl),
+    });
+    return { home, pluginsDir, store, core, folders, lines, approve: async (id: string) => expect(await core.approve(id, core.get(id)!.treeHash!)).toBe("approved") };
+  }
+  const REEL = (over: Record<string, unknown> = {}) => JSON.stringify({
+    manifest: 1, id: "reel", name: "Reel", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, capabilities: ["files"],
+    host: { entry: "host/index.ts", runtime: "bun", process: "own", declares: {
+      "reel.tools": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } } },
+    } },
+    client: { entry: "client/index.tsx", css: ["client/style.css"] },
+    contributes: { ui: [{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "bot.tab", id: "open", component: "ReelBadge" }] },
+    ...over,
+  });
+  const reelFiles = () => ({
+    "clover.json": REEL(),
+    "host/index.ts": "function resolvePath(p: string): string { return p; }\nexport const a = resolvePath(\"x\");\n",
+    "client/index.tsx": "export function ReelPage() { return null; }\nexport function ReelBadge() { return null; }\n",
+    "client/style.css": ".reel { color: black; }\n",
+    "plugins/captions/clover.json": JSON.stringify({ manifest: 1, name: "Captions", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { "reel.tools": [{ id: "captions", name: "Captions" }] } }),
+    "plugins/captions/host/index.ts": "export const b = 1;\n",
+  });
+  async function built() {
+    const w = reelWorld();
+    const reel = join(w.pluginsDir, "reel");
+    write(reel, reelFiles());
+    await w.folders.installed("reel", "bot", { bot: "alpha" });
+    expect(w.core.get("reel")?.state).toBe("found");
+    // Looked at again while its install card waits (the catch-up look, another plugin's change): its own point is
+    // still its own.
+    await w.folders.refresh(reel);
+    await w.approve("reel");
+    expect(w.core.get("reel")?.state).toBe("running");
+    return { w, reel };
+  }
+
+  test("an await added in its host code, then a TSX and CSS edit: each applies with no card, and the stored OK follows", async () => {
+    const { w, reel } = await built();
+    write(reel, { "host/index.ts": "async function resolvePath(p: string): Promise<string> { return await Promise.resolve(p); }\nexport const a = resolvePath(\"x\");\n" });
+    await w.folders.refresh(reel);
+    expect(w.core.get("reel")?.state).toBe("running");
+    write(reel, { "client/index.tsx": "export function ReelPage() { return null; }\nexport function ReelBadge() { return 1; }\n", "client/style.css": ".reel { color: white; }\n" });
+    await w.folders.refresh(reel);
+    expect(w.core.get("reel")?.state).toBe("running");
+    expect(w.core.get("reel")!.okHash).toBe(w.core.get("reel")!.treeHash);
+    // The stored OK is this tree's, its lines the current ones (the Plugins page and the next real card read them).
+    const ok = w.store.loadOk("reel")!;
+    expect(ok.okHash).toBe(w.core.get("reel")!.treeHash!);
+    expect(ok.okLines).toEqual((await readPluginFolder(reel, { source: "local" })).snapshot!.okLines);
+    expect(w.lines.filter((l) => l.includes("asks again"))).toEqual([]);
+  });
+
+  test("a capability or a network host added still asks, says why in the log, and the next code edit after the OK applies", async () => {
+    const { w, reel } = await built();
+    write(reel, { "clover.json": REEL({ capabilities: ["files", "notify"] }) });
+    await w.folders.refresh(reel);
+    expect(w.core.get("reel")?.state).toBe("found");
+    expect(w.lines).toContain("reel: asks again: it asks for more capabilities");
+    // Looked at again while that card waits; then OK'd.
+    await w.folders.refresh(reel);
+    await w.approve("reel");
+    write(reel, { "host/index.ts": "export const a = 2;\n" });
+    await w.folders.refresh(reel);
+    expect(w.core.get("reel")?.state).toBe("running");
+    write(reel, { "clover.json": REEL({ capabilities: ["files", "notify", "network:api.example.com"] }) });
+    await w.folders.refresh(reel);
+    expect(w.core.get("reel")?.state).toBe("found");
+    expect(w.lines.filter((l) => l.startsWith("reel: asks again:"))).toEqual(["reel: asks again: it asks for more capabilities", "reel: asks again: it asks for more capabilities"]);
+  });
+
+  test("an OK kept before (its own point's entries counted as code whole) doesn't make the next edit ask; a code field changed does", async () => {
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-old-"))), "reel");
+    temps.push(dirname(dir));
+    write(dir, reelFiles());
+    // As the registry read it while the plugin wasn't on: no declaration known, each entry whole.
+    const old = (await readPluginFolder(dir, { source: "local", codeFieldsOf: () => undefined })).snapshot!;
+    write(dir, { "host/index.ts": "export const a = 3;\n" });
+    const now = (await readPluginFolder(dir, { source: "local" })).snapshot!;
+    expect(workshopAdds(old, now)).toBeUndefined();
+    // A point declared elsewhere with a code field: the entry's code changes, it asks.
+    const codeDecl = () => ["run"];
+    const p1 = (await readPluginFolder(dir, { source: "local", codeFieldsOf: codeDecl })).snapshot!;
+    write(dir, { "plugins/captions/clover.json": JSON.stringify({ manifest: 1, name: "Captions", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { "acme.runs": [{ id: "captions", run: "bin/x" }] } }) });
+    const p2 = (await readPluginFolder(dir, { source: "local", codeFieldsOf: codeDecl })).snapshot!;
+    expect(workshopAdds(p1, p2)).toBe("its child captions runs a program it didn't");
+  });
+
+  test("the registry's declaration of a point comes before the tree's own: an edit that drops a code field from its declaration and adds a run value under it still asks", async () => {
+    const w = reelWorld();
+    const tarot = join(w.pluginsDir, "tarot");
+    const decl = (program: boolean) => ({ shape: "list", fields: { type: "object", properties: { id: { type: "string" }, run: { type: "string", ...(program ? { format: "program" } : {}) } } } });
+    const m = (program: boolean, entries: unknown[]) => JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      host: { entry: "host/index.ts", runtime: "bun", declares: { "tarot.runs": decl(program) } }, contributes: { "tarot.runs": entries } });
+    write(tarot, { "clover.json": m(true, [{ id: "a", run: "bin/a" }]), "host/index.ts": "export const p = 1;\n", "bin/a": "#!/bin/sh\necho a\n", "bin/b": "#!/bin/sh\necho b\n" });
+    await w.folders.installed("tarot", "bot", { bot: "alpha" });
+    await w.approve("tarot");
+    expect(w.core.points().find((p) => p.name === "tarot.runs")?.declaredBy).toMatchObject({ pluginId: "tarot" });
+    // The tree now says `run` is no program, and adds an entry with one: the registry still runs it by the declaration
+    // it holds, so the edit asks again rather than reading the new entry as data.
+    write(tarot, { "clover.json": m(false, [{ id: "a", run: "bin/a" }, { id: "b", run: "bin/b" }]) });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("found");
+    expect(w.lines).toContain("tarot: asks again: it runs a program it didn't");
+  });
+
+  test("where its keys and calls go: repeats and order add nothing, for any update; a new web page URL asks", async () => {
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-b-reel-reach-"))), "reel");
+    temps.push(dirname(dir));
+    const snapWith = async (ui: unknown[]) => {
+      write(dir, { ...reelFiles(), "clover.json": REEL({ contributes: { ui } }) });
+      return (await readPluginFolder(dir, { source: "local" })).snapshot!;
+    };
+    const one = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }]);
+    const two = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "bot.tab", id: "open", component: "ReelBadge" }]);
+    expect(JSON.parse(one.plugins[""]!.reaches).web).toEqual([null]);
+    expect(JSON.parse(two.plugins[""]!.reaches).web).toEqual([null, null]);
+    expect(workshopAdds(one, two)).toBeUndefined();
+    expect(updateAddsTrigger({ ...two, okLines: one.okLines }, { ...two, plugins: { ...two.plugins, "": { ...two.plugins[""]!, reaches: one.plugins[""]!.reaches } } })).toBeUndefined();
+    const web = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "bot.tab", id: "site", web: { url: "https://example.com/", partition: "site" } }]);
+    expect(JSON.parse(web.plugins[""]!.reaches).web).toEqual([null, "https://example.com/"]);
+    // A web page URL is a host it reaches: asked about first as such.
+    expect(workshopAdds(two, web)).toBe("it reaches more hosts");
   });
 });

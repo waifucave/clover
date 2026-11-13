@@ -352,6 +352,24 @@ const definitionsChanged = (before: PluginFingerprint | undefined, after: Plugin
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
 const adds = (before: readonly string[], after: readonly string[]) => after.some((x) => !before.includes(x));
 
+/** Where a fingerprint's keys and calls go (`reaches`), as one set of places: each model endpoint, http server and web
+ *  page URL once, a UI entry with no web page (`null`) not a place at all. Order and repeats say nothing. */
+function reachPlaces(fp: PluginFingerprint): string[] {
+  try {
+    const r = JSON.parse(fp.reaches) as { models?: unknown[]; http?: unknown[]; web?: unknown[] };
+    return [...new Set([
+      ...(r.models ?? []).map((x) => `model:${canonicalJson(x)}`),
+      ...(r.http ?? []).map((x) => `http:${canonicalJson(x)}`),
+      ...(r.web ?? []).filter((x) => x !== null && x !== undefined).map((x) => `web:${canonicalJson(x)}`),
+    ])];
+  } catch {
+    return [fp.reaches];
+  }
+}
+/** Whether `after` sends its keys or calls to a place `before` didn't (two UI entries with no web page against one,
+ *  or the same places in another order, add nothing). */
+const reachesMore = (before: PluginFingerprint, after: PluginFingerprint) => adds(reachPlaces(before), reachPlaces(after));
+
 /** Whether a plugin's fingerprint hits a trigger or changes what runs. A new plugin in the tree (a child) asks again
  *  when it is code; a data child applies, like any data file. */
 function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFingerprint): boolean {
@@ -367,7 +385,7 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || (after.adult && !before.adult)
     || after.runs !== before.runs
     || after.defaults !== before.defaults
-    || after.reaches !== before.reaches
+    || reachesMore(before, after)
     || definitionsChanged(before, after)
     || (after.dynamicHosts && !before.dynamicHosts);
 }
@@ -436,7 +454,7 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (adds(before.fetchesCode, after.fetchesCode)) return `${who} fetches more code when it runs`;
     if (after.addons && !before.addons) return `${who} loads add-ons`;
     if (after.adult && !before.adult) return `${who} has adult content`;
-    if (after.reaches !== before.reaches) return `${who} sends its keys or calls somewhere else`;
+    if (reachesMore(before, after)) return `${who} sends its keys or calls somewhere else`;
     if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
     if (after.label !== before.label) return `${who} changes its name or its author`;
     if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
@@ -467,16 +485,47 @@ function hostProgramsOf(fp: PluginFingerprint): boolean {
  *  any other, which a workshop edit may change; a different program is not. */
 function programsOf(fp: PluginFingerprint): string {
   try {
-    const r = JSON.parse(fp.runs) as { helper?: unknown; mcp?: { command?: unknown }[]; hooks?: { command?: unknown; scope?: unknown }[]; dotted?: unknown };
+    const r = JSON.parse(fp.runs) as { helper?: unknown; mcp?: { command?: unknown }[]; hooks?: { command?: unknown; scope?: unknown }[] };
     return canonicalJson({
       mcp: [...new Set((r.mcp ?? []).map((s) => canonicalJson(s.command ?? null)))].sort(),
       hooks: [...new Set((r.hooks ?? []).map((h) => canonicalJson({ command: h.command ?? null, scope: h.scope ?? null })))].sort(),
       helper: r.helper ?? null,
-      dotted: r.dotted ?? null,
     });
   } catch {
     return fp.runs;
   }
+}
+
+/** Whether a fingerprint's points' code fields (`runs.dotted`) hold code its OK'd one didn't: an entry of `after` whose
+ *  code fields no entry of `before` holds the same. A point whose declaration says fewer code fields than before (an OK
+ *  kept from a read that counted a whole entry as code, before `ownPointsFirst`) adds nothing; nor does an entry gone. */
+function dottedAdds(before: PluginFingerprint, after: PluginFingerprint): boolean {
+  const read = (fp: PluginFingerprint): Record<string, unknown[]> | undefined => {
+    try {
+      const d = (JSON.parse(fp.runs) as { dotted?: unknown }).dotted;
+      return d !== null && typeof d === "object" ? (d as Record<string, unknown[]>) : {};
+    } catch {
+      return undefined;
+    }
+  };
+  const was = read(before);
+  const now = read(after);
+  if (was === undefined || now === undefined) return before.runs !== after.runs;
+  for (const [point, entries] of Object.entries(now)) {
+    const prior = was[point] ?? [];
+    for (const e of Array.isArray(entries) ? entries : [entries]) {
+      if (e === null || typeof e !== "object") {
+        if (!prior.some((p) => canonicalJson(p) === canonicalJson(e))) return true;
+        continue;
+      }
+      // An entry with none of the code fields set holds no code.
+      const fields = Object.entries(e as Record<string, unknown>).filter(([, v]) => v !== undefined && v !== null);
+      if (fields.length === 0) continue;
+      const held = prior.some((p) => p !== null && typeof p === "object" && fields.every(([k, v]) => canonicalJson((p as Record<string, unknown>)[k] ?? null) === canonicalJson(v)));
+      if (!held) return true;
+    }
+  }
+  return false;
 }
 
 /** The tools a fingerprint runs without a card that aren't read-only (`contained`), as one list. */
@@ -513,7 +562,7 @@ export function workshopAdds(ok: OkSnapshot, now: OkSnapshot): string | undefine
     const who = key === "" ? "it" : `its child ${key}`;
     const before = ok.plugins[key];
     if (!before) continue; // a new child is judged by updateAddsTrigger above
-    if (programsOf(after) !== programsOf(before)) return `${who} runs a program it didn't`;
+    if (programsOf(after) !== programsOf(before) || dottedAdds(before, after)) return `${who} runs a program it didn't`;
     if (adds(containedOf(before), containedOf(after))) return `${who} has more tools that run without asking`;
     if (runDefaultsOf(after) !== runDefaultsOf(before)) return `${who} changes a setting's default that it runs with`;
   }

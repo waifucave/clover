@@ -18,6 +18,36 @@ import type { Leftovers } from "./leftovers";
 
 /** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
 export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalogPointDecl(point));
+
+/** The code fields of a point the tree itself declares (its host's `declares`, or an entry's, in the plugin or a child),
+ *  read from the tree: a plugin's own points are known whether or not the plugin runs now. Before, the registry knew
+ *  them only while the plugin was on, so a tree read while it waited for its OK (its install, an edit's card) counted
+ *  each entry of its own points as code whole, and the next read while it ran didn't: every bot edit after an OK asked
+ *  again (the owner's reel, 14f). A well-known name keeps the catalog's declaration, and a name the registry has a
+ *  declarer for keeps that one, as the registry records it: the tree's own is read only where the registry knows none. */
+export function ownPointsFirst(tree: TreeReport, fallback: CodeFieldsOf): CodeFieldsOf {
+  const own = new Map<string, { fields?: unknown }>();
+  const add = (declares: unknown) => {
+    if (declares === null || typeof declares !== "object") return;
+    for (const [name, decl] of Object.entries(declares as Record<string, unknown>)) if (!own.has(name) && decl !== null && typeof decl === "object") own.set(name, decl as { fields?: unknown });
+  };
+  for (const m of [tree.top.manifest, ...tree.children.map((c) => c.report.manifest)]) {
+    if (m === undefined) continue;
+    add((m.host as { declares?: unknown } | undefined)?.declares);
+    for (const raw of Object.values((m.contributes ?? {}) as Record<string, unknown>)) {
+      for (const e of Array.isArray(raw) ? raw : [raw]) if (e !== null && typeof e === "object") add((e as { declares?: unknown }).declares);
+    }
+  }
+  return (point) => {
+    if (catalogPointDecl(point) !== undefined) return fallback(point);
+    // The registry's declarer first (another plugin may run these entries by its own declaration, with code fields
+    // the tree's redeclaration leaves out); the tree's own only where the registry knows none.
+    const known = fallback(point);
+    if (known !== undefined) return known;
+    const decl = own.get(point);
+    return decl !== undefined ? codeFieldsFrom(decl) : undefined;
+  };
+}
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import { wrapperNetworkOpen } from "./wrap";
@@ -172,7 +202,7 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = treeOk ? { ...okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside), okLines: treeOkLines(folder, tree) } : undefined;
+  const snapshot = treeOk ? { ...okSnapshot(hash, entries, tree, ownPointsFirst(tree, opts.codeFieldsOf ?? catalogCodeFields), loader.inside), okLines: treeOkLines(folder, tree) } : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
@@ -229,6 +259,8 @@ export class PluginFolders {
   readonly #now: () => number;
   /** The tree each held plugin has now, for its OK's snapshot. */
   readonly #current = new Map<string, OkSnapshot>();
+  /** The tree each plugin's "asks again" line was last said for. */
+  readonly #askedSaid = new Map<string, string>();
   /** Top-level id → the folder it came from; and what each folder held last read. */
   readonly #byFolder = new Map<string, string>();
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -512,6 +544,7 @@ export class PluginFolders {
         this.#wentAway(was);
         this.#byFolder.delete(was);
         this.#current.delete(was);
+        this.#askedSaid.delete(was);
         this.#o.core.remove(was);
         await this.#restoreShadowed(was);
       } else if (was === undefined && resolve(dirname(abs)) === resolve(this.#o.pluginsDir)) {
@@ -754,6 +787,16 @@ export class PluginFolders {
       change = r.snapshot.cards !== ok.cards || placesCards(ok) ? "card-styling" : "applies";
     }
     const workshop = !s.dev && !s.bundled && provenance.by === "bot" && provenance.bot !== undefined;
+    // An OK'd plugin whose change asks again says why, once per tree (its log line; PluginStatus tells its builder the
+    // same through `workshopTrigger`).
+    const tree = r.inputs.find((i) => i.id === r.id)?.treeHash;
+    if ((change === "asks-again" || change === "card-styling") && ok && r.snapshot && stored?.okHash !== undefined && tree !== undefined && this.#askedSaid.get(r.id) !== tree) {
+      this.#askedSaid.set(r.id, tree);
+      const why = change === "card-styling" ? "it changes how its approval cards look (or a tree that places its own cards changed its code)"
+        : (workshop && update === undefined ? workshopAdds(ok, r.snapshot) : update !== undefined ? updateAddsTrigger(ok, r.snapshot) : undefined)
+          ?? "its code changed, and its OK covers only the tree it was given for";
+      this.#o.log?.(`${r.id}: asks again: ${why.replace(/[\r\n]+/g, " ")}`);
+    }
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
