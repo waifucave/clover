@@ -15,6 +15,8 @@ export const S = {
   hiddenWarning: "Has hidden characters",
   hiddenMark: (code: string, name: string) => `Hidden character ${code}, ${name}`,
   loading: "Listing…",
+  noPreview: (type: string) => `No preview for ${type} here.`,
+  preview: (path: string) => `Preview of ${path}`,
   viewer: (path: string) => `Contents of ${path}`,
   fold: (name: string) => `Fold ${name}`,
   unfold: (name: string) => `Unfold ${name}`,

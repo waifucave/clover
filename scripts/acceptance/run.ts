@@ -2798,7 +2798,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
 }
 
 /** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
-function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string): ExampleCtx {
+function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string): ExampleCtx {
   return {
     cdp, rpc, home, root, userHome, childReport: CHILD_REPORT,
     // This app's own output and the home's app log, whichever it wrote to.
@@ -2821,8 +2821,10 @@ function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: strin
     // Its cards pressed in this app's window (the app that drew them logs to its own log, not the first app's).
     turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp, log } }),
     alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true, log }),
+    inspectTurn: (s, text, ms, inspect) => turn(rpc, s, text, ms, { press: { cdp, log }, inspect: async () => inspect() }),
     history: (s) => history(rpc, s),
     appCli: (words) => appCli(words),
+    ...(appearanceFile !== undefined ? { setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme) } : {}),
   };
 }
 
@@ -3470,6 +3472,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
       alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
+      inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
     };
     record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
@@ -4563,7 +4566,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
     // and the rows after them (a shard's units leave out the ones another shard runs).
-    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile);
+    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile);
     for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
       if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
