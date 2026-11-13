@@ -2,16 +2,40 @@
   "manifest": 1,
   "id": "acceptance-points-page",
   "name": "Acceptance points page",
-  "description": "The acceptance-points row's page: a plugin whose sidebar app button's component, mounted in a frame of its own layer as soon as it runs, reaches files, memory, routines, usage, logs, notify, a conversation, its own command, its own point and the run's loopback site (added to its OK at install) through the UI SDK's usePluginApi, and hands the answers to its host half, whose report command gives them to the run. Where it writes, which conversation it notes in and which site it fetches are its settings, which the run sets.",
+  "description": "The acceptance-points row's page: a plugin whose sidebar app button's component, mounted in a frame of its own layer as soon as it runs, reaches files, memory, routines, usage, logs, notify, a conversation, its own command, its own point and the run's loopback site (added to its OK at install) through the UI SDK's usePluginApi (and reads its own string through `t`, from its own locale file), and hands the answers to its host half, whose report command gives them to the run. Where it writes, which conversation it notes in and which site it fetches are its settings, which the run sets. A question the run names in its `pageQuestion` setting it answers through `conversation.answer`.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
   },
-  "capabilities": ["conversation.post", "files", "memory.read", "routines.read", "usage.read", "notify"],
+  "capabilities": [
+    "conversation.post",
+    "files",
+    "memory.read",
+    "routines.read",
+    "usage.read",
+    "notify"
+  ],
   "settings": {
-    "pageFolder": { "type": "string", "title": "Page folder", "default": "" },
-    "pageSite": { "type": "string", "title": "Page site", "default": "" },
-    "pageSession": { "type": "string", "title": "Page conversation", "default": "" }
+    "pageFolder": {
+      "type": "string",
+      "title": "Page folder",
+      "default": ""
+    },
+    "pageSite": {
+      "type": "string",
+      "title": "Page site",
+      "default": ""
+    },
+    "pageSession": {
+      "type": "string",
+      "title": "Page conversation",
+      "default": ""
+    },
+    "pageQuestion": {
+      "type": "string",
+      "title": "Page question",
+      "default": ""
+    }
   },
   "client": {
     "entry": "client/index.tsx"
@@ -25,9 +49,16 @@
         "fields": {
           "type": "object",
           "properties": {
-            "id": { "type": "string" },
-            "title": { "type": "string" },
-            "greet": { "type": "string", "format": "handler" }
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "greet": {
+              "type": "string",
+              "format": "handler"
+            }
           }
         }
       }
@@ -35,14 +66,21 @@
   },
   "contributes": {
     "acceptance-points-page.items": [
-      { "id": "hello", "title": "Hello", "greet": "greet" }
+      {
+        "id": "hello",
+        "title": "Hello",
+        "greet": "greet"
+      }
     ],
     "commands": [
       {
         "name": "report",
         "description": "Says what its page handed over",
         "handler": "report",
-        "args": { "type": "object", "additionalProperties": false }
+        "args": {
+          "type": "object",
+          "additionalProperties": false
+        }
       }
     ],
     "ui": [
@@ -54,6 +92,12 @@
         "icon": "assets/icon.svg",
         "opens": "acceptance-points-page",
         "order": 960
+      }
+    ],
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
       }
     ]
   }

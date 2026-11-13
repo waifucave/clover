@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-api",
   "name": "Acceptance API",
-  "description": "The acceptance run's fixture for the plugin API's served areas: one host MCP tool, ApiProbe, that reads its own log, the usage rows, Alpha's memory and the routines, runs its own command and is refused another plugin's, plays a silent clip as Alpha's voice, listens for push-to-talk, and is refused the clover tree's keys; it answers what each one gave.",
+  "description": "The acceptance run's fixture for the plugin API's served areas: one host MCP tool, ApiProbe, that reads its own log, the usage rows, Alpha's memory and the routines, runs its own command and is refused another plugin's, plays a silent clip as Alpha's voice, listens for push-to-talk, and is refused the clover tree's keys; then the rest of each area's members: the commands list, a memory file read, a routine's runs, the plan readings and a usage watch, its own log followed, and the computers (list, watch, a hold on a made-up app taken, listed and released, the action signal, Clover's windows, the user-working mark on a made-up app); it answers what each one gave.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -11,7 +11,7 @@
     "entry": "host/index.ts",
     "runtime": "bun"
   },
-  "capabilities": ["usage.read", "memory.read", "routines.read", "audio"],
+  "capabilities": ["usage.read", "memory.read", "routines.read", "audio", "computers.read", "computers.control"],
   "contributes": {
     "mcpServers": {
       "api": {

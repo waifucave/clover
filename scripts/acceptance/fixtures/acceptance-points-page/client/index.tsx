@@ -45,8 +45,19 @@ export function AcceptancePointsPage() {
         await pace();
         const bytes = await api.files.readBytes(path);
         const text = await api.files.readText(path);
-        await api.files.remove(path);
-        out.files = { heard: JSON.stringify(heard).includes("page.txt"), bytes: bytes instanceof Uint8Array ? new TextDecoder().decode(bytes) : `not bytes: ${typeof bytes}`, text };
+        // The folder's listing, a move, a glob and a grep over it, then the moved file removed.
+        await pace();
+        const listing = (await api.files.list(folder)).map((f: { path?: string; name?: string }) => String(f.path ?? f.name ?? ""));
+        const moved = `${folder}/page-moved.txt`;
+        await api.files.move(path, moved);
+        await pace();
+        const globbed = (await api.files.glob("*.txt", { cwd: folder })).paths;
+        const grepped = (await api.files.grep("ACCEPTANCE-PAGE-FILE", { cwd: folder })).matches.map((x: { path: string }) => x.path);
+        await api.files.remove(moved);
+        out.files = {
+          heard: JSON.stringify(heard).includes("page.txt"), bytes: bytes instanceof Uint8Array ? new TextDecoder().decode(bytes) : `not bytes: ${typeof bytes}`, text,
+          listed: listing.some((p: string) => p.endsWith("page.txt")), globbed: globbed.some((p: string) => p.endsWith("page-moved.txt")), grepped: grepped.some((p: string) => p.endsWith("page-moved.txt")),
+        };
       } catch (e) {
         out.files = said(e);
       }
@@ -64,6 +75,10 @@ export function AcceptancePointsPage() {
       await pace();
       out.note = await api.conversation.note(session, { label: "Acceptance points page", text: "ACCEPTANCE-POINTS-PAGE-NOTE" }).then(() => "noted", said);
       await pace();
+      out.commandsList = await api.commands.list().then((v: { name: string }[]) => (v.some((c) => c.name === `${api.plugin.id}.report`) ? "its own listed" : `gave ${JSON.stringify(v.map((c) => c.name)).slice(0, 120)}`), said);
+      await pace();
+      // Its own string, from its own locale file (`locales`), with its placeholder filled.
+      out.t = api.t(`${api.plugin.id}.greeting`, { who: "page" });
       out.command = await api.commands.run(`${api.plugin.id}.report`, {}).then((v: unknown) => (typeof v === "object" && v !== null ? "its report" : `gave ${JSON.stringify(v)?.slice(0, 80)}`), said);
       await pace();
       out.point = await api.points.call(`${api.plugin.id}.items`, { pluginId: api.plugin.id, entryId: "hello" }, "greet", { who: "page" }).then((v: unknown) => v, said);
@@ -72,6 +87,32 @@ export function AcceptancePointsPage() {
       await pace();
       await api.host.call("pageReport", out).catch(() => undefined);
       if (live) setState("reported");
+    })();
+    return () => {
+      live = false;
+    };
+  }, [api]);
+  // A question the run names (its `pageQuestion` setting: the session, the call, the question and the answer), answered
+  // through `conversation.answer` (the plugin's `conversation.post`), the outcome handed to its host half.
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      for (let i = 0; i < 600 && live; i++) {
+        const raw = String((await api.settings.get("pageQuestion").catch(() => "")) ?? "");
+        if (raw !== "") {
+          let answered: string;
+          try {
+            const q = JSON.parse(raw) as { session: string; callId: string; question: string; answer: string };
+            await api.conversation.answer(q.session, q.callId, { [q.question]: q.answer });
+            answered = `answered ${q.callId}`;
+          } catch (e) {
+            answered = said(e);
+          }
+          await api.host.call("pageAnswer", answered).catch(() => undefined);
+          return;
+        }
+        await sleep(1_000);
+      }
     })();
     return () => {
       live = false;

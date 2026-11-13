@@ -2224,10 +2224,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (saved !== "export.bin write token") fail(`the save pick gave the page ${JSON.stringify(saved)}, not export.bin, write access and a token`);
       const log = ctx.appLog();
       const kept = !log.includes(`files: ${id}: the core keeps no grants yet`);
-      // Its host half's use of the token (`files.stat` on `grant:<uuid>`): the file's size when the core keeps grants.
+      // Its host half's use of the token (`files.stat` on `grant:<uuid>`, and `files.path` for the real path a program of
+      // its own would take): the file's size and the real path's last part when the core keeps grants.
       const hostSaid = await until("its host half's answer about the token", 20_000, async () => ((await attr("host")) !== "" ? await attr("host") : undefined));
-      if (kept && hostSaid !== `size ${size}`) fail(`the host half's files.stat on the token said ${JSON.stringify(hostSaid)}, not size ${size}`);
-      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the layer is cross-origin isolated (${sab}); the folder picker gave it ${folder}; a dropped file gave it ${dropped}; the save picker gave it ${saved}; the core ${kept ? `kept the grants (plugin.grant.add answered); the host half read the file's size through files.stat on the token (${hostSaid})` : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised (it said ${hostSaid})"}`;
+      if (kept && hostSaid !== `size ${size} file generated-testsrc.webm`) fail(`the host half's files.stat and files.path on the token said ${JSON.stringify(hostSaid)}, not size ${size} file generated-testsrc.webm`);
+      return `${id} (files) installed from its folder, OK'd on its card ${ok}; its page ran a WebAssembly module from its own folder (${wasm}) and a blob worker (${worker}); the open picker gave it ${opened} (a token, never a path); the media URL answered a range with ${range} and past the end ${past}; the <video> read ${video} from it; the layer is cross-origin isolated (${sab}); the folder picker gave it ${folder}; a dropped file gave it ${dropped}; the save picker gave it ${saved}; the core ${kept ? `kept the grants (plugin.grant.add answered); the host half read the file's size through files.stat and its real path through files.path on the token (${hostSaid})` : "keeps no grants yet (plugin.grant.add not served by this core): the host half's use of a token is not exercised (it said ${hostSaid})"}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });

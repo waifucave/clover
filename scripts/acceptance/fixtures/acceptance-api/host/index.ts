@@ -26,6 +26,8 @@ const TOOLS = [{
 }];
 
 const word = (v: string) => v.replace(/\s+/g, "_").slice(0, 80);
+/** A call that must answer within 10 s (a hung member fails its own pair, not the whole probe). */
+const within = <T = any>(p: Promise<T> | T, ms = 10_000): Promise<T> => Promise.race([Promise.resolve(p), new Promise<T>((_, no) => setTimeout(() => no(new Error("no answer in 10 s")), ms))]);
 const failed = (e: unknown) => `refused:${word(String((e as { code?: unknown })?.code ?? (e as Error)?.message ?? e))}`;
 
 async function probe(a: Api): Promise<string> {
@@ -60,6 +62,64 @@ async function probe(a: Api): Promise<string> {
     return "watched";
   });
   await at("keys", async () => `made:${(await a.keys.publicKey("x")).length}`);
+  // The rest of each area's members (try 15's gate).
+  await at("commands-list", async () => {
+    const cmds: { name: string }[] = await within(a.commands.list());
+    return `listed:${cmds.length}:${cmds.some((c) => c.name === "acceptance-api.ping") ? "own" : "no-own"}`;
+  });
+  await at("memory-read", async () => {
+    const entries: { path: string }[] = await within(a.memory.list("alpha"));
+    if (entries.length === 0) return "nothing-to-read";
+    return `read:${(await within<string>(a.memory.read("alpha", entries[0]!.path))).length > 0 ? "text" : "empty"}`;
+  });
+  await at("routines-runs", async () => {
+    const mine = ((await within(a.routines.list({}))) as { id: string; name: string }[]).find((r) => r.name === "acceptance-api");
+    if (mine === undefined) return "no-routine";
+    const got: { runs: unknown[] } = await within(a.routines.runs(mine.id, { limit: 5 }));
+    return `runs:${Array.isArray(got.runs) ? got.runs.length : "not-a-list"}`;
+  });
+  await at("usage-plans", async () => {
+    const plans = await within(a.usage.plans());
+    return Array.isArray(plans) ? `plans:${plans.length}` : "not-a-list";
+  });
+  await at("usage-watch", async () => {
+    const off = a.usage.watch(() => {});
+    if (typeof off !== "function") return "no-unsubscribe";
+    off();
+    return "watched";
+  });
+  await at("logs-follow", async () => {
+    const line = `acceptance-api-follow-${Date.now()}`;
+    let heard = false;
+    const off = a.logs.follow({ plugin: "acceptance-api" }, (l: string) => { if (l.includes(line)) heard = true; });
+    try {
+      for (let i = 0; i < 50 && !heard; i++) {
+        if (i % 10 === 2) console.log(line);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    } finally {
+      if (typeof off === "function") off();
+    }
+    return heard ? "heard" : "missing";
+  });
+  await at("computers", async () => {
+    const list: { name: string }[] = await within(a.computers.list());
+    const name = list[0]?.name;
+    if (name === undefined) return "no-computer";
+    const off = a.computers.watch(() => {});
+    if (typeof off === "function") off();
+    // A made-up app: no real window is held, and the user's mark is on an app no one uses.
+    const taken = await within<{ held: boolean; hold?: { id: string }; reason?: string }>(a.computers.takeHold(name, { kind: "app", app: "AcceptanceApiNoSuchApp" }));
+    if (!taken.held || taken.hold === undefined) return `not-held:${taken.reason ?? "?"}`;
+    const listed = (await within<{ holds: { id: string }[] }>(a.computers.holds(name))).holds.some((h) => h.id === taken.hold!.id);
+    await within(a.computers.setActionRunning(name, true));
+    await within(a.computers.setActionRunning(name, false));
+    const windows = await within(a.computers.cloverWindows(name));
+    await within(a.computers.setUserWorking(name, true, { kind: "app", app: "AcceptanceApiNoSuchMark" }));
+    await within(a.computers.releaseHold(taken.hold.id));
+    const left = (await within<{ holds: { id: string }[] }>(a.computers.holds(name))).holds.some((h) => h.id === taken.hold!.id);
+    return `held:${listed ? "listed" : "unlisted"}:windows-${Array.isArray(windows) ? "list" : "none"}:released-${left ? "no" : "yes"}`;
+  });
   return `acceptance-api-pong ${out.join(" ")}`;
 }
 
