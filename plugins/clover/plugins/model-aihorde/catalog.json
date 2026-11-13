@@ -103,7 +103,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "thedrummer/cydonia-24b-v4.3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "aihorde/aphrodite/TheDrummer/Skyfall-31B-v4.2",
@@ -160,7 +161,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "thedrummer/skyfall-31b-v4.2",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

@@ -89,7 +89,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "llama3.1-8b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

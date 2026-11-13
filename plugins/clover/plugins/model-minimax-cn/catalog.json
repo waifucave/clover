@@ -160,7 +160,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M2.1",
@@ -282,7 +283,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.1",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M2.1-highspeed",
@@ -404,7 +406,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.1-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M2.5",
@@ -526,7 +529,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.5",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M2.5-highspeed",
@@ -648,7 +652,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.5-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M2.7",
@@ -770,7 +775,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M2.7-highspeed",
@@ -892,7 +898,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M3",
@@ -1015,7 +1022,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-cn/MiniMax-M3.1-Flash",
@@ -1145,7 +1153,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m3.1-flash",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "weak"
     }
   ]
 }

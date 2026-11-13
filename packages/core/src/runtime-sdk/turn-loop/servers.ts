@@ -29,6 +29,9 @@ export interface CoreToolDef {
 export interface CoreToolResult {
   text: string;
   isError: boolean;
+  /** Pictures after the text, as MCP `image` items (base64 PNG and the like): the model sees each as an image
+   *  (`AppScreenshot`; the item-10 probe pins an image item reaching the model's input). */
+  images?: readonly { data: string; mimeType: string }[];
   meta?: Record<string, unknown>;
   endTurn?: { note: string };
 }
@@ -82,7 +85,9 @@ export function coreToolsServer(tools: () => readonly CoreToolDef[]): McpSdkServ
       if (def === undefined) return text(`unknown tool: ${name}`, true);
       try {
         const r = await def.run(args);
-        return { ...text(r.text, r.isError), ...(r.meta === undefined ? {} : { _meta: r.meta }) };
+        const images = (r.images ?? []).filter((i) => /^image\/[a-z0-9.+-]+$/i.test(i.mimeType) && /^[A-Za-z0-9+/=]+$/.test(i.data)).map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType.toLowerCase() }));
+        const out = text(r.text, r.isError);
+        return { content: [...out.content, ...images], isError: out.isError, ...(r.meta === undefined ? {} : { _meta: r.meta }) };
       } catch (err) {
         return text(err instanceof Error ? err.message : String(err), true);
       }

@@ -96,7 +96,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
@@ -170,7 +171,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-v4-flash-0731",
@@ -251,7 +253,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/deepseek-ai/deepseek-v4-flash-0731",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-v4-pro-0813",
@@ -332,7 +335,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/deepseek-ai/deepseek-v4-pro-0813",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "strong"
     },
     {
       "key": "cloudflare-workers-ai/@cf/google/gemma-4-26b-a4b-it",
@@ -407,7 +411,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/google/gemma-4-26b-a4b-it",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/ibm-granite/granite-4.0-h-micro",
@@ -470,7 +475,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/ibm-granite/granite-4.0-h-micro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8",
@@ -533,7 +539,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/meta/llama-3.1-8b-instruct-fp8",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
@@ -597,7 +604,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/meta/llama-3.2-11b-vision-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/meta/llama-3.2-1b-instruct",
@@ -660,7 +668,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/meta/llama-3.2-1b-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/meta/llama-3.2-3b-instruct",
@@ -723,7 +732,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/meta/llama-3.2-3b-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -786,7 +796,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct",
@@ -850,7 +861,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/meta/llama-4-scout-17b-16e-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/mistralai/mistral-small-3.1-24b-instruct",
@@ -913,7 +925,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/mistralai/mistral-small-3.1-24b-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/moonshotai/kimi-k2.6",
@@ -993,7 +1006,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/moonshotai/kimi-k2.6",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "cloudflare-workers-ai/@cf/moonshotai/kimi-k2.7-code",
@@ -1069,7 +1083,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/moonshotai/kimi-k2.7-code",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "cloudflare-workers-ai/@cf/nvidia/nemotron-3-120b-a12b",
@@ -1143,7 +1158,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/nvidia/nemotron-3-120b-a12b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "cloudflare-workers-ai/@cf/openai/gpt-oss-120b",
@@ -1217,7 +1233,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/openai/gpt-oss-120b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "cloudflare-workers-ai/@cf/openai/gpt-oss-20b",
@@ -1291,7 +1308,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/openai/gpt-oss-20b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/qwen/qwen2.5-coder-32b-instruct",
@@ -1354,7 +1372,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/qwen/qwen2.5-coder-32b-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/qwen/qwen3-30b-a3b-fp8",
@@ -1428,7 +1447,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/qwen/qwen3-30b-a3b-fp8",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/qwen/qwen3.8-27b",
@@ -1509,7 +1529,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/qwen/qwen3.8-27b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/qwen/qwq-32b",
@@ -1583,7 +1604,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/qwen/qwq-32b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash",
@@ -1657,7 +1679,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/zai-org/glm-4.7-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "cloudflare-workers-ai/@cf/zai-org/glm-5.2",
@@ -1737,7 +1760,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/zai-org/glm-5.2",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "strong"
     },
     {
       "key": "cloudflare-workers-ai/@cf/zai-org/glm-5.3",
@@ -1817,7 +1841,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/zai-org/glm-5.3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "strong"
     },
     {
       "key": "cloudflare-workers-ai/@cf/zai-org/glm-5.3-flash",
@@ -1898,7 +1923,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "@cf/zai-org/glm-5.3-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     }
   ]
 }

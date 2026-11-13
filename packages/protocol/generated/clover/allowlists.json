@@ -180,6 +180,7 @@
       "app.tab.open",
       "app.window.capture",
       "app.window.open",
+      "app.window.render",
       "voice.play"
     ]
   },

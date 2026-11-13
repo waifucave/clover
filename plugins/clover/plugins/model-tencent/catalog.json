@@ -80,7 +80,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hunyuan-functioncall",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "weak"
     },
     {
       "key": "tencent/hunyuan-lite",
@@ -126,7 +127,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "hunyuan-lite",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "weak"
     },
     {
       "key": "tencent/hunyuan-pro",
@@ -172,7 +174,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "hunyuan-pro",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "weak"
     },
     {
       "key": "tencent/hunyuan-t1-latest",
@@ -225,7 +228,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "hunyuan-t1-latest",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     },
     {
       "key": "tencent/hunyuan-turbos-latest",
@@ -278,7 +282,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "hunyuan-turbos-latest",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     },
     {
       "key": "tencent/hunyuan-vision",
@@ -324,7 +329,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hunyuan-vision",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "weak"
     }
   ]
 }

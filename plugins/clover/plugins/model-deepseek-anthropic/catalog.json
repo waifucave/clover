@@ -148,7 +148,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "deepseek-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepseek-anthropic/deepseek-v4-pro",
@@ -261,7 +262,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     }
   ]
 }
