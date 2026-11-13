@@ -637,17 +637,19 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     // the app's own sidebar uses, each shown; nothing is clicked, and no window is shown.
     if (ctx.appCli !== undefined) {
       const went: string[] = [];
-      for (const [to, kind] of [["settings", "settings"], ["bot:alpha", "bot"]] as const) {
+      // Settings is a dialog over her tab: the shell says so (`dialog`), with the tab under it.
+      for (const [to, kind, dialog] of [["settings", "bot", "settings"], ["bot:alpha", "bot", undefined]] as const) {
         const r = await ctx.appCli(["open", to]);
-        let a: { shown?: boolean; reason?: string; where?: { tab?: { kind?: string; id?: string } }; frames?: unknown[] };
+        let a: { shown?: boolean; reason?: string; where?: { tab?: { kind?: string; id?: string }; dialog?: string }; frames?: unknown[] };
         try { a = JSON.parse(r.stdout); } catch { return fail(`clover-core app open ${to} printed no JSON (exit ${r.code}): ${(r.stderr || r.stdout).trim().slice(0, 300)} [packages/cli/src/app-cli.ts, apps/desktop/src/main/open.ts]`); }
-        if (r.code !== 0 || a.shown !== true || a.where?.tab?.kind !== kind) fail(`clover-core app open ${to}: shown ${String(a.shown)}${a.reason ? ` (${a.reason})` : ""}, the window at ${JSON.stringify(a.where?.tab)} [apps/desktop/src/main/open.ts]`);
+        if (r.code !== 0 || a.shown !== true || a.where?.tab?.kind !== kind || a.where?.dialog !== dialog) fail(`clover-core app open ${to}: shown ${String(a.shown)}${a.reason ? ` (${a.reason})` : ""}, the window at ${JSON.stringify(a.where?.tab)}${a.where?.dialog ? ` under ${a.where.dialog}` : ""} [apps/desktop/src/main/open.ts]`);
         if (!Array.isArray(a.frames) || a.frames.length === 0) fail(`clover-core app open ${to} listed no frames`);
         went.push(`${to} shown (${a.frames!.length} frames)`);
       }
       const here = await ctx.appCli(["where"]);
       const at = (JSON.parse(here.stdout) as { where?: { tab?: { kind?: string; id?: string } } }).where?.tab;
-      if (at?.kind !== "bot" || at.id !== "alpha") fail(`clover-core app where says the window is at ${JSON.stringify(at)}, not Alpha's tab`);
+      const over = (JSON.parse(here.stdout) as { where?: { dialog?: string } }).where?.dialog;
+      if (at?.kind !== "bot" || at.id !== "alpha" || over !== undefined) fail(`clover-core app where says the window is at ${JSON.stringify(at)}${over ? ` under ${over}` : ""}, not Alpha's tab`);
       if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless (app open)");
       shotSaid += `; clover-core app open ${went.join(", then ")}; app where: Alpha's tab; no window shown`;
     }

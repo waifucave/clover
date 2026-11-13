@@ -7,7 +7,8 @@ import type { AppOpenResult, CapturedWindow } from "@waifucave/clover-protocol";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
-/** A target as the shell's act and the place that shows it once it is there. */
+/** A target as the shell's act and the place that shows it once it is there. Settings is a dialog over the tab (the
+ *  shell's `dialog`); every other place shows only with no dialog over it. */
 export interface OpenPlan {
   act: ShellAct;
   shows(state: ShellState): boolean;
@@ -23,16 +24,16 @@ export function planOpen(target: string, known: { bots: readonly string[]; pages
   const [head, ...rest] = target.split(":");
   const arg = rest.join(":");
   if (head === "settings") {
-    return { act: { kind: "settings", ...(arg !== "" ? { section: arg } : {}) }, shows: (s) => s.tab.kind === "settings", what: arg !== "" ? `Settings at ${arg}` : "Settings" };
+    return { act: { kind: "settings", ...(arg !== "" ? { section: arg } : {}) }, shows: (s) => s.dialog === "settings" || s.tab.kind === "settings", what: arg !== "" ? `Settings at ${arg}` : "Settings" };
   }
-  if ((head === "plugins" || head === "archive") && arg === "") return { act: { kind: "go", target: { page: head } }, shows: (s) => s.tab.kind === head, what: head === "plugins" ? "Plugins" : "Archive" };
-  if (head === "code" && arg === "") return { act: { kind: "go", target: { side: "code" } }, shows: (s) => s.sidebar.side === "code" && s.tab.kind === "agent", what: "the coding side" };
+  if ((head === "plugins" || head === "archive") && arg === "") return { act: { kind: "go", target: { page: head } }, shows: (s) => s.dialog === undefined && s.tab.kind === head, what: head === "plugins" ? "Plugins" : "Archive" };
+  if (head === "code" && arg === "") return { act: { kind: "go", target: { side: "code" } }, shows: (s) => s.dialog === undefined && s.sidebar.side === "code" && s.tab.kind === "agent", what: "the coding side" };
   if (head === "bot") {
     if (!known.bots.includes(arg)) return { refused: `no bot ${arg === "" ? "named" : arg} here (${list()})` };
-    return { act: { kind: "go", target: { bot: arg } }, shows: (s) => s.tab.kind === "bot" && s.tab.id === arg, what: `${arg}'s tab` };
+    return { act: { kind: "go", target: { bot: arg } }, shows: (s) => s.dialog === undefined && s.tab.kind === "bot" && s.tab.id === arg, what: `${arg}'s tab` };
   }
   const key = head === "app" ? arg : target;
-  if (key !== "" && known.pages.includes(key)) return { act: { kind: "go", target: { app: key } }, shows: (s) => s.tab.kind === "app" && s.tab.id === key, what: `the page ${key}` };
+  if (key !== "" && known.pages.includes(key)) return { act: { kind: "go", target: { app: key } }, shows: (s) => s.dialog === undefined && s.tab.kind === "app" && s.tab.id === key, what: `the page ${key}` };
   return { refused: `${target} isn't a place in the app (${list()})` };
 }
 
@@ -54,6 +55,7 @@ const place = (s: ShellState | undefined): AppOpenResult["where"] => (s === unde
   tab: { kind: s.tab.kind, ...(s.tab.id !== undefined ? { id: s.tab.id } : {}) },
   ...(s.bot !== undefined ? { bot: s.bot } : {}),
   side: s.sidebar.side,
+  ...(s.dialog !== undefined ? { dialog: s.dialog } : {}),
 });
 
 /** The answer to `app.window.open`: with a target, the window taken there and whether it shows; without, where it is. */

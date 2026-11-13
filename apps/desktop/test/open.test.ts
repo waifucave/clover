@@ -37,7 +37,8 @@ function fake(o: { drawn?: boolean; shows?: (act: ShellAct) => ShellState | unde
 }
 
 const show = (a: ShellAct): ShellState | undefined => {
-  if (a.kind === "settings") return state({ kind: "settings" });
+  // Settings shows over the tab, which the shell still reports under it (Shell.tsx `dialog`).
+  if (a.kind === "settings") return { ...state({ kind: "bot", id: "alpha" }), dialog: "settings" };
   if (a.kind !== "go") return undefined;
   const t = a.target as Record<string, string>;
   if (t.bot) return state({ kind: "bot", id: t.bot });
@@ -50,8 +51,8 @@ const show = (a: ShellAct): ShellState | undefined => {
 describe("app.window.open", () => {
   test("each target is the shell's own act, and the answer waits until the place shows", async () => {
     for (const [target, act, where] of [
-      ["settings", { kind: "settings" }, { kind: "settings" }],
-      ["settings:devices", { kind: "settings", section: "devices" }, { kind: "settings" }],
+      ["settings", { kind: "settings" }, { kind: "bot", id: "alpha" }],
+      ["settings:devices", { kind: "settings", section: "devices" }, { kind: "bot", id: "alpha" }],
       ["bot:luna", { kind: "go", target: { bot: "luna" } }, { kind: "bot", id: "luna" }],
       ["app:reel", { kind: "go", target: { app: "reel" } }, { kind: "app", id: "reel" }],
       ["ex-timeline", { kind: "go", target: { app: "ex-timeline" } }, { kind: "app", id: "ex-timeline" }],
@@ -69,6 +70,12 @@ describe("app.window.open", () => {
     const f = fake({ shows: () => state({ kind: "bot", id: "alpha" }) });
     const r = await openWindow(f.deps, { target: "bot:luna" });
     expect({ shown: r.shown, reason: r.reason }).toEqual({ shown: false, reason: "luna's tab didn't show within 0 s" });
+  });
+
+  test("a tab under Settings doesn't show while Settings is over it", async () => {
+    const f = fake({ shows: () => ({ ...state({ kind: "bot", id: "luna" }), dialog: "settings" }) });
+    const r = await openWindow(f.deps, { target: "bot:luna" });
+    expect({ shown: r.shown, dialog: r.where?.dialog }).toEqual({ shown: false, dialog: "settings" });
   });
 
   test("an unknown target is refused with the targets, bots and pages there are; nothing is sent", async () => {

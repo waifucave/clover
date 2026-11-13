@@ -117,6 +117,8 @@ export const AppPlace = z.object({
   tab: z.object({ kind: utf16(32), id: utf16(256).optional() }),
   bot: utf16(256).optional(),
   side: utf16(16).optional(),
+  /** `settings` while Settings shows over the tab. */
+  dialog: utf16(16).optional(),
 });
 /** `app.open`'s and `app.where`'s answer: whether the target shows (`shown`, with why not), the window's place, whether
  *  it is drawn, and its frames (ids and sizes only). */

@@ -96,6 +96,9 @@ describe("shell.* from a plugin's frame", () => {
     expect(r?.state.safeArea).toEqual({ left: 80, top: 0 });
     expect(r?.apps).toEqual([{ id: "archive", title: "Archive", icon: "x" }]);
     expect(cleanReport({ state: state(), account: { name: "Delta", detail: "laptop", extra: 1 } })?.account).toEqual({ name: "Delta", detail: "laptop" });
+    // Settings over the tab: `dialog` is kept as that one word, anything else dropped.
+    expect(cleanReport({ state: { ...state(), dialog: "settings" } })?.state.dialog).toBe("settings");
+    expect(cleanReport({ state: { ...state(), dialog: "evil" } })?.state).not.toHaveProperty("dialog");
     expect(cleanReport({ state: state(), account: { name: 3 } })?.account).toBeUndefined();
     expect((r?.state as unknown as Record<string, unknown>).extra).toBeUndefined();
     expect(cleanReport({ state: { tab: { kind: "weird" } } })).toBeUndefined();

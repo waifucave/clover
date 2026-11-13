@@ -76,6 +76,10 @@
               "side": {
                 "type": "string",
                 "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
               }
             },
             "required": [
@@ -201,6 +205,10 @@
                 "maxLength": 256
               },
               "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
                 "type": "string",
                 "maxLength": 16
               }
@@ -333,6 +341,10 @@
                 "maxLength": 256
               },
               "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
                 "type": "string",
                 "maxLength": 16
               }

@@ -242,6 +242,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const stateOut: ShellState = {
     tab: { kind: !shown ? "other" : shown.route === "bot" ? "bot" : shown.route === "agent" ? "agent" : shown.route === "bot-editor" ? "bot-editor" : shown.route === "settings" || shown.route === "plugins" || shown.route === "archive" ? shown.route : "app", ...(shown?.params.bot ?? shown?.params.session !== undefined ? { id: (shown?.params.bot ?? shown?.params.session)! } : shown !== undefined && !["bot", "agent", "bot-editor", "settings", "plugins", "archive"].includes(shown.route) ? { id: shown.route } : {}) },
     ...(botRef ? { bot: botRef.id } : {}),
+    ...(dialog ? { dialog: "settings" as const } : {}),
     sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots" },
     panels: { open, available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [] },
     safeArea: { left: 80, top: 44 },

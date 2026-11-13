@@ -114,6 +114,7 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; 
     state: {
       tab: { kind, ...(typeof tab.id === "string" && ID.test(tab.id) ? { id: tab.id } : {}) },
       ...(typeof s.bot === "string" && ID.test(s.bot) ? { bot: s.bot } : {}),
+      ...(s.dialog === "settings" ? { dialog: "settings" as const } : {}),
       sidebar: { collapsed: sidebar.collapsed === true, side: sidebar.side === "code" ? "code" : "bots" },
       panels: { open: names(panels.open), available: names(panels.available) },
       safeArea: { left: num(safe.left), top: num(safe.top) },
