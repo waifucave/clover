@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ChromeActions, ChromeDrag, ChromeEdit, ChromePanels, ChromeSession, ChromeSidebar, ChromeTitle } from "../client/chrome";
-import { BotTab, Window, shapeOf, type WindowProps } from "../client/Window";
+import { BotTab, SIDEBAR_GRACE_MS, Window, shapeOf, type WindowProps } from "../client/Window";
 import type { ChromeApi } from "../client/chrome";
 
 afterEach(cleanup);
@@ -167,4 +167,27 @@ describe("outside the shell", () => {
     expect(container.textContent).toBe("");
     expect(container.querySelector("button")).toBeNull();
   });
+});
+
+// The owner's report on try 14d: back on Alpha's tab from an app's page, the stock sidebar floated over her window for a
+// moment, until her own part said again that it draws the way to the other tabs.
+describe("a bot whose theme drops the sidebar", () => {
+  const mode = () => document.querySelector(".cl-window")?.getAttribute("data-sidebar-mode");
+  test("each time its tab shows, the stock sidebar waits for its own part's word (the grace), and only then floats in", async () => {
+    const skin = { "sidebar.mode": "none" };
+    const { rerender } = render(frame(skin, null));
+    expect(mode()).toBe("none");
+    await act(() => new Promise((r) => setTimeout(r, SIDEBAR_GRACE_MS + 100)));
+    // Nothing of its own said it draws the way: the stock sidebar floats in.
+    expect(mode()).toBe("float");
+    // Another bot's tab, then back: each showing has its grace again, from its first frame.
+    rerender(frame(skin, null, {}, chromeApi({ bot: { id: "luna", name: "Luna" } })));
+    expect(mode()).toBe("none");
+    rerender(frame(skin, null, {}, chromeApi()));
+    expect(mode()).toBe("none");
+    // Its own part's word holds it after the grace.
+    rerender(frame(skin, null, { provides: { sidebar: true, drag: true } }, chromeApi()));
+    await act(() => new Promise((r) => setTimeout(r, SIDEBAR_GRACE_MS + 100)));
+    expect(mode()).toBe("none");
+  }, 15_000);
 });

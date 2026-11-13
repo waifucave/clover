@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
-import { cleanReport, hearsShell, ownsShownBot, routeShell } from "../src/main/ui/shell-calls";
+import { cleanReport, hearsShell, ownsShownBot, providedNow, routeShell } from "../src/main/ui/shell-calls";
 
 const state = (over: Partial<ShellState> = {}): ShellState => ({
   tab: { kind: "bot", id: "alpha" }, bot: "alpha",
@@ -100,5 +100,24 @@ describe("shell.* from a plugin's frame", () => {
     expect((r?.state as unknown as Record<string, unknown>).extra).toBeUndefined();
     expect(cleanReport({ state: { tab: { kind: "weird" } } })).toBeUndefined();
     expect(cleanReport(null)).toBeUndefined();
+  });
+});
+
+describe("the handles a shown bot's own frames offer (shell.provide)", () => {
+  const on = (bot: string | undefined): ShellState => ({ tab: bot ? { kind: "bot", id: bot } : { kind: "app", id: "reel" }, ...(bot ? { bot } : {}), sidebar: { collapsed: false, side: "bots" }, panels: { open: [], available: [] }, safeArea: { left: 0, top: 0 } });
+  test("a frame's word is kept while another page shows and counts again when its bot's tab is back; a gone frame is forgotten", () => {
+    const provides = new Map<string, ReadonlySet<string>>([["alpha:7:1", new Set(["sidebar"])], ["alpha:7:2", new Set(["sidebar", "drag"])], ["luna:9:1", new Set(["drag"])]]);
+    const alive = new Set(["alpha:7:1", "alpha:7:2", "luna:9:1"]);
+    expect(providedNow(provides, on("alpha"), (k) => alive.has(k))).toEqual({ sidebar: true, drag: true });
+    // An app's page: nothing offered, and nothing forgotten.
+    expect(providedNow(provides, on(undefined), (k) => alive.has(k))).toEqual({ sidebar: false, drag: false });
+    expect(provides.size).toBe(3);
+    // Back on her tab (her frames kept, never asked again): the same handles at once.
+    expect(providedNow(provides, on("alpha"), (k) => alive.has(k))).toEqual({ sidebar: true, drag: true });
+    // Only the shown bot's frames count; a frame that is gone (asleep, unloaded) is dropped.
+    expect(providedNow(provides, on("luna"), (k) => alive.has(k))).toEqual({ sidebar: false, drag: true });
+    alive.delete("alpha:7:2");
+    expect(providedNow(provides, on("alpha"), (k) => alive.has(k))).toEqual({ sidebar: true, drag: false });
+    expect([...provides.keys()]).toEqual(["alpha:7:1", "luna:9:1"]);
   });
 });

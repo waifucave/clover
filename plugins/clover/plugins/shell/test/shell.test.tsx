@@ -11,6 +11,7 @@ import { SPOT_DECLS } from "../runtime/catalog";
 import { DEFAULT_TAB_LAYOUT, layoutSpots } from "@waifucave/clover-plugin-sdk";
 import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
 import { Shell, type ShellStart } from "../client/Shell";
+import { KeptTab, notDrawn } from "../client/KeptTab";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
@@ -44,6 +45,15 @@ const SidebarStub: EntryComponent = ({ props }) => (
     </button>
     <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "settings", params: {} })}>
       go settings
+    </button>
+    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "bot", params: { bot: "alpha" } })}>
+      go alpha
+    </button>
+    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "bot", params: { bot: "luna" } })}>
+      go luna
+    </button>
+    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "plugins", params: {} })}>
+      go plugins
     </button>
   </nav>
 );
@@ -261,5 +271,83 @@ describe("a bot's own layout's header", () => {
     await mountPart(BotHeader as EntryComponent, withAvatar);
     expect(document.querySelector(".cl-bot-header")!.textContent).toContain("Luna");
     expect(document.querySelector(".cl-bot-header")!.textContent).toContain("claude-sonnet-5-5");
+  });
+});
+
+// The owner's report on try 14d: coming back to Alpha's tab from an app's page drew the stock layout and an empty
+// conversation for a moment. The last bot tab shown stays mounted while another page shows, and a tab showing with
+// something not drawn yet is held invisible until it is (or the cap).
+describe("the bot tab kept across pages", () => {
+  const kept = () => [...document.querySelectorAll(".cl-shell-kept")] as HTMLElement[];
+  const go = async (name: string) => {
+    fireEvent.click(screen.getByRole("button", { name }));
+    await act(() => settle(6));
+  };
+
+  test("leaving a bot's tab keeps it mounted, hidden and inert; coming back shows the same element, not a new one", async () => {
+    await mount();
+    const [tab] = kept();
+    expect(tab?.hasAttribute("data-shown")).toBe(true);
+    const conversation = tab!.querySelector("[data-stub='conversation']");
+    expect(conversation?.textContent).toContain('"session":"s_alpha"');
+    // Another page (the plugins page here, an app's page alike): the bot tab is there, not shown, and takes no input.
+    await go("go plugins");
+    expect(kept()).toEqual([tab!]);
+    expect(tab!.style.display).toBe("none");
+    expect(tab!.hasAttribute("inert")).toBe(true);
+    expect(tab!.getAttribute("aria-hidden")).toBe("true");
+    // Back: the very same element and conversation, shown, with nothing to rebuild.
+    await go("go alpha");
+    expect(kept()).toEqual([tab!]);
+    expect(tab!.hasAttribute("data-shown")).toBe(true);
+    expect(tab!.style.display).toBe("contents");
+    expect(tab!.querySelector("[data-stub='conversation']")).toBe(conversation);
+    // Settings is a dialog over the tab: the tab stays shown under it.
+    await go("go settings");
+    expect(kept()[0]).toBe(tab!);
+    expect(tab!.hasAttribute("data-shown")).toBe(true);
+  });
+
+  test("one tab is kept: another bot's tab takes the place; an agent's tab is never kept", async () => {
+    await mount();
+    await go("go luna");
+    expect(kept().length).toBe(1);
+    expect(kept()[0]!.querySelector("[data-stub='conversation']")?.textContent).toContain('"session":"s_luna"');
+    await go("go code");
+    expect(kept().length).toBe(1);
+    expect(kept()[0]!.hasAttribute("data-shown")).toBe(false);
+    expect(kept()[0]!.querySelector("[data-stub='conversation']")?.textContent).toContain('"session":"s_luna"');
+  });
+
+  test("what of a tab isn't drawn yet, by the runtime's marks", () => {
+    const root = document.createElement("div");
+    expect(notDrawn(root)).toEqual(["no part yet"]);
+    root.innerHTML = `<div data-clover-entry="alpha#layout" data-clover-part="m1"><div data-clover-spot="bot.side" data-clover-pending=""></div><iframe data-clover-entry="alpha#room"></iframe><div data-clover-entry="alpha#header" data-clover-asleep=""></div><div class="cl-shell-empty"></div></div>`;
+    expect(notDrawn(root)).toEqual(["spot bot.side resolving", "alpha#room loading", "alpha#header asleep", "loading note"]);
+    root.innerHTML = `<div data-clover-entry="alpha#layout" data-clover-part="m1"><div data-clover-spot="bot.side"></div><iframe data-clover-entry="alpha#room" data-clover-drawn=""></iframe></div>`;
+    expect(notDrawn(root)).toEqual([]);
+  });
+
+  test("a tab that shows with a frame not drawn is held invisible until it draws, at most the cap", async () => {
+    const frame = (drawn: boolean) => <iframe data-clover-entry="alpha#room" {...(drawn ? { "data-clover-drawn": "" } : {})} />;
+    const { rerender } = render(<KeptTab shown={true}>{frame(false)}</KeptTab>);
+    const box = document.querySelector(".cl-shell-kept") as HTMLElement;
+    expect(box.hasAttribute("data-held")).toBe(true);
+    expect(box.style.visibility).toBe("hidden");
+    rerender(<KeptTab shown={true}>{frame(true)}</KeptTab>);
+    await act(() => new Promise((r) => setTimeout(r, 60)));
+    expect(box.hasAttribute("data-held")).toBe(false);
+    expect(box.style.visibility).toBe("");
+    cleanup();
+    // Never drawn: shown anyway at the cap.
+    render(<KeptTab shown={true} holdMaxMs={80}>{frame(false)}</KeptTab>);
+    const capped = document.querySelector(".cl-shell-kept") as HTMLElement;
+    expect(capped.hasAttribute("data-held")).toBe(true);
+    await act(() => new Promise((r) => setTimeout(r, 200)));
+    expect(capped.hasAttribute("data-held")).toBe(false);
+    cleanup();
+    // Drawn already (the kept tab coming back): never held.
+    render(<KeptTab shown={true}><div data-clover-entry="clover/shell#x" /></KeptTab>);
+    expect((document.querySelector(".cl-shell-kept") as HTMLElement).hasAttribute("data-held")).toBe(false);
   });
 });

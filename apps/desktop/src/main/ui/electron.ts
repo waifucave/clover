@@ -16,7 +16,7 @@ import { FileGrants, PICK_METHODS, grantResponse, routeDrop, routePick, type Dia
 import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
 import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
-import { cleanReport, hearsShell, ownsShownBot, routeShell } from "./shell-calls";
+import { cleanReport, hearsShell, providedNow, routeShell } from "./shell-calls";
 import type { UiPlugin } from "./model";
 import type { IpcStats } from "./ipc-stats";
 
@@ -429,10 +429,12 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   const shellProvides = new Map<number, Map<string, Set<string>>>();
   const sayProvides = (windowId: number): void => {
     const state = shellWindows.get(windowId)?.state;
-    const mine = shellProvides.get(windowId);
-    if (mine !== undefined) for (const key of [...mine.keys()]) if (!ownsShownBot(key.split(":")[0]!, state)) mine.delete(key);
-    const all = [...(mine?.values() ?? [])];
-    runtime.shellMessage(windowId, { type: "shell-provides", sidebar: all.some((p) => p.has("sidebar")), drag: all.some((p) => p.has("drag")) });
+    const alive = (key: string): boolean => {
+      const [, processId, routingId] = key.split(":");
+      const f = webFrameMain.fromId(Number(processId), Number(routingId));
+      return f !== undefined && f !== null && !f.detached;
+    };
+    runtime.shellMessage(windowId, { type: "shell-provides", ...providedNow(shellProvides.get(windowId) ?? new Map(), state, alive) });
   };
   runtime.send = (frame, message: LayerMessage) => {
     const f = webFrameMain.fromId(frame.processId, frame.routingId);

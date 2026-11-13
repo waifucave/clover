@@ -47,7 +47,7 @@ const SAMPLER = (ms: number) => `(() => {
     rows: [...document.querySelectorAll(".cl-conv__unit")].filter(vis).length,
     appPage: [...document.querySelectorAll('[data-clover-entry^="${APP_ID}#"]')].some((e) => e.tagName === "IFRAME" && vis(e) && e.getBoundingClientRect().height > 40),
     loadingNote: [...document.querySelectorAll(".cl-shell-empty")].some(vis),
-    alpha: [...document.querySelectorAll('[data-clover-entry^="alpha#"]')].map((f) => f.getAttribute("data-clover-entry") + ":" + (f.tagName !== "IFRAME" ? (f.hasAttribute("data-clover-asleep") ? "asleep" : "other") : (f.getAttribute("data-clover-drawn") !== null || f.style.height !== "" ? "drawn" : "loading")) + (vis(f) ? "" : ":hidden")).sort(),
+    alpha: [...document.querySelectorAll('[data-clover-entry^="alpha#"]')].map((f) => f.getAttribute("data-clover-entry") + ":" + (f.tagName !== "IFRAME" ? (f.hasAttribute("data-clover-asleep") ? "asleep" : "inline") : (f.hasAttribute("data-clover-drawn") || (f.style.height !== "" && document.querySelector("iframe[data-clover-drawn]") === null) ? "drawn" : "loading")) + (vis(f) ? "" : ":hidden")).sort(),
   });
   const t0 = performance.now();
   const out = [];
@@ -76,7 +76,9 @@ export function flashOf(s: FlashSample): string | undefined {
   if (s.stockSidebar) why.push("the stock sidebar");
   if (s.empty) why.push("the empty conversation");
   if (s.loadingNote) why.push("a loading note");
-  const undrawn = s.alpha.filter((a) => !a.endsWith(":hidden") && !a.endsWith(":drawn"));
+  // Her frames shown before their documents drew, or asleep; an inline part of hers (her layout, drawn by the window's own
+  // document) is drawn with it.
+  const undrawn = s.alpha.filter((a) => !a.endsWith(":hidden") && !a.endsWith(":drawn") && !a.endsWith(":inline"));
   if (undrawn.length > 0) why.push(`her frames not drawn (${undrawn.join(", ")})`);
   return why.length > 0 ? why.join("; ") : undefined;
 }
