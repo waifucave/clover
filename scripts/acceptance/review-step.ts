@@ -54,12 +54,12 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
     const file = join(ctx.home, "settings.json");
     settingsBefore = existsSync(file) ? readFileSync(file, "utf8") : undefined;
     const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
-    writeFileSync(file, `${JSON.stringify({ ...now, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
+    writeFileSync(file, `${JSON.stringify({ ...now, provider: { ...(typeof now.provider === "object" && now.provider !== null ? now.provider : {}), model: tag }, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
     roleSet = true;
     await until("the daemon to take the reviewer role", 30_000, async () => {
       const v = await rpc.request<{ state: string; model?: string }>("plugin.review", { card: card.id, peek: true });
       return v.state !== "unavailable" ? v : undefined;
-    }, async () => "plugin.review (peek) stayed unavailable after the reviewer role was set in settings.json");
+    }, async () => `plugin.review (peek) stayed unavailable after the reviewer role was set in settings.json: ${readFileSync(file, "utf8").replace(/\s+/g, " ").slice(0, 600)}`);
     // The card's own page: the fallback window the app draws when no part shows the card.
     const url = `clover-sealed://card/${encodeURIComponent(card.id)}/own`;
     const page = await until("the card's own page", 45_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(url)));
