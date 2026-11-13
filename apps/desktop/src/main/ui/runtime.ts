@@ -521,7 +521,17 @@ export class UiRuntime {
   /** The document a frame is, or the error a layer gets. */
   private requireDoc(frame: FrameRef): Mount {
     const doc = this.docByFrame(frame);
-    if (doc === undefined) throw new LayerError("this document isn't bound to a mount");
+    if (doc === undefined) {
+      // Once per frame, ids and the document's scheme and host only (never its address, which carries a token).
+      const key = `${frame.processId}:${frame.routingId}`;
+      if (!this.unboundSeen.has(key) && this.unboundSeen.size < 200) {
+        this.unboundSeen.add(key);
+        let where = "?";
+        try { const u = new URL(frame.url); where = `${u.protocol}//${u.host}`; } catch { /* not an address */ }
+        this.log(`layers: a call from frame ${key} (${where}) that is bound to no mount`);
+      }
+      throw new LayerError("this document isn't bound to a mount");
+    }
     return doc;
   }
 
@@ -720,7 +730,10 @@ export class UiRuntime {
   resolve(frame: FrameRef, mountId: string, spot: string, key?: string, hints: { session?: string; entry?: string; bot?: string } = {}): SpotView {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);
-    if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
+    if (part === undefined || this.docOf(part)?.id !== doc.id) {
+      this.logRefusedPart("resolve", doc, mountId, part);
+      throw new LayerError("that part isn't in this document");
+    }
     // Only the trusted `clover` layer may say which kind of session a part shows (`when.session`).
     const { shape, cellKey, session, ctx } = this.cellOf(doc, part, spot, key, hints);
     if (!this.declares(part, spot)) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
@@ -884,6 +897,7 @@ export class UiRuntime {
     const m = this.requireDoc(frame);
     if (m.kind !== "frame" || m.parent === undefined || !Number.isFinite(height)) return;
     const parentDoc = this.docOf(this.mounts.get(m.parent)!);
+    if (height <= 0) this.log(`layers: ${m.id} (${m.plugin?.id ?? "core"}) reported a height of ${Math.round(height)}`);
     if (parentDoc !== undefined) this.post(parentDoc.id, { type: "child-size", child: m.id, height: Math.max(0, Math.min(100_000, Math.round(height))) });
   }
 
@@ -1037,8 +1051,22 @@ export class UiRuntime {
   private partIn(frame: FrameRef, mountId: string): Mount {
     const doc = this.requireDoc(frame);
     const part = this.mounts.get(mountId);
-    if (part === undefined || this.docOf(part)?.id !== doc.id) throw new LayerError("that part isn't in this document");
+    if (part === undefined || this.docOf(part)?.id !== doc.id) {
+      this.logRefusedPart("part", doc, mountId, part);
+      throw new LayerError("that part isn't in this document");
+    }
     return part;
+  }
+
+  private refusedParts = new Set<string>();
+  private unboundSeen = new Set<string>();
+  /** Which document a part was asked of when it isn't that document's: once per pair, ids and states only (the row-22 diagnosis). */
+  private logRefusedPart(door: string, doc: Mount, mountId: string, part: Mount | undefined): void {
+    const key = `${doc.id}>${mountId}`;
+    if (this.refusedParts.has(key) || this.refusedParts.size > 200) return;
+    this.refusedParts.add(key);
+    const holder = part === undefined ? undefined : this.docOf(part);
+    this.log(`layers: ${door} ${mountId} asked of document ${doc.id} (${doc.plugin?.id ?? "core"} w${doc.windowId} ${doc.tokenState ?? "?"}): ${part === undefined ? "no such mount" : `it is a ${part.kind} of ${holder?.id ?? "no document"} (${part.plugin?.id ?? "core"} ${part.tokenState ?? "?"})`}`);
   }
 
   /** A part offers data for a drag: a single-use token for the drag's data, or the reason it can't. */
@@ -1215,9 +1243,25 @@ export class UiRuntime {
     return [...this.mounts.values()].filter((m) => m.frame !== undefined).map((m) => ({ mount: m.id, layer: m.layer, windowId: m.windowId, frame: m.frame! }));
   }
 
+  /** What each frame mount is, by id and plugin and state (ids and states only). */
+  frameStates(): string {
+    return [...this.mounts.values()].filter((m) => m.kind === "frame").map((m) => `${m.id} ${m.plugin?.id ?? "core"} w${m.windowId} ${m.tokenState ?? "?"}${m.frame === undefined ? "" : " bound"}`).join(", ");
+  }
+
   /** Sends an app command (a shortcut, a menu item) to every document of a window. */
   command(windowId: number, name: string, args?: Readonly<Record<string, string>>): void {
-    for (const m of this.mounts.values()) if (m.windowId === windowId && m.frame !== undefined) this.post(m.id, { type: "command", name, ...(args !== undefined ? { args } : {}) });
+    let told = 0;
+    let waiting = 0;
+    for (const m of this.mounts.values()) {
+      if (m.windowId !== windowId || m.kind !== "frame") continue;
+      if (m.frame === undefined) waiting++;
+      else {
+        told++;
+        this.post(m.id, { type: "command", name, ...(args !== undefined ? { args } : {}) });
+      }
+    }
+    // Ids and counts only: a command that finds a document not bound yet (loading again) reaches nothing of it.
+    this.log(`layers: command ${name} to window ${windowId}: ${told} document(s) told, ${waiting} not bound yet`);
   }
 
   /** A message to the part a surface window's root placed (the one `surfaceOf` lets steer it). */

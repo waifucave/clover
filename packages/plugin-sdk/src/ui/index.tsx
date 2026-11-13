@@ -1538,6 +1538,8 @@ function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fon
   const [box, setBox] = useState<{ width?: number; height?: number }>({});
   const [loaded, setLoaded] = useState(false);
   const frame = useRef<HTMLIFrameElement | null>(null);
+  // How the frame got its size, for a reading of a frame that took no room: the page said it, or the wait gave it a few lines.
+  const byPage = useRef(false);
   // The card's own style values (`card.*`, §5.5), by value so a new object each render doesn't ask for a new frame.
   const tokenKey = JSON.stringify(tokens);
   useEffect(() => {
@@ -1568,6 +1570,7 @@ function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fon
       const n = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(Math.ceil(v), max) : undefined);
       const width = n(said.width, 1200);
       const height = n(said.height, 4000);
+      byPage.current = true;
       setBox((b) => (b.width === width && b.height === height ? b : { ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) }));
     };
     window.addEventListener("message", on);
@@ -1599,7 +1602,7 @@ function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fon
     style.width = box.width ?? 0;
     style.height = box.height ?? 0;
   }
-  return <iframe ref={frame} src={src} onLoad={() => setLoaded(true)} data-clover-sealed={`${kind}:${name}`} style={style} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
+  return <iframe ref={frame} src={src} onLoad={() => setLoaded(true)} data-clover-sealed={`${kind}:${name}`} data-clover-sealed-state={`${loaded ? "loaded" : "pending"}${box.height === undefined ? "" : byPage.current ? " said" : " fallback"}`} style={style} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
 }
 
 /** A pixel size from a `card.font.size` token ("15px"), or the stylesheet's own 14. */

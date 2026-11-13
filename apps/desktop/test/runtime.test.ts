@@ -1041,3 +1041,20 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     expect(heard).toEqual([["card_later", WIN, "not yet"], ["card_own", WIN, "absent"], ["card_own", WIN, "made"], ["card_other", WIN, "refused"]]);
   });
 });
+
+describe("the row diagnosis log lines (ids only, once per pair, no change of what a call does)", () => {
+  test("a part asked of a document that isn't its own is refused as before and named once; an unbound frame is named once, without its address", () => {
+    const lines: string[] = [];
+    const s = setup([], { log: (l) => lines.push(l) });
+    expect(() => s.rt.resolve(s.rootFrame, "nope", "bot.tab")).toThrow("that part isn't in this document");
+    expect(() => s.rt.resolve(s.rootFrame, "nope", "bot.tab")).toThrow("that part isn't in this document");
+    expect(lines.filter((l) => l.includes("asked of document"))).toHaveLength(1);
+    expect(lines.find((l) => l.includes("asked of document"))).toContain("no such mount");
+    const stray = frame("clover-plugin://clover/?mount=secrettoken");
+    expect(() => s.rt.resolve(stray, "nope", "bot.tab")).toThrow("this document isn't bound to a mount");
+    expect(() => s.rt.resolve(stray, "nope", "bot.tab")).toThrow("this document isn't bound to a mount");
+    const unbound = lines.filter((l) => l.includes("bound to no mount"));
+    expect(unbound).toHaveLength(1);
+    expect(unbound[0]).not.toContain("secrettoken");
+  });
+});
