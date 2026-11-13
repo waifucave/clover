@@ -16,6 +16,7 @@ import type { ApiCallContext, ApiHandlers } from "../plugin-host/api/router";
 import { ContractError } from "../contracts/common";
 import type { TabOwner, TabView, Screenshot } from "./contract";
 import { BrowserError } from "./policy";
+import { takeCheckedHost } from "./checked-hosts";
 import { browserCallerOf, type BrowserService, type ProtocolCaller } from "./service";
 
 /** The DevTools methods the Browser tool calls, and so the only ones a session's call may pass. */
@@ -37,6 +38,8 @@ export interface ToolCaller {
   sessionId: string;
   sessionKind: string;
   bot?: string;
+  /** The site the approval check judged this call's tab to be on: the tool acts only while the page is still on it. */
+  checkedHost?: string;
 }
 
 type SessionCaller = Extract<Caller, { kind: "session" }>;
@@ -88,7 +91,8 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
   return {
     "browser.toolCaller": (ctx) => {
       const c = sessionOf(ctx);
-      const out: ToolCaller = { kind: "session", sessionId: c.sessionId, sessionKind: c.sessionKind, ...(c.bot !== undefined ? { bot: c.bot } : {}) };
+      const checkedHost = takeCheckedHost(c.sessionId);
+      const out: ToolCaller = { kind: "session", sessionId: c.sessionId, sessionKind: c.sessionKind, ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(checkedHost !== undefined ? { checkedHost } : {}) };
       return out;
     },
     "browser.tabs": async (ctx, args) => {

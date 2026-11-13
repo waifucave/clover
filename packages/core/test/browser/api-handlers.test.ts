@@ -3,6 +3,7 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { BrowserService } from "../../src/browser";
 import { browserApiHandlers, TOOL_CDP_METHODS } from "../../src/browser/api-handlers";
 import type { ApiCallContext, ApiHandler } from "../../src/plugin-host/api/router";
+import { noteCheckedHost } from "../../src/browser/checked-hosts";
 import { FakeApp } from "./fakes";
 
 const alpha: Caller = { kind: "session", sessionId: "s-alpha", sessionKind: "bot", bot: "alpha" };
@@ -25,6 +26,13 @@ describe("the Browser tool's browser.* calls", () => {
     for (const caller of [{ kind: "plugin", pluginId: "clover/browser" }, { kind: "core" }, { kind: "user", client: "app" }, { kind: "peer", device: "a".repeat(20) }] as Caller[]) {
       for (const path of ["browser.toolCaller", "browser.tabs", "browser.open"] as const) await expect(call(path, caller)).rejects.toThrow(/session whose tool call/);
     }
+  });
+
+  test("browser.toolCaller hands over the site the approval check judged, once", async () => {
+    const { call } = setup();
+    noteCheckedHost("s-alpha", "example.com");
+    expect(await call("browser.toolCaller", alpha)).toMatchObject({ checkedHost: "example.com" });
+    expect(await call("browser.toolCaller", alpha)).not.toHaveProperty("checkedHost");
   });
 
   test("browser.toolCaller says the session, its kind and its bot", async () => {

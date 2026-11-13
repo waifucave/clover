@@ -153,3 +153,30 @@ describe("the caller from the core (`api.browser.toolCaller()`), when the host g
     expect(await text()).toMatch(/can't tell which session/);
   });
 });
+
+describe("the site an acting call was approved for", () => {
+  const point = () => ({ x: 10, y: 10, facts: { tag: "BUTTON", autocomplete: "", contentEditable: false }, label: "button" });
+  const withHost = (host: string) => ({ ...alphaCaller, checkedHost: host }) as unknown as typeof alphaCaller;
+
+  test("an acting verb runs while the tab is still on the host the core checked, and a looking verb never asks", async () => {
+    const h = await harness([tabView("a1", ALPHA)]);
+    h.browser.page.point = point;
+    const r = await h.call({ verb: "click", ref: "e1" }, withHost("example.com"));
+    expect(r.isError).toBeFalsy();
+    expect(h.browser.sent("Input.dispatchMouseEvent").length).toBeGreaterThan(0);
+    expect((await h.call({ verb: "tabs" }, withHost("other.example"))).isError).toBeFalsy();
+  });
+
+  test("a page that moved to another host before the act is refused, and nothing is sent to it", async () => {
+    const h = await harness([tabView("a1", ALPHA, { url: "https://elsewhere.example/login" })]);
+    h.browser.page.point = point;
+    for (const args of [{ verb: "click", ref: "e1" }, { verb: "type", ref: "e1", text: "hi" }, { verb: "key", key: "Enter" }]) {
+      const r = await h.call(args, withHost("example.com"));
+      expect(r.isError).toBe(true);
+      expect(r.content[0]!.text).toBe("The page moved to elsewhere.example; ask again.");
+    }
+    expect(h.browser.sent("Input.dispatchMouseEvent")).toEqual([]);
+    expect(h.browser.sent("Input.dispatchKeyEvent")).toEqual([]);
+    expect(h.browser.sent("Input.insertText")).toEqual([]);
+  });
+});

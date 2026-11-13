@@ -22,6 +22,11 @@ export async function serveBrowser(transport: McpServerTransport, api: PluginApi
   return await serveMcp(transport, {
     info: { name: SERVER_NAME, title: "Clover Browser", version: typeof version === "string" ? version : "0.0.0" },
     tools: [TOOL],
-    call: async (_name, args, request) => tool.call(args, parseCaller(await callerOf({ id: request.id })), request.signal),
+    call: async (_name, args, request) => {
+      const raw = await callerOf({ id: request.id });
+      // The site the core's approval check judged the tab to be on, from the host's context only (never the request).
+      const checked = typeof raw === "object" && raw !== null && typeof (raw as { checkedHost?: unknown }).checkedHost === "string" ? (raw as { checkedHost: string }).checkedHost : undefined;
+      return tool.call(args, parseCaller(raw), request.signal, checked);
+    },
   });
 }

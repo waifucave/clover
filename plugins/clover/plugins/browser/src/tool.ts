@@ -87,6 +87,13 @@ function staleRef(ref: string): ToolFailure {
   return new ToolFailure(`${ref} isn't on the page any more (or the page changed since your read). Read the page again for fresh refs.`);
 }
 
+/** The verbs that act on a page: their approval is for one site. */
+const ACTING_VERBS: ReadonlySet<string> = new Set(["click", "type", "key", "select"]);
+
+function hostOf(url: string): string | undefined {
+  try { return new URL(url).hostname.toLowerCase() || undefined; } catch { return undefined; }
+}
+
 export class BrowserTool {
   private readonly page: PageRunner;
   /** Each session's current tab: the one it last opened or used. */
@@ -109,7 +116,7 @@ export class BrowserTool {
   }
 
   /** One `tools/call`. Never throws: every failure is a result with `isError`. */
-  async call(rawArgs: unknown, caller: Caller | undefined, signal: AbortSignal = new AbortController().signal): Promise<ToolResult> {
+  async call(rawArgs: unknown, caller: Caller | undefined, signal: AbortSignal = new AbortController().signal, checkedHost?: string): Promise<ToolResult> {
     let verb = "do that";
     try {
       const acting = actingFor(caller);
@@ -117,7 +124,7 @@ export class BrowserTool {
       this.browser();
       const args = parseArgs(rawArgs);
       verb = args.verb;
-      return await this.run(args, acting, signal);
+      return await this.run(args, acting, signal, checkedHost);
     } catch (e) {
       return failure(describeError(e, verb));
     }
@@ -214,7 +221,7 @@ export class BrowserTool {
 
   // ---- the verbs ------------------------------------------------------------------------------------------------------
 
-  private async run(a: BrowserArgs, who: Acting, signal: AbortSignal): Promise<ToolResult> {
+  private async run(a: BrowserArgs, who: Acting, signal: AbortSignal, checkedHost?: string): Promise<ToolResult> {
     if (a.verb === "tabs") return await this.tabsVerb(who);
     if (a.verb === "open") return await this.openVerb(a, who);
     if (a.verb === "close" && a.tab === undefined) throw new ToolFailure('close needs the tab, like {"verb":"close","tab":"tab_1"}.');
@@ -226,6 +233,12 @@ export class BrowserTool {
     return await this.locked(tab.id, async () => {
       // Looking stays open while the person holds the tab; everything else waits for them (the core refuses it too).
       if (tab.heldByUser && a.verb !== "screenshot") throw new ToolFailure(HELD_SENTENCE);
+      // The approval was for the site the tab was on when it was checked: a page can move itself before the act runs.
+      if (checkedHost !== undefined && ACTING_VERBS.has(a.verb)) {
+        const now = (await this.tabsOf(who)).find((t) => t.id === tab.id);
+        const host = hostOf(now?.url ?? tab.url);
+        if (host !== checkedHost) throw new ToolFailure(`The page moved to ${host ?? "another page"}; ask again.`);
+      }
       switch (a.verb) {
         case "close": return await this.closeVerb(tab);
         case "navigate": return await this.navigateVerb(a, tab);
