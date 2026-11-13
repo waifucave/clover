@@ -62,7 +62,8 @@ export async function settingsUsageText(cdp: Cdp): Promise<string> {
       const v = await cdp.evaluate(d.session, "(() => { const s = document.querySelector('[class*=cl-settings]'); return s ? s.innerText.replace(/\\s+/g, ' ').slice(0, 500) : null; })()").catch(() => null);
       if (typeof v === "string") dialogs.push(v);
     }
-    return `settings text: ${dialogs.join(" || ") || "no settings element"}; documents: ${seen.join(" | ")}`;
+    const errors = cdp.console.filter((c) => /error|warn/i.test(c.level)).slice(-8).map((c) => `${c.level}: ${c.text.replace(/\s+/g, " ").slice(0, 200)}`);
+    return `settings text: ${dialogs.join(" || ") || "no settings element"}; console: ${errors.join(" | ") || "none"}; documents: ${seen.join(" | ")}`;
   });
   // Closed again the user's way, so no later step meets the dialog.
   for (const type of ["keyDown", "keyUp"]) for (const d of await treeDocs(cdp)) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
