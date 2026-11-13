@@ -64,8 +64,6 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     }, async () => "no talk button in the composer");
     done.push("with a listening voice set, the talk button shows");
 
-    // The shell frame says whether it may record: its Permissions-Policy allows the microphone for it (the real device is never asked).
-    const policy = await inTree<string>("(() => { const p = document.permissionsPolicy; return p && p.allowsFeature('microphone') ? 'allowed' : 'blocked'; })()");
     // A counter on the real constructor's door: the generated clip must never reach it.
     for (const d of await treeDocs(cdp)) {
       await cdp.evaluate(d.session, `(() => {
@@ -104,8 +102,30 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     if (c.starts !== 1 || c.pieces !== 3 || c.bytes !== 38_400) fail(`the recorder's counters read ${JSON.stringify(c)}; wanted 1 start, 3 pieces, 38400 bytes`);
     if (c.probe !== 0) fail(`getUserMedia was called ${c.probe} time(s): the real microphone was asked for`);
     done.push(`the recorder ran the generated clip once (${c.starts} start, ${c.pieces} pieces, ${c.bytes} bytes), and getUserMedia was never called`);
-    if (policy === undefined || policy.value !== "allowed") fail(`the shell frame's Permissions-Policy says the microphone is ${policy?.value ?? "unreadable"}, not allowed for the recorder`);
-    done.push("the shell frame's Permissions-Policy allows the microphone for the recorder (no prompt was raised)");
+    // The document that recorded (the one with the counters) is the clover layer's own, and the browser's Permissions-Policy for its
+    // frame allows the microphone; a document of any other layer (Alpha's, a plugin's) does not (the real device is never asked).
+    // Two readings must agree: the browser's own state for the frame (CDP `Page.getPermissionsPolicyState`: the header and the
+    // iframe's `allow` together) and the page's own view (`document.featurePolicy`, the shipped name; `permissionsPolicy` where it exists).
+    const policyOf = async (session: string): Promise<{ href: string; browser: boolean | undefined; page: "allowed" | "blocked" | "unavailable" }> => {
+      const page = String(await cdp.evaluate(session, "(() => { const p = document.permissionsPolicy || document.featurePolicy; return location.href.slice(0, 60) + ' ' + (!p || !p.allowsFeature ? 'unavailable' : p.allowsFeature('microphone') ? 'allowed' : 'blocked'); })()")).split(" ");
+      const browser = await (async () => {
+        const tree = (await cdp.send("Page.getFrameTree", {}, session)) as { frameTree: { frame: { id: string } } };
+        const state = (await cdp.send("Page.getPermissionsPolicyState", { frameId: tree.frameTree.frame.id }, session)) as { states: { feature: string; allowed: boolean }[] };
+        return state.states.find((x) => x.feature === "microphone")?.allowed;
+      })().catch(() => undefined);
+      return { href: page[0]!, browser, page: page[1] as "allowed" | "blocked" | "unavailable" };
+    };
+    const mine = await policyOf(counters!.session);
+    if (!mine.href.startsWith("clover-plugin://clover/") || mine.browser !== true || mine.page === "blocked") fail(`the recording document ${mine.href}: the browser's Permissions-Policy state says the microphone is ${String(mine.browser)}, the page says ${mine.page}; it must be allowed for the recorder`);
+    const others: string[] = [];
+    for (const d of await cdp.documents()) {
+      if (d.session === counters!.session || d.url.startsWith("clover-plugin://clover/") || !d.url.startsWith("clover-plugin://")) continue;
+      const v = await policyOf(d.session).catch(() => undefined);
+      if (v === undefined) continue;
+      if (v.browser === true || v.page === "allowed") fail(`a document of another layer allows the microphone: ${v.href} (browser ${String(v.browser)}, page ${v.page})`);
+      others.push(v.href.slice(0, 30));
+    }
+    done.push(`the recording document's Permissions-Policy allows the microphone for it (browser state ${String(mine.browser)}, page ${mine.page})${others.length > 0 ? `, and blocks it in ${others.length} other layer document(s)` : ""} (no prompt was raised)`);
     return done.join("; ");
   } finally {
     if (voiced) await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: null } }).catch(() => undefined);
