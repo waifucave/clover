@@ -196,10 +196,11 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const made = await ok(ctx, session, "PluginNew", { template: "tool", id: WORKSHOP_ID, name: WORKSHOP_NAME });
     if (!made.called!.endsWith("__PluginNew")) fail(`the scaffold call was ${made.called}, not the builder's mcp__builder__PluginNew`);
     if (!made.result.text.startsWith(`Made a tool plugin, ${WORKSHOP_ID}: 3 files.`)) fail(`PluginNew answered "${made.result.text.slice(0, 160)}"`);
-    for (const [path, content] of Object.entries(files)) await ok(ctx, session, "Write", { file_path: join(folder, path), content });
+    const wrote: Record<string, string> = {};
+    for (const [path, content] of Object.entries(files)) wrote[path] = (await ok(ctx, session, "Write", { file_path: join(folder, path), content })).result.text;
     for (const [path, content] of Object.entries(files)) {
       const on = (() => { try { return readFileSync(join(folder, path), "utf8"); } catch { return undefined; } })();
-      if (on !== content) fail(`${path} in her scratch ${on === undefined ? "isn't there" : "isn't what she wrote"}`);
+      if (on !== content) fail(`${path} in her scratch (${folder}) ${on === undefined ? "isn't there" : "isn't what she wrote"}; Write said "${wrote[path]!.slice(0, 300)}"`);
     }
     const checked = await ok(ctx, session, "PluginValidate", { folder: WORKSHOP_ID });
     if (!/\bvalid\b/.test(checked.result.text) || /invalid/.test(checked.result.text)) fail(`PluginValidate said "${checked.result.text.slice(0, 300)}"`);

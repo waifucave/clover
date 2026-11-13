@@ -348,6 +348,8 @@ async function cleanup(): Promise<void> {
     for (const f of ["app.log", "app.log.1"]) {
       try { cpSync(join(home, "logs", f), join(keepLogs, f)); } catch { /* not written, or best effort */ }
     }
+    // The plugins' own logs (a stdio server's stderr: why it crashed), from the same temp home.
+    try { cpSync(join(home, "logs", "plugins"), join(keepLogs, "plugins"), { recursive: true }); } catch { /* none, or best effort */ }
   }
   // A kept keychain file stays for the upgrade run (its state dir's owner deletes it); a run's own goes.
   if (keychainMade && stateDir === undefined) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
