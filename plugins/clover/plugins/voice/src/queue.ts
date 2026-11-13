@@ -42,8 +42,11 @@ export interface QueueClock {
 
 /** Plugins' sounds that may wait their turn at once. */
 export const WAITING_SOUNDS = 8;
-/** Added to a sound's length before the next starts: the device's output latency. */
-export const LATENCY_SLACK_MS = 250;
+/** Added to a sound's length before the next starts: what the player lags behind this half's clock. The pieces cross
+ *  the core and the app before the player schedules them, and the player's first sound waits for its AudioContext to
+ *  start; the acceptance run measured that lag past 250 ms on a first sound (a reply's tail cut by the next sound), so
+ *  this leaves room for it: a short pause between two sounds, never one over another. */
+export const LATENCY_SLACK_MS = 600;
 
 export class VoiceQueue {
   #current: { item: QueueItem; timer?: unknown; stopped: boolean } | undefined;
