@@ -61,12 +61,30 @@ describe("resolveKeys", () => {
     expect(r.get("b.go")).toEqual({ state: "clash", with: ["a.go"] });
     expect(r.get("c.go")).toEqual({ state: "bound", chord: "meta+j" });
   });
+  test("on macOS alt alone types a character, so alt+letter and alt+shift+letter are not bindable; elsewhere alt is a real modifier", () => {
+    const mac = resolveKeys([{ name: "a.e", key: "alt+e" }, { name: "a.s", key: "alt+shift+k" }, { name: "a.c", key: "ctrl+alt+e" }, { name: "a.m", key: "meta+alt+e" }, { name: "a.f", key: "alt+f6" }], "darwin");
+    expect(mac.get("a.e")).toEqual({ state: "bare" });
+    expect(mac.get("a.s")).toEqual({ state: "bare" });
+    expect(mac.get("a.c")).toEqual({ state: "bound", chord: "ctrl+alt+e" });
+    expect(mac.get("a.m")).toEqual({ state: "bound", chord: "alt+meta+e" });
+    expect(mac.get("a.f")).toEqual({ state: "bound", chord: "alt+f6" });
+    for (const platform of ["win32", "linux"] as const) {
+      expect(resolveKeys([{ name: "a.e", key: "alt+e" }], platform).get("a.e")).toEqual({ state: "bound", chord: "alt+e" });
+    }
+  });
+  test("the window's own reload, developer-tools, zoom and full-screen chords are the app's", () => {
+    const r = resolveKeys([{ name: "a.r", key: "f5" }, { name: "a.d", key: "ctrl+shift+i" }, { name: "a.z", key: "mod+=" }, { name: "a.fs", key: "f11" }], "win32");
+    expect(r.get("a.r")).toEqual({ state: "app", what: "Reload" });
+    expect(r.get("a.d")).toEqual({ state: "app", what: "Developer tools" });
+    expect(r.get("a.z")).toEqual({ state: "app", what: "Zoom in" });
+    expect(r.get("a.fs")).toEqual({ state: "app", what: "Full screen" });
+  });
   test("a chord that would take typing is not bound; a function key is", () => {
-    const r = resolveKeys([{ name: "a.k", key: "k" }, { name: "a.e", key: "enter" }, { name: "a.s", key: "shift+a" }, { name: "a.f", key: "f5" }, { name: "a.sf", key: "shift+f5" }], "linux");
+    const r = resolveKeys([{ name: "a.k", key: "k" }, { name: "a.e", key: "enter" }, { name: "a.s", key: "shift+a" }, { name: "a.f", key: "f6" }, { name: "a.sf", key: "shift+f6" }], "linux");
     expect(r.get("a.k")).toEqual({ state: "bare" });
     expect(r.get("a.e")).toEqual({ state: "bare" });
     expect(r.get("a.s")).toEqual({ state: "bare" });
-    expect(r.get("a.f")).toEqual({ state: "bound", chord: "f5" });
-    expect(r.get("a.sf")).toEqual({ state: "bound", chord: "shift+f5" });
+    expect(r.get("a.f")).toEqual({ state: "bound", chord: "f6" });
+    expect(r.get("a.sf")).toEqual({ state: "bound", chord: "shift+f6" });
   });
 });

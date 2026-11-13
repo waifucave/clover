@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { APP_CHORDS, canonicalChord } from "@waifucave/clover-plugin-sdk";
-import { PluginKeys } from "../src/main/plugin-keys";
+import { PluginKeys, keysMayRun } from "../src/main/plugin-keys";
 import { appShortcut } from "../src/main/shortcuts";
 
 const press = (o: { key: string; code?: string; type?: string; control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; isAutoRepeat?: boolean }) =>
@@ -63,5 +63,19 @@ describe("a press's type", () => {
     k.set(rows);
     expect(k.match(press({ key: "K", code: "KeyK", meta: true, shift: true, type: "rawKeyDown" }))).toBe("a.go");
     expect(k.match(press({ key: "K", code: "KeyK", meta: true, shift: true, type: "char" }))).toBeUndefined();
+  });
+});
+
+describe("where the focus is", () => {
+  test("a sealed frame (an approval or OK card) or an open secret field keeps a command's key from running", () => {
+    expect(keysMayRun({ frameUrl: "clover-sealed://card/card_1/own?token=x", secureOpen: false })).toBe(false);
+    expect(keysMayRun({ frameUrl: "clover-core://app/", secureOpen: true })).toBe(false);
+    expect(keysMayRun({ frameUrl: undefined, secureOpen: true })).toBe(false);
+  });
+  test("any other focus, or none, lets it run", () => {
+    expect(keysMayRun({ frameUrl: "clover-core://app/", secureOpen: false })).toBe(true);
+    expect(keysMayRun({ frameUrl: "clover-plugin://alpha/?mount=1", secureOpen: false })).toBe(true);
+    expect(keysMayRun({ frameUrl: null, secureOpen: false })).toBe(true);
+    expect(keysMayRun({ frameUrl: undefined, secureOpen: false })).toBe(true);
   });
 });

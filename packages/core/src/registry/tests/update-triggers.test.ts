@@ -103,3 +103,14 @@ describe("every OK-card line an update adds or alters asks again", () => {
   // on Windows and Linux reads the logins, no sandbox on this computer, host code held to its proxy), which follow the
   // class and the computer, both judged above or not the update's.
 });
+
+describe("a notifier's OK card", () => {
+  test("says what it is told and that it gets no words; a plugin with no notifier says nothing of it", async () => {
+    const notifier = await snap({
+      manifest: 1, id: "luna", name: "Luna", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      host: { entry: "host/index.js" }, contributes: { notifiers: [{ id: "banner", handler: "banner" }] },
+    }, { "host/index.js": "export default {};\n" });
+    expect(notifier.lines).toContain("It is told when your bots need you or have answered, so it can notify you; it does not get the words.");
+    expect((await snap(BASE)).lines.join("\n")).not.toContain("so it can notify you");
+  });
+});

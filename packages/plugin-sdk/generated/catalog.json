@@ -344,7 +344,7 @@
       "shape": "list",
       "kind": "code",
       "runsOn": "the main, unless `runsOn` says otherwise",
-      "doc": "Wakes companions when something happens (§10).",
+      "doc": "Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify the user or wake a companion (§10). The OK card says so.",
       "shipsWith": "waifucave push; desktop notifications"
     },
     {

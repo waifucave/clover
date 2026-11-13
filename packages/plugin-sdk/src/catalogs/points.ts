@@ -51,7 +51,7 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "relays", side: "daemon", shape: "list", kind: "code", runsOn: "every device that uses them",
     doc: "Carries encrypted traffic when two devices can't connect directly, or holds encrypted sync mail (§8.3).", shipsWith: "n0's public relays; the cloud computer relay" },
   { name: "notifiers", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
-    doc: "Wakes companions when something happens (§10).", shipsWith: "waifucave push; desktop notifications" },
+    doc: "Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify the user or wake a companion (§10). The OK card says so.", shipsWith: "waifucave push; desktop notifications" },
   { name: "companions", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
     doc: "Serves a remote client within the fixed list of remote calls (§10).", shipsWith: "the iOS app; clover.waifucave.com" },
   { name: "themes", side: "app", shape: "list", kind: "data", runsOn: "every app instance",
