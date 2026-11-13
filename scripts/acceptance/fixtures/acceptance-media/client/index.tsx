@@ -80,7 +80,7 @@ export function AcceptanceMediaMain() {
   };
   const attrs = Object.fromEntries(Object.entries(facts).map(([k, v]) => [`data-${k}`, v]));
   return (
-    <div data-acceptance-media="main" style={{ minHeight: 120 }} {...attrs}>
+    <div data-acceptance-media="main" style={{ minHeight: 120 }} onDragOver={(e) => e.preventDefault()} {...attrs}>
       <button data-acceptance-media-step="open" onClick={() => void open().catch(fail("open"))}>Open video</button>
       <button data-acceptance-media-step="folder" onClick={() => void folder().catch(fail("folder"))}>Pick a folder</button>
       <button data-acceptance-media-step="save" onClick={() => void save().catch(fail("save"))}>Save a file</button>

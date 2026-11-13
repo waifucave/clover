@@ -108,6 +108,35 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   // A card on top rests small; the strip at the top opens the island (its tab dots live there).
   await shoot?.("1-closed-strip");
   await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 20_000);
+  /** Chooses a tab on the dots by its label, clicking again until it reads as selected (a dot takes a click once the island rests). */
+  /** The pointer over the open island (it puts itself away a moment after the pointer leaves, and a click alone doesn't move it);
+   *  an island that has put itself away is opened again from its strip. */
+  const hold = async (): Promise<void> => {
+    for (const d of await here()) {
+      const c = await cdp.centerOf(d.session, ".clv-open", undefined).catch(() => undefined);
+      if (c !== undefined) { await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y }, d.session).catch(() => undefined); return; }
+    }
+    await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 10_000).catch(() => undefined);
+    await sleep(1_200);
+  };
+  const choose = async (label: string): Promise<void> => {
+    const selector = `[role=tab][aria-label=${JSON.stringify(label)}]`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await hold();
+      await sleep(600);
+      await clickIn(cdp, `the island's ${label} tab dot`, selector, undefined, 20_000).catch(async (err: unknown) => {
+        const seen: string[] = [];
+        for (const d of await here()) seen.push(String(await cdp.evaluate(d.session, "[...document.querySelectorAll('[role=tab]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-selected')).join(',') || (document.body ? 'no dots; ' + document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : '')").catch(() => "")));
+        throw new Error(`${(err as Error).message} (attempt ${attempt + 1}; dots: ${seen.filter((x) => x !== "").join(" | ")})`);
+      });
+      await sleep(400);
+      for (const d of await here()) {
+        const v = await cdp.evaluate(d.session, `(() => { const t = document.querySelector(${JSON.stringify(selector)}); return t ? t.getAttribute('aria-selected') === 'true' : null; })()`).catch(() => null);
+        if (v === true) return;
+      }
+    }
+    throw new Error(`the ${label} tab dot never read as selected`);
+  };
   // The island morphs open first: its dots only take a click once it rests, so the click is repeated until the tab is chosen.
   const chosen = async (): Promise<boolean> => {
     for (const d of await here()) {
@@ -144,13 +173,13 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
   });
   if (shoot !== undefined) {
     await shoot("3-open-usage");
-    await clickIn(cdp, "the island's Devices tab dot", '[role=tab][aria-label="Devices"]', undefined, 20_000);
+    await choose("Devices");
     await sleep(1_000);
     await shoot("4-open-devices");
   }
   // A third-party plugin's tab, on the same dots (labelled with its plugin's name), drawn by that plugin's own frame.
   if (thirdParty !== undefined) {
-    await clickIn(cdp, "the third-party tab's dot", `[role=tab][aria-label=${JSON.stringify(thirdParty.label)}]`, undefined, 20_000);
+    await choose(thirdParty.label);
     await until("the third-party tab's own words", 20_000, async () => {
       // Its own plugin's layer draws it: a document of its own, not the island's or the clover tree's.
       for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://acceptance-tab/"))) {
@@ -158,6 +187,10 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
         if (typeof v === "string" && v.includes(thirdParty.words)) return true;
       }
       return undefined;
+    }, async () => {
+      const seen: string[] = [];
+      for (const d of await cdp.documents()) if (/surface=island|clover-plugin:\/\/(acceptance-tab|clover)\//.test(d.url)) seen.push(`${d.url.slice(0, 55)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); return p ? 'PANEL ' + p.getAttribute('aria-label') + ' ' + p.innerHTML.replace(/\\s+/g, ' ').slice(0, 260) : (document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : ''); })()").catch(() => "")).slice(0, 320)}`);
+      return seen.join(" | ");
     });
     await shoot?.("5-open-third-party");
   }
