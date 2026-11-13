@@ -151,7 +151,7 @@ function useWindowWidth(): number {
 }
 const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
-const clock = (): string => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const clock = (at: number): string => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 interface BotRow { id: string; name: string; state: string; portrait?: string }
 
@@ -288,7 +288,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
         </div>
       </header>
       <div className="rm__left">
-        {pin ? <div className="rm__pin"><p>{pin.text}</p><small>Pinned at {clock()}</small></div> : null}
+        {pin ? <div className="rm__pin"><p>{pin.text}</p><small>{pin.at === undefined ? "Pinned" : `Pinned at ${clock(pin.at)}`}</small></div> : null}
         <section className="rm__today" aria-label="So far today">
           <h3>So far today</h3>
           <ul>{tally(counts.replies, "reply", "replies")}{tally(counts.tools, "tool call", "tool calls")}{tally(counts.files, "file touched", "files touched")}</ul>

@@ -76,8 +76,8 @@ describe("the sidebar entry", () => {
     expect(routes).toEqual([
       { route: "agent", params: { session: "agent-1" } },
       { route: "bot", params: { bot: "luna" } },
-      { route: "archive", params: {} },
-      { route: "discord-waifus", params: {} },
+      { route: "archive", params: { title: "Archive" } },
+      { route: "discord-waifus", params: { title: "Discord Waifus" } },
       { route: "settings", params: {} },
     ]);
     // A bundled app wears the shell's own glyph; a third party's, its icon.
@@ -91,7 +91,7 @@ describe("the sidebar entry", () => {
       { pluginId: "odd", id: "odd-app", spot: "sidebar.app", component: "Badge", fields: { title: { ja: "英語なし" }, opens: "odd" }, source: "installed", enabledAt: 0 },
     ] });
     fireEvent.click(screen.getByRole("button", { name: /Notes/ }));
-    expect(routes).toEqual([{ route: "example-notes", params: {} }]);
+    expect(routes).toEqual([{ route: "example-notes", params: { title: "Notes" } }]);
     // A map with no English is no title: that entry isn't listed.
     expect(screen.queryByRole("button", { name: /英語なし/ })).toBeNull();
   });

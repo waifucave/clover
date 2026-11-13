@@ -30,6 +30,8 @@ export type Mood = (typeof MOODS)[number];
 export interface Pinned {
   id: string;
   text: string;
+  /** When it was pinned (ms since the epoch); a note pinned before this was kept has none. */
+  at?: number;
 }
 
 /** The stage document, as lane E's components read it (version 1). */
@@ -111,7 +113,7 @@ export function readStage(raw: unknown, fallbackScene = "meadow"): StageState {
   }
   if (Array.isArray(r.pinned)) {
     for (const p of r.pinned.slice(0, PINNED_MAX)) {
-      if (p !== null && typeof p === "object" && typeof (p as Pinned).id === "string" && typeof (p as Pinned).text === "string") s.pinned.push({ id: (p as Pinned).id.slice(0, 32), text: (p as Pinned).text.slice(0, PIN_TEXT_MAX) });
+      if (p !== null && typeof p === "object" && typeof (p as Pinned).id === "string" && typeof (p as Pinned).text === "string") s.pinned.push({ id: (p as Pinned).id.slice(0, 32), text: (p as Pinned).text.slice(0, PIN_TEXT_MAX), ...(Number.isFinite((p as Pinned).at) && (p as Pinned).at! > 0 ? { at: (p as Pinned).at! } : {}) });
     }
   }
   const a = r.activity as Record<string, unknown> | undefined;
@@ -218,7 +220,7 @@ export const CONTROLS = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
 const list = (names: readonly string[]) => (names.length === 0 ? "none" : names.map((n) => JSON.stringify(n)).join(", "));
 
 /** Applies a change: the new document and a line saying what happened, or a refusal that names the valid values. */
-export function applyStage(state: StageState, change: StageChange, o: { catalog?: StageCatalog; scenes: readonly Scene[]; newId?: () => string }): StageResult {
+export function applyStage(state: StageState, change: StageChange, o: { catalog?: StageCatalog; scenes: readonly Scene[]; newId?: () => string; now?: () => number }): StageResult {
   const next: StageState = { ...state, outfit: { ...state.outfit }, pinned: [...state.pinned] };
   const noModel = "Her tab hasn't loaded a model yet, so it has no names to use; try again once it shows her.";
   switch (change.kind) {
@@ -258,7 +260,7 @@ export function applyStage(state: StageState, change: StageChange, o: { catalog?
       if (text === "") return { ok: false, said: "A pinned note needs some text." };
       if (state.pinned.length >= PINNED_MAX) return { ok: false, said: `Her stage holds ${PINNED_MAX} notes; unpin one first (their handles: ${list(state.pinned.map((p) => p.id))}).` };
       const id = o.newId?.() ?? nextHandle(state.pinned);
-      next.pinned.push({ id, text });
+      next.pinned.push({ id, text, at: (o.now ?? Date.now)() });
       return { ok: true, state: next, said: `Pinned: ${noteGist(text)}`, shown: { kind: "pin", label: "Pinned", value: noteGist(text), handle: id } };
     }
     case "unpin": {

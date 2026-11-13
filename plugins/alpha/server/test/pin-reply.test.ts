@@ -52,7 +52,7 @@ test("a press names the message ({ session, seq }); her reply is read from the l
   ];
   await server.start(withConversation(f.api, log) as never);
   expect(await server.ui.pinReply({ session: "b_alpha", seq: 4 })).toEqual({ ok: true });
-  expect((f.store.get(STAGE_KEY) as { pinned: { id: string; text: string }[] }).pinned).toEqual([{ id: "n1", text: "Perfect." }]);
+  expect((f.store.get(STAGE_KEY) as { pinned: { id: string; text: string }[] }).pinned).toEqual([{ id: "n1", text: "Perfect.", at: expect.any(Number) }]);
   expect(f.sent.at(-1)?.event).toBe("stage");
   // Not a reply of hers: a user's message, a seq with nothing there, another bot's conversation; a bad press.
   expect(await server.ui.pinReply({ session: "b_alpha", seq: 3 })).toEqual({ note: "Only her replies pin to her stage." });

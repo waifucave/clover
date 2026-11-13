@@ -33,6 +33,13 @@ batches of `{ t, rms, centroid }` frames (loudness and brightness on the audio c
 from the stage every 40 ms or so while the bot speaks and the frame can be seen, and nothing while it is quiet. This renderer
 opens the mouth for a frame louder than 0.04, and looks only while speech is due. A renderer never hears the audio itself.
 
+## The stage's framing
+
+The stage fills the renderer's frame and says how the theme frames the figure in the `framing` prop (`{ mode?, crop?, headroom? }`:
+the theme's `--clover-avatar-framing`, `--clover-avatar-crop` and `--clover-avatar-headroom`, read live; CSS variables do not cross
+into a plugin's frame, so they come as data). This renderer shows `crop` of the picture's height from the top, with `headroom` of
+it empty above (`framePicture`); with no `framing` it fits the whole picture. A renderer that ignores `framing` still fills its frame.
+
 ## The avatar contract
 
 `useAvatarControl()` (same package) is how a renderer takes a bot plugin's cues and tells the app what it has. This one calls

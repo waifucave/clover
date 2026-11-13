@@ -27,6 +27,9 @@ export interface MountContext {
   /** The window's system material behind transparent parts (§86: macOS sidebar vibrancy, Windows 11 acrylic). */
   material: "vibrancy" | "acrylic" | "none";
   safeMode: boolean;
+  /** The window the part is in: `narrow` is the shell's own 900px rule (the window is narrower than 900 CSS pixels), kept live
+   *  (`useMountContext()` re-renders on the change), so a page can fold its layout the way the shell folds its. */
+  window: { narrow: boolean };
   /** The bots this computer knows, for the default shell until the plugin API's `bots` reaches layers (E-M2). */
   bots?: readonly { id: string; name: string }[];
 }
@@ -199,6 +202,8 @@ export type LayerMessage =
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it
    *  was served). */
   | { type: "child-reload"; child: string; url: string }
+  /** The window's width class changed (`MountContext.window`), to every frame of the window. */
+  | { type: "window"; narrow: boolean }
   /** A child frame's content height, for the parent to size it (§5.5: the core sizes the frame). */
   | { type: "child-size"; child: string; height: number }
   /** The speech the bot's avatar frame lip-syncs to, from its parent (the stage): numbers only (`cleanSpeechMessage`). */

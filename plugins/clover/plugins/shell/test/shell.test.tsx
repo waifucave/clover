@@ -272,6 +272,14 @@ describe("a bot's own layout's header", () => {
     expect(document.querySelector(".cl-bot-header")!.textContent).toContain("Luna");
     expect(document.querySelector(".cl-bot-header")!.textContent).toContain("claude-sonnet-5-5");
   });
+
+  test("an app's title bar says its name from the route's `title` (the shell does not list the sidebar's apps itself), the key when none", async () => {
+    await mount({ route: { route: "reel", params: { title: "Reel" } } });
+    expect(document.querySelector(".cl-window__title-text")?.textContent).toBe("Reel");
+    cleanup();
+    await mount({ route: { route: "reel", params: {} } });
+    expect(document.querySelector(".cl-window__title-text")?.textContent).toBe("reel");
+  });
 });
 
 // The owner's report on try 14d: coming back to Alpha's tab from an app's page drew the stock layout and an empty

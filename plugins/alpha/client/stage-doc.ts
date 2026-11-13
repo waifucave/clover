@@ -11,7 +11,7 @@ export interface StageState {
   mood: Mood;
   outfit: Record<string, boolean>;
   activity?: { kind: string; label: string };
-  pinned: { id: string; text: string }[];
+  pinned: { id: string; text: string; at?: number }[];
   tally?: { turns: number; tools: number; day?: string };
   /** Bumped by each expression, motion or celebration, so a repeated one plays again. */
   nonce: number;
@@ -28,7 +28,11 @@ export function readStage(raw: unknown): StageState | undefined {
   if (r.v !== 1 || typeof r.scene !== "string") return undefined;
   const mood = (MOODS as readonly string[]).includes(String(r.mood)) ? (r.mood as Mood) : "calm";
   const pinned = Array.isArray(r.pinned)
-    ? r.pinned.filter((p): p is { id: string; text: string } => p !== null && typeof p === "object" && typeof (p as { id?: unknown }).id === "string" && typeof (p as { text?: unknown }).text === "string")
+    ? r.pinned.flatMap((p): { id: string; text: string; at?: number }[] => {
+      if (p === null || typeof p !== "object") return [];
+      const q = p as { id?: unknown; text?: unknown; at?: unknown };
+      return typeof q.id === "string" && typeof q.text === "string" ? [{ id: q.id, text: q.text, ...(typeof q.at === "number" && Number.isFinite(q.at) && q.at > 0 ? { at: q.at } : {}) }] : [];
+    })
     : [];
   const act = r.activity as { kind?: unknown; label?: unknown } | undefined;
   const tally = r.tally as { turns?: unknown; tools?: unknown; day?: unknown } | undefined;
