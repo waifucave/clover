@@ -225,7 +225,6 @@ const STATE_WORDS: Partial<Record<PluginState, string>> = {
   off: "off",
   refused: "refused by the user: it stays off until its folder changes",
   stopped: "stopped after crashing",
-  blocked: "blocked",
 };
 
 const ok = (text: string): CoreToolResult => ({ text, isError: false });

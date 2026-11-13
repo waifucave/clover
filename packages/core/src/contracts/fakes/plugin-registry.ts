@@ -24,8 +24,6 @@ export interface FakePluginInput {
   enabled?: boolean;
   /** The validator refused it: its reason. */
   invalid?: string;
-  /** The index revoked it: the revocation's reason. */
-  blocked?: string;
   folder?: string;
   issues?: ValidationIssue[];
   class?: PluginClass;
@@ -108,7 +106,7 @@ export class FakePluginRegistry implements PluginRegistry {
     const held = this.#mustGet(id);
     const state = this.#snap.records.get(id)?.state;
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
-    if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+    if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     // A found plugin's switch is its sealed OK card (S2): nothing loads until the user's yes on it.
     if (enabled && state === "found") return { applied: false, card: this.#raiseOk(parentOf(id) ?? id) };
     held.enabled = enabled;
@@ -249,7 +247,6 @@ export class FakePluginRegistry implements PluginRegistry {
       if (i.source !== undefined) p.source = i.source;
       if (h.okHash !== undefined) p.okHash = h.okHash;
       if (i.invalid !== undefined) p.invalid = i.invalid;
-      if (i.blocked !== undefined) p.blocked = i.blocked;
       if (h.stopped !== undefined) p.stopped = h.stopped;
       if (i.folder !== undefined) p.folder = i.folder;
       if (i.issues !== undefined) p.issues = i.issues;

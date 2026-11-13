@@ -80,11 +80,11 @@ const LAYER_TARGETS: Record<string, string> = {
 };
 
 describe("what a plugin may use now (grantsInForce): exactly what its host process would get", () => {
-  test("its grant while it is on and running (or waiting for a point); nothing while off, stopped, blocked, refused, invalid or awaiting its OK", () => {
+  test("its grant while it is on and running (or waiting for a point); nothing while off, stopped, refused, invalid or awaiting its OK", () => {
     const granted = ["conversation.read", "call:tarot"];
     expect(grantsInForce({ enabled: true, state: "running", granted })).toEqual(granted);
     expect(grantsInForce({ enabled: true, state: "waiting", granted })).toEqual(granted);
-    for (const state of ["off", "stopped", "blocked", "refused", "invalid", "found"] as const) expect([state, grantsInForce({ enabled: true, state, granted })]).toEqual([state, []]);
+    for (const state of ["off", "stopped", "refused", "invalid", "found"] as const) expect([state, grantsInForce({ enabled: true, state, granted })]).toEqual([state, []]);
     // Turned off by the user: the OK still covers it (granted stays set), but it may use none of it.
     expect(grantsInForce({ enabled: false, state: "running", granted })).toEqual([]);
     // Awaiting a new OK while the old version runs on the old one (the registry keeps the old grant): the old grant.

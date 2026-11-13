@@ -438,14 +438,15 @@ describe("the OK's text", () => {
       ...min(), engines: { clover: "^1.0.0" }, capabilities: ["approvals", "network:api.luna.example"], addons: { description: "Tarot decks" },
       contributes: { mcpServers: { tarot: { type: "stdio", command: "npx", args: ["tarot-mcp"] } } },
     });
-    const lines = describeOk(r, { os: "linux", source: "other" });
+    const lines = describeOk(r, { os: "linux" });
     expect(lines).toContain("luna runs code on your computers.");
     expect(lines).toContain("Its code could read Clover's logins and approve its own cards.");
     expect(lines).toContain("It restyles approval cards.");
     expect(lines).toContain("Its components reach only api.luna.example; its host code can reach any host.");
     expect(lines).toContain("It fetches code when it runs: npx tarot-mcp.");
     expect(lines).toContain("It loads add-ons of its own, which Clover doesn't check.");
-    expect(lines).toContain("Not reviewed: it isn't from the official index.");
+    // No "reviewed" mark of any kind (the owner's ruling, 2026-11-13: no official index).
+    expect(lines.some((l) => /reviewed/i.test(l))).toBe(false);
     expect(lines.filter((l) => l === "It restyles approval cards.")).toHaveLength(1);
     expect(r.restylesCards).toBe(true);
   });

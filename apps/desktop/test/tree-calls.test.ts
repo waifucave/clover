@@ -355,7 +355,7 @@ const WORST: Record<string, Worst> = {
   "plugin.index.list": "read",
   "plugin.index.search": "read",
   "models.list": "read",
-  "plugin.setEnabled": "sealed card", // turning a revoked plugin back on is the override's warning card; turning an OK'd plugin back on (or off) is a gesture (accepted)
+  "plugin.setEnabled": "sealed card", // turning a found plugin on raises its OK card; turning an OK'd plugin back on (or off) is a gesture (accepted)
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
@@ -367,11 +367,11 @@ const WORST: Record<string, Worst> = {
   "ui.secret": "main-owned dialog", // the app's own key dialog; the key never passes the page
   "plugin.install": "sealed card", // every install raises the core's OK card before anything runs
   "plugin.remove": "sealed card", // main sets card: the removal card
-  "plugin.update": "sealed card", // main sets card: a non-official update asks (the yes applies that tree only); a new trigger shows its OK card instead; the official index's applies as its automatic check would
-  "plugin.pin": "harmless change", // at worst holds a plugin's fixes back on this computer (revocations still apply); unpinning only returns it to the normal update flow
+  "plugin.update": "sealed card", // main sets card: an update asks (the yes applies that tree only); a new trigger shows its OK card instead
+  "plugin.pin": "harmless change", // at worst holds a plugin's fixes back on this computer (it isn't offered updates); unpinning only returns it to the normal update flow
   "plugin.restart": "harmless change", // restarts the plugin's own processes on the code already OK'd
-  "plugin.index.add": "sealed card", // the core's warning card with the key's fingerprint
-  "plugin.index.remove": "sealed card", // main sets card: asks when installs came from it; blocks it held stay
+  "plugin.index.add": "harmless change", // runs nothing: each plugin installed from it asks on its own OK card
+  "plugin.index.remove": "sealed card", // main sets card: asks when installs came from it
   "plugin.auth.signIn": "main-owned dialog", // a key only in the app's key dialog; a browser sign-in opens the provider's page
   "plugin.auth.signOut": "sealed card", // main sets card: the sign-out card
   "plugin.dev.add": "sealed card", // a picked folder only, and the core's development-folder card
@@ -668,7 +668,7 @@ describe("the Plugins page's calls as main sends them", () => {
       ["plugin.update", { id: "tarot", ...forged }],
       ["plugin.pin", { id: "tarot", pinned: true, ...forged }],
       ["plugin.restart", { id: "tarot", ...forged }],
-      ["plugin.index.add", { url: "https://plugins.example.com/index.json", keys: ["k"], ...forged }],
+      ["plugin.index.add", { url: "https://plugins.example.com/index.json", ...forged }],
       ["plugin.index.remove", { url: "https://plugins.example.com/index.json", ...forged }],
       ["plugin.auth.signIn", { id: "tarot", index: 1, ...forged }],
       ["plugin.auth.signOut", { id: "tarot", index: 0, ...forged }],

@@ -14,7 +14,6 @@ import { CORE_VERSION } from "../version";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { PLUGINS_METHODS, PluginDetail, PluginSummary, topPluginIdOf, type PluginProvenance } from "@waifucave/clover-protocol";
-import { parentOf } from "../contracts/plugin-registry-rules";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord } from "../contracts/plugin-registry";
@@ -25,8 +24,7 @@ import { pluginPath } from "./paths";
 import { onCardYes } from "./card-yes";
 import { manifestIconOf } from "./ui";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
-import { httpsUrl, keyFingerprint, type IndexClient } from "../registry/indexes/client";
-import type { Revocations } from "../registry/indexes/revocations";
+import { httpsUrl, type IndexClient } from "../registry/indexes/client";
 import { installFromIndex } from "../registry/indexes/install";
 import { installFromNpm } from "../registry/indexes/npm";
 import type { PluginUpdater } from "../registry/indexes/update";
@@ -122,8 +120,6 @@ export function pluginRegistryMethods(o: {
   os?: "macos" | "windows" | "linux";
   /** The plugin indexes (§5.1); absent, there are none (the lists are empty and adding one is refused). */
   indexes?: IndexClient;
-  /** Their revocation lists: their state in the index list, and the override switch (`REVOKED_OVERRIDE`). */
-  revocations?: Revocations;
   /** Plugin updates (`registry/indexes/update.ts`), with the index client. */
   updater?: PluginUpdater;
   /** The core's events (`plugin_card_note`). */
@@ -153,56 +149,13 @@ export function pluginRegistryMethods(o: {
     [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }, ctx) => {
       requireUser(ctx, "switch a plugin on or off");
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
-      const r = must(id);
-      if (r.state === "blocked" && enabled) {
-        // A revoked tree (the owner's answer C): the user may run it anyway on this computer, after one sealed warning
-        // card from any caller (the app's switch and the terminal alike). Only the yes on that card records the
-        // override, keyed to the revoked record (the top plugin: a list names top-level ids, and its tree hash covers
-        // every child) and the exact tree hash that was revoked, so a changed tree is blocked again.
-        const top = must(parentOf(r.id) ?? r.id);
-        const v = o.revocations?.verdict({ id: top.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance: top.provenance });
-        if (v === undefined || o.revocations?.overrideAllowed !== true || o.indexes === undefined || top.treeHash === undefined) {
-          throw new ContractError("refused", `${id} is blocked: ${r.reason ?? "a revocation list names it"}. Its files, data and keys stay on this computer.`);
-        }
-        if (o.openCard === undefined) notServed("running a revoked plugin anyway", "this computer's approval broker isn't running, and its warning card must be answered first");
-        const revokedHash = top.treeHash;
-        const opened = await o.openCard!({
-          kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-revoked",
-          fields: {
-            title: { type: "text", text: `Run ${top.name} anyway?` },
-            detail: {
-              type: "list", items: [
-                `${v.by} revoked it, giving this reason: "${v.reason}"`,
-                "If you go on, Clover will run it anyway on this computer. A changed version of it is blocked again.",
-                "Its data and settings are kept either way.",
-                `Its tree: ${revokedHash}`,
-              ],
-            },
-          },
-        });
-        const apply = async (): Promise<string | undefined> => {
-          const now = registry.get(top.id);
-          // The tree the user saw on the card, and only that one.
-          if (now?.treeHash !== revokedHash) return now === undefined ? "It was removed meanwhile." : "Its files changed since the card, so it stays blocked; switching it on shows a new card.";
-          o.indexes!.setOverride(top.id, revokedHash);
-          await folders.refresh(now.folder);
-          if (registry.get(id)?.state !== "blocked") await registry.setEnabled(id, true);
-          return undefined;
-        };
-        if (opened.card === undefined) {
-          if (!(await opened.allowed)) throw new ContractError("refused", `${id} stays blocked`);
-          await apply();
-          return { applied: true as const };
-        }
-        onYes(opened.card, "plugin-revoked", opened.allowed, apply);
-        return { applied: false as const, card: opened.card };
-      }
+      must(id);
       return registry.setEnabled(id, enabled);
     }),
     [M.pluginRestart.name]: handler(M.pluginRestart, async ({ id }, ctx) => {
       requireUser(ctx, "restart a plugin");
       const r = must(id);
-      // Only a plugin that may run: blocked, waiting for its OK, refused or off, a restart starts nothing (the host's
+      // Only a plugin that may run: waiting for its OK, refused or off, a restart starts nothing (the host's
       // start already finds no startable record for it; this says so instead of marking it stopped).
       if (!["running", "waiting", "stopped"].includes(r.state)) throw new ContractError("refused", `${id} isn't running (${r.state}${r.reason !== undefined ? `: ${r.reason}` : ""}), so there's nothing to restart`);
       o.onRestart?.(id);
@@ -237,13 +190,8 @@ export function pluginRegistryMethods(o: {
         // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
         // id finds it (#332's second review).
         await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: now, children });
-        // This computer's records for the id go too: a later install under it is never pinned, and never runs a revoked
-        // tree on this one's override.
-        if (o.indexes !== undefined) {
-          o.indexes.setPinned(id, false);
-          o.indexes.setOverride(id, undefined);
-          o.indexes.setRemovedBlock(id, undefined);
-        }
+        // This computer's record for the id goes too: a later install under it is never pinned.
+        o.indexes?.setPinned(id, false);
         rmSync(folder, { recursive: true, force: true });
         await folders.refresh(folder);
         // Forgotten above: the folder's going leaves nothing to record, and no update of it comes back.
@@ -368,10 +316,10 @@ export function pluginRegistryMethods(o: {
         return { id: id as never, state: raised.state, treeHash, ...(raised.card !== undefined ? { card: raised.card } : {}) };
       };
       if (source.from === "index") {
-        // From a signed index (§5.1): its id and tree hash as the index lists them, never a revoked tree.
+        // From an index (§5.1): its id and tree hash as the index lists them; its OK card decides.
         const src = source as { from: "index"; id: string; version?: string; index?: string };
         const done = await installFromIndex({
-          ...target, client: o.indexes!, ...(o.revocations ? { revocations: o.revocations } : {}),
+          ...target, client: o.indexes!,
           id: src.id, ...(src.version !== undefined ? { version: src.version } : {}), ...(src.index !== undefined ? { index: src.index } : {}),
           adultConfirmed: registry.adultConfirmed,
         });
@@ -379,10 +327,10 @@ export function pluginRegistryMethods(o: {
         return raise(done.id, done.treeHash);
       }
       if (source.from === "npm") {
-        // From npm (§5.1): unpacked as it is, its bytes checked against npm's integrity record, never a revoked tree.
+        // From npm (§5.1): unpacked as it is, its bytes checked against npm's integrity record; its OK card decides.
         const src = source as { from: "npm"; name: string; version?: string };
         const done = await installFromNpm({
-          ...target, client: o.indexes!, ...(o.revocations ? { revocations: o.revocations } : {}),
+          ...target, client: o.indexes!,
           name: src.name, ...(src.version !== undefined ? { version: src.version } : {}),
         });
         await folders.installed(done.id, by, { npm: done.npm });
@@ -416,14 +364,13 @@ export function pluginRegistryMethods(o: {
     [M.pluginUpdate.name]: handler(M.pluginUpdate, async ({ id, list, card }, ctx) => {
       const user = requireUser(ctx, "update a plugin");
       if (o.updater === undefined || o.indexes === undefined) notServed("plugin.update", "this computer has no index client");
-      // The indexes now, then the updates: every unpinned index plugin's, or the one the user names. `list`: what is
-      // newer, each offered with why, nothing applied.
+      // The indexes now, then the updates: without an id (or with `list`), what is newer, each offered with why, nothing
+      // applied; with an id, the user's click on that plugin's update, which applies it.
       // One update card per plugin: while one waits, asking again raises nothing.
       const waiting = id !== undefined && card === true && list !== true ? updateCards.get(id) : undefined;
       if (waiting !== undefined) return { updated: [], offered: [{ id: id!, ...waiting, why: "already waiting for your yes on its card" }] };
       await o.indexes!.refresh();
-      // From the Plugins page (main sets `card`): an update that runs on the old OK and isn't the official index's asks on
-      // a sealed card first. The call answers at once (offered, "waiting for your yes on its card"); the yes applies that
+      // From the Plugins page (main sets `card`): an update that runs on the old OK asks on a sealed card first. The call answers at once (offered, "waiting for your yes on its card"); the yes applies that
       // tree, and only that one, by a check of its own, so an unanswered card never holds the updater's turn.
       const confirm = card === true
         ? async (c: { id: string; from: string; to: string; source: string; treeHash: string }): Promise<boolean | "asked" | "pending"> => {
@@ -455,12 +402,7 @@ export function pluginRegistryMethods(o: {
       for (const u of r.updated) if (registry.get(u.id)?.state === "found") await registry.installed(u.id, user.client === "cli" ? "cli" : "app");
       return { updated: r.updated, ...(r.offered.length > 0 ? { offered: r.offered } : {}), ...(r.failed.length > 0 ? { failed: r.failed } : {}) };
     }),
-    [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({
-      indexes: (o.indexes?.list() ?? []).map((i) => {
-        const rev = o.revocations?.status(i.url);
-        return { ...i, ...(rev !== undefined ? { revocations: rev } : {}) };
-      }),
-    })),
+    [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: o.indexes?.list() ?? [] })),
     [M.pluginIndexSearch.name]: handler(M.pluginIndexSearch, ({ query, limit }) => {
       if (o.indexes === undefined) return { entries: [] };
       const entries = o.indexes.search({ ...(query !== undefined ? { query } : {}), ...(limit !== undefined ? { limit } : {}), adultConfirmed: registry.adultConfirmed });
@@ -478,59 +420,24 @@ export function pluginRegistryMethods(o: {
         }),
       };
     }),
-    // Another index, by URL with its keys, after a warning (§5.1, §14.2 item 25): plugins from it aren't reviewed by
-    // the official index. In the user's own terminal the CLI shows the warning; from the app it's a sealed card.
-    [M.pluginIndexAdd.name]: handler(M.pluginIndexAdd, async ({ url, keys }, ctx) => {
-      const user = requireUser(ctx, "add a plugin index");
+    // Another index, by its https URL (§5.1; the owner's ruling, 2026-11-13): a plain list, unsigned. Adding one runs
+    // nothing, so no card: each plugin installed from it asks for its OK as every install does.
+    [M.pluginIndexAdd.name]: handler(M.pluginIndexAdd, async ({ url }, ctx) => {
+      requireUser(ctx, "add a plugin index");
       const indexes = o.indexes;
       if (indexes === undefined) notServed("plugin.index.add", "this computer has no index client");
-      const checked = httpsUrl(url);
-      const add = async () => {
-        indexes!.add(checked, keys);
-        await indexes!.refresh(checked);
-        // Its revocation list, for the plugins installed from it.
-        void o.revocations?.check();
-      };
-      if (user.client === "cli") {
-        await add();
-        return { applied: true as const };
-      }
-      if (o.openCard === undefined) notServed("adding a plugin index from the app", "this computer's approval broker isn't running; `clover plugin index add <url> <key>` in your terminal adds it");
-      const opened = await o.openCard!({
-        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-index",
-        fields: {
-          title: { type: "text", text: "Add a plugin index?" },
-          detail: { type: "list", items: [checked, "Plugins from it aren't reviewed by Clover's official index. Each still asks for your OK before it runs.", ...keys.map((k, i) => `Key${keys.length > 1 ? ` ${i + 1}` : ""}, to compare with the one the index publishes: ${keyFingerprint(k)}`)] },
-        },
-      });
-      onYes(opened.card, "plugin-index", opened.allowed, async () => {
-        await add();
-        return undefined;
-      });
-      if (opened.card === undefined) {
-        if (!(await opened.allowed)) throw new ContractError("refused", "the index wasn't added");
-        return { applied: true as const };
-      }
-      return { applied: false as const, card: opened.card };
+      const checked = indexes!.add(httpsUrl(url));
+      await indexes!.refresh(checked);
+      return { applied: true as const };
     }),
     [M.pluginIndexRemove.name]: handler(M.pluginIndexRemove, async ({ url, card }, ctx) => {
       requireUser(ctx, "remove a plugin index");
       if (o.indexes === undefined) throw new ContractError("not_found", `${url} isn't one of your indexes`);
       const checked = httpsUrl(url);
       const plainName = (r: PluginRecord) => (typeof r.name === "string" ? r.name : r.id);
-      const remove = () => {
-        // A block its list holds on an installed plugin stays (the controller's ruling): kept for that exact tree, with
-        // the reason, marked as from an index since removed; only the override card lifts it.
-        for (const r of registry.list()) {
-          if (r.parent !== undefined || r.treeHash === undefined) continue;
-          const v = o.revocations?.verdict({ id: r.id, treeHash: r.treeHash, version: r.version, provenance: r.provenance });
-          if (v?.index === checked) o.indexes!.setRemovedBlock(r.id, { treeHash: r.treeHash, by: `${v.by}, since removed`, reason: v.reason });
-        }
-        o.indexes!.remove(checked);
-        void o.revocations?.check();
-      };
+      const remove = () => o.indexes!.remove(checked);
       // From the Plugins page (main sets `card`): when plugins installed from it are here, a sealed card says they get no
-      // more updates or revocations from it.
+      // more updates from it.
       const from = registry.list().filter((r) => r.parent === undefined && r.provenance.index?.url === checked);
       if (card !== true || from.length === 0) {
         remove();
@@ -542,7 +449,7 @@ export function pluginRegistryMethods(o: {
         kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-index-remove",
         fields: {
           title: { type: "text", text: "Remove this index?" },
-          detail: { type: "list", items: [checked, `${from.length} installed plugin${from.length === 1 ? "" : "s"} came from it and will get no more updates or revocations from it: ${names.length > 1000 ? `${names.slice(0, 999)}…` : names}.`] },
+          detail: { type: "list", items: [checked, `${from.length} installed plugin${from.length === 1 ? "" : "s"} came from it and will get no more updates from it: ${names.length > 1000 ? `${names.slice(0, 999)}…` : names}.`] },
         },
       });
       onYes(opened.card, "plugin-index-remove", opened.allowed, () => {
@@ -557,8 +464,8 @@ export function pluginRegistryMethods(o: {
       return { applied: false as const, card: opened.card };
     }),
     [M.pluginPin.name]: handler(M.pluginPin, ({ id, pinned }, ctx) => {
-      // The user's alone: a layer reaches this as a plugin (its `change` passes the gate for the handler to decide),
-      // and a pin it moved would let new code in on the old OK, or keep fixes out.
+      // The user's alone: a layer reaches this as a plugin (its `change` passes the gate for the handler to decide). A
+      // pinned plugin isn't offered updates (the owner's ruling, 2026-11-13: nothing updates on its own).
       requireUser(ctx, "pin a plugin");
       if (o.indexes === undefined) notServed("plugin.pin", "this computer has no index client");
       const r = must(id);

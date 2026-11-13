@@ -3848,10 +3848,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       indexes: { cacheDir: join(cloverHome, "plugins-state", "index-cache") },
     });
     partsRegistry = opened;
-    // The plugin indexes and their revocation lists (§5.1): read from their last good copies before the first scan
-    // (`indexes` above), then checked now and every 6 hours; a failure keeps the copies.
+    // The plugin indexes the user added (§5.1): read from their last good copies (`indexes` above), then fetched once now;
+    // a failure keeps the copies. Nothing updates on its own (the owner's ruling, 2026-11-13): the Plugins page lists
+    // the updates and the user's click applies one.
     const pluginIndexes = opened.indexes;
-    opened.revocations?.start();
+    void pluginIndexes?.refresh();
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
     workshopFolders = () => [
       ...opened.registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot !== undefined).map((r) => r.folder),
@@ -3925,9 +3926,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
-      // Its sealed cards (a development folder from the app, an added index, running a revoked plugin anyway) ask on the
+      // Its sealed cards (a development folder from the app, a removal or an update from the Plugins page) ask on the
       // daemon's one broker once the parts are up (`pluginsBroker`); before, they wait for it, bounded.
-      ...pluginRegistryMethods({ onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
+      ...pluginRegistryMethods({ onRestart: (id) => notices.userRestarted(id), opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), openCard: brokerCardOpener(pluginsBroker), emit: (event) => void cloverServer?.coreEvent(event), log: (line) => console.error(line), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.updater ? { updater: opened.updater } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;

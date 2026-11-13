@@ -73,12 +73,11 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
       expect(reg.entries("triggers").map((c) => [c.entryId, c.state])).toEqual([["webhook", "active"]]);
     });
 
-    test("invalid, blocked and stopped plugins say why, and contribute nothing", () => {
+    test("invalid and stopped plugins say why, and contribute nothing", () => {
       const reg = make({
-        plugins: [{ ...webhook, invalid: "needs a newer Clover (plugin API ^2.0.0)" }, { ...forwarder, blocked: "revoked by the official index: malware" }],
+        plugins: [{ ...webhook, invalid: "needs a newer Clover (plugin API ^2.0.0)" }],
       });
       expect(reg.get("webhook")).toMatchObject({ state: "invalid", reason: "needs a newer Clover (plugin API ^2.0.0)", manifest: undefined });
-      expect(reg.get("forwarder")).toMatchObject({ state: "blocked", reason: "revoked by the official index: malware" });
       expect(reg.entries("triggers")).toEqual([]);
       const ok = make({ plugins: [webhook] });
       ok.setStopped("webhook", "crashed 3 times in 10 minutes");
@@ -176,9 +175,9 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
       expect(await reg.installed("island", "cli")).toEqual({ state: "running" });
     });
 
-    test("a plugin's granted capabilities are its OK's: none before it, after a refusal or a block (F-M3's text gate)", async () => {
+    test("a plugin's granted capabilities are its OK's: none before it, after a refusal or when invalid (F-M3's text gate)", async () => {
       const withCaps = { ...webhook, manifest: { ...webhook.manifest, capabilities: ["conversation.read", "files"] } };
-      const reg = make({ plugins: [{ ...withCaps, approved: false }, { id: "gone", manifest: m({ name: "Gone", capabilities: ["files"] }), blocked: "malware" }] });
+      const reg = make({ plugins: [{ ...withCaps, approved: false }, { id: "gone", manifest: m({ name: "Gone", capabilities: ["files"] }), invalid: "no manifest format" }] });
       expect(reg.get("webhook")).toMatchObject({ state: "found", capabilities: ["conversation.read", "files"], granted: [] });
       expect(reg.get("gone")).toMatchObject({ capabilities: ["files"], granted: [] });
       await reg.approve("webhook", hashOf(reg, "webhook"));
@@ -200,7 +199,6 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
           { ...island },
           { id: "clover", manifest: m({ name: "Clover" }), source: "bundled" },
           { id: "bad", manifest: m({ name: "Bad" }), invalid: "no manifest format" },
-          { id: "gone", manifest: m({ name: "Gone" }), blocked: "malware" },
           { id: "no", manifest: m({ name: "No" }), approved: false },
         ],
       });
@@ -214,9 +212,9 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
       expect(reg.get("island")?.state).toBe("off");
       expect(await reg.setEnabled("island", true)).toEqual({ applied: true });
       expect(reg.get("island")?.state).toBe("running");
-      // Refused: blocked, refused and invalid plugins, either way, and switching Clover's own plugin off.
+      // Refused: refused and invalid plugins, either way, and switching Clover's own plugin off.
       await reg.refuse("no");
-      for (const [id, on] of [["bad", true], ["bad", false], ["gone", true], ["gone", false], ["no", true], ["no", false], ["clover", false]] as const) {
+      for (const [id, on] of [["bad", true], ["bad", false], ["no", true], ["no", false], ["clover", false]] as const) {
         const code = await reg.setEnabled(id, on).then(() => "ok", (e: { code?: string }) => e.code);
         expect([id, on, code]).toEqual([id, on, "refused"]);
       }

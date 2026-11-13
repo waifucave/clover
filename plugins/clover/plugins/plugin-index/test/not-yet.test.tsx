@@ -47,7 +47,7 @@ describe("a plugin not available in this build yet", () => {
       settings: [{ key: "origin", title: "Origin", secret: false, value: "x", control: { kind: "text", value: "x" } }],
       signIns: [{ index: 0, method: "api-key", signedIn: false, state: "signed-out" }], log: ["a line"], pinned: false, updates: true, agents: [], notifies: true, muted: false,
     };
-    render(<Detail plugin={p} onBack={() => {}} onSwitch={() => void switched++} onRestart={() => void restarted++} onPin={() => {}} onMute={() => {}} onRemove={() => void removed++} onKey={() => {}} onSignIn={() => {}} onSignOut={() => {}} onRunAnyway={() => {}} onSetting={() => {}} />);
+    render(<Detail plugin={p} onBack={() => {}} onSwitch={() => void switched++} onRestart={() => void restarted++} onPin={() => {}} onMute={() => {}} onRemove={() => void removed++} onKey={() => {}} onSignIn={() => {}} onSignOut={() => {}} onSetting={() => {}} />);
     expect(screen.getByRole("status").textContent).toBe("Not available in this build yet");
     for (const name of [S.turnOn, S.turnOff, S.restart, S.remove, S.holdBack, S.letThrough, S.mute, S.unmute]) expect(screen.queryByRole("button", { name })).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
@@ -67,7 +67,7 @@ describe("a plugin not available in this build yet", () => {
       id: "clover", name: "Clover", source: "Comes with Clover", state: "running", enabled: true, dev: false, children: ["Shell", "waifucave forwarder"],
       notYetParts: ["waifucave forwarder"], provenance: "", oks: [], tools: [], servers: [], settings: [], signIns: [], log: [], pinned: false, updates: false, agents: [], notifies: false, muted: false,
     };
-    render(<Detail plugin={p} onBack={() => {}} onSwitch={() => {}} onRestart={() => {}} onRemove={() => {}} onKey={() => {}} onSignIn={() => {}} onSignOut={() => {}} onRunAnyway={() => {}} />);
+    render(<Detail plugin={p} onBack={() => {}} onSwitch={() => {}} onRestart={() => {}} onRemove={() => {}} onKey={() => {}} onSignIn={() => {}} onSignOut={() => {}} />);
     expect(screen.getByRole("heading", { name: "Parts not available in this build yet" })).toBeTruthy();
     expect(document.querySelector("[data-not-yet-parts]")?.textContent).toBe("waifucave forwarder");
   });

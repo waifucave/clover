@@ -264,14 +264,14 @@ describe("Clover connections (C-M1)", () => {
     expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
     expect((await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error).toBeUndefined();
     // Each state in which its host half wouldn't run: the frame's connection is still open, and gets nothing.
-    for (const [enabled, state] of [[false, "off"], [true, "stopped"], [true, "blocked"], [true, "invalid"], [true, "refused"]] as const) {
+    for (const [enabled, state] of [[false, "off"], [true, "stopped"], [true, "invalid"], [true, "refused"]] as const) {
       records.tarot = { ...records.tarot!, enabled, state };
       records.friend = { ...records.friend!, enabled, state };
       expect([state, (await tarot.request("session.list", {})).error.code]).toEqual([state, CLOVER_ERR.CAPABILITY_REFUSED]);
       expect([state, (await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error.data]).toEqual([state, expect.objectContaining({ code: "refused" })]);
     }
     // A change waiting for its new OK: what the registry says for its process. Held until the OK (found, nothing granted):
-    // nothing. The old version still running on the old OK (an official index's update): the old grant.
+    // nothing. The old version still running on the old OK (an update waiting for its OK): the old grant.
     records.tarot = { enabled: true, state: "found", granted: [] };
     expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
     records.tarot = { enabled: true, state: "running", granted: ["conversation.read"] };

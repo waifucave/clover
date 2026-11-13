@@ -67,7 +67,7 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   // holds it (macOS with the sandbox on, as `openPluginRegistry` decides); checked for another OS, the fence isn't known.
   const here = opts.os === undefined || opts.os === (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
   const hostNetworkHeld = here && opts.os === "macos" && pluginFenceAvailable();
-  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards, restylesWindow: tree.restylesWindow, hostNetworkHeld, ...(here ? { sandboxed: pluginFenceAvailable() } : {}) }), ...hookOkLines([tree.top, ...tree.children.map((c) => c.report)]), ...agentEnvLines(folder, tree)] : [];
+  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), restylesCards: tree.restylesCards, restylesWindow: tree.restylesWindow, hostNetworkHeld, ...(here ? { sandboxed: pluginFenceAvailable() } : {}) }), ...hookOkLines([tree.top, ...tree.children.map((c) => c.report)]), ...agentEnvLines(folder, tree)] : [];
   return {
     folder,
     ok: hash !== undefined && tree.ok && issues.every((i) => i.severity !== "error"),

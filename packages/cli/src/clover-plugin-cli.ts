@@ -45,7 +45,7 @@ export const PLUGIN_USAGE = [
   "       clover plugin wrap <mcp-config|mcp-url|skill-folder|agent-file|claude-plugin> <file|folder|url|json>",
   "       clover plugin enable <id> | disable <id> | restart <id> | remove <id> [--yes]",
   "       clover plugin update [<id>] | pin <id> | unpin <id>",
-  "       clover plugin index list | index add <url> <key> | index remove <url>",
+  "       clover plugin index list | index add <url> | index remove <url>",
   "       clover plugin dev <folder> | dev add <folder> | dev list | dev remove <folder> | dev renew <folder>",
   "       clover plugin logs <id> [-n <lines>]",
   `       clover plugin new <${Object.keys(PLUGIN_TEMPLATES).join("|")}> [<folder>] [--name <name>]`,
@@ -400,19 +400,18 @@ async function runUpdate(args: readonly string[], call: CloverPluginCall): Promi
 }
 
 async function runIndex(args: readonly string[], call: CloverPluginCall): Promise<CliRun> {
-  const usage = "usage: clover plugin index list | index add <url> <key> | index remove <url>";
+  const usage = "usage: clover plugin index list | index add <url> | index remove <url>";
   const [sub, ...rest] = args;
   try {
     if (sub === "list" && rest.length === 0) {
-      const { indexes } = (await call("plugin.index.list", {})) as { indexes: { url: string; name?: string; official: boolean; lastCheckedAt?: number; error?: string; stale?: boolean }[] };
-      if (!indexes.some((i) => i.official)) indexes.unshift({ url: "(none)", name: "Clover's index: the official index isn't set up in this build", official: true });
-      return { code: 0, output: indexes.map((i) => `${i.official ? "official  " : "added     "}${i.url}${i.name ? `  ${i.name}` : ""}${i.error ? `  last check failed: ${i.error}` : ""}${i.stale ? "  stale" : ""}`).join("\n") };
+      const { indexes } = (await call("plugin.index.list", {})) as { indexes: { url: string; name?: string; lastCheckedAt?: number; error?: string }[] };
+      if (indexes.length === 0) return { code: 0, output: "no indexes added; add one with: clover plugin index add <url>" };
+      return { code: 0, output: indexes.map((i) => `${i.url}${i.name ? `  ${i.name}` : ""}${i.error ? `  last check failed: ${i.error}` : ""}`).join("\n") };
     }
-    if (sub === "add" && rest.length === 2) {
-      const [url, key] = rest as [string, string];
-      if (!/^[0-9a-f]{64}$/.test(key)) return fail("the key is the index's Ed25519 public key, 64 hex characters", 2);
-      await call("plugin.index.add", { url, keys: [key] });
-      return { code: 0, output: `added ${url}: plugins from it aren't reviewed by Clover; each still asks for your OK` };
+    if (sub === "add" && rest.length === 1) {
+      const [url] = rest as [string];
+      await call("plugin.index.add", { url });
+      return { code: 0, output: `added ${url}: each plugin from it asks for your OK before it runs` };
     }
     if (sub === "remove" && rest.length === 1) {
       await call("plugin.index.remove", { url: rest[0] });
@@ -435,7 +434,7 @@ async function runInfo(args: readonly string[], call: CloverPluginCall): Promise
     const from = p.provenance.index ? `the index ${p.provenance.index.url}` : p.provenance.npm ? `npm (${p.provenance.npm.name})` : p.provenance.wrapped ? `a wrapped ${p.provenance.wrapped.from}` : p.source;
     const lines = [
       `${name} (${p.id}) ${p.version}`,
-      `state: ${p.state}${p.reason ? `: ${p.reason}` : ""}${p.pinned ? "; updates held back" : ""}`,
+      `state: ${p.state}${p.reason ? `: ${p.reason}` : ""}${p.pinned ? "; pinned: no updates offered" : ""}`,
       `from: ${from}, added by ${p.provenance.by}`,
       `may: ${[...p.capabilities, ...p.networkHosts.map((h) => `reach ${h}`), ...(p.provenance.wrapped?.network === "any" ? ["reach any host (a wrapped server)"] : []), ...(p.provenance.wrapped?.reads ?? []).map((r) => `read ${r}`)].join(", ") || "nothing beyond its own parts"}`,
       `tools: ${servers.flatMap(([, s]) => Object.keys(s.tools ?? {})).join(", ") || "none listed"}${servers.length > 0 ? ` (servers: ${servers.map(([n]) => n).join(", ")})` : ""}`,
@@ -478,7 +477,7 @@ export async function runPluginCommand(verb: string, args: readonly string[], ca
     case "unpin": {
       const id = oneId(args, `usage: clover plugin ${verb} <id>`);
       if (typeof id !== "string") return id;
-      return simple("plugin.pin", { id, pinned: verb === "pin" }, verb === "pin" ? `${id} stays at its version` : `${id} updates again`);
+      return simple("plugin.pin", { id, pinned: verb === "pin" }, verb === "pin" ? `${id} stays at its version; no updates are offered for it` : `${id} is offered updates again`);
     }
     case "remove":
       return runRemove(args, call, io);

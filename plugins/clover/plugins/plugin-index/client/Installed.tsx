@@ -1,32 +1,29 @@
 // The Plugins page's first tab: what is installed, grouped (what needs the user, what is on, what is off) and
 // searchable, and one plugin opened: what it is, where it came from, what its OK lets it do, the tools it gives, its
-// settings (a key only as saved or not, entered in the app's own key dialog), its sign-ins and its log. Removing it,
-// signing out and running a revoked one anyway ask on a sealed card the core raises; the page says so.
+// settings (a key only as saved or not, entered in the app's own key dialog), its sign-ins and its log. Removing it and
+// signing out ask on a sealed card the core raises; the page says so.
 import { useEffect, useState } from "react";
 import { CloverMark, IconPlugin, IconSearch } from "./icons";
 import { S } from "./strings";
 import type { DetailProps, DetailSetting, InstalledGroup, InstalledPlugin, InstalledProps } from "./types";
 
-// A revoked plugin (blocked: by an index's revocation list, or one kept since that index was removed) is its own group,
-// first, with its reason: the list never offers to turn it on (only its detail's "Run it anyway…", the warning card).
 const GROUP_OF: Record<InstalledPlugin["state"], InstalledGroup> = {
-  found: "attention", refused: "attention", invalid: "attention", stopped: "attention", blocked: "revoked",
+  found: "attention", refused: "attention", invalid: "attention", stopped: "attention",
   running: "on", waiting: "on", off: "off",
 };
-const GROUPS: InstalledGroup[] = ["revoked", "attention", "on", "off"];
+const GROUPS: InstalledGroup[] = ["attention", "on", "off"];
 
 /** A state in words, with its reason when the reason says more ("Waiting for your OK: waiting for your OK" doesn't). */
 export function stateText(state: InstalledPlugin["state"], reason: string | undefined): string {
-  const words = state === "blocked" ? S.revoked : S.stateWords[state];
+  const words = S.stateWords[state];
   return reason && reason.trim().toLowerCase() !== words.toLowerCase() ? `${words}: ${reason}` : words;
 }
 
-/** The plugins that match a search (name or id, any case), by group, each group by name; `revokedOnly` keeps only
- *  the revoked ones. */
-export function groupInstalled(plugins: readonly InstalledPlugin[], query: string, revokedOnly = false): { group: InstalledGroup; plugins: InstalledPlugin[] }[] {
+/** The plugins that match a search (name or id, any case), by group, each group by name. */
+export function groupInstalled(plugins: readonly InstalledPlugin[], query: string): { group: InstalledGroup; plugins: InstalledPlugin[] }[] {
   const q = query.trim().toLowerCase();
   const hit = (p: InstalledPlugin) => q === "" || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || p.children.some((c) => c.toLowerCase().includes(q));
-  return GROUPS.filter((g) => !revokedOnly || g === "revoked").map((group) => ({
+  return GROUPS.map((group) => ({
     group,
     plugins: plugins.filter((p) => GROUP_OF[p.state] === group && hit(p)).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
   })).filter((g) => g.plugins.length > 0);
@@ -49,7 +46,7 @@ export function PluginIcon({ icon }: { icon: InstalledPlugin["icon"] }) {
 function StateBadge({ state }: { state: InstalledPlugin["state"] }) {
   const group = GROUP_OF[state];
   return (
-    <span className="cl-plugin-index__badge" data-state={state} data-tone={group === "revoked" ? "danger" : group === "attention" ? "attention" : group === "on" ? "accent" : undefined}>
+    <span className="cl-plugin-index__badge" data-state={state} data-tone={group === "attention" ? "attention" : group === "on" ? "accent" : undefined}>
       {S.groups[group]}
     </span>
   );
@@ -63,7 +60,6 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         <span className="cl-plugin-index__name">
           {p.name}
           {p.dev && <span className="cl-plugin-index__badge" data-tone="attention">{S.dev}</span>}
-          {p.state === "blocked" && <span className="cl-plugin-index__badge" data-tone="danger">{S.revokedBadge}</span>}
         </span>
         <span className="cl-plugin-index__meta">
           {[p.id, p.version, p.source, p.children.length > 0 ? S.children(p.children.length) : undefined].filter(Boolean).join(" · ")}
@@ -72,7 +68,7 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         {p.notYet && <span className="cl-plugin-index__description" data-not-yet="">{S.notYet}</span>}
         {!p.notYet && p.notYetParts !== undefined && p.notYetParts.length > 0 && <span className="cl-plugin-index__line" data-not-yet-parts="">{S.notYetPartsLine(p.notYetParts.length)}</span>}
         {(GROUP_OF[p.state] !== "on" && GROUP_OF[p.state] !== "off" || p.state === "waiting") && (
-          <span className="cl-plugin-index__description" data-tone={p.state === "blocked" || p.state === "invalid" ? "danger" : "attention"}>
+          <span className="cl-plugin-index__description" data-tone={p.state === "invalid" ? "danger" : "attention"}>
             {stateText(p.state, p.reason)}
           </span>
         )}
@@ -87,27 +83,13 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
 }
 
 export function Installed(props: InstalledProps) {
-  const [revokedOnly, setRevokedOnly] = useState(false);
-  const revoked = props.plugins.filter((p) => p.state === "blocked").length;
-  const groups = groupInstalled(props.plugins, props.query, revokedOnly && revoked > 0);
+  const groups = groupInstalled(props.plugins, props.query);
   return (
     <>
       <form className="cl-plugin-index__search" role="search" onSubmit={(e) => e.preventDefault()}>
         <IconSearch />
         <input className="cl-plugin-index__search-input" type="search" aria-label={S.installedSearch} placeholder={S.installedSearch} value={props.query} onChange={(e) => props.onQuery(e.target.value)} />
       </form>
-      {revoked > 0 && (
-        <div className="cl-plugin-index__row" role="radiogroup" aria-label={S.show}>
-          <label className="cl-plugin-index__choice">
-            <input type="radio" name="cl-plugin-index-show" checked={!revokedOnly} onChange={() => setRevokedOnly(false)} />
-            {S.showAll}
-          </label>
-          <label className="cl-plugin-index__choice">
-            <input type="radio" name="cl-plugin-index-show" checked={revokedOnly} onChange={() => setRevokedOnly(true)} />
-            {S.showRevoked(revoked)}
-          </label>
-        </div>
-      )}
       {props.loading ? (
         <p className="cl-plugin-index__note" role="status">
           {S.loading}
@@ -205,20 +187,14 @@ export function Detail(props: DetailProps) {
           <StateBadge state={p.state} />
         </div>
         <div className="cl-plugin-index__actions">
-          {p.state === "blocked" ? (
-            p.revoked && (
-              <button type="button" className="cl-plugin-index__button" onClick={props.onRunAnyway}>
-                {S.runAnyway}
-              </button>
-            )
-          ) : (
+          {
             // Not available in this build yet: no switch, no restart, pin or remove (the state line says why).
             p.state !== "found" && p.state !== "invalid" && !p.notYet && (
               <button type="button" className="cl-plugin-index__button" onClick={() => props.onSwitch(!p.enabled)}>
                 {p.enabled ? S.turnOff : S.turnOn}
               </button>
             )
-          )}
+          }
           {(on || p.state === "stopped") && (
             <button type="button" className="cl-plugin-index__button" onClick={props.onRestart}>
               {S.restart}
@@ -241,12 +217,11 @@ export function Detail(props: DetailProps) {
       {p.description && <p className="cl-plugin-index__intro">{p.description}</p>}
       {p.notYet ? (
         <p className="cl-plugin-index__state-line" data-state={p.state} data-not-yet="" role="status">{S.notYet}</p>
-      ) : (GROUP_OF[p.state] === "revoked" || GROUP_OF[p.state] === "attention" || p.state === "waiting" || p.reason) && (
+      ) : (GROUP_OF[p.state] === "attention" || p.state === "waiting" || p.reason) && (
         <p className="cl-plugin-index__state-line" data-state={p.state} role="status">
-          {p.state === "blocked" ? `${S.stateWords.blocked}${p.reason ? `: ${p.reason}` : ""}` : stateText(p.state, p.reason)}
+          {stateText(p.state, p.reason)}
         </p>
       )}
-      {p.state === "blocked" && <p className="cl-plugin-index__note">{S.blockedNote}</p>}
       {p.notYetParts !== undefined && p.notYetParts.length > 0 && (
         <Section title={S.notYetParts}>
           <ul className="cl-plugin-index__facts" data-not-yet-parts="">

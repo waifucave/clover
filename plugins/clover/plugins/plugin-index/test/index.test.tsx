@@ -73,27 +73,27 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
 const rows = () => within(screen.getByRole("list", { name: "Results" })).getAllByRole("listitem");
 
 describe("the plugin index", () => {
-  test("results name their index, their newest version and whether they are reviewed", () => {
+  test("results name their index and their newest version", () => {
     const results = toResults(ENTRIES, INDEXES);
-    expect(results.map((r) => [r.id, r.indexName, r.version, r.official])).toEqual([
-      ["tarot-panel", "Clover index", "1.2.0", true],
-      ["weather-routine", "Clover index", "0.3.1", true],
-      ["chibi-pack", "Clover index", "2.1.0", true],
-      ["terminal-plus", "Friends' plugins", "0.9.0", false],
-      ["story-mode", "Friends' plugins", "0.1.0", false],
+    expect(results.map((r) => [r.id, r.indexName, r.version])).toEqual([
+      ["tarot-panel", "Community plugins", "1.2.0"],
+      ["weather-routine", "Community plugins", "0.3.1"],
+      ["chibi-pack", "Community plugins", "2.1.0"],
+      ["terminal-plus", "Friends' plugins", "0.9.0"],
+      ["story-mode", "Friends' plugins", "0.1.0"],
     ]);
   });
 
-  test("lists every result, marks what is installed, newer, unreviewed or for adults, and the indexes", async () => {
+  test("lists every result, marks what is installed, newer or for adults (no review mark), and the indexes", async () => {
     await mount();
-    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Tarot panel", "Weather routine", "Chibi pack", "Terminal plusNot reviewed", "Story mode18+Not reviewed"]);
+    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Tarot panel", "Weather routine", "Chibi pack", "Terminal plus", "Story mode18+"]);
     expect(rows()[0]!.textContent).toContain("Installed 1.2.0");
     expect(rows()[2]!.textContent).toContain("2.1.0 available");
     expect(within(rows()[1]!).getByRole("button", { name: "Install Weather routine" })).toBeTruthy();
     const indexes = within(screen.getByRole("list", { name: "Indexes" })).getAllByRole("listitem");
     expect(indexes.map((i) => i.textContent)).toEqual([
-      "Clover indexOfficialhttps://github.com/waifucave/clover-index · Checked 12 min ago",
-      "Friends' pluginsNot reviewedhttps://plugins.example.net/index.json · Checked 3 h ago",
+      "Community pluginshttps://plugins.example.org/index.json · Checked 12 min ago",
+      "Friends' pluginshttps://plugins.example.net/index.json · Checked 3 h ago",
     ]);
   });
 
@@ -124,7 +124,7 @@ describe("the plugin index", () => {
     const { core } = await mount({ spot: "panel", key: "terminal" });
     expect(screen.getByRole("note").textContent).toContain("Looking for a plugin for the terminal panel.");
     expect(core.calls.find((c) => c.method === "plugin.index.search")?.params).toEqual({ query: "terminal", limit: 50 });
-    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Terminal plusNot reviewed"]);
+    expect(rows().map((r) => r.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Terminal plus"]);
   });
 
   test("the tabs: Installed and Find plugins", async () => {
@@ -142,16 +142,14 @@ describe("the Plugins page: what is installed", () => {
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);
-    expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
-    expect(names("Revoked")).toEqual(["Story modeRevoked"]);
-    expect(names("Needs you")).toEqual(["My panelIn development", "Weather routine"]);
+    expect(groupNames()).toEqual(["Needs you", "On", "Off"]);
+    expect(names("Needs you")).toEqual(["My panelIn development", "Story mode", "Weather routine"]);
     expect(names("On")).toEqual(["Clover", "linear", "Tarot panel"]);
     expect(names("Off")).toEqual(["Terminal plus"]);
     const clover = screen.getByRole("button", { name: "Open Clover" }).closest("li")!;
     expect(clover.textContent).toContain("2 parts");
     const story = screen.getByRole("button", { name: "Open Story mode" }).closest("li")!;
-    expect(story.textContent).toContain("Revoked: revoked by Friends' plugins");
-    // The list never offers to turn it on: only Open (its detail's override card).
+    expect(story.textContent).toContain("Can't load: needs a newer Clover");
     expect(within(story).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open"]);
   });
 
@@ -213,15 +211,6 @@ describe("the Plugins page: what is installed", () => {
   test("a picture only from the plugin's own files: never a remote one, an absolute path or a step out", () => {
     expect(iconUrl("tarot", "a/b.png")).toBe("/_t/tarot/a/b.png");
     for (const bad of ["https://x.example/a.png", "data:image/png;base64,AA", "/etc/a.png", "../a.png", "a//b.png", "a/../../b.png", ""]) expect(iconUrl("tarot", bad)).toBeUndefined();
-  });
-
-  test("a revoked filter: only the revoked ones, with their reason (one kept since its index was removed among them)", async () => {
-    await mount({});
-    fireEvent.click(screen.getByRole("radio", { name: "Revoked (1)" }));
-    expect(groupNames()).toEqual(["Revoked"]);
-    expect(screen.getByRole("list", { name: "Revoked" }).textContent).toContain("revoked by Friends' plugins");
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-    expect(groupNames()).toEqual(["Revoked", "Needs you", "On", "Off"]);
   });
 
   test("the search narrows by name, id or a part's name", async () => {
@@ -388,13 +377,11 @@ describe("the Plugins page: what is installed", () => {
     expect(screen.getByRole("tab", { name: "Installed" })).toBeTruthy();
   });
 
-  test("a revoked plugin says it is blocked and offers to run it anyway, on its warning card", async () => {
-    const { core } = await mount({ id: "story-mode" });
-    expect(screen.getByRole("status").textContent).toContain("Blocked: revoked by Friends' plugins");
-    expect(screen.queryByRole("button", { name: "Turn on" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Run it anyway…" }));
-    await act(() => settle());
-    expect(core.calls.find((c) => c.method === "plugin.setEnabled")?.params).toEqual({ id: "story-mode", enabled: true });
+  test("no plugin is revoked or run anyway: no such group, filter or button (the owner's ruling, 2026-11-13)", async () => {
+    await mount({ id: "story-mode" });
+    expect(screen.getByRole("status").textContent).toContain("needs a newer Clover");
+    expect(screen.queryByRole("button", { name: /anyway/i })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/revoked|reviewed|official/i);
   });
 });
 
@@ -466,35 +453,23 @@ describe("the Plugins page: updates and indexes", () => {
     expect(core.calls.find((c) => c.method === "plugin.pin")?.params).toEqual({ id: "mcp-linear", pinned: false });
   });
 
-  test("indexes: the official slot says this build has none; each added one with its health; add by address and key, remove on its card", async () => {
+  test("indexes: each added one with its health; add by address alone, remove on its card", async () => {
     const { core } = await mount({ tab: "indexes" });
-    // The fixtures' first index is marked official: a build with none shows the plain sentence instead.
-    expect(screen.getByRole("region", { name: "Clover's index" }).textContent).toContain("Clover index");
+    expect(screen.queryByRole("region", { name: "Clover's index" })).toBeNull();
     const yours = within(screen.getByRole("list", { name: "Indexes you added" })).getAllByRole("listitem");
-    expect(yours[0]!.textContent).toContain("Checked 3 h ago");
+    expect(yours.map((y) => y.querySelector(".cl-plugin-index__name")?.textContent)).toEqual(["Community plugins", "Friends' plugins"]);
+    expect(yours[1]!.textContent).toContain("Checked 3 h ago");
     fireEvent.click(screen.getByRole("button", { name: "Remove Friends' plugins" }));
     await act(() => settle());
     expect(core.calls.find((c) => c.method === "plugin.index.remove")?.params).toEqual({ url: INDEXES[1]!.url });
     expect(screen.getByRole("status").textContent).toBe("Answer the card to go on.");
     const add = screen.getByRole("button", { name: "Add index" }) as HTMLButtonElement;
-    fireEvent.change(screen.getByRole("textbox", { name: "Index address (https://…)" }), { target: { value: "https://plugins.example.org/index.json" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Its signing key (64 hex characters)" }), { target: { value: "not a key" } });
     expect(add.disabled).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: "Its signing key (64 hex characters)" }), { target: { value: "a".repeat(64) } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Index address (https://…)" }), { target: { value: "https://plugins.example.com/index.json" } });
+    expect(screen.queryByRole("textbox", { name: /key/i })).toBeNull();
     fireEvent.click(add);
     await act(() => settle());
-    expect(core.calls.find((c) => c.method === "plugin.index.add")?.params).toEqual({ url: "https://plugins.example.org/index.json", keys: ["a".repeat(64)] });
-  });
-
-  test("a build with no official index says so", async () => {
-    const core = fakeCore({ "plugin.list": () => ({ plugins: [], adultConfirmed: false }), "plugin.index.list": () => ({ indexes: [INDEXES[1]!] }) });
-    render(
-      <UiRuntimeProvider runtime={runtimeWith({ core: () => core })}>
-        <PluginIndexEntry props={{ route: "plugins", params: { tab: "indexes" }, now: NOW }} />
-      </UiRuntimeProvider>,
-    );
-    await act(() => settle());
-    expect(screen.getByText("The official index isn't set up in this build.")).toBeTruthy();
+    expect(core.calls.find((c) => c.method === "plugin.index.add")?.params).toEqual({ url: "https://plugins.example.com/index.json" });
   });
 
   test("the detail holds an index plugin's updates back, or lets them through", async () => {
