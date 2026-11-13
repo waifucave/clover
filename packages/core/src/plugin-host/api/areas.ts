@@ -116,7 +116,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   const engine = () => side().routines ?? notRunning("the routine engine");
   const usageWatches = new Map<string, number>();
   /** The utterances plugins are playing now, by id: whose, which bot's figure, and the next piece. */
-  const playing = new Map<string, { pluginId: string; bot: string; session: string; utterance: string; next: number; idle?: ReturnType<typeof setTimeout> }>();
+  const playing = new Map<string, { pluginId: string; bot: string; session: string; utterance: string; next: number; format?: string; idle?: ReturnType<typeof setTimeout> }>();
   /** The memory folder of `bot`, if the caller may read it: its own bot's always, any bot's with `memory.read`. */
   /** Whether `bot` is the plugin's own LIVE bot: its id is the plugin's top-level id and the bot side has it now. A
    *  folder or routine a removed bot left is no plugin's own (a plugin installed later under the same id doesn't
@@ -436,6 +436,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       const now = u;
       if (now.idle !== undefined) clearTimeout(now.idle);
       const format = a.format;
+      now.format = format;
       for (let at = 0; at < a.data.length; at += PIECE_BYTES) {
         await send({ bot: now.bot, session: now.session, utterance: now.utterance, seq: now.next++, audio: Buffer.from(a.data.subarray(at, at + PIECE_BYTES)).toString("base64"), format, final: false });
       }
@@ -656,6 +657,18 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
   return {
     handlers,
     async forget(pluginId) {
+      // Its utterances end now (their last piece, as the idle timer would send it 30 s later): its sound stops and
+      // their slots free as it stops or is removed.
+      for (const [id, u] of [...playing]) {
+        if (u.pluginId !== pluginId) continue;
+        if (u.idle !== undefined) clearTimeout(u.idle);
+        playing.delete(id);
+        try {
+          await s.voicePlay?.({ bot: u.bot, session: u.session, utterance: u.utterance, seq: u.next++, audio: "", format: (u.format ?? "pcm16-24k") as never, final: true });
+        } catch {
+          // the app's player is gone: nothing is playing there
+        }
+      }
       for (const [id, t] of [...terminals]) {
         if (t.pluginId !== pluginId) continue;
         t.stop?.();

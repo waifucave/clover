@@ -119,7 +119,7 @@ How to read it:
 | `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do | moves your bot's figure |  |
 | `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | reports your bots' figures | Clover's own plugins only |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
-| `audio` | Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on | hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices | a warning |
+| `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices | hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices | a warning |
 | `call:<plugin-id>` | Run that plugin's commands | runs commands of {plugin} |  |
 | `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards | Clover's own plugins only |
 | `network:<host>` | Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host | connects to {host} |  |

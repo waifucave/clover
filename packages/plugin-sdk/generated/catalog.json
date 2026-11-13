@@ -147,7 +147,7 @@
     },
     {
       "name": "audio",
-      "lets": "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on",
+      "lets": "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices",
       "ok": "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
       "warns": true
     },

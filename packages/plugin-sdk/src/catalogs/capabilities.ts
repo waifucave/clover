@@ -54,7 +54,7 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
-  { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices", warns: true },
+  { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from

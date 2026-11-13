@@ -17,6 +17,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { VoiceService, type VoicePlay } from "../../voices/service";
 import { startPluginHost } from "../daemon-host";
+import { areasParts } from "../api/areas";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
@@ -139,4 +140,28 @@ describe("audio.* in a real plugin host", () => {
       opened.close();
     }
   }, 120_000);
+});
+
+describe("audio.play when its plugin stops", () => {
+  test("forget ends the plugin's open utterances at once (their last piece), and leaves another plugin's playing", async () => {
+    const sent: VoicePlay[] = [];
+    const { handlers, forget } = areasParts({
+      bots: () => ({ bots: { has: () => true } }) as unknown as BotSide,
+      node: () => undefined, links: () => undefined, voicePlay: (p) => void sent.push(p),
+    });
+    const ctx = (pluginId: string) => ({ pluginId, process: "shared", caller: { kind: "plugin", pluginId }, record: { granted: ["audio"] }, path: "audio.play" }) as never;
+    const luna = `pa_${crypto.randomUUID()}`;
+    const sol = `pa_${crypto.randomUUID()}`;
+    await handlers["audio.play"]!(ctx("luna"), [{ format: "opus", data: new Uint8Array(4) }, {}, { utterance: luna }]);
+    await handlers["audio.play"]!(ctx("sol"), [{ format: "mp3", data: new Uint8Array(4) }, {}, { utterance: sol }]);
+    expect(sent.filter((p) => p.final)).toEqual([]);
+    await forget("luna");
+    expect(sent.filter((p) => p.final).map((p) => [p.utterance, p.seq, p.format, p.audio])).toEqual([[luna, 1, "opus", ""]]);
+    // Its slot is free: the same name starts a new utterance of its own, from seq 0.
+    sent.length = 0;
+    await handlers["audio.play"]!(ctx("luna"), [{ format: "opus", data: new Uint8Array(4) }, {}, { utterance: luna }]);
+    expect(sent.map((p) => p.seq)).toEqual([0]);
+    await forget("luna");
+    await forget("sol");
+  });
 });
