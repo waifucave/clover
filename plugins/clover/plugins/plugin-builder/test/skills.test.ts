@@ -243,7 +243,8 @@ describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => 
     expect(sdk).toContain('const FILL_SPOTS: readonly string[] = ["main", "panel", "avatar"];');
     expect(sdk).toContain('const FILL_STYLE: CSSProperties = { height: "100%", flex: "1 1 0", minHeight: 0 };');
     expect(sdk).toContain('...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` })');
-    expect(sdk).toContain('if (m.type === "child-size" && m.child === item.mount) setHeight(m.height);');
+    // A frame's reported height becomes its height (b-tab-flash also notes the drawn url in the same branch).
+    expect(sdk).toMatch(/if \(m\.type === "child-size" && m\.child === item\.mount\) \{?\s*setHeight\(m\.height\);/);
     expect(sdk).toContain("for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);");
     expect(sdk).toContain('style={{ display: "contents" }}');
     expect(read("apps/desktop/src/layer/layer.css")).toContain('html[data-clover-spot="main"] body, html[data-clover-spot="panel"] body { overflow: auto; }');
