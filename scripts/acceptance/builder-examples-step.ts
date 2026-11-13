@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readExamples, type Example } from "../../plugins/clover/plugins/plugin-builder/test/examples";
 import { callTurn, fail, leave, until, type ExampleCtx } from "./example-steps";
-import { drawn, openSettingsSection, openSidebarEntry, reloadsSettled } from "./window-open";
+import { drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
 
 export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) and ex-buddy's header and side panel on its bot's tab are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from Alpha; each removed afterwards";
 
@@ -106,29 +106,19 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   };
 
   await check("ex-settings", async () => {
-    await openSettingsSection(ctx, "Ex settings");
-    const d = await drawn(ctx, "ex-settings", "Hello from Ex settings.", "its Settings section");
+    const d = await drawnInSettings(ctx, "Ex settings", "ex-settings", "Hello from Ex settings.", "its Settings section");
     return `its Settings section drawn ("${d.text.trim().slice(0, 60)}")`;
   });
   await check("ex-point", async () => {
-    await openSettingsSection(ctx, "Ex point");
-    const d = await until("ex-point's section", 40_000, async () => {
-      for (const x of await cdp.documents()) {
-        if (x.url.startsWith("clover-plugin://ex-point") && (await cdp.evaluate(x.session, "!!document.querySelector('ul')").catch(() => false)) === true) return x;
-      }
-      return undefined;
-    });
-    void d;
+    await drawnInSettings(ctx, "Ex point", "ex-point", "", "its Settings section", "!!document.querySelector('ul')");
     return "its Settings section drawn (a list no plugin fills yet)";
   });
   await check("ex-board and ex-board-widget", async () => {
-    await openSettingsSection(ctx, "Ex board");
-    const w = await drawn(ctx, "ex-board-widget", "Hello from a small widget", "ex-board-widget's widget inside ex-board's section");
+    const w = await drawnInSettings(ctx, "Ex board", "ex-board-widget", "Hello from a small widget", "ex-board-widget's widget inside ex-board's section");
     return `ex-board's Settings section drawn with ex-board-widget's widget inside it, handed its props ("${w.text.trim().slice(0, 40)}")`;
   });
   await check("ex-buddy's child", async () => {
-    await openSettingsSection(ctx, "Ex buddy");
-    const d = await drawn(ctx, "ex-buddy", "Ex buddy has nothing to set yet.", "its child's Settings section");
+    const d = await drawnInSettings(ctx, "Ex buddy", "ex-buddy", "Ex buddy has nothing to set yet.", "its child's Settings section");
     return `its child plugin's Settings section drawn (${d.url.slice(0, 60)})`;
   });
   await check("ex-status", async () => {

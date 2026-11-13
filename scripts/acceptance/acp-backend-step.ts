@@ -140,7 +140,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
   const result = await until("the agent's call of the Clover server", 60_000, async () => reportOf(report).find((x) => x.type === "mcp-result"));
   if (result.isError === true) fail(`the Clover server's Glossary answered an error: ${String(result.text).slice(0, 300)}`);
   const text = String(result.text);
-  if (text.trim() === "") fail("the Clover server's Glossary answered nothing");
+  if (!text.includes('"kind": "tool"')) fail(`the Clover server's Glossary listed no tool: "${text.replace(/\s+/g, " ").slice(0, 300)}"`);
   // The session's own conversation carries the call too (the agent's tool call, completed).
   const finished = await until("the turn to end", 60_000, async () => ((await history()).some((e) => e.type === "turn_completed") ? true : undefined),
     async () => `events: ${(await history()).slice(-6).map((e) => String(e.type)).join(", ")}`);

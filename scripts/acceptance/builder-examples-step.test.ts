@@ -14,8 +14,8 @@ afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true
 
 test("the row is in the table and installs every example of the builder's skill, a declarer before its fillers", () => {
   expect(FULL_STEPS).toContain(BUILDER_EXAMPLES_STEP);
-  expect([...INSTALL_ORDER].sort()).toEqual(readExamples().map((e) => e.folder).sort());
-  const at = (id: string) => INSTALL_ORDER.indexOf(id as (typeof INSTALL_ORDER)[number]);
+  expect([...(INSTALL_ORDER as readonly string[])].sort()).toEqual(readExamples().map((e) => e.folder).sort());
+  const at = (id: string) => (INSTALL_ORDER as readonly string[]).indexOf(id);
   expect(at("ex-board")).toBeLessThan(at("ex-board-widget"));
   expect(at("ex-fit")).toBeLessThan(at("ex-fit-tile"));
 });

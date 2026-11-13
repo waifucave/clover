@@ -10,7 +10,7 @@
 // Both are removed afterwards (the second first), whatever happened.
 import { escape, fail, leave, until, type ExampleCtx } from "./example-steps";
 import { cardsOf, ok, pluginOf, stepOf } from "./workshop-step";
-import { drawn, openSettingsSection } from "./window-open";
+import { drawnInSettings, isLayerOf, openSettingsSection, reloadsSettled } from "./window-open";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 
 export const WORKSHOP_POINTS_STEP = "a bot builds a plugin that takes plugins: Alpha builds a plugin with a point (PluginNew, Write, PluginValidate, PluginInstall) and a second plugin that fills it; the first one's Settings section in the window shows nothing until the second's OK card is pressed, then its entry";
@@ -49,6 +49,8 @@ async function pressOk(ctx: ExampleCtx, id: string, card: { id: string }): Promi
     const s = (await pluginOf(ctx, id))?.state;
     return s === "running" || s === "enabled" ? true : undefined;
   }, async () => `it is ${(await pluginOf(ctx, id))?.state ?? "gone"}`);
+  // A plugin with UI loads the window's document again to frame its layer: what the row opens next waits for that.
+  await reloadsSettled(ctx);
 }
 
 export async function workshopPointsStep(ctx: ExampleCtx, session: string): Promise<string> {
@@ -94,14 +96,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   const items = (d: { session: string }) => ctx.cdp.evaluate(d.session, "JSON.stringify([...document.querySelectorAll('li')].map((e) => e.textContent))").then((v) => JSON.parse(String(v)) as string[]);
   // Its section in Settings is drawn (a list with no item yet).
   await stepOf("1b. its Settings section is drawn in the window with no item", async () => {
-    await openSettingsSection(ctx, BOARD_NAME);
-    const d = await until(`${BOARD_ID}'s section`, 40_000, async () => {
-      for (const x of await ctx.cdp.documents()) {
-        if (!x.url.startsWith(`clover-plugin://${BOARD_ID}`)) continue;
-        if ((await ctx.cdp.evaluate(x.session, "!!document.querySelector('ul')").catch(() => false)) === true) return x;
-      }
-      return undefined;
-    });
+    const d = await drawnInSettings(ctx, BOARD_NAME, BOARD_ID, "", `${BOARD_ID}'s section`, "!!document.querySelector('ul')");
     const now = await items(d);
     if (now.length > 0) fail(`its section lists ${JSON.stringify(now)} before any plugin fills the point`);
     done.push("1b its Settings section drawn by its own layer, a list with no item");
@@ -116,7 +111,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await openSettingsSection(ctx, BOARD_NAME);
     await new Promise((r) => setTimeout(r, 2_000));
     for (const x of await ctx.cdp.documents()) {
-      if (!x.url.startsWith(`clover-plugin://${BOARD_ID}`)) continue;
+      if (!isLayerOf(x.url, BOARD_ID)) continue;
       if ((await ctx.cdp.evaluate(x.session, "!!document.querySelector('ul')").catch(() => false)) !== true) continue;
       const now = await items(x);
       if (now.length > 0) fail(`its section lists ${JSON.stringify(now)} while ${ITEM_ID} waits for its OK`);
@@ -128,8 +123,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   await stepOf("3. its OK card pressed, the first plugin's section shows its entry", async () => {
     await escape(ctx.cdp);
     await pressOk(ctx, ITEM_ID, itemCard);
-    await openSettingsSection(ctx, BOARD_NAME);
-    await drawn(ctx, BOARD_ID, ITEM_TITLE, `${BOARD_ID}'s section listing ${ITEM_ID}'s entry`);
+    await drawnInSettings(ctx, BOARD_NAME, BOARD_ID, ITEM_TITLE, `${BOARD_ID}'s section listing ${ITEM_ID}'s entry`);
     done.push(`3 ${ITEM_ID}'s OK card pressed: ${BOARD_ID}'s section lists "${ITEM_TITLE}", drawn by its own layer`);
   });
   return done.join("; ");
