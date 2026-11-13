@@ -4124,7 +4124,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const httpSettings = filePluginSettings(cloverHome);
     const httpMcp = new HttpMcpOpener({
       registry: host.registry, settings: (id) => httpSettings.read(id), secrets: (id) => host.pluginSecrets.forPlugin(id),
-      fetch: pinnedFetch(httpSeam), localFetch: pinnedFetch(httpSeam, { localNames: true }), log: (line) => console.error(`[plugins] ${line}`),
+      // A local URL (this computer's own loopback, `localNames`) is never the outside world the test seam stands in for:
+      // it is reached for real, as in a release build (14f's third table: the seam refused the run's fixture server).
+      fetch: pinnedFetch(httpSeam), localFetch: pinnedFetch(undefined, { localNames: true }), log: (line) => console.error(`[plugins] ${line}`),
     });
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({
