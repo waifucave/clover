@@ -21,6 +21,7 @@ import * as settings from "@clover-child/settings";
 import * as shell from "@clover-child/shell";
 import * as sidebar from "@clover-child/sidebar";
 import * as usage from "@clover-child/usage";
+import * as devices from "@clover-child/devices";
 import * as vrm from "@clover-child/vrm";
 import { IslandHosted, Live2dAvatarHosted, PillHosted, VrmAvatarHosted } from "./hosts";
 import type { CloverChildId } from "./ids";
@@ -43,6 +44,7 @@ export const modules: Record<CloverChildId, Record<string, unknown>> = {
   "clover/island": { ...island, IslandApp: IslandHosted },
   "clover/pill": { ...pill, PillApp: PillHosted },
   "clover/usage": usage,
+  "clover/devices": devices,
   // The avatars hear the app's language only through their installed translator (lane G's ask).
   "clover/vrm": { ...vrm, VrmAvatar: VrmAvatarHosted },
   "clover/live2d": { ...live2d, Live2dAvatarEntry: Live2dAvatarHosted },

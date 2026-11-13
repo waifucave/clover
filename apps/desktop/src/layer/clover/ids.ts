@@ -20,6 +20,7 @@ export const modules = [
   "clover/pill",
   "clover/vrm",
   "clover/usage",
+  "clover/devices",
 ] as const;
 
 export type CloverChildId = (typeof modules)[number];
