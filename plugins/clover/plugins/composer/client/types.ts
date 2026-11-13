@@ -26,6 +26,10 @@ export interface ComposerModel {
   detail?: string;
   /** The provider holds a key or a sign-in now (`models.list`'s `signedIn`). */
   signedIn?: boolean;
+  /** The effort levels this model takes (`models.list`'s `efforts`); none: it has no effort setting. */
+  efforts?: string[];
+  /** The level the provider uses when none is chosen. */
+  defaultEffort?: string;
 }
 
 /** The bot's model and effort, changeable at any time; the next turn uses them (spec §6.3). */
@@ -33,7 +37,10 @@ export interface ComposerModelChoice {
   model: string;
   effort?: string;
   models: ComposerModel[];
+  /** The current model's effort levels; the menu's Effort section shows when there are any. */
   efforts?: string[];
+  /** The level in use while none is chosen: ticked in the menu, not shown on the pill. */
+  defaultEffort?: string;
   onChange: (choice: { model: string; effort?: string }) => void;
 }
 

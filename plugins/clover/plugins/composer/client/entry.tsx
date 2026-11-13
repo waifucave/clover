@@ -53,14 +53,19 @@ function modelsOf(catalog: unknown): ComposerModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
   return list.flatMap((m) => {
-    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown; plugin?: unknown; signedIn?: unknown };
+    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown; plugin?: unknown; signedIn?: unknown; efforts?: unknown; defaultEffort?: unknown };
     if (typeof o.id !== "string") return [];
     const label = typeof o.label === "string" ? o.label : typeof o.name === "string" ? o.name : o.id;
     const provider = typeof o.providerName === "string" ? o.providerName : typeof o.provider === "string" ? o.provider : undefined;
     // A model a third-party plugin brings says which plugin it comes from; Clover's own (the `clover` tree) don't.
     const from = typeof o.plugin === "string" && o.plugin.split("/")[0] !== "clover" ? o.plugin : undefined;
     const detail = from === undefined ? provider : provider === undefined ? S.modelFrom(from) : `${provider} · ${S.modelFrom(from)}`;
-    return [{ id: o.id, label, ...(detail !== undefined ? { detail } : {}), ...(typeof o.signedIn === "boolean" ? { signedIn: o.signedIn } : {}) }];
+    const efforts = Array.isArray(o.efforts) ? o.efforts.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+    return [{
+      id: o.id, label, ...(detail !== undefined ? { detail } : {}), ...(typeof o.signedIn === "boolean" ? { signedIn: o.signedIn } : {}),
+      ...(efforts.length > 0 ? { efforts } : {}),
+      ...(typeof o.defaultEffort === "string" && efforts.includes(o.defaultEffort) ? { defaultEffort: o.defaultEffort } : {}),
+    }];
   });
 }
 
@@ -96,6 +101,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const current = kind === "bot" ? bot?.model : session?.model;
   const effort = kind === "bot" ? bot?.effort : session?.effort;
   const models = modelsOf(catalog);
+  const currentModel = models.find((m) => m.id === current);
   const [commands, setCommands] = useState<SlashCommand[] | undefined>(undefined);
   const [slashResult, setSlashResult] = useState<ComposerSlash["result"]>(undefined);
 
@@ -139,9 +145,14 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
           model: current,
           ...(effort ? { effort } : {}),
           models: models.some((m) => m.id === current) ? models : [{ id: current, label: current }, ...models],
-          onChange: ({ model: next, effort: nextEffort }) => {
+          ...(currentModel?.efforts ? { efforts: currentModel.efforts } : {}),
+          ...(currentModel?.defaultEffort ? { defaultEffort: currentModel.defaultEffort } : {}),
+          onChange: ({ model: next, effort: asked }) => {
             // The core's composer spot decides what a switch is (a bot's user layer, or the session's own model).
             setNotice(undefined);
+            // A level goes with the model only when that model takes it; one that doesn't gets its own default.
+            const to = models.find((m) => m.id === next);
+            const nextEffort = to?.efforts !== undefined && asked !== undefined && !to.efforts.includes(asked) ? to.defaultEffort : asked;
             host.setModel(next, nextEffort).then(() => setRev((n) => n + 1), () => setNotice(S.modelRefused));
           },
         }

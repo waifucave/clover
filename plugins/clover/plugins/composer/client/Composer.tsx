@@ -525,7 +525,7 @@ export function Composer(props: ComposerProps) {
                   items: model.efforts.map((effort) => ({
                     id: `effort-${effort}`,
                     label: effort,
-                    checked: effort === model.effort,
+                    checked: effort === (model.effort ?? model.defaultEffort),
                     onPick: () => model.onChange({ model: model.model, effort }),
                   })),
                 },

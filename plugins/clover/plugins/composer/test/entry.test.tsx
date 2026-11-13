@@ -1,6 +1,6 @@
 // The composer on the runtime: sends, stops, model and level changes through the core.
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { card, computerView, fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { BotView, ComputerView, EntryComponent, SessionView } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
@@ -14,7 +14,7 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; refuse?: string; kept?: Map<string, string>; models?: { id: string; name: string; providerName: string; plugin?: string; signedIn?: boolean; efforts?: string[]; defaultEffort?: string }[]; listen?: { listens: boolean; start?: () => { note?: string } | Promise<{ note?: string }>; stop?: () => { text?: string; note?: string } | Promise<{ text?: string; note?: string }> }; commands?: SlashCommand[]; run?: (name: string, args: unknown) => unknown; tokens?: Record<string, number> } = {}) {
   const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
   // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
   const host: string[][] = [];
@@ -174,6 +174,33 @@ describe("the composer entry", () => {
     expect(screen.getAllByRole("menuitemradio")).toHaveLength(4);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
     expect(host).toEqual([["setModel", "xai/grok-5", "medium"]]);
+  });
+
+  test("the model menu offers the current model's effort levels; a pick sets it, and a model that lacks the level gets its own default", async () => {
+    const { host } = await mount(session({}), {
+      models: [
+        { id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI", signedIn: true, efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+        { id: "moonshot/kimi-k3", name: "Kimi K3", providerName: "Moonshot", signedIn: true, efforts: ["low", "max"], defaultEffort: "low" },
+        { id: "xai/grok-5", name: "Grok 5", providerName: "xAI", signedIn: true },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    const levels = () => screen.getAllByRole("menuitemradio").filter((e) => ["low", "medium", "high", "max"].includes((e.textContent ?? "").trim()));
+    expect(levels().map((e) => (e.textContent ?? "").trim())).toEqual(["low", "medium", "high"]);
+    expect(levels().find((e) => e.getAttribute("aria-checked") === "true")?.textContent?.trim()).toBe("medium");
+    fireEvent.click(levels()[2]!);
+    expect(host).toEqual([["setModel", "openai/gpt-6", "high"]]);
+    // Kimi K3 has no "high": it gets its own default, not a level it would refuse.
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Model:.*high/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Kimi K3/ }));
+    expect(host.at(-1)).toEqual(["setModel", "moonshot/kimi-k3", "low"]);
+  });
+
+  test("a model with no effort setting shows no Effort section", async () => {
+    await mount(session({}), { models: [{ id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI", signedIn: true }] });
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(1);
   });
 
   test("a model a third-party plugin brings names that plugin; Clover's own don't", async () => {
