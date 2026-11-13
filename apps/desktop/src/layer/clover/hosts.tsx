@@ -7,8 +7,8 @@
 // to install the plugin's own translator with the app's `useT()` (lane G's ask, G-M3's `setTranslator`), so their
 // words come in the user's language with English beneath.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, useApprovals, useAvatarControl, useAvatarSpeech, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
-import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
+import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, Spot, useApprovals, useAvatarControl, useAvatarSpeech, useMountContext, usePluginApi, useSurface, useSpotEntries, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type IslandTabEntry, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
 import { coalesced } from "./coalesce";
 import { islandCards } from "./cards";
 import { usePillBots } from "./pill-bots";
@@ -84,10 +84,21 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
   const surface = useSurface();
   const window: SurfaceHostApi = useCoalesced(surface);
   const approvals = useApprovals();
+  // The `island.tab` entries (Usage, the island's own Devices, a plugin's): each tab draws its one entry by its ref.
+  const tabEntries = useSpotEntries("island.tab").entries;
+  const tabs = useMemo(() => tabEntries.map((e): IslandTabEntry => ({
+    id: e.id,
+    title: typeof e.fields["title"] === "string" ? e.fields["title"] : e.id,
+    pluginId: e.pluginId,
+    pluginName: e.pluginName,
+    ...(e.fields["attention"] === "never" || e.fields["attention"] === "badge" || e.fields["attention"] === "expand" ? { attention: e.fields["attention"] } : {}),
+    render: () => <Spot name="island.tab" only={e.ref} />,
+  })), [tabEntries]);
   const host: IslandHost | undefined = environment === undefined ? undefined : {
     environment,
     window,
     cards: islandCards(approvals.cards),
+    tabs,
     t,
   };
   if (host === undefined) return null;
