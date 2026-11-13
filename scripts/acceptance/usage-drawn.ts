@@ -72,10 +72,10 @@ export async function settingsUsageText(cdp: Cdp): Promise<string> {
 
 /** The island's Usage tab, chosen on its tab dots while the island is open (a card is pending), and its drawn text. */
 export async function islandUsageText(cdp: Cdp): Promise<string> {
-  const here = async () => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/island") || d.url.startsWith("clover-plugin://clover/usage"));
+  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
   await clickIn(cdp, "the island's Usage tab dot", '[role=tab][aria-label="Usage"]', undefined, 20_000).catch(async (err: unknown) => {
     const seen: string[] = [];
-    for (const d of await here()) seen.push(`${d.url.slice(0, 60)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 120) : ''").catch(() => "")).slice(0, 120)}`);
+    for (const d of await here()) seen.push(`${d.url.slice(0, 60)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 300) : ''").catch(() => "")).slice(0, 700)}`);
     throw new Error(`${(err as Error).message} (the island's documents: ${seen.join(" | ") || "none"})`);
   });
   return until("the Usage tab's drawn text", 20_000, async () => {
