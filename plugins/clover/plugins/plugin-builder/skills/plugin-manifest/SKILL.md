@@ -28,7 +28,7 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 | `platforms` | no | Where its code runs: some of `darwin-arm64`, `windows-x64`, `linux-x64`, `linux-arm64`; default all. |
 | `adult` | no | `true` keeps the whole tree off until the user confirms they are 18+. |
 | `enabledByDefault` | no | Children only (default `true`): `false` ships it off until the user turns it on. |
-| `scope` | no | Who gets its tools, skills, agents and hooks: `bots`, `agents` or `both` (default). |
+| `scope` | no | Who gets its tools, skills, agents and hooks: `bots` (bots and the agents they start), `agents` (every agent, no bot), `both` (default), or `own-bot` (a bot's plugin: only its own bot and that bot's agents). |
 | `onlyBackends` | no | Only these agent backends receive it, e.g. `["claude-code"]`. Rarely needed. |
 | `host` | for host code | `{ "entry": "host/index.ts", "runtime": "bun" }`; see below. |
 | `client` | for components | `{ "entry": "client/index.ts", "css": ["client/style.css"], "isolated": true }`: `isolated` (default false) makes its pages cross-origin isolated, for `SharedArrayBuffer`; see plugin-ui. |

@@ -76,6 +76,6 @@ Never put a tool that changes anything outside the plugin's display on either li
 3. Keep files the plugin makes in its data folder (no capability). When it needs the user's own files, ask for
    `files` and work on what the user picks (plugin-ui, "Files and media"), not on paths it chooses itself.
 4. One network host, named exactly, rather than several; none if the plugin can work offline.
-5. A bot's plugin: `scope: "own-bot"` on hooks, and no `model` unless the bot needs a particular one.
+5. A bot's plugin: `scope: "own-bot"` on the plugin (its persona: skills, agents, hooks) or on its hooks, and no `model` unless the bot needs a particular one.
 6. Mark read-only tools `readOnly` and display-only tools `contained`, honestly; the card names them.
 7. Say all of it to the user before the install, in plain words, so the card holds no surprise.

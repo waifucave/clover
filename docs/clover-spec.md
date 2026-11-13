@@ -230,6 +230,8 @@ These are **not** pluggable [D]. Plugins can extend them only through the declar
 * **[P] Crashes and logs:** a crashed worker restarts after 1 second, the delay doubling up to 1 minute. After 3 crashes in 10 minutes the plugin stops on that computer, its tools answer "plugin stopped: <reason>", and Settings shows its last log lines until the user restarts it. A worker that misses the plugin host's heartbeat for 30 seconds counts as crashed. A folder holding a native module runs in a process of its own (§5.2). Each plugin logs to `logs/plugins/<id>.log`, which Settings and `clover plugin logs` show.
 * **[D] Each plugin declares its scope: `bots`, `agents` or `both`.**
   * Scope covers a plugin's MCP servers, skills, agent definitions and hooks, and defaults to `both`.
+  * **[P] One rule everywhere** (hooks, a bot's Glossary, MCP servers, an agent's bridge and the parts placed in an agent's own folders): `bots` reaches a bot's own sessions (its conversation, side threads) and the agents a bot delegates to, since they do that bot's work; `agents` reaches every agent, a bot's and the user's own coding sessions (§9.3), and no bot's own session; `both` reaches all of them.
+  * **[P] A bot plugin may scope its own parts to itself:** `own-bot`, on the plugin or on one hook, reaches only the sessions of the bots its tree contributes and the agents they delegate to, never another bot, another bot's agent or the user's coding sessions. A bot's persona (its skills, its hooks) is that bot's. An `own-bot` server is served only on its own computer.
   * A plugin may also limit itself to certain agent backends (`onlyBackends`), for example only Claude Code. **[P]** An agent session on a backend the list leaves out gets none of the plugin's MCP servers, skills, agent definitions or hooks; a session Clover's own runtime drives (a bot's delegation on Clover's agent, the user's coding session) is on the backend `clover`. Bots aren't agent backends: the list never narrows what a bot gets.
   * The user can override the scope in settings.
   * An agent definition can narrow which in-scope plugins its agent receives.
@@ -609,7 +611,7 @@ interface Manifest {
   platforms?: Platform[];           // code runs only on these; default all
   adult?: boolean;                  // whole tree; off until the user confirms they are 18+
   enabledByDefault?: boolean;       // children only; default true
-  scope?: Scope;                    // default "both"; covers mcpServers, skills, agents, hooks
+  scope?: Scope | "own-bot";        // default "both"; covers mcpServers, skills, agents, hooks; own-bot: a bot plugin's own (§5.1)
   onlyBackends?: string[];          // only these Agent backends receive it, e.g. ["claude-code"]
   host?: { entry: Path; runtime?: "bun" | "node";   // bun = a worker in the plugin host; node = its own process, Clover's own plugins only (§5.6, the load guard)
            start?: "each" | "main" | "chosen";     // starts at once there (§5.2); otherwise only when needed
@@ -772,7 +774,7 @@ interface Ui {
 **[D] What a bot can change:**
 
 * **The harness owns the system prompt.** It enforces fixed blocks (tools, safety, memory, devices…). A bot plugin supplies only its **`<bot-instructions>`** block: who the bot is, how it talks, what it cares about.
-* **There are no tools specific to a bot.** Every bot has the same tools and sees every installed plugin, MCP server and skill scoped to bots (§5.1). Tools, skills or hooks that come inside a bot's plugin serve every bot.
+* **There are no tools specific to a bot.** Every bot has the same tools and sees every installed plugin, MCP server and skill scoped to bots (§5.1). Tools, skills or hooks that come inside a bot's plugin serve every bot, unless the plugin scopes them to its own bot (`own-bot`, §5.1).
 * **[D] MCP server instructions go into the system prompt.** The instructions every enabled MCP server gives (in `initialize`, or from `server/discover` under MCP 2026-07-28) are always included, whether its tools are preloaded or on-demand, in a harness-owned block.
   * **[D] The block is rebuilt only at compaction,** so the prompt cache is not thrown away every time something changes. It lists installed and enabled servers, not only connected ones: a server on a sleeping computer stays listed, and its tools answer "computer offline". Servers added between compactions, and a repo's own servers, arrive as an appended note in the conversation at the next turn and move into the system prompt at the next compaction.
   * **[P] When the cache has already expired,** the next turn rebuilds the MCP block, the devices block and the `computer` lists without compacting, since there is no cache left to save. A conversation under the compaction threshold would otherwise never rebuild.

@@ -1,0 +1,10 @@
+{
+  "type": "plugin_api_event",
+  "ts": 1781270000000,
+  "pluginId": "luna",
+  "watch": "w_1",
+  "value": {
+    "type": "changed",
+    "path": "notes/today.md"
+  }
+}

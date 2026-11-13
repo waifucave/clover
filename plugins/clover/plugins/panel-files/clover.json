@@ -25,6 +25,22 @@
         "component": "FilesEntry",
         "when": {
           "session": "coding"
+        },
+        "declares": {
+          "file.preview": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "mediaType": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     ]

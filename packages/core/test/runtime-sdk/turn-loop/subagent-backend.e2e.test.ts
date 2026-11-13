@@ -255,7 +255,8 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       expect(readFileSync(open, "utf8")).toBe("rewritten-by-the-hook");
       expect(asks.map((a) => (a.rawInput as { content?: string }).content)).toEqual(["rewritten-by-the-hook"]);
       expect(r[2]!.content).toContain("the hook's view of the file");
-      expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["agent:Write", "agent:Write", "agent:Read"]);
+      // No bot named: the user's own session on Clover's runtime, which the hooks see as `coding` (the manager's name).
+      expect(seen.map((x) => `${x.kind}:${x.tool}`)).toEqual(["coding:Write", "coding:Write", "coding:Read"]);
     } finally {
       await session.stop();
     }
@@ -386,7 +387,11 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
         callTool: async (_n: string, args: Record<string, unknown>) => { got.push(args); return { content: [{ type: "text", text: "sent" }] }; },
       },
     };
-    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN });
+    // The hooks' view of a delegation with no bot is the user's coding session (the manager's name for it). Only the
+    // hooks read that kind: SendMessage still goes over the bridge to the manager, which judges by its own record.
+    const seen: string[] = [];
+    const hooks: TurnHooks = { ...NO_HOOKS, toolBefore: async (s, tool, input) => { seen.push(`${s.kind}:${s.caller.kind === "session" ? s.caller.sessionKind : "?"}:${tool.name}`); return { input }; } };
+    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, hooks: () => hooks });
     expect(backend.inProcess).toBe(true);
     const session = await backend.start({ ...spec(root, "winter-test/calls"), inProcessBridge } as AgentStartSpec);
     session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
@@ -394,6 +399,7 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       const end = await session.prompt({ text: 'CALL mcp__clover_bridge__SendMessage {"to":"luna","message":"done"}' });
       expect(JSON.parse(end.text)[0].content).toBe("sent");
       expect(got).toEqual([{ to: "luna", message: "done" }]);
+      expect(seen).toEqual(["coding:coding:mcp__clover_bridge__SendMessage"]);
     } finally {
       await session.stop();
     }

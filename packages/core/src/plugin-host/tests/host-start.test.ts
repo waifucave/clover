@@ -85,6 +85,25 @@ describe("host.start", () => {
     }
   }, 60_000);
 
+  test("Restart on a running host half stops it and starts it again (its module runs a second time)", async () => {
+    const w = await world({ restartee: undefined });
+    const ph = await startPluginHost({ home: w.home, computer: "Studio", registry: w.opened.registry, secrets: w.secrets });
+    const ups = () => w.logOf("restartee").split("restartee is up").length - 1;
+    const ping = () => ph.host.invoke({ pluginId: "restartee", handler: "ping", args: null, caller: { kind: "user", client: "app" } });
+    try {
+      await w.approve("restartee");
+      expect(await ping()).toBe("pong");
+      await until(() => ups() === 1);
+      expect(ph.host.status("restartee").state).toBe("running");
+      await ph.host.restart("restartee");
+      expect(await ping()).toBe("pong");
+      await until(() => ups() === 2);
+    } finally {
+      await ph.close();
+      w.opened.close();
+    }
+  }, 60_000);
+
   test("a plugin already approved starts with the host; main waits for the main computer, starts there and is let go when it moves", async () => {
     const w = await world({ "svc-main": "main", "svc-each": "each" });
     // Approved under a first host, which is closed: the second finds them approved at its start.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { generatePkce, runLoginFlow, refreshTokens, decodeAccountId } from "../../src/providers/pkce";
+import { generatePkce, runLoginFlow, refreshTokens, decodeAccountId, TokenExchangeError } from "../../src/providers/pkce";
 
 let authServer: ReturnType<typeof Bun.serve> | null = null;
 afterEach(() => { authServer?.stop(true); authServer = null; });
@@ -122,5 +122,33 @@ describe("pkce", () => {
       openBrowser: async () => {},
     })).rejects.toThrow(/another login in progress/);
     blocker.stop(true);
+  });
+
+  test("a refusal carries its status and OAuth's error code; the exchange options send through the given fetch, give up at the timeout and never follow a redirect", async () => {
+    const via: string[] = [];
+    authServer = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) {
+      const path = new URL(req.url).pathname;
+      if (path === "/dead") return Response.json({ error: "invalid_grant", error_description: "revoked" }, { status: 400 });
+      if (path === "/busy") return new Response("slow down", { status: 429 });
+      if (path === "/moved") return new Response(null, { status: 302, headers: { location: `http://127.0.0.1:${authServer!.port}/ok` } });
+      if (path === "/slow") { await Bun.sleep(2_000); return Response.json({ access_token: "late" }); }
+      return Response.json({ access_token: "at_ok", expires_in: 60 });
+    } });
+    const base = `http://127.0.0.1:${authServer.port}`;
+    const send = (url: string, init: RequestInit) => { via.push(url); return fetch(url, init); };
+    const dead = await refreshTokens(`${base}/dead`, "c", "r", { fetch: send }).catch((e: unknown) => e);
+    expect(dead).toBeInstanceOf(TokenExchangeError);
+    expect(dead).toMatchObject({ status: 400, oauthError: "invalid_grant" });
+    expect((dead as Error).message).toStartWith("token exchange failed: HTTP 400");
+    expect(await refreshTokens(`${base}/busy`, "c", "r").catch((e: unknown) => e)).toMatchObject({ status: 429, oauthError: undefined });
+    expect(via).toEqual([`${base}/dead`]);
+    // Without noRedirect the platform follows it (the old behaviour); with it, the redirect is a refusal.
+    expect((await refreshTokens(`${base}/moved`, "c", "r")).accessToken).toBe("at_ok");
+    expect(await refreshTokens(`${base}/moved`, "c", "r", { noRedirect: true }).catch((e: unknown) => e)).toMatchObject({ status: 302 });
+    const t0 = Date.now();
+    const late = await refreshTokens(`${base}/slow`, "c", "r", { timeoutMs: 100 }).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(Error);
+    expect(late).not.toBeInstanceOf(TokenExchangeError);
+    expect(Date.now() - t0).toBeLessThan(1_500);
   });
 });

@@ -6,6 +6,7 @@
 // lists every folder shown. The folder's name and its computer sit in the panel's header row.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { previewTypeOf } from "./media";
 import { FilesPanel, FilesTitle } from "./FilesPanel";
 import type { FilesWithWatch } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
@@ -30,7 +31,7 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
   const files = api.files as FilesWithWatch | undefined;
   const [where, setWhere] = useState<{ root: string; computer: string } | undefined>(undefined);
   const [listing, setListing] = useState<Record<string, FileEntry[]>>({});
-  const [open, setOpen] = useState<{ path: string; text: string } | undefined>(undefined);
+  const [open, setOpen] = useState<{ path: string; text: string; mediaType?: string } | undefined>(undefined);
   const [matches, setMatches] = useState<{ query: string; items: { path: string; line: number; text: string }[]; truncated?: boolean } | undefined>(undefined);
 
   const list = (path: string) => {
@@ -70,7 +71,7 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
       const { listed, open: openPath } = shown.current;
       const touched = e.type === "resync" ? listed : [...new Set(e.paths.flatMap((p) => [p, parent(p)]))].filter((p) => listed.includes(p));
       for (const folder of touched) list(folder);
-      if (openPath && (e.type === "resync" || e.paths.includes(openPath))) files.readText(openPath).then((text) => setOpen({ path: openPath, text }), () => undefined);
+      if (openPath && previewTypeOf(openPath) === undefined && (e.type === "resync" || e.paths.includes(openPath))) files.readText(openPath).then((text) => setOpen({ path: openPath, text }), () => undefined);
     });
     void Promise.resolve(result).then((u) => (live ? (stop = u) : u()));
     return () => {
@@ -92,7 +93,10 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
         onList={list}
         onOpen={(path) => {
           if (!files || !inside(where.root, path)) return;
-          files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
+          // A picture goes to the `file.preview` spot (no text read); any other file is read as text.
+          const mediaType = previewTypeOf(path);
+          if (mediaType !== undefined) setOpen({ path, text: "", mediaType });
+          else files.readText(path).then((text) => setOpen({ path, text }), () => undefined);
         }}
         {...(open ? { open } : {})}
         onSearch={(query) =>
