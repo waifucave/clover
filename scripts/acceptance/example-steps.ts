@@ -123,11 +123,17 @@ async function escape(cdp: Cdp): Promise<void> {
 /** The Plugins page from the sidebar, on a tab. */
 async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
   await escape(cdp);
-  await clickTree(cdp, "the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
-  await until("the Plugins page's tabs", 15_000, async () => {
-    for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-plugin-index__tabs')").catch(() => false)) === true) return true;
-    return undefined;
-  });
+  // The window's document can load again just after a plugin with a layer is installed, which puts the route back to the
+  // shell's first page: the sidebar's entry is pressed again until the page's tabs stand (the Plugins page step does the same).
+  let up = false;
+  for (let attempt = 0; attempt < 3 && !up; attempt++) {
+    await clickTree(cdp, "the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
+    up = await until("the Plugins page's tabs", 6_000, async () => {
+      for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-plugin-index__tabs')").catch(() => false)) === true) return true;
+      return undefined;
+    }).then(() => true, () => false);
+  }
+  if (!up) throw new Error(`the Plugins page's tabs: not after 3 presses of the sidebar's Plugins entry (frames: ${await frames(cdp)})`);
   await clickTree(cdp, `the ${tab} tab`, "[role=tab]", tab);
 }
 
