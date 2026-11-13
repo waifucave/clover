@@ -299,6 +299,13 @@ export class CorePluginHost implements PluginHost {
   async restart(pluginId: string): Promise<void> {
     const h = this.#hostedOf(pluginId);
     if (h === undefined) throw new ContractError("not_installed", `${pluginId} isn't installed`);
+    // A running one is stopped first, so it really starts again (the Plugins page's Restart on a running plugin did
+    // nothing: its module kept running and no new start ran; the acceptance's add-ons row, 2026-11-13). Its calls in
+    // flight end, said so.
+    if (h.state === "running") {
+      await this.#stopModule(pluginId, h, "reload");
+      this.#failCalls(h, new ContractError("cancelled", "interrupted: the plugin restarted"));
+    }
     if (h.timer) this.#o.clock.clearTimeout(h.timer);
     h.crashTimes = [];
     delete h.restartAt;

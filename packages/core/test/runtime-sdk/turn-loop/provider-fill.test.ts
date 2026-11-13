@@ -62,6 +62,17 @@ test("a bot's model tag fills the model, its provider and locator, the shared br
   expect(JSON.stringify(options)).not.toContain("sk-test-not-real");
 });
 
+test("a model whose own id has a slash (groq/qwen/…) is passed whole, so the runtime doesn't read its first segment as the provider", async () => {
+  const home = temp("clover-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const { broker } = recordingBroker();
+  const fill = botProviderFill({ home, broker, secrets, modelPlugins: () => undefined });
+  const options: Options = { model: "groq/qwen/qwen3.8-27b", cwd: home, env: { CLOVER_HOME: home } };
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, options);
+  expect(options.model).toBe("groq/qwen/qwen3.8-27b");
+  expect(options.provider).toMatchObject({ providerId: "groq" });
+});
+
 test("the user's own endpoint for the provider travels as its connection, read at each fill", async () => {
   const home = temp("clover-a3-fill-home-");
   const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
@@ -74,7 +85,8 @@ test("the user's own endpoint for the provider travels as its connection, read a
   settings = { providers: { openai: { baseUrl: "http://127.0.0.1:9/v1" } } } as unknown as Settings;
   const second: Options = { model: "openai/gpt-test-model" };
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, second);
-  expect(second.provider).toEqual({ providerId: "openai", authRef: credentialRefFor("openai", home)!, connection: { baseUrl: "http://127.0.0.1:9/v1", endpointOrigin: "user", local: true } });
+  // There, a model the catalog doesn't list (the local server's own name) may run: `allowUnlisted`.
+  expect(second.provider).toEqual({ providerId: "openai", authRef: credentialRefFor("openai", home)!, connection: { baseUrl: "http://127.0.0.1:9/v1", endpointOrigin: "user", local: true }, allowUnlisted: true });
 });
 
 test("a test model and the unstated sentinel get nothing", async () => {

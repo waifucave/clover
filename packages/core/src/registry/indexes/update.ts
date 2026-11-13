@@ -49,8 +49,9 @@ export interface UpdateResult {
 export type UpdateConfirm = (change: UpdateChange & { source: string; treeHash: string; root: string; changed: string }) => Promise<boolean | "asked" | "pending">;
 
 /** What an update changes in the files, in a line for its card: how many changed, were added and were removed (the
- *  owner's ruling, 2026-11-13: the click on Update is an informed one). */
-export function filesChanged(from: string, to: string): string {
+ *  owner's ruling, 2026-11-13: the click on Update is an informed one). `sameAsks`: it runs on the OK given before, and
+ *  the line says so; one that asks again lists what it adds on its OK card instead. */
+export function filesChanged(from: string, to: string, sameAsks = true): string {
   const hashes = (root: string): Map<string, string> => {
     const out = new Map<string, string>();
     const walk = (dir: string, rel: string) => {
@@ -82,7 +83,7 @@ export function filesChanged(from: string, to: string): string {
     else if (was !== h) changed++;
   }
   const removed = [...a.keys()].filter((p) => !b.has(p)).length;
-  return `Its files: ${changed} changed, ${added} added, ${removed} removed. It asks for the same things as before.`;
+  return `Its files: ${changed} changed, ${added} added, ${removed} removed.${sameAsks ? " It asks for the same things as before." : ""}`;
 }
 
 export interface UpdaterOptions extends Omit<InstallTarget, "taken"> {
@@ -265,7 +266,8 @@ export class PluginUpdater {
           return;
         }
       }
-      await this.#swap(r, root, v.treeHash, provenance);
+      // One that asks for its OK again: its OK card says what changed in the files too (counted before the swap).
+      await this.#swap(r, root, v.treeHash, provenance, trigger === undefined ? undefined : filesChanged(join(this.#o.pluginsDir, r.id), root, false));
       out.updated.push(change);
     } finally {
       st.done();
@@ -273,7 +275,7 @@ export class PluginUpdater {
   }
 
   /** Puts the new version in place, the previous one kept beside it (its record first), and reads it. */
-  async #swap(r: PluginRecord, root: string, treeHash: string, provenance: PluginProvenance): Promise<void> {
+  async #swap(r: PluginRecord, root: string, treeHash: string, provenance: PluginProvenance, changed?: string): Promise<void> {
     if (r.treeHash === undefined) throw new ContractError("failed", `${r.id} has no tree to keep`);
     const dest = join(this.#o.pluginsDir, r.id);
     const name = `.${r.id}.previous-${randomBytes(6).toString("hex")}`;
@@ -291,7 +293,7 @@ export class PluginUpdater {
       this.#o.client.setUpdating(r.id, undefined);
       throw new ContractError("failed", `${r.id} couldn't be moved into the plugins folder: ${(err as NodeJS.ErrnoException).code ?? errText(err)}`);
     }
-    await this.#o.folders.updated(r.id, treeHash, provenance);
+    await this.#o.folders.updated(r.id, treeHash, provenance, changed);
     await this.#settle(r.id);
   }
 

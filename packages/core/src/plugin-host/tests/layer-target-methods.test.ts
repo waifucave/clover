@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { API_CALLS } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, COMPONENT_CALLS, listenerArgOf, type ApiCallInfo } from "@waifucave/clover-plugin-sdk";
 import { allowedMethods, AnyPluginId, CLOVER_ERR, CLOVER_EVENTS, CLOVER_METHODS, TopPluginId, type Caller } from "@waifucave/clover-protocol";
 import { PLUGIN_OWN_EVENTS } from "../../ipc/core-events";
 import { pointsApi } from "../api/points";
@@ -14,6 +14,7 @@ import { commandsApi } from "../../commands/views";
 import { grantsInForce, type PluginRecord } from "../../contracts/plugin-registry";
 import { mayRunCommand, runCommand, type RunnableCommand } from "../../registry/commands";
 import { createApiRouter } from "../api/router";
+import { layerCallRefusal } from "../ui";
 
 const plugin = (pluginId: string): Caller => ({ kind: "plugin", pluginId });
 const USER: Caller = { kind: "user", client: "app" };
@@ -225,8 +226,9 @@ describe("what a layer hears and reads of other plugins", () => {
   });
 });
 
-/** Every call a layer makes to its own plugin (`plugin.layer.call`), and what holds it to that plugin. The plugin is
- *  the connection's in each (the method takes no plugin id at all); this table says what each reads or runs. */
+/** The calls a layer makes to its own plugin's own things (`plugin.layer.call`), and what holds each to that plugin. The
+ *  plugin is the connection's in each (the method takes no plugin id at all). Every other member the catalog gives
+ *  components goes through the same method into the same router (below: the accepted set is the catalog's). */
 const OWN_CALLS: Record<string, string> = {
   "host.call": "its host half's `ui` table, as the plugin, no session",
   "storage.synced.get": "its synced store, read only",
@@ -238,15 +240,31 @@ const OWN_CALLS: Record<string, string> = {
   "avatar.catalogue": "its own bot's figure's catalogue (`avatar.read`)",
   "avatar.box": "its own bot's figure's box (`avatar.read`)",
   "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `clover` tree only)",
+  "confirm": "a question to the user on the app's own sealed card naming the plugin; the answer only",
+  "confirmCard": "the same, with the card's id",
+  "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`, bundled-only)",
 };
 
 describe("plugin.layer.call, as a class", () => {
-  test("every call is in the table, and the method takes no plugin id, session or bot (the connection's plugin, never a parameter)", () => {
-    const shape = (CLOVER_METHODS.get("plugin.layer.call")!.params as unknown as { shape: { call: { options: string[] } } }).shape;
-    expect([...shape.call.options].sort()).toEqual(Object.keys(OWN_CALLS).sort());
-    expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
-    expect(pluginIdKeys("plugin.layer.call")).toEqual([]);
-    expect(CLOVER_METHODS.get("plugin.layer.call")!.capability).toBeUndefined();
+  test("the calls it accepts are exactly the catalog's component members (less the listeners, which are watches); the method takes no plugin id, session or bot", () => {
+    const comp = (p: string) => { const i = (API_CALLS as Record<string, ApiCallInfo>)[p]!; return (i.where === "ui" || i.where === "both") && i.notYet === undefined; };
+    const calls = Object.keys(API_CALLS).filter((p) => layerCallRefusal(p) === undefined).sort();
+    const watches = Object.keys(API_CALLS).filter((p) => layerCallRefusal(p, true) === undefined).sort();
+    expect(calls).toEqual(Object.keys(API_CALLS).filter((p) => comp(p) && listenerArgOf(p) === undefined).sort());
+    expect(watches).toEqual(Object.keys(API_CALLS).filter((p) => comp(p) && listenerArgOf(p) !== undefined).sort());
+    expect([...calls, ...watches].sort()).toEqual([...COMPONENT_CALLS].sort());
+    // The table's own-plugin calls are among them; host-only, own-process and clover-process members never are.
+    for (const call of Object.keys(OWN_CALLS)) expect([call, layerCallRefusal(call)]).toEqual([call, undefined]);
+    for (const call of ["secrets.get", "keys.open", "desktop.show", "ui.send", "storage.synced.set", "routines.fire", "computers.takeHold", "files.path"]) expect(layerCallRefusal(call)).toMatch(/host code/);
+    expect(layerCallRefusal("browser.onCdpEvent", true)).toMatch(/isn't available yet/);
+    expect(layerCallRefusal("nope.nothing")).toMatch(/isn't a call of the plugin API/);
+    for (const method of ["plugin.layer.call", "plugin.layer.watch"]) {
+      const shape = (CLOVER_METHODS.get(method)!.params as unknown as { shape: Record<string, unknown> }).shape;
+      expect(Object.keys(shape).sort()).toEqual(["args", "call"]);
+      expect(pluginIdKeys(method)).toEqual([]);
+      expect(CLOVER_METHODS.get(method)!.capability).toBeUndefined();
+      expect(CLOVER_METHODS.get(method)!.roles).toEqual(["layer"]);
+    }
   });
 
   test("every call the SDK's layer makes through it, and every layer-callable avatar call the catalog lists, is accepted by its params", () => {

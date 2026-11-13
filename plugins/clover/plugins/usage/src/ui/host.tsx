@@ -2,6 +2,7 @@
 // the gallery and the tests hand the in-memory fake (`memoryUsage`) and E-M1 hands the plugin API's.
 
 import { createContext, useContext, type ReactElement } from "react";
+import type { CoreClient } from "../../../shell/runtime/types";
 import type { UsageApi } from "../model/usage";
 import { UsageTab } from "./UsageTab";
 import { UsageView } from "./UsageView";
@@ -20,9 +21,22 @@ export interface UsageHost {
   lang?: string;
 }
 
-/** The host, with its translator installed for the usage plugin's words. */
-function useUsageHost(): UsageHost | null {
-  const host = useContext(UsageHostContext);
+/** The usage API over the core's own `usage.*` methods (the app's layer for the `clover` tree may call them: `usage.read`).
+ *  Nothing emits `usage_changed` yet, so `watch` hears nothing and a view reads again when it mounts. */
+export function coreUsageApi(core: Pick<CoreClient, "call">): UsageApi {
+  const call = core.call as unknown as (method: string, params?: unknown) => Promise<any>;
+  return {
+    rows: (query) => call("usage.rows", query),
+    plans: async () => (await call("usage.plans", {})).readings,
+    summary: async (query) => (await call("usage.summary", query)).groups,
+    watch: () => () => undefined,
+  };
+}
+
+/** The host, with its translator installed for the usage plugin's words: the one a test or the gallery gives, else `fallback`
+ *  (the app's own, `client/entries.tsx`, built from the layer's hooks). */
+export function useUsageHost(fallback: UsageHost | null = null): UsageHost | null {
+  const host = useContext(UsageHostContext) ?? fallback;
   setTranslator(host?.t ?? null);
   setLanguage(host?.lang);
   return host;

@@ -25,8 +25,8 @@ import { join, resolve } from "node:path";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 
-export const EXAMPLE_NOTES_STEP = "example-notes (stays inside), from its folder on the Plugins page: its OK card names its cardless tools and no network; contained and readOnly tools run with no card, the other cards; hook, skill, agent definition, /note, its TSX page (host.call, its own setting changed with no card from the page and from the Plugins page), the bot's window skin, locales; turned off, then removed";
-export const EXAMPLE_WEATHER_STEP = "example-weather (reaches outside), from its folder on the Plugins page: its OK card names its host and notifications and says its tools still ask; its key through the key dialog; each call cards; its forecast reaches its host through its proxy with that key; /rain-alert notifies, and is refused once muted on the Plugins page";
+export const EXAMPLE_NOTES_STEP = "example-notes (stays inside), from its folder on the Plugins page: its OK card names its cardless tools and no network; contained and readOnly tools run with no card, the other cards; hook, skill, agent definition, /note, its TSX page (host.call, its own setting changed with no card from the page and from the Plugins page), the bot's window skin, locales (its page in its Japanese words when the user's language is Japanese, and back); turned off, then removed";
+export const EXAMPLE_WEATHER_STEP = "example-weather (reaches outside), from its folder on the Plugins page: its OK card names its host and notifications and says its tools still ask; its key through the key dialog; each call cards; its forecast reaches its host through its proxy with that key; /rain-alert notifies and a card arriving takes the notification down, and it is refused once muted on the Plugins page";
 
 export const EXAMPLES = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples");
 
@@ -55,8 +55,12 @@ export interface ExampleCtx {
   approveCard(id: string): Promise<void>;
   /** A turn whose cards are answered with "Always allow" over RPC (the browser row's kept answer); only the runs that need it give one. */
   alwaysTurn?: (session: string, text: string, ms?: number) => ReturnType<ExampleCtx["turn"]>;
+  /** A turn that runs `inspect` while its card is pending (the island open), then presses the card as `turn` does; only the browser row's run gives one. */
+  inspectTurn?: (session: string, text: string, ms: number, inspect: () => Promise<void>) => Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   /** Answers a pending card no over RPC, as the app's sealed frame does (a step's clean-up of a card it left waiting). */
   denyCard(id: string): Promise<void>;
+  /** Sets the app's dark or light for a render (the run's appearance file); only a run that renders gives one. */
+  setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   history(session: string): Promise<Ev[]>;
@@ -121,10 +125,11 @@ async function escape(cdp: Cdp): Promise<void> {
 }
 
 /** The Plugins page from the sidebar, on a tab. */
-async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
+export async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<void> {
   await escape(cdp);
   await clickTree(cdp, "the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
-  await until("the Plugins page's tabs", 15_000, async () => {
+  // 30 s: the first thing a fresh app does in a shard of its own (its first open of the page took ~20 s under load).
+  await until("the Plugins page's tabs", 30_000, async () => {
     for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, "!!document.querySelector('.cl-plugin-index__tabs')").catch(() => false)) === true) return true;
     return undefined;
   });
@@ -315,6 +320,22 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   if (page.notes[0] !== tag || page.notes[1] !== "Buy oat milk" || page.notes.length !== 2) fail(`the page lists ${JSON.stringify(page.notes)}, not the newest first`);
   if (page.title !== "Notes" || !page.text.includes("2 notes") || /example-notes\./.test(page.text)) fail(`the page's words aren't its locale's: "${page.text.slice(0, 160)}"`);
   if (Number(page.turns) !== turns) fail(`the page shows ${page.turns} turns, the store ${turns}`);
+  // The user's language (checklist 1.69, 2.4): set to Japanese in the app's UI settings, the page's `t` words come from
+  // its ja locale file, its count's interpolation too; back to English, its English words again.
+  const wordsIn = async (want: (t: { title: string; text: string }) => boolean, what: string) => until(what, 20_000, async () => {
+    const v = await cdp.evaluate(page.session, "(() => { const p = document.querySelector('[data-notes=page]'); return p ? JSON.stringify({ title: (p.querySelector('h1') || {}).textContent, text: p.innerText }) : null; })()").catch(() => null);
+    if (typeof v !== "string") return undefined;
+    const t = JSON.parse(v) as { title: string; text: string };
+    return want(t) ? t : undefined;
+  }, async () => String(await cdp.evaluate(page.session, "(document.querySelector('[data-notes=page]') || document.body).innerText.slice(0, 200)").catch(() => "")));
+  const langBefore = (await rpc.request<{ language?: string }>("ui.settings", {}).catch(() => ({} as { language?: string }))).language;
+  try {
+    await rpc.request("ui.set", { patch: { language: "ja" } });
+    await wordsIn((t) => t.title === "ノート" && t.text.includes("ノート 2 件") && !/example-notes\./.test(t.text), "its page in its Japanese words (ノート, ノート 2 件)");
+  } finally {
+    await rpc.request("ui.set", { patch: { language: langBefore ?? "en" } }).catch(() => undefined);
+  }
+  await wordsIn((t) => t.title === "Notes" && t.text.includes("2 notes"), "its page back in its English words");
   if (!ctx.appLog().includes(`layers: ${id}'s layer connected to the core`)) fail("its layer has no connection of its own");
   const order = await cdp.centerOf(page.session, "[data-notes=order]");
   if (order === undefined) fail("the page has no order switch");
@@ -526,7 +547,13 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     // On a miss, what the desktop notifier said of it (its own log: never the notification's words).
     const notifierLog = async () => `the desktop notifier's log: ${((await rpc.request<{ lines: string[] }>("plugin.logs", { id: "clover/notifications", lines: 12 }).catch(() => ({ lines: ["(unreadable)"] }))).lines.join(" | ") || "empty")}`;
     await until("the app to be asked to show the alert", 15_000, async () => ([...ctx.appLog().matchAll(shownLine)].length > before ? true : undefined), notifierLog);
-    done.push(`/rain-alert sent a notification (the headless app showed none and said so)`);
+    const alertId = [...ctx.appLog().matchAll(shownLine)].at(-1)![1]!;
+    // A card arriving takes a plugin's banner down (the core's notify service, `desktop.close`; checklist 2.41): the
+    // next forecast raises its tool card, and the app is asked to close that very notification.
+    const closedLine = `notify: closed (${alertId})`;
+    await callTurn(ctx, session, "forecast", {});
+    await until("the app to be asked to close the alert once a card came", 15_000, () => (ctx.appLog().includes(closedLine) ? true : undefined), notifierLog);
+    done.push(`/rain-alert sent a notification (the headless app showed none and said so); a card arriving closed it (desktop.close, ${alertId})`);
 
     // 5. Muted on its detail, the next alert is refused and nothing reaches the app.
     await openDetail(cdp, "Weather");

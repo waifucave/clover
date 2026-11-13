@@ -91,3 +91,11 @@ test("the third-party fixtures' model rows are ones a picker offers (supported: 
     expect(rows.map((r) => [r.key, r.status])).toEqual(rows.map((r) => [r.key, "supported"]));
   }
 });
+
+test("each model the code-adapter row moves Alpha to is one the picker offers (bot.setUserLayer refuses any other)", async () => {
+  const { catalogModelListings } = await import("../../packages/core/src/runtime-sdk/models-list");
+  const { loadCatalog } = await import("../../packages/core/node_modules/@waifucave/clover-provider-catalog");
+  const { GEMINI_MODEL, OPENAI_WIRE_PROVIDERS } = await import("./code-adapter-step");
+  const listed = new Set(catalogModelListings(loadCatalog(), new Set()).map((m) => m.id));
+  for (const model of [GEMINI_MODEL, ...OPENAI_WIRE_PROVIDERS.map((p) => p.model)]) expect([model, listed.has(model)]).toEqual([model, true]);
+});

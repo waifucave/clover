@@ -144,7 +144,7 @@ export interface ComputerNode {
   /** The local servers other computers run and this one doesn't, as a session of `kind` lists them (lane A's
    *  `PluginMcp` `remoteServers`): each from a computer that runs it, on the computers that do. A server this
    *  computer's host places is never here. */
-  mcpRemoteServers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[];
+  mcpRemoteServers(kind: "bot" | "side-thread" | "agent" | "coding", bot?: string): BotMcpServer[];
   /** Mirror: installs a local server on other computers, with the user's answer for each. */
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
@@ -276,12 +276,12 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return { ...l, here };
   };
   const remotePlacement = (server: string): McpServerPlacement => ({ name: server, kind: "local", computers: mcpComputers(server) });
-  const mcpRemoteServers = (kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] => {
+  const mcpRemoteServers = (kind: "bot" | "side-thread" | "agent" | "coding", bot?: string): BotMcpServer[] => {
     if (!remoteMcp) return [];
     const out: BotMcpServer[] = [];
     for (const server of remoteMcp.servers()) {
       const l = remoteListing(server);
-      if (l === undefined || !kindServed(servedKinds(l.scope, l.here), kind)) continue;
+      if (l === undefined || !kindServed(servedKinds(l.scope, l.here), kind, bot)) continue;
       const computers = mcpComputers(server);
       if (computers.length > 0) out.push(botServer(l, computers));
     }

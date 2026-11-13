@@ -33,7 +33,9 @@ import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore as ContractSecretStore } from "../contracts/secret-store";
-import { runLoginFlow, type OAuthTokens } from "../providers/pkce";
+import { runLoginFlow, type ExchangeOptions, type OAuthTokens } from "../providers/pkce";
+import { pluginTokenFetch } from "./model-plugins/plugin-api";
+import { TOKEN_TIMEOUT_MS } from "./model-plugins/oauth-renewal";
 import { credentialStoreOverSecretStore } from "../providers/credential-store";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { credentialValueRefusal, removeCredential } from "./credentials";
@@ -118,13 +120,14 @@ export interface PluginAuthDeps {
 /** The loopback port the OAuth redirect comes back to: Codex's registered one (codex-rs parity). */
 export const OAUTH_CALLBACK_PORT = 1455;
 
-function defaultOAuth(entry: Extract<AuthEntry, { method: "oauth-pkce" }>): OAuthRun {
+function defaultOAuth(entry: Extract<AuthEntry, { method: "oauth-pkce" }>, exchange?: ExchangeOptions): OAuthRun {
   let resolveUrl!: (url: string) => void;
   let rejectUrl!: (err: Error) => void;
   const authorizeUrl = new Promise<string>((res, rej) => { resolveUrl = res; rejectUrl = rej; });
   const tokens = runLoginFlow({
     clientId: entry.clientId, authorizeUrl: entry.authorizeUrl, tokenUrl: entry.tokenUrl, callbackPort: OAUTH_CALLBACK_PORT,
     scope: (entry.scopes ?? []).join(" "),
+    ...(exchange !== undefined ? { exchange } : {}),
     // The core opens nothing itself: the app opens the URL it is handed.
     openBrowser: async (url) => { resolveUrl(url); },
   });
@@ -200,7 +203,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       const v = await deps.pluginSecrets.get({ owner: { kind: "plugin", pluginId: id }, name }).catch(() => null);
       if (v !== null) return { ...base, state: "signed-in" };
       // Signed out by a refused renewal: say so, and what to do.
-      const ended = n.entry.method === "oauth-pkce" ? deps.oauthRenewal?.refusedReason(id, name) : undefined;
+      const ended = n.entry.method === "oauth-pkce" ? await deps.oauthRenewal?.refusedReason(id, name) : undefined;
       if (ended !== undefined && run === undefined) return { ...base, state: "signed-out", reason: ended.slice(0, 2000) };
     }
     if (run !== undefined) return { ...base, state: "failed", reason: run.failed.slice(0, 2000) };
@@ -295,7 +298,9 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       }
       if (key !== undefined) throw new ContractError("invalid", `a ${entry.method} sign-in takes no key`);
       if (entry.method === "oauth-pkce") {
-        const flow = (deps.oauth ?? defaultOAuth)(entry);
+        // A third party's code exchange goes as its renewals do: its pinned fetch, the timeout, no redirect.
+        const flow = deps.oauth !== undefined ? deps.oauth(entry)
+          : defaultOAuth(entry, provider !== undefined ? undefined : { fetch: pluginTokenFetch(deps.registry.get(id)), timeoutMs: TOKEN_TIMEOUT_MS, noRedirect: true });
         const stored = flow.tokens.then(async (t) => {
           if (provider !== undefined) {
             await writeCredentialMaterial(deps.secrets, modelPluginSlotFor(provider).account, {

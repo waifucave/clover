@@ -24,7 +24,7 @@ import type { BotSessionContext } from "../../bots/service";
 import { permittedProviders, providerBaseUrlFor, type Settings } from "../../settings";
 import { sessionCredentialAllowlist, type HostCredentialBroker } from "../host-credentials";
 import { credentialPresenceFrom } from "../keychain";
-import { splitTag } from "../model-tag";
+import { runtimeModelId } from "../model-tag";
 import { installedModelPlugins } from "../model-plugins";
 import type { ModelPlugins } from "../model-plugins/service";
 import { providerFor } from "../provider-selection";
@@ -53,9 +53,12 @@ export function botProviderFill(deps: BotProviderFillDeps): (model: string, opti
   return async (model, options, ctx) => {
     const selection = providerFor(model, deps.home);
     if (selection === undefined) return;
-    options.model = splitTag(model).modelId;
+    options.model = runtimeModelId(model);
     const baseUrl = providerBaseUrlFor(deps.settings?.(), selection.providerId);
-    options.provider = baseUrl === undefined ? selection : { ...selection, connection: { baseUrl, endpointOrigin: "user", local: true } };
+    // An endpoint of the user's own may serve models the catalog doesn't list (a local server's own names), as
+    // `bot.setUserLayer` accepts them: the runtime takes an unlisted id there (only for a provider whose catalog isn't
+    // authoritative).
+    options.provider = baseUrl === undefined ? selection : { ...selection, connection: { baseUrl, endpointOrigin: "user", local: true }, allowUnlisted: true };
     // The catalog slots a subagent may resolve: the bot's own model's provider and the ones approved for this bot, each
     // permitted and credentialed now (review r1 (h)).
     const permitted = new Set(permittedProviders().map((p) => p.providerId));

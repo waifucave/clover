@@ -55,6 +55,17 @@ describe("clover.json (spec §5.9, format 1)", () => {
     }
   });
 
+  // The reader draws the old session through the `conversation` spot; the runtime places a spot only where the part's
+  // own entry declares it, so the page declares it as the shell does (the same declaration, which the validator lets
+  // more than one entry hold). Undeclared, the reader stayed empty ("waiting"; the acceptance's archive row, 2026-11-13).
+  test("its page declares the conversation spot its reader draws, as the shell declares it", () => {
+    const shell = JSON.parse(readFileSync(join(root, "..", "shell", "clover.json"), "utf8"));
+    const theirs = shell.contributes.ui.find((u: { declares?: Record<string, unknown> }) => u.declares?.conversation !== undefined)?.declares.conversation;
+    const page = manifest.contributes.ui.find((u: { spot: string; key?: string }) => u.spot === "main" && u.key === "archive");
+    expect(theirs).toBeDefined();
+    expect(page.declares?.conversation).toEqual(theirs);
+  });
+
   test("lane B's validator finds nothing it would report, loaded as a bundled part of clover", () => {
     expect(manifestFindings(root)).toEqual([]);
   });

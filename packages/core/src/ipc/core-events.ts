@@ -19,12 +19,12 @@ import type { CloverConn } from "./clover";
 
 /** Events that belong to one owner (a session's or a plugin's terminal, tab, call or watch), sent only with `to`. */
 export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
-  "terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed",
+  "terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed", "plugin_api_event",
 ]);
 
 /** Events about one plugin that only that plugin's own connections get (`pluginOf`, from the connection's token, never
  *  the event's word alone): a host half's message to its components and its store's changes. */
-export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed", "plugin_settings_changed", "plugin_point_changed"]);
+export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed", "plugin_settings_changed", "plugin_point_changed", "plugin_api_event"]);
 /** Own events that go only to a plugin that is on and running (`pluginRunning`). */
 const RUNNING_ONLY_EVENTS: ReadonlySet<string> = new Set(["plugin_settings_changed"]);
 

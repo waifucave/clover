@@ -5,6 +5,8 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { CARDS_STEP } from "./cards-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
+import { ADDONS_STEP } from "./addons-step";
+import { ARCHIVE_STEP } from "./archive-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
@@ -89,6 +91,8 @@ export const FULL_STEPS = [
   OAUTH_SIGN_IN_STEP,
   SCHEDULED_ROUTINE_STEP,
   ARRIVALS_STEP,
+  ADDONS_STEP,
+  ARCHIVE_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

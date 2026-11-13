@@ -89,6 +89,13 @@ describe("the open island's rect", () => {
     expect(islandRect(bare, 100).height).toBe(168);
     expect(islandRect(notch, 200).height).toBe(168);
   });
+
+  test("grows to fit one card with its buttons, never below the default and never past the cap", () => {
+    expect(islandRect(notch, undefined, 120).height).toBe(168);
+    expect(islandRect(notch, undefined, 300.2).height).toBe(301);
+    expect(islandRect(notch, undefined, 900).height).toBe(420);
+    expect(islandRect(notch, 600, 300).height).toBe(300);
+  });
 });
 
 describe("a card's geometry", () => {

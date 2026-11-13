@@ -75,11 +75,14 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
+import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
+import { ADDONS_STEP, addonsStep } from "./addons-step";
+import { ARCHIVE_STEP, archiveStep, seedArchive } from "./archive-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
@@ -103,6 +106,8 @@ import { placeOAuthFixture, startFakeOAuth, type FakeOAuth } from "./fake-oauth"
 import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { startFakeOpenAi, type FakeOpenAi } from "./fake-openai";
 import { holdMachine } from "./exclusive";
+import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
+import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
@@ -185,7 +190,8 @@ const browserOnly = argv.includes("--only-browser");
 const routineOnly = argv.includes("--only-scheduled-routine");
 /** The rows that run alone with no app (their clauses go over the app's methods): no app is there to be told of a
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
-const appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
+// (`let`: a shard's `models` unit runs the same rows on its daemon before any app of the shard is up, appless too.)
+let appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
 // --only-kids | --only-listen | --only-web | --only-drag | --only-review: the row(s) of the plugin-app unit (shards.ts) alone: the
 // daemon, the dummy key, Alpha on it, then the app over it and just those rows (the child-plugin and notifier rows together
 // for --only-kids; a web page part drawn sealed; Alpha's own handle dragging the window; the Review on an OK card).
@@ -709,6 +715,9 @@ let thirdPartyOutcome: { status: Status; detail: string } | undefined;
 let oauthOutcome: { status: Status; detail: string } | undefined;
 let routineOutcome: { status: Status; detail: string } | undefined;
 let netSite: ReturnType<typeof Bun.serve> | undefined;
+/** The loopback site the acceptance-points fixture's component fetches (`net.fetch`), for its row only. */
+let pageSite: ReturnType<typeof Bun.serve> | undefined;
+const PAGE_SITE_BODY = "ACCEPTANCE-POINTS-PAGE-SITE";
 const NET_BODY = "ACCEPTANCE-NET-BODY";
 /** The open network's line on a pasted server's OK card (packages/plugin-sdk/src/manifest/validate.ts describeOk). */
 const OPEN_NETWORK_LINE = "It can reach any host on the network";
@@ -1678,6 +1687,9 @@ async function main(): Promise<void> {
   // Step 1: the daemon, then the app headless; the app pairs and finishes its setup.
   let daemon: { proc: ChildProcess; log: string };
   try {
+    // The previous app's session in the home's store before the daemon first opens it (the archive row; not on an
+    // upgrade's home, which an earlier run made).
+    if (runs("archive") && stateDir === undefined) seedArchive(home);
     daemon = await startDaemonProc();
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");
@@ -1855,10 +1867,30 @@ async function main(): Promise<void> {
     // reads this plugin's tree and its report comes back; the card is untouched, and its Approve below still works.
     let reviewed = "not asked on the upgrade's old half";
     if (!oldHalf) {
-      const r = await until("the plugin's Review", 120_000, async () => {
-        const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
-        return v.state === "running" ? undefined : v;
-      });
+      // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model chosen for the role: it won't pick
+      // one on that provider by itself (`no-default-model`; lane E's finding on row 55). The reviewer role is set to the
+      // model Alpha runs, as the user would in Settings › Roles, in the home's settings.json (read live), and the file is
+      // put back after, so no other step meets a reviewer it didn't have.
+      const tag = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+      if (tag === undefined || !tag.startsWith("anthropic/")) fail(`Alpha runs ${tag ?? "no model"}, not an Anthropic one the run's key can drive`);
+      const settingsFile = join(home, "settings.json");
+      const settingsBefore = existsSync(settingsFile) ? readFileSync(settingsFile, "utf8") : undefined;
+      const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
+      writeFileSync(settingsFile, `${JSON.stringify({ ...now, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
+      let r: { state: string; report?: string; why?: string };
+      try {
+        await until("the daemon to take the reviewer role", 30_000, async () => {
+          const v = await c.request<{ state: string }>("plugin.review", { card: card.id, peek: true });
+          return v.state !== "unavailable" ? v : undefined;
+        });
+        r = await until("the plugin's Review", 120_000, async () => {
+          const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
+          return v.state === "running" ? undefined : v;
+        });
+      } finally {
+        if (settingsBefore === undefined) rmSync(settingsFile, { force: true });
+        else writeFileSync(settingsFile, settingsBefore, { mode: 0o600 });
+      }
       if (r.state !== "done") fail(`its Review is ${r.state}: ${r.why ?? "no reason"} [packages/core/src/registry/plugin-review.ts]`);
       if (!r.report?.includes(`${REVIEW_MARK} ${installed.id}`) || !r.report.includes("a model's reading of the plugin's files")) fail(`its Review's report isn't the job's for ${installed.id}: ${(r.report ?? "").slice(0, 200)}`);
       const after = await c.request<{ card: Card }>("card.get", { id: card.id });
@@ -1977,7 +2009,9 @@ async function main(): Promise<void> {
   // from a folder; its probe command (run as the user, with no model turn) reads and calls the point, keeps and deletes
   // store keys, and posts a note and a message into Alpha's conversation; the run sets a setting and switches the child
   // off, which its watches hear; a turn with a tool call and the user's compaction (session.compact) run its child's
-  // hooks on all eight events; then it is removed with its data, and its data folder is gone.
+  // hooks on all eight events; then it is removed with its data, and its data folder is gone. Beside it, a plugin's page
+  // (acceptance-points-page, its sidebar button's component in the run's app) reaches one member of each area a
+  // component reaches through the UI SDK's usePluginApi, and the row checks each answer.
   if (!STEPS.some((x) => x.startsWith(POINTS_PREFIX))) { /* not in this run */ }
   else if (session === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (oldHalf) pointsOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
@@ -2005,17 +2039,52 @@ async function main(): Promise<void> {
       if (JSON.stringify(probe.keys) !== JSON.stringify(["acceptance-a", "acceptance-b"]) || JSON.stringify(probe.keysAfter) !== JSON.stringify(["acceptance-b"])) wrong.push(`the store's keys were ${JSON.stringify(probe.keys)}, then ${JSON.stringify(probe.keysAfter)} after a delete`);
       if (probe.mood !== "calm") wrong.push(`settings.get gave ${JSON.stringify(probe.mood)}, not the default`);
       if (probe.posted !== "posted") wrong.push(`conversation.note/send: ${String(probe.posted)}`);
+      // A plugin's page (acceptance-points-page: its sidebar app button's component, in a frame of its own layer in the
+      // run's app, mounted as soon as it runs): one member of each area a component reaches since components got the
+      // whole catalog, through the UI SDK's own usePluginApi (the app's main process carries each call on the layer's
+      // own connection to the core), its answers handed to its host half and read back with its `report`, each checked.
+      // Its own plugin, not acceptance-points' child: a tree whose hook is a shell script can't ship a client that
+      // imports react (the loader can't follow the script, `loaderReach`). Its notification is muted before it runs, so
+      // nothing shows on the screen; the run's loopback site is on its OK (written in at install); where it writes,
+      // which conversation it notes in and which site it fetches are its settings, set as the user.
+      const pageId = "acceptance-points-page";
+      pageSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/page" ? new Response(PAGE_SITE_BODY) : new Response("not here", { status: 404 })) });
+      const pageFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", pageId);
+      cpSync(join(import.meta.dir, "fixtures", pageId), pageFolder, { recursive: true });
+      const pageManifest = JSON.parse(readFileSync(join(pageFolder, "clover.json"), "utf8")) as { capabilities: string[] };
+      pageManifest.capabilities.push(`network:127.0.0.1:${pageSite.port}`);
+      writeFileSync(join(pageFolder, "clover.json"), JSON.stringify(pageManifest, null, 2));
+      await c.request("notify.setMuted", { pluginId: pageId, muted: true });
+      const pageInstalled = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: pageFolder } }, 60_000);
+      if (pageInstalled.id !== pageId) fail(`the page fixture installed as ${pageInstalled.id}`);
+      await approve(c, await until(`${pageId}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (pageInstalled.card !== undefined && k.id === pageInstalled.card) || k.pluginId === pageId)));
+      await until(`${pageId} to run after its OK`, 60_000, async () => ((await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: pageId }).catch(() => undefined))?.plugin?.state === "running" ? true : undefined));
+      const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
+      if (computer === "") fail("computer.list lists no computer");
+      mkdirSync(join(userHome, "acceptance-points-page"), { recursive: true });
+      for (const [key, value] of [["pageFolder", `home/${computer}/acceptance-points-page`], ["pageSite", `http://127.0.0.1:${pageSite.port}`], ["pageSession", session]] as const) {
+        await c.request("plugin.settings.set", { id: pageId, key, value });
+      }
+      const page = await until("its page's answers (its sidebar button's component, through usePluginApi)", 120_000, async () => {
+        const r = (await c.request<{ result: { page?: Record<string, unknown> } }>("command.run", { name: `${pageId}.report`, args: {} })).result;
+        return r.page;
+      }, 1_000).catch((err: unknown) => fail(`${why(err)}; the app log's lines about it: ${readLog(join(logs, "app.log")).split("\n").filter((l) => l.includes(pageId)).slice(-6).join(" | ").slice(0, 600) || "none"}`));
+      const checked = checkPageReport(page, { siteBody: PAGE_SITE_BODY });
+      wrong.push(...checked.wrong.map((w) => `its page: ${w}`));
+      const pageSaid = `${pageId}'s page reached ${checked.said.join(", ")}`;
+      await c.request("plugin.remove", { id: pageId, deleteData: true }).catch((err: unknown) => wrong.push(`${pageId} wasn't removed: ${why(err)}`));
       if (wrong.length > 0) fail(wrong.join("; "));
       // Its note and its message reach Alpha's conversation; the message starts a turn the fake answers.
       await until("its note and its message's turn in Alpha's conversation", 120_000, async () => {
         const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
-        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") ? true : undefined;
+        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") && text.includes("ACCEPTANCE-POINTS-PAGE-NOTE") ? true : undefined;
       });
       // Its child's hooks: a turn with a tool call runs six of its events, and the user's compaction of Alpha's
       // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
       await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
       await c.request("session.compact", { id: session }, 120_000).catch((err: unknown) => wrong.push(`session.compact failed: ${why(err)}`));
-      const eventsFile = join(home, "plugin-data", id, "filler", "events.txt");
+      // A plugin's data folder is its tree's (`<home>/plugin-data/<top>`): the child's hook writes its top plugin's.
+      const eventsFile = join(home, "plugin-data", id, "events.txt");
       const all = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end", "compact.before", "compact.after"];
       await until("its hooks' notes", 30_000, async () => (all.every((e) => readLog(eventsFile).split("\n").includes(e)) ? true : undefined)).catch(() => undefined);
       const events = readLog(eventsFile);
@@ -2034,11 +2103,16 @@ async function main(): Promise<void> {
       await c.request("plugin.remove", { id, deleteData: true });
       await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined));
       if (existsSync(join(home, "plugin-data", id))) fail(`${id} was removed with deleteData, but its data folder is still there`);
-      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); removed with deleteData, its data folder gone` };
+      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); ${pageSaid}; removed with deleteData, its data folder gone` };
     } catch (err) {
       pointsOutcome = { status: statusOf(err), detail: why(err) };
       // Its hooks would run on every later turn: it goes, whatever failed.
       await c.request("plugin.remove", { id: "acceptance-points", deleteData: true }).catch(() => undefined);
+    } finally {
+      pageSite?.stop(true);
+      pageSite = undefined;
+      await c.request("plugin.remove", { id: "acceptance-points-page", deleteData: true }).catch(() => undefined);
+      await c.request("notify.setMuted", { pluginId: "acceptance-points-page", muted: false }).catch(() => undefined);
     }
   }
 
@@ -2618,6 +2692,8 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   let session: string | undefined;
   let c: CloverClient | undefined;
   try {
+    // The previous app's session in the home's store before the daemon first opens it (the archive row).
+    if (ids.includes("archive")) seedArchive(home);
     await startDaemonProc();
     c = (await appDriver()).client;
     await signInKey(c);
@@ -2635,6 +2711,11 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
       // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
       await c.request("session.attach", { id: session });
+      // No app is up yet in this shard (its window, if any, comes after): their cards are answered over RPC only, as
+      // under their own --only-* (the first 14f table: "the app was never told of the card" for all four).
+      const wasAppless = appless;
+      appless = true;
+      try {
       for (const [step, turnOf] of [[CODE_ADAPTER_STEP, codeAdapterTurn], [THIRD_PARTY_MODEL_STEP, thirdPartyModelTurn], [OAUTH_SIGN_IN_STEP, oauthSignInTurn], [SCHEDULED_ROUTINE_STEP, scheduledRoutineTurn]] as const) {
         try {
           const out = await turnOf(c, session);
@@ -2643,6 +2724,9 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
           record(stepNumber(FULL_STEPS, step), statusOf(err), why(err));
         }
       }
+      } finally {
+        appless = wasAppless;
+      }
     }
   } catch (err) {
     for (const name of mine) if (!rows.some((r) => r.name === name)) record(stepNumber(FULL_STEPS, name), statusOf(err), `shard setup (${ids.join(", ")}): ${why(err)}`);
@@ -2650,7 +2734,7 @@ async function unitsRun(app: { exe: string; args: string[] }, ids: readonly Unit
   } finally {
     c?.close();
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "tab-flash" || id === "browser" || id === "plugin-app");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "tab-flash" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -2725,7 +2809,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
 }
 
 /** The examples' context over one app: its cards pressed in its window, main's picker, the fake's requests. */
-function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string): ExampleCtx {
+function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: string, appearanceFile?: string): ExampleCtx {
   return {
     cdp, rpc, home, root, userHome, childReport: CHILD_REPORT,
     // This app's own output and the home's app log, whichever it wrote to.
@@ -2748,8 +2832,10 @@ function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: strin
     // Its cards pressed in this app's window (the app that drew them logs to its own log, not the first app's).
     turn: (s, text, ms) => turn(rpc, s, text, ms, { press: { cdp, log } }),
     alwaysTurn: (s, text, ms) => turn(rpc, s, text, ms, { always: true, log }),
+    inspectTurn: (s, text, ms, inspect) => turn(rpc, s, text, ms, { press: { cdp, log }, inspect: async () => inspect() }),
     history: (s) => history(rpc, s),
     appCli: (words) => appCli(words),
+    ...(appearanceFile !== undefined ? { setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme) } : {}),
   };
 }
 
@@ -2770,6 +2856,10 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc)) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
+    // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
+    [ADDONS_STEP, () => addonsStep(ctx, session)],
+    // The previous app's session, read on the Archive page (checklist 4.14).
+    [ARCHIVE_STEP, () => archiveStep(ctx)],
     // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
     [CHILD_STEP, () => childStep(ctx, session)],
     [NOTIFY_STEP, () => notifyStep(ctx, session)],
@@ -2923,6 +3013,10 @@ async function thirdPartyModelTurn(c: CloverClient, session: string): Promise<{ 
     // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
     await modelPluginsUp();
     await until(`${THIRD_PARTY_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === THIRD_PARTY_MODEL) ? true : undefined), 500);
+    // A model no plugin that is on offers is refused in the picker's words (its model listed: the rebuild on its OK is done, nothing settles).
+    const bogus = `${THIRD_PARTY_PLUGIN}/not-a-model-it-offers`;
+    const refusedSet = await c.request("bot.setUserLayer", { id: "alpha", patch: { model: bogus } }).then(() => undefined, (e: unknown) => why(e));
+    if (refusedSet === undefined || !refusedSet.includes(`${bogus} isn't offered by any plugin that is on`)) fail(`bot.setUserLayer took ${bogus}, which no plugin offers (${refusedSet ?? "applied"})`);
     await until(`${THIRD_PARTY_MODEL} to be a model Alpha can run`, 60_000, async () => {
       const set = await c.request<{ applied?: boolean }>("bot.setUserLayer", { id: "alpha", patch: { model: THIRD_PARTY_MODEL } }).catch(() => undefined);
       if (set === undefined) return undefined;
@@ -3389,6 +3483,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }): Promise<voi
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log } }),
       alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
+      inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
     };
     record(n, "PASS", await browserStep(ctx, session, browserFixture, panelOpener(rpc)));
@@ -3700,7 +3795,11 @@ async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: stri
       return r?.sessions.find((x) => !before.has(x.id))?.id;
     }, 500);
   } else {
-    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
+    // The user picks the model a coding session of theirs runs (no bot's to inherit): the one the run's key drives,
+    // Alpha's. Without it the session takes the default model, which no stored key here answers (14f's first table).
+    const model = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+    if (model === undefined) fail("Alpha has no model to give the user's coding session");
+    id = (await c.request<{ session: string }>("agent.start", { backend: "clover-code", computer, root, model, prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." }, 30_000)).session;
   }
   // The call's card, if its level asks: it names the agent's own session.
   const carded: string[] = [];
@@ -3719,9 +3818,11 @@ async function agentEchoProbe(c: CloverClient, computer: string, o: { bot?: stri
     }
     const evs = await history(c, where).catch(() => []);
     return evs.find((e) => JSON.stringify(e).includes(PONG) || JSON.stringify(e).includes("ACCEPTANCE-CHILD-NO-ECHO"));
-  }, 1_000).catch((err: unknown) => {
+  }, 1_000).catch(async (err: unknown) => {
     const mine = (fake?.requests ?? []).slice(seen).filter((r) => r.lastUserText.includes("ACCEPTANCE-CHILD-ECHO") || r.toolUse?.endsWith("Echo"));
-    fail(`${why(err)}; the agent's requests: ${mine.map((r) => `${r.answered}${r.toolUse ? ` (called ${r.toolUse})` : ""}`).join(", ") || "none"}${carded.length ? `; ${carded.join("; ")}` : ""} [packages/core/src/agents/plugin-reach.ts]`);
+    // The agent's own row: a session that ended (its model unanswered, a refusal) says why.
+    const row = (await c.request<{ sessions: { id: string; status: string; failure?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => undefined))?.sessions.find((x) => x.id === id);
+    fail(`${why(err)}; the agent is ${row?.status ?? "gone"}${row?.failure ? ` (${row.failure.slice(0, 200)})` : ""}; the agent's requests: ${mine.map((r) => `${r.answered}${r.toolUse ? ` (called ${r.toolUse})` : ""}`).join(", ") || "none"}${carded.length ? `; ${carded.join("; ")}` : ""} [packages/core/src/agents/plugin-reach.ts]`);
   });
   if (JSON.stringify(heard).includes("ACCEPTANCE-CHILD-NO-ECHO")) {
     fail(`the agent's bridge offered no echo tool: ${/ACCEPTANCE-CHILD-NO-ECHO ([^"\\]*)/.exec(JSON.stringify(heard))?.[1]?.slice(0, 300) ?? "?"} [packages/core/src/agents/plugin-reach.ts]`);
@@ -4146,6 +4247,13 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   // The old run's harness token (a test-marked core's, test-only) would be read before the new core writes its own:
   // it goes. Everything else the old build left in run/ stays, as on a real upgrade.
   rmSync(join(home, "run", HARNESS_TOKEN_FILE), { force: true });
+  // What an earlier build's home holds once a botless agent ran on it (14e: a Review on an OK card): its transcript in
+  // `agents/`, as the writer makes it. The first 14f table's row 7 refused this home as the "old layout" on its next boot.
+  if (!existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) {
+    const t = new AgentTranscript(home, "acceptance-old-agent");
+    t.writeRecord({ v: 1, sessionId: "acceptance-old-agent", backend: "fake", computer: "this", root: "/", startedAt: Date.now() });
+    t.call({ acceptance: "an earlier build's botless agent" });
+  }
   const blockFrom = (from: number, detail: string) => { for (let n = from; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) record(n, "BLOCKED", detail); };
   // 1: the app first (no daemon), then the daemon; the shell fills the window.
   const port = freePort();
@@ -4171,7 +4279,10 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     await until(`the shell to fill the window within ${COLD_START_SECONDS} s of the daemon's start`, COLD_START_SECONDS * 1000, () => shellDoc(cdp!)).catch(async (e: unknown) => fail(`${why(e)} (frames: ${await dumpFrames(cdp!).catch(() => "?")}; app.log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /pair:|layers:|registry/.test(l)).slice(-6).join(" | ").slice(0, 500)})`));
     const took = Date.now() - at;
     if (/Nothing fills this window/.test(readLog(appLog).slice(logFrom))) fail("the fallback note was drawn");
-    record(1, "PASS", `the app waited, the daemon started on the old home, and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
+    const migC = firstLine(daemon.log, /^migration C:/);
+    if (migC !== undefined) fail(`the old home (an earlier build's, with a botless agent's transcript) was read as Migration C's old layout: ${migC}`);
+    if (oldLayoutMarkers(home).length > 0 || !existsSync(join(home, "migration", "c", "CURRENT_LAYOUT"))) fail(`the daemon didn't mark the old home current (${oldLayoutMarkers(home).join("; ") || "no marker"})`);
+    record(1, "PASS", `the app waited, the daemon started on the old home (no Migration C: marked current), and the shell filled the window ${(took / 1000).toFixed(1)} s later`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -4476,7 +4587,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     }
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
     // and the rows after them (a shard's units leave out the ones another shard runs).
-    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile);
+    const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile);
     for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
       if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
@@ -4502,9 +4613,12 @@ async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc:
     stoppingDaemon = true;
     await endChild(daemon.proc, 20_000);
     if (existsSync(join(home, "run", "core.sock"))) say("the stopped daemon left its socket file");
+    // A home this run's own daemon made is never the old layout (Migration C would refuse or migrate it): named here.
+    const markers = oldLayoutMarkers(home);
+    if (markers.length > 0) say(`the home the first daemon made reads as the old layout: ${markers.join("; ")}`);
     const again = await startDaemonProc().catch((err: unknown) => {
       const refused = firstLine(join(logs, `daemon-${daemonRun}.log`), /refus|migration/i);
-      return fail(`${why(err)}${refused ? ` (${refused})` : ""}`);
+      return fail(`${why(err)}${refused ? ` (${refused})` : ""}${markers.length > 0 ? ` [old-layout markers: ${markers.join("; ")}]` : ""}`);
     });
     const d = target === "source" ? await appDriver().catch(() => undefined) : undefined;
     if (d !== undefined && session !== undefined) {

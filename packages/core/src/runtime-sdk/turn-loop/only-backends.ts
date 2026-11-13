@@ -28,14 +28,47 @@ export function servesBackend(registry: Pick<PluginRegistry, "get">, pluginId: s
   return !Array.isArray(list) || list.length === 0 || list.includes(listedBackendOf(backend));
 }
 
-/** Whether `pluginId`'s skills and agent definitions reach a session of `kind` by its manifest's `scope` (its own, else
- *  its top plugin's; `both` by default), read as its MCP servers' is: `bots` reaches bots' conversations and side
- *  threads, `agents` the agents' and the user's coding sessions. */
-export function scopeServes(registry: Pick<PluginRegistry, "get">, pluginId: string, kind: string): boolean {
-  const scopeOf = (id: string) => (registry.get(id)?.manifest as { scope?: unknown } | undefined)?.scope;
-  const scope = scopeOf(pluginId) ?? scopeOf(topPluginIdOf(pluginId)) ?? "both";
+/** A plugin's scope (spec §5.1): `bots`, `agents`, `both` (the default), or `own-bot`: a bot plugin's own parts, for
+ *  that bot alone (its hooks, skills, agent definitions and servers that say so, or its whole plugin's). */
+export type PluginScope = "bots" | "agents" | "both" | "own-bot";
+
+/** A session as the scope rule reads it: its kind, and its bot (a bot's own session's, or the bot whose delegation an
+ *  `agent` session is). In Clover an `agent` session is always a bot's delegation (the agent manager's); a session the
+ *  user started is `coding`. */
+export interface ScopeSession {
+  kind: string;
+  bot?: string;
+}
+
+/** THE scope rule, one for every place a plugin's parts reach a session (hooks, the bots' Glossary, the MCP servers,
+ *  an agent's bridge and placed parts):
+ *  - `bots`: a bot's own sessions (its conversation, side threads) and the agents it delegates to (its work: §5.3, "a
+ *    hook scoped to `bots` covers the agents a bot starts"; bots are equal, so every bot's);
+ *  - `agents`: every agent session, a bot's delegation or the user's own coding session (§9.3 [D]);
+ *  - `both`: every session;
+ *  - `own-bot`: as `bots`, for the bot the plugin's tree is (a bot's id is its plugin's) and the agents it starts. */
+export function servesScope(scope: PluginScope, s: ScopeSession, pluginId?: string): boolean {
   if (scope === "both") return true;
-  if (scope === "bots") return kind === "bot" || kind === "side-thread";
-  if (scope === "agents") return kind === "agent" || kind === "coding";
+  if (scope === "own-bot") return pluginId !== undefined && s.bot !== undefined && topPluginIdOf(s.bot) === topPluginIdOf(pluginId) && servesScope("bots", s);
+  if (scope === "bots") return s.kind === "bot" || s.kind === "side-thread" || (s.kind === "agent" && s.bot !== undefined);
+  if (scope === "agents") return s.kind === "agent" || s.kind === "coding";
   return false;
+}
+
+const SCOPES: ReadonlySet<string> = new Set(["bots", "agents", "both", "own-bot"]);
+
+/** A plugin part's scope: the entry's own (an MCP server's or hook's `scope`), else its plugin's manifest's, else its
+ *  top plugin's (a child takes its tree's), else `both`. */
+export function scopeOf(registry: Pick<PluginRegistry, "get">, pluginId: string, entryScope?: unknown): PluginScope {
+  const valid = (v: unknown): PluginScope | undefined => (typeof v === "string" && SCOPES.has(v) ? (v as PluginScope) : undefined);
+  const manifestScope = (id: string) => valid((registry.get(id)?.manifest as { scope?: unknown } | undefined)?.scope);
+  return valid(entryScope) ?? manifestScope(pluginId) ?? manifestScope(topPluginIdOf(pluginId)) ?? "both";
+}
+
+/** Whether a plugin's skills, agent definitions and plugin listing reach a session: its scope (`scopeOf`) serves the
+ *  session (`servesScope`) and its `onlyBackends` the session's backend (`servesBackend`). The bots' Glossary and an
+ *  agent's bridge and placed parts both ask this. */
+export function partsServe(registry: Pick<PluginRegistry, "get">, pluginId: string, s: ScopeSession & { backend?: string }): boolean {
+  return servesScope(scopeOf(registry, pluginId), { kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }) }, pluginId)
+    && servesBackend(registry, pluginId, s.kind, s.backend);
 }

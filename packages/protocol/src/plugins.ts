@@ -35,9 +35,11 @@ export type WrapKind = z.infer<typeof WrapKind>;
 
 /** Who wrote it, from the core's own record (§5.6); the manifest's `generated.by` is only a hint. */
 export const PluginProvenance = z.object({
-  by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled"]),
+  by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled", "plugin"]),
   at: Timestamp,
   bot: BotId.optional(),
+  /** `by: "plugin"`: the plugin whose component asked for the install (`plugins.install`); its OK card names it. */
+  plugin: AnyPluginId.optional(),
   /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
    *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's.
    *  `network: "any"`: the owner's ruling for a server the user brought (2026-11-10, §5.3): its local servers and hooks
@@ -95,7 +97,8 @@ export const PluginSummary = z.object({
   treeHash: TreeHash.optional(),
   /** Tool prefix: `mcp__<namespace>__<Tool>` (§6.7). Children share their top-level plugin's. */
   namespace: utf16(40),
-  scope: Scope,
+  /** The manifest's scope (§5.1); `own-bot`: a bot plugin's own parts, its own bot's sessions and their agents only. */
+  scope: z.union([Scope, z.literal("own-bot")]),
   adult: z.boolean(),
   children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
   /** A development folder (§5.6), on this computer only. */
@@ -632,15 +635,42 @@ export const PLUGINS_METHODS = {
        *  `points.entries`, the entries of a point its own tree declares (§5.4: the declarer reads them), as its host
        *  half reads them. The settings and points calls only while the plugin is on and running. `avatar.cue`,
        *  `avatar.catalogue` and `avatar.box`: its own bot's figure (the plugin's top-level id is the bot), each by its
-       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box. */
-      call: z.enum(["host.call", "storage.synced.get", "storage.synced.keys", "settings.get", "settings.set", "points.entries", "avatar.cue", "avatar.catalogue", "avatar.box", "avatar.report"]),
+       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box.
+       *  `confirm` and `confirmCard`: a question to the user on the app's own sealed card naming the plugin (§5.4);
+       *  `plugins.install`: an install through the user's door, behind its OK card (capability `plugins.install`). */
+      //
+      // Any other member the plugin SDK's catalog gives components (`COMPONENT_CALLS`: `where` "ui" or "both", not
+      // `notYet`) goes through the same capability gate, fence and limits as its host half's call, as the plugin from
+      // the `ui` side; a member that takes a listener is `plugin.layer.watch`'s. The core refuses any other name (the
+      // protocol can't read the SDK's catalog: the core holds the list to it, and a test holds the core to the catalog).
+      call: utf16(128, 1),
       /** The call's parameters in order: `host.call` takes the handler's name, its args and options (`timeoutMs`);
        *  `storage.synced.get` the key; `settings.get` a key, or nothing for every key; `settings.set` the key and the
-       *  value (`null` for the default). At most 64 KiB serialized. */
-      args: z.array(z.unknown()).max(3),
+       *  value (`null` for the default). Bytes cross as `{ $bytes: base64 }`. At most 64 KiB serialized (an
+       *  `audio.play` clip or a `files.write`, 1,500,000: under the app's own cap on a layer's call). */
+      args: z.array(z.unknown()).max(8),
     }),
     result: z.object({ result: z.unknown() }),
-    doc: "A plugin component's call to its own plugin: its host half's handler, a read of its synced store, or its own settings (read, and its plain ones changed). It acts as the plugin, never as the user.",
+    doc: "A plugin component's plugin API call on its own layer connection: its host half's handler, its synced store and settings, or any member the catalog gives components, through the core's capability gate as the plugin, never as the user.",
+  }),
+  pluginLayerWatch: defineMethod({
+    name: "plugin.layer.watch", owner: "A", roles: ["layer"],
+    params: z.object({
+      /** A member that takes a listener the catalog gives components (`files.watch`, `logs.follow`, `usage.watch`,
+       *  `conversation.follow`, `audio.onRecording` …): the core calls it as the plugin from the `ui` side, with its own
+       *  listener in the listener's place, after the same capability and fence checks as a host half's. */
+      call: utf16(128, 1),
+      /** The member's parameters in order, the listener's place `null`. */
+      args: z.array(z.unknown()).max(8),
+    }),
+    result: z.object({ watch: utf16(64, 1) }),
+    doc: "A plugin component's watch: each value comes back as `plugin_api_event` to this layer connection alone, until `plugin.layer.unwatch`, the connection closes, or the plugin stops, is turned off or removed, or loses the capability (`ended`).",
+  }),
+  pluginLayerUnwatch: defineMethod({
+    name: "plugin.layer.unwatch", owner: "A", roles: ["layer"],
+    params: z.object({ watch: utf16(64, 1) }),
+    result: z.object({}),
+    doc: "Ends one of this layer connection's own watches (`plugin.layer.watch`); an unknown or another connection's id is a no-op.",
   }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],
@@ -896,6 +926,16 @@ export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: u
  *  (`host.on(event)`). */
 export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
 export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
+/** A watch's value (`plugin.layer.watch`): a component's listener member (`files.watch`, `logs.follow`, `usage.watch`
+ *  …) called on its own layer connection; each value the core's listener got, as JSON (bytes as `{ $bytes }`), for that
+ *  connection alone. `ended` once, last: the watch is over (the connection's plugin stopped, was turned off or removed,
+ *  lost the capability, or the source ended) and why. */
+export const PluginApiEvent = coreEvent("plugin_api_event", {
+  pluginId: AnyPluginId,
+  watch: utf16(64, 1),
+  value: z.unknown().optional(),
+  ended: z.object({ reason: utf16(500, 1) }).optional(),
+});
 /** The entries of a point the plugin's tree declares changed (its name only, never the entries): for that plugin's
  *  own layer, whose `points.watch` reads them again. */
 export const PluginPointChangedEvent = coreEvent("plugin_point_changed", { pluginId: AnyPluginId, point: utf16(128, 1) });
@@ -944,6 +984,11 @@ export const PLUGINS_EVENTS = {
     type: "plugin_ui_message", owner: "B", roles: ["layer"], schema: PluginUiMessageEvent, transient: true,
     fixture: { type: "plugin_ui_message", ts: 1781270000000, pluginId: "luna", event: "drawn", value: { card: "The Fool" } },
     doc: "A plugin's host half sent its components a message (`ui.send`): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), and the app hands it to that plugin's parts' `host.on`.",
+  }),
+  pluginApiEvent: defineEvent({
+    type: "plugin_api_event", owner: "A", roles: ["layer"], schema: PluginApiEvent, transient: true,
+    fixture: { type: "plugin_api_event", ts: 1781270000000, pluginId: "luna", watch: "w_1", value: { type: "changed", path: "notes/today.md" } },
+    doc: "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
   }),
   pluginSettingsChanged: defineEvent({
     type: "plugin_settings_changed", owner: "B", roles: ["layer"], schema: PluginSettingsChangedEvent, transient: true,
