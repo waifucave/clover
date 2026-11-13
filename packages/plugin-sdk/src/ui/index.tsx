@@ -927,7 +927,8 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
 }
 
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
- *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `approvals`, `conversation`'s `list`, `get` and `answer`, and
+ *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `approvals`, `confirm`, `confirmCard`,
+ *  `plugins.install`, `conversation`'s `list`, `get` and `answer`, and
  *  its own plugin (`host.call`, `host.on`, and `storage.synced`'s `get`, `keys` and `watch`). The rest reaches layers
  *  with lane B's host side (B-M2). */
 export function usePluginApi(): PluginApi {
@@ -1142,7 +1143,16 @@ export function usePluginApi(): PluginApi {
           });
         },
       } as PluginApi["settings"],
-      confirm: unavailable("confirm") as unknown as PluginApi["confirm"],
+      // A question to the user (§5.4 "Asking the user"), on its own connection (`plugin.layer.call`): the app's own sealed
+      // card, naming the plugin, as a host half's; the component gets only the answer (and, with `confirmCard`, the
+      // card's id).
+      confirm: (text: string) => call<{ result: boolean }>("plugin.layer.call", { call: "confirm", args: [text] }).then((r) => r.result === true),
+      confirmCard: (text: string) => call<{ result: { allowed: boolean; card: string } }>("plugin.layer.call", { call: "confirmCard", args: [text] }).then((r) => r.result),
+      // `plugins.install` (capability `plugins.install`, bundled-only): an install through the user's own door; what it
+      // installs lands found, behind its sealed OK card, which says this plugin asked.
+      plugins: {
+        install: (source: unknown) => call<{ result: { id: string; state: string; card?: string } }>("plugin.layer.call", { call: "plugins.install", args: [source] }).then((r) => r.result),
+      } as unknown as PluginApi["plugins"],
       t,
     } as PluginApi;
   }, [part.entry.pluginId, part.mount, t]);

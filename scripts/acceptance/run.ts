@@ -1832,10 +1832,30 @@ async function main(): Promise<void> {
     // reads this plugin's tree and its report comes back; the card is untouched, and its Approve below still works.
     let reviewed = "not asked on the upgrade's old half";
     if (!oldHalf) {
-      const r = await until("the plugin's Review", 120_000, async () => {
-        const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
-        return v.state === "running" ? undefined : v;
-      });
+      // Clover's own jobs run on the run's key (Anthropic, the fake) only with a model chosen for the role: it won't pick
+      // one on that provider by itself (`no-default-model`; lane E's finding on row 55). The reviewer role is set to the
+      // model Alpha runs, as the user would in Settings › Roles, in the home's settings.json (read live), and the file is
+      // put back after, so no other step meets a reviewer it didn't have.
+      const tag = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+      if (tag === undefined || !tag.startsWith("anthropic/")) fail(`Alpha runs ${tag ?? "no model"}, not an Anthropic one the run's key can drive`);
+      const settingsFile = join(home, "settings.json");
+      const settingsBefore = existsSync(settingsFile) ? readFileSync(settingsFile, "utf8") : undefined;
+      const now = settingsBefore === undefined ? {} : (JSON.parse(settingsBefore) as Record<string, unknown>);
+      writeFileSync(settingsFile, `${JSON.stringify({ ...now, reviewer: { ...(typeof now.reviewer === "object" && now.reviewer !== null ? now.reviewer : {}), model: tag } }, null, 2)}\n`, { mode: 0o600 });
+      let r: { state: string; report?: string; why?: string };
+      try {
+        await until("the daemon to take the reviewer role", 30_000, async () => {
+          const v = await c.request<{ state: string }>("plugin.review", { card: card.id, peek: true });
+          return v.state !== "unavailable" ? v : undefined;
+        });
+        r = await until("the plugin's Review", 120_000, async () => {
+          const v = await c.request<{ state: string; report?: string; why?: string }>("plugin.review", { card: card.id }, 30_000);
+          return v.state === "running" ? undefined : v;
+        });
+      } finally {
+        if (settingsBefore === undefined) rmSync(settingsFile, { force: true });
+        else writeFileSync(settingsFile, settingsBefore, { mode: 0o600 });
+      }
       if (r.state !== "done") fail(`its Review is ${r.state}: ${r.why ?? "no reason"} [packages/core/src/registry/plugin-review.ts]`);
       if (!r.report?.includes(`${REVIEW_MARK} ${installed.id}`) || !r.report.includes("a model's reading of the plugin's files")) fail(`its Review's report isn't the job's for ${installed.id}: ${(r.report ?? "").slice(0, 200)}`);
       const after = await c.request<{ card: Card }>("card.get", { id: card.id });
