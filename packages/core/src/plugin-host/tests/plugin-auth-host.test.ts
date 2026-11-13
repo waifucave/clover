@@ -10,7 +10,7 @@
 // Temp homes, the fake approval broker, in-memory secret stores, loopback servers; nothing opens a window.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -221,6 +221,47 @@ export const adapter = {
       // The keyed call carries it.
       const adapter = started.plugins.providerAdapterFor("acme-oauth", { caller: { kind: "core" } })!;
       expect(await text(adapter.streamTurn(turn("fast"), ctxOf("acme-oauth")))).toEqual({ text: "hello over oauth" });
+      expect(oauth.seen.bearer).toEqual([`Bearer ${oauth.token}`]);
+    } finally {
+      started?.stop();
+      await ph.close();
+      opened.close();
+      oauth.stop();
+    }
+  }, 120_000);
+
+  test("the acceptance run's fixture (scripts/acceptance/fixtures/acceptance-oauth), placed as the run places it, signs in and its turn carries the token", async () => {
+    const home = temp("clover-a-auth-oauth-fixture-");
+    const oauth = fakeOAuth();
+    const dest = join(home, "plugins", "acceptance-oauth");
+    cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "scripts", "acceptance", "fixtures", "acceptance-oauth"), dest, { recursive: true });
+    const m = JSON.parse(readFileSync(join(dest, "clover.json"), "utf8")) as { capabilities: string[]; contributes: { models: { auth: { authorizeUrl: string; tokenUrl: string }[] }[] } };
+    m.capabilities = [`network:127.0.0.1:${oauth.port}`];
+    m.contributes.models[0]!.auth[0]!.authorizeUrl = `${oauth.url}/authorize`;
+    m.contributes.models[0]!.auth[0]!.tokenUrl = `${oauth.url}/token`;
+    writeFileSync(join(dest, "clover.json"), JSON.stringify(m));
+    writeFileSync(join(dest, "host", "endpoint.json"), JSON.stringify({ url: `${oauth.url}/v1/turn` }));
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
+    let started: Awaited<ReturnType<typeof startModelPlugins>> | undefined;
+    try {
+      expect(opened.registry.get("acceptance-oauth")?.issues ?? []).toEqual([]);
+      await approve(opened, broker, "acceptance-oauth");
+      started = await startModelPlugins({ registry: opened.registry, host: ph.host, pluginSecrets: ph.pluginSecrets, home, secrets: new DaemonStore(), addApiHandlers: (h) => ph.addApiHandlers(h) });
+      const oauthRun = (entry: { authorizeUrl: string; tokenUrl: string; clientId: string; scopes?: string[] }): OAuthRun => {
+        let resolveUrl!: (u: string) => void;
+        const authorizeUrl = new Promise<string>((r) => { resolveUrl = r; });
+        return { authorizeUrl, tokens: runLoginFlow({ clientId: entry.clientId, authorizeUrl: entry.authorizeUrl, tokenUrl: entry.tokenUrl, callbackPort: 0, scope: (entry.scopes ?? []).join(" "), openBrowser: async (u) => { resolveUrl(u); } }) };
+      };
+      const auth = createPluginAuth({ registry: opened.registry, host: ph.host, secrets: new DaemonStore(), pluginSecrets: secrets, oauth: oauthRun as never });
+      const signing = await auth.signIn("acceptance-oauth", 0);
+      const consent = await fetch(signing.authorizeUrl!, { redirect: "manual" });
+      expect((await fetch(consent.headers.get("location")!)).status).toBe(200);
+      for (let i = 0; i < 100 && (await auth.list("acceptance-oauth"))[0]!.state !== "signed-in"; i++) await Bun.sleep(20);
+      const adapter = started.plugins.providerAdapterFor("acceptance-oauth", { caller: { kind: "core" } })!;
+      expect(await text(adapter.streamTurn(turn("oauth-fast"), ctxOf("acceptance-oauth")))).toEqual({ text: "hello over oauth" });
       expect(oauth.seen.bearer).toEqual([`Bearer ${oauth.token}`]);
     } finally {
       started?.stop();

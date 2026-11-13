@@ -50,3 +50,29 @@ test("the OpenAI-wire fake streams both wires to its key only, and records no ke
     fake.stop();
   }
 });
+
+test("the OAuth fake: a PKCE authorize redirects with a code; the code buys the token only with its verifier, once; the token is the only bearer it answers", async () => {
+  const { createHash, randomBytes } = await import("node:crypto");
+  const { startFakeOAuth } = await import("./fake-oauth");
+  const fake = startFakeOAuth({ reply: "R" });
+  try {
+    const verifier = randomBytes(32).toString("base64url");
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const redirect = "http://localhost:1/auth/callback";
+    const q = new URLSearchParams({ response_type: "code", client_id: "c", redirect_uri: redirect, scope: "models", state: "s1", code_challenge: challenge, code_challenge_method: "S256" });
+    const a = await fetch(`${fake.url}/authorize?${q}`, { redirect: "manual" });
+    expect(a.status).toBe(302);
+    const code = new URL(a.headers.get("location")!).searchParams.get("code")!;
+    expect(new URL(a.headers.get("location")!).searchParams.get("state")).toBe("s1");
+    const exchange = (v: string) => fetch(`${fake.url}/token`, { method: "POST", body: new URLSearchParams({ grant_type: "authorization_code", client_id: "c", code, redirect_uri: redirect, code_verifier: v }) });
+    expect((await exchange("not-the-verifier")).status).toBe(400);
+    const t = (await (await exchange(verifier)).json()) as { access_token: string };
+    expect((await exchange(verifier)).status).toBe(400); // a code buys one token
+    expect(await (await fetch(`${fake.url}/v1/turn`, { method: "POST", headers: { authorization: `Bearer ${t.access_token}` } })).text()).toBe("R");
+    expect((await fetch(`${fake.url}/v1/turn`, { method: "POST", headers: { authorization: "Bearer other" } })).status).toBe(401);
+    expect(fake.seen).toEqual({ authorized: 1, exchanged: 1, refusedExchanges: 2, turns: [{ bearerMatched: true }, { bearerMatched: false }] });
+    expect((await fetch(`${fake.url}/authorize?${new URLSearchParams({ response_type: "code", redirect_uri: "https://evil.example/cb", state: "s", code_challenge: challenge, code_challenge_method: "S256" })}`, { redirect: "manual" })).status).toBe(400);
+  } finally {
+    fake.stop();
+  }
+});

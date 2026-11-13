@@ -7,7 +7,7 @@ import { CARDS_STEP } from "./cards-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { API_AREAS_STEP } from "./api-areas-step";
-import { CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
+import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -68,6 +68,7 @@ export const FULL_STEPS = [
   API_AREAS_STEP,
   CODE_ADAPTER_STEP,
   THIRD_PARTY_MODEL_STEP,
+  OAUTH_SIGN_IN_STEP,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;
