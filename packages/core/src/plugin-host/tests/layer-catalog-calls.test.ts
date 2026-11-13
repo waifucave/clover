@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { PLUGINS_EVENTS, PLUGINS_METHODS } from "@waifucave/clover-protocol";
 import type { ApiRouter } from "../../contracts/plugin-host";
 import type { PluginRecord, RegistryChange } from "../../contracts/plugin-registry";
-import { LAYER_CALL_MAX_BYTES, LAYER_FETCHES_PER_PLUGIN, LAYER_WATCH_VALUE_MAX_BYTES, LAYER_WATCHES_PER_CONNECTION, pluginUi } from "../ui";
+import { LAYER_CALL_MAX_BYTES, LAYER_FETCHES_PER_PLUGIN, LAYER_RESULT_MAX_BYTES, LAYER_WATCH_VALUE_MAX_BYTES, LAYER_WATCHES_PER_CONNECTION, pluginUi } from "../ui";
 
 type Sent = { follows: Map<string, () => void>; event: { type: string; [k: string]: unknown } };
 
@@ -82,6 +82,12 @@ describe("a component's calls of the catalog", () => {
     w.ui.close();
   });
 
+  test("an answer past LAYER_RESULT_MAX_BYTES is refused with why, never cutting the page's connection", async () => {
+    const w = world({ router: async () => "x".repeat(LAYER_RESULT_MAX_BYTES) });
+    expect(((await w.ui.methods[M.pluginLayerCall.name]!({ call: "memory.read", args: ["alpha", "MEMORY.md"] }, w.conn("luna").ctx).catch((e: unknown) => e)) as Error).message).toContain(`a component is handed at most ${LAYER_RESULT_MAX_BYTES}`);
+    w.ui.close();
+  });
+
   test("a plugin's pages hold at most LAYER_FETCHES_PER_PLUGIN fetches open; a fetch's headers are capped", async () => {
     const release: (() => void)[] = [];
     const w = world({ router: (call) => (call.path === "net.fetch" ? new Promise((r) => release.push(() => r(new Response("ok")))) : Promise.resolve(null)) });
@@ -150,6 +156,13 @@ describe("a component's watches (plugin.layer.watch)", () => {
     w.records.delete("luna");
     w.change({ type: "removed", id: "luna" } as RegistryChange);
     expect(ended()).toEqual(["luna's OK no longer lists what files.watch needs", "luna is stopped", "luna was turned off", "luna was removed"]);
+    // A watch judged per source when it opened (another plugin's log, with `logs.read`) ends on any change to the grants.
+    w.records.set("luna", { id: "luna", enabled: true, state: "running", source: "folder", granted: ["logs.read", "files"] } as unknown as PluginRecord);
+    await Bun.sleep(1_050);
+    await watch("logs.follow", ["core", null]);
+    w.records.set("luna", { ...w.records.get("luna")!, granted: ["files"] });
+    w.change({ type: "plugin", id: "luna" } as RegistryChange);
+    expect(ended().at(-1)).toBe("luna's OK changed; watch again");
     expect(w.ui.watchCount()).toBe(0);
     const refusal = async (call: string, args: unknown[]) => ((await watch(call, args).catch((e: unknown) => e)) as Error).message;
     expect(await refusal("files.stat", ["x"])).toContain("takes no listener");

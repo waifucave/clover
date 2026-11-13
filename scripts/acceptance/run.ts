@@ -72,7 +72,7 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { CloverClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
-import { pageProbe } from "./layer-page-step";
+import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
@@ -1978,7 +1978,9 @@ async function main(): Promise<void> {
   // from a folder; its probe command (run as the user, with no model turn) reads and calls the point, keeps and deletes
   // store keys, and posts a note and a message into Alpha's conversation; the run sets a setting and switches the child
   // off, which its watches hear; a turn with a tool call and the user's compaction (session.compact) run its child's
-  // hooks on all eight events; then it is removed with its data, and its data folder is gone.
+  // hooks on all eight events; then it is removed with its data, and its data folder is gone. Beside it, a plugin's page
+  // (acceptance-points-page, its sidebar button's component in the run's app) reaches one member of each area a
+  // component reaches through the UI SDK's usePluginApi, and the row checks each answer.
   if (!STEPS.some((x) => x.startsWith(POINTS_PREFIX))) { /* not in this run */ }
   else if (session === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (oldHalf) pointsOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
@@ -1986,11 +1988,6 @@ async function main(): Promise<void> {
     try {
       const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-points");
       cpSync(join(import.meta.dir, "fixtures", "acceptance-points"), folder, { recursive: true });
-      // The run's own loopback site its component fetches (its port on the fixture's OK, written in at install).
-      pageSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/page" ? new Response(PAGE_SITE_BODY) : new Response("not here", { status: 404 })) });
-      const fixtureManifest = JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { capabilities: string[] };
-      fixtureManifest.capabilities.push(`network:127.0.0.1:${pageSite.port}`);
-      writeFileSync(join(folder, "clover.json"), JSON.stringify(fixtureManifest, null, 2));
       const installed = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
       const id = installed.id;
       const card = await until(`${id}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (installed.card !== undefined && k.id === installed.card) || k.pluginId === id));
@@ -2011,35 +2008,45 @@ async function main(): Promise<void> {
       if (JSON.stringify(probe.keys) !== JSON.stringify(["acceptance-a", "acceptance-b"]) || JSON.stringify(probe.keysAfter) !== JSON.stringify(["acceptance-b"])) wrong.push(`the store's keys were ${JSON.stringify(probe.keys)}, then ${JSON.stringify(probe.keysAfter)} after a delete`);
       if (probe.mood !== "calm") wrong.push(`settings.get gave ${JSON.stringify(probe.mood)}, not the default`);
       if (probe.posted !== "posted") wrong.push(`conversation.note/send: ${String(probe.posted)}`);
-      // Its component, on its layer's own connection (the route `usePluginApi` takes): one member of each area a
-      // component reaches since components got the whole catalog, each answer checked. Only where the run holds the
-      // app's `layer.token` door (from source); a packaged run says so.
-      const openLayer = panelOpener(c);
-      let pageSaid = "its component's route: not run here (this target has no layer token door)";
-      if (openLayer !== undefined) {
-        const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
-        if (computer === "") fail("computer.list lists no computer");
-        mkdirSync(join(userHome, "acceptance-points-page"), { recursive: true });
-        const link = await openLayer(id);
-        try {
-          const page = await pageProbe({
-            layer: { request: ((m: string, p: unknown) => link.request(m, p)) as never, apiEvents: () => link.heard("plugin_api_event") as never },
-            pluginId: id, computer, watchFolder: `home/${computer}/acceptance-points-page`, session, bot: "alpha",
-            site: { url: `http://127.0.0.1:${pageSite.port}`, body: PAGE_SITE_BODY },
-            setMuted: async (muted) => { await c.request("notify.setMuted", { pluginId: id, muted }); },
-            sleep: (ms) => sleep(ms).then(() => undefined),
-          });
-          wrong.push(...page.wrong.map((w) => `its component: ${w}`));
-          pageSaid = `its component reached ${page.said.join(", ")}`;
-        } finally {
-          link.close();
-        }
+      // A plugin's page (acceptance-points-page: its sidebar app button's component, in a frame of its own layer in the
+      // run's app, mounted as soon as it runs): one member of each area a component reaches since components got the
+      // whole catalog, through the UI SDK's own usePluginApi (the app's main process carries each call on the layer's
+      // own connection to the core), its answers handed to its host half and read back with its `report`, each checked.
+      // Its own plugin, not acceptance-points' child: a tree whose hook is a shell script can't ship a client that
+      // imports react (the loader can't follow the script, `loaderReach`). Its notification is muted before it runs, so
+      // nothing shows on the screen; the run's loopback site is on its OK (written in at install); where it writes,
+      // which conversation it notes in and which site it fetches are its settings, set as the user.
+      const pageId = "acceptance-points-page";
+      pageSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/page" ? new Response(PAGE_SITE_BODY) : new Response("not here", { status: 404 })) });
+      const pageFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", pageId);
+      cpSync(join(import.meta.dir, "fixtures", pageId), pageFolder, { recursive: true });
+      const pageManifest = JSON.parse(readFileSync(join(pageFolder, "clover.json"), "utf8")) as { capabilities: string[] };
+      pageManifest.capabilities.push(`network:127.0.0.1:${pageSite.port}`);
+      writeFileSync(join(pageFolder, "clover.json"), JSON.stringify(pageManifest, null, 2));
+      await c.request("notify.setMuted", { pluginId: pageId, muted: true });
+      const pageInstalled = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: pageFolder } }, 60_000);
+      if (pageInstalled.id !== pageId) fail(`the page fixture installed as ${pageInstalled.id}`);
+      await approve(c, await until(`${pageId}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (pageInstalled.card !== undefined && k.id === pageInstalled.card) || k.pluginId === pageId)));
+      await until(`${pageId} to run after its OK`, 60_000, async () => ((await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: pageId }).catch(() => undefined))?.plugin?.state === "running" ? true : undefined));
+      const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
+      if (computer === "") fail("computer.list lists no computer");
+      mkdirSync(join(userHome, "acceptance-points-page"), { recursive: true });
+      for (const [key, value] of [["pageFolder", `home/${computer}/acceptance-points-page`], ["pageSite", `http://127.0.0.1:${pageSite.port}`], ["pageSession", session]] as const) {
+        await c.request("plugin.settings.set", { id: pageId, key, value });
       }
+      const page = await until("its page's answers (its sidebar button's component, through usePluginApi)", 120_000, async () => {
+        const r = (await c.request<{ result: { page?: Record<string, unknown> } }>("command.run", { name: `${pageId}.report`, args: {} })).result;
+        return r.page;
+      }, 1_000).catch((err: unknown) => fail(`${why(err)}; the app log's lines about it: ${readLog(join(logs, "app.log")).split("\n").filter((l) => l.includes(pageId)).slice(-6).join(" | ").slice(0, 600) || "none"}`));
+      const checked = checkPageReport(page, { siteBody: PAGE_SITE_BODY });
+      wrong.push(...checked.wrong.map((w) => `its page: ${w}`));
+      const pageSaid = `${pageId}'s page reached ${checked.said.join(", ")}`;
+      await c.request("plugin.remove", { id: pageId, deleteData: true }).catch((err: unknown) => wrong.push(`${pageId} wasn't removed: ${why(err)}`));
       if (wrong.length > 0) fail(wrong.join("; "));
       // Its note and its message reach Alpha's conversation; the message starts a turn the fake answers.
       await until("its note and its message's turn in Alpha's conversation", 120_000, async () => {
         const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
-        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") && (openLayer === undefined || text.includes("ACCEPTANCE-POINTS-PAGE-NOTE")) ? true : undefined;
+        return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") && text.includes("ACCEPTANCE-POINTS-PAGE-NOTE") ? true : undefined;
       });
       // Its child's hooks: a turn with a tool call runs six of its events, and the user's compaction of Alpha's
       // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
@@ -2072,6 +2079,8 @@ async function main(): Promise<void> {
     } finally {
       pageSite?.stop(true);
       pageSite = undefined;
+      await c.request("plugin.remove", { id: "acceptance-points-page", deleteData: true }).catch(() => undefined);
+      await c.request("notify.setMuted", { pluginId: "acceptance-points-page", muted: false }).catch(() => undefined);
     }
   }
 
