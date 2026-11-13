@@ -120,7 +120,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash-ga-260731",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "volcengine-agent-plan/deepseek-v4-pro-260425",
@@ -207,7 +208,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro-260425",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "volcengine-agent-plan/doubao-seed-2-0-lite-260215",
@@ -295,7 +297,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "doubao-seed-2.0-lite-260215",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "volcengine-agent-plan/doubao-seed-2-0-mini-260215",
@@ -383,7 +386,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "doubao-seed-2.0-mini-260215",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "volcengine-agent-plan/doubao-seed-2-1-turbo-260628",
@@ -455,7 +459,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "doubao-seed-2.1-turbo-260628",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "volcengine-agent-plan/doubao-seed-evolving",
@@ -527,7 +532,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "doubao-seed-evolving",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "volcengine-agent-plan/glm-5-2-260617",
@@ -614,7 +620,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.2-260617",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "volcengine-agent-plan/kimi-k2.6",
@@ -678,7 +685,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "volcengine-agent-plan/kimi-k2.7-code",
@@ -743,7 +751,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "volcengine-agent-plan/kimi-k3",
@@ -815,7 +824,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "volcengine-agent-plan/minimax-m2.7",
@@ -879,7 +889,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "volcengine-agent-plan/minimax-m3",
@@ -944,7 +955,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     }
   ]
 }

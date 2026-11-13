@@ -140,7 +140,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3-coder-next",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3-coder-plus",
@@ -248,7 +249,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3-coder-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.5-122b-a10b",
@@ -358,7 +360,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-122b-a10b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.5-397b-a17b",
@@ -468,7 +471,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.5-plus",
@@ -564,7 +568,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.6-27b",
@@ -674,7 +679,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.6-flash",
@@ -777,7 +783,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.6-plus",
@@ -873,7 +880,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.7-max",
@@ -974,7 +982,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.7-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.7-plus",
@@ -1077,7 +1086,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.7-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.8-flash",
@@ -1180,7 +1190,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "alibaba-cn-anthropic/qwen3.8-max",
@@ -1283,7 +1294,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     }
   ]
 }

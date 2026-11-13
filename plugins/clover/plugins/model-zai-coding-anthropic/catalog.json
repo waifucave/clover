@@ -124,7 +124,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "zai-coding-anthropic/glm-5.3-flash",
@@ -219,7 +220,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

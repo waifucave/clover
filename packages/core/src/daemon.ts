@@ -47,7 +47,7 @@ import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcSe
 import { CloverFence } from "./fence/fence";
 import { grantFiles, pluginGrantMethods, PluginGrants } from "./fence/plugin-grants";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
-import { appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
+import { APP_RENDER_FEATURE, APP_RENDER_TIMEOUT_MS, appCaptureHandler, appOpenHandlers } from "./ipc/app-capture";
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
 import { planReadings, usagePlansMethods } from "./usage/rpc";
@@ -249,7 +249,7 @@ export interface BrowserHostInjection {
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/clover-protocol";
-import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { AppRenderResult, topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -295,6 +295,8 @@ export async function stopWithin(daemon: Pick<RunningDaemon, "stop"> & Partial<P
 }
 /** How often the links try a locked secret store again when it says nothing on unlocking. */
 const LOCKED_RETRY_MS = 30_000;
+/** The longest a call to a door not in yet waits for the daemon's late parts (`lateDoors`); past it, "not served yet". */
+const LATE_DOORS_MAX_MS = 60_000;
 
 export interface RunningDaemon {
   socketPath: string;
@@ -641,6 +643,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  `directory-parked`: the directory's recovery and its crash-left rows parked; `socket-bound`: the IPC socket is
    *  listening), so they assert the order itself rather than compare clocks. A production caller never sets it. */
   bootOrderForTests?: (step: "runtime-state-recovered" | "directory-parked" | "socket-bound") => void;
+  /** TEST ONLY: how long the parts that start after the socket listens (the plugin registry, the links) wait before
+   *  they start, as a loaded machine's slow start does (ms): the late doors' race, on purpose. */
+  lateDoorsDelayMsForTests?: number;
   /** WS-25 §7 TEST SEAM: the MCP OAuth store sessions' `mcp-oauth:<id>` sign-ins are brokered from (a
    *  memory store). Absent: production reads `daemonMcpOAuthStore(<this home's Keychain service>)`, and a
    *  caller that injected its own `secrets` gets a per-daemon MEMORY store (WS-25 integration: shared by the
@@ -3410,6 +3415,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // The late doors (the plugin registry's and the parts' methods, which join `cloverLaneHandlers` after the socket
+  // listens): each part says when its first start is done, or that it waits on the user (a locked store); a call for a
+  // method not in yet waits for both (`CloverServerDeps.lateDoors`), at most LATE_DOORS_MAX_MS.
+  let pluginsDoorsIn!: () => void;
+  let partsDoorsIn!: () => void;
+  const lateDoorsIn = Promise.all([
+    new Promise<void>((r) => { pluginsDoorsIn = r; }),
+    new Promise<void>((r) => { partsDoorsIn = r; }),
+  ]).then(() => {});
+  const lateDoors = (): Promise<void> => Promise.race([lateDoorsIn, new Promise<void>((r) => { setTimeout(r, LATE_DOORS_MAX_MS).unref?.(); })]);
   // Lane K's agents start with the bot side, after the server: the server reaches them through these doors.
   const agentDoors = lateAgentDoors(cloverLaneHandlers);
   // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
@@ -3515,6 +3530,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
+    lateDoors,
     codeAgent: agentDoors.codeAgent,
     bridge: agentDoors.bridge,
     tokens: cloverTokens,
@@ -4120,6 +4136,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // Lane B's plugin workshop (§5.6): a bot builds a plugin in its scratch, installs it for the user's OK, and edits
       // it in place afterwards under the workshop rule.
       ...(partsRegistry !== undefined ? { workshop: workshopFor(partsRegistry) } : {}),
+      // A bot's look at this computer's app (`AppScreenshot`): the app here draws the place (`app.window.render`).
+      appScreenshot: {
+        home: cloverHome,
+        render: async (params) => {
+          const app = (cloverServer?.connections() ?? []).find((c) => c.role === "app" && c.features.includes(APP_RENDER_FEATURE));
+          if (app === undefined || cloverServer === undefined) throw new Error((cloverServer?.connections() ?? []).some((c) => c.role === "app") ? "the app on this computer is older than AppScreenshot" : "the app isn't running on this computer");
+          const answer = AppRenderResult.safeParse(await cloverServer.ask(app, "app.window.render", params, APP_RENDER_TIMEOUT_MS));
+          if (!answer.success) throw new Error("the app's answer to app.window.render isn't one");
+          return answer.data;
+        },
+        ownPlugins: (bot) => (partsRegistry?.registry.list() ?? []).filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id),
+      },
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       // §6.6: the bots' voices stream from their voice plugins on the plugin host, and each piece goes to this
@@ -4393,8 +4421,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
   };
   const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    if (opts.lateDoorsDelayMsForTests !== undefined) await new Promise((r) => setTimeout(r, opts.lateDoorsDelayMsForTests));
     for (;;) {
       while (storeLocked()) {
+        // Its doors, and the bot side's after them, wait on the user's unlock: a call to one answers "not served yet"
+        // meanwhile, not after a wait.
+        pluginsDoorsIn();
+        partsDoorsIn();
         await untilStoreAnswers();
         if (partsStopping) return undefined;
       }
@@ -4415,15 +4448,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   })().catch((err: unknown) => {
     console.error(`[plugins] not started: ${(err as Error).message}`);
     return undefined;
-  });
+  }).finally(() => pluginsDoorsIn());
+  // Its first try's doors are in once it returns or fails (a retry's come when it succeeds).
+  void pluginsStarted;
   void pluginsStarted.then(async (registry) => {
     // No registry (plugins off, it gave up, or the daemon stopping): no plugin hooks will come to wait for.
     if (registry === undefined) pluginsGaveUp = true;
     if (partsStopping) await closeStarted();
   });
   const partsReady = (async () => {
+    if (opts.lateDoorsDelayMsForTests !== undefined) await new Promise((r) => setTimeout(r, opts.lateDoorsDelayMsForTests));
     if (opts.links === false) return void (await pluginsStarted);
     for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
+      // The links wait on the user's unlock (this device's key): their doors aren't coming before it.
+      partsDoorsIn();
       await untilStoreAnswers();
       if (partsStopping) return;
     }
@@ -4505,7 +4543,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
   })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); })
-    .finally(() => partsBrokerSettled(daemonParts?.broker));
+    .finally(() => { partsBrokerSettled(daemonParts?.broker); partsDoorsIn(); });
   // What the stop's asynchronous tail still waits on, by name (`stopPending`, which `stopWithin` names when its bound
   // cuts the stop off): each drain is added as it starts and goes as it settles.
   const stopTail = new Set<string>();

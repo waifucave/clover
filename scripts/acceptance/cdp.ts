@@ -4,7 +4,7 @@
 // port only behind CLOVER_DEV_DEBUG=1 (apps/desktop/src/main/debug-guard.ts); a packaged app never does.
 
 export interface ConsoleEntry { session: string; url: string; level: string; text: string }
-export interface FrameInfo { session: string; url: string; type: string }
+export interface FrameInfo { session: string; url: string; type: string; targetId?: string }
 
 type Pending = { resolve(v: any): void; reject(e: Error): void };
 
@@ -54,11 +54,14 @@ export class Cdp {
     const s: string = m.sessionId ?? "browser";
     if (m.method === "Target.attachedToTarget") {
       const sid: string = m.params.sessionId;
-      const info = m.params.targetInfo as { url: string; type: string };
-      this.frames.set(sid, { session: sid, url: info.url, type: info.type });
+      const info = m.params.targetInfo as { url: string; type: string; targetId?: string };
+      this.frames.set(sid, { session: sid, url: info.url, type: info.type, ...(info.targetId !== undefined ? { targetId: info.targetId } : {}) });
       void this.arm(sid);
     } else if (m.method === "Target.targetInfoChanged") {
-      for (const f of this.frames.values()) void f;
+      // A target attached before its page loaded (a surface window: the island, the pill) was named by its first
+      // address, about:blank: its own address once it has one (the island press found no island target without it).
+      const info = m.params.targetInfo as { url: string; type: string; targetId: string };
+      for (const f of this.frames.values()) if (f.targetId === info.targetId) { f.url = info.url; f.type = info.type; }
     } else if (m.method === "Runtime.consoleAPICalled") {
       const text = (m.params.args as { value?: unknown; description?: string }[]).map((a) => (a.value !== undefined ? String(a.value) : a.description ?? "")).join(" ");
       this.console.push({ session: s, url: this.frames.get(s)?.url ?? "", level: m.params.type, text });

@@ -108,7 +108,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ling-2.6-1t",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "ant-ling/Ling-2.6-flash",
@@ -172,7 +173,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ling-2.6-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "ant-ling/Ling-3.0-flash",
@@ -254,7 +256,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ling-3.0-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "ant-ling/Ling-3.0-flash-VL",
@@ -331,7 +334,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ling-3.0-flash-vl",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "ant-ling/Ling-3.1-flash",
@@ -413,7 +417,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ling-3.1-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "ant-ling/Ring-2.6-1T",
@@ -488,7 +493,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ring-2.6-1t",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     }
   ]
 }

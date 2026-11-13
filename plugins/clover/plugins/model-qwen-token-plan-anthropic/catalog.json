@@ -116,7 +116,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash-0731",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "qwen-token-plan-anthropic/deepseek-v4-pro",
@@ -200,7 +201,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "qwen-token-plan-anthropic/deepseek-v4-pro-0813",
@@ -284,7 +286,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro-0813",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "qwen-token-plan-anthropic/deepseek-v4.1-flash",
@@ -369,7 +372,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4.1-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "qwen-token-plan-anthropic/glm-5.2",
@@ -453,7 +457,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qwen-token-plan-anthropic/glm-5.3",
@@ -534,7 +539,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qwen-token-plan-anthropic/qwen3.6-flash",
@@ -627,7 +633,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "qwen-token-plan-anthropic/qwen3.7-max",
@@ -711,7 +718,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.7-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "qwen-token-plan-anthropic/qwen3.7-plus",
@@ -804,7 +812,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.7-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-token-plan-anthropic/qwen3.8-flash",
@@ -890,7 +899,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.8-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "qwen-token-plan-anthropic/qwen3.8-max",
@@ -978,7 +988,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.8-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     }
   ]
 }

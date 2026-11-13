@@ -81,7 +81,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hyper/auto",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

@@ -13,6 +13,10 @@ import { CloverRpcError, type CloverConn, type CloverHandler } from "./clover";
 export const APP_CAPTURE_FEATURE = "app.capture";
 /** The feature an app lists when it answers `app.window.open` (`app.open`, `app.where`). */
 export const APP_OPEN_FEATURE = "app.open";
+/** The feature an app lists when it answers `app.window.render` (a bot's AppScreenshot). */
+export const APP_RENDER_FEATURE = "app.render";
+/** How long the app has to draw a place for a bot (its render window's own limit is 20 s, then queued ones wait). */
+export const APP_RENDER_TIMEOUT_MS = 60_000;
 /** How long the app has to answer one window's picture. */
 export const APP_CAPTURE_TIMEOUT_MS = 20_000;
 

@@ -126,7 +126,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "ernie-4.5-turbo-128k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "qianfan/ernie-4.5-turbo-20260402",
@@ -215,7 +216,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "ernie-4.5-turbo-20260402",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "qianfan/ernie-4.5-turbo-32k",
@@ -304,7 +306,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "ernie-4.5-turbo-32k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "qianfan/ernie-4.5-turbo-vl",
@@ -393,7 +396,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "ernie-4.5-turbo-vl",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "qianfan/ernie-4.5-turbo-vl-32k",
@@ -482,7 +486,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "ernie-4.5-turbo-vl-32k",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "weak"
     },
     {
       "key": "qianfan/ernie-5.0",
@@ -594,7 +599,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ernie-5.0",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "qianfan/ernie-5.0-thinking-exp",
@@ -682,7 +688,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ernie-5.0-thinking-exp",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "qianfan/ernie-5.0-thinking-latest",
@@ -771,7 +778,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ernie-5.0-thinking-latest",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "qianfan/ernie-5.0-thinking-preview",
@@ -883,7 +891,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ernie-5.0-thinking-preview",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "qianfan/ernie-5.1",
@@ -971,7 +980,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "ernie-5.1",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     },
     {
       "key": "qianfan/ernie-x1.1",
@@ -1059,7 +1069,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ernie-x1.1",
-      "modelFamily": "ernie"
+      "modelFamily": "ernie",
+      "strength": "medium"
     }
   ]
 }

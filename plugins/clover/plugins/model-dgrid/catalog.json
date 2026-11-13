@@ -88,7 +88,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "dgridai/free",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }
