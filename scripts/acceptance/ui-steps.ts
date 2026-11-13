@@ -1072,7 +1072,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await clickText(`Add ${devId} as a development folder`, "button", `Add ${devId} as a development folder`).catch(async (err: Error) => {
         const text = await treeText(cdp);
         const at = text.indexOf("Development folders");
-        return fail(`${err.message.slice(0, 120)} | the page's Development folders part: ${text.slice(Math.max(0, at), at + 700).replace(/\s+/g, " ")}`);
+        return fail(`${err.message.slice(0, 120)} | the page: ${text.replace(/\s+/g, " ").slice(0, 700)} | its Development folders part: ${text.slice(Math.max(0, at), at + 350).replace(/\s+/g, " ")}`);
       });
       const devCard = await ctx.pressCard!("its development folder card", (c) => c.kind === "change" && c.change === "dev-folder");
       const added = await until("the development folder listed", 30_000, async () => { const f = await mine(); return f?.pluginId === devId ? f : undefined; });
