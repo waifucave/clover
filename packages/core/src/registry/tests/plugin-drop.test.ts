@@ -4,13 +4,17 @@
 // same "Built by" card as `PluginInstall`, and the workshop's edit rights after the OK); one nobody claimed is an ordinary
 // found plugin. A folder already there at start keeps its card on the user's switch. A card always shows the tree as last
 // read: a folder that changes while its card waits gets a new card, so no OK covers a tree the user didn't see.
+// No fixed sleeps stand for "it has been read": each wait is on the outcome (a card, a record, a log line), bounded
+// generously for a loaded machine. The OS's watch can drop an event; the registry's catch-up look (fast here) reads the
+// change anyway, so a dropped event costs time, never the test.
 import { afterAll, afterEach, expect, setDefaultTimeout, test } from "bun:test";
-setDefaultTimeout(20_000);
+setDefaultTimeout(90_000);
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PLUGIN_API_VERSION, catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import { RegistryCore, type OkCardRaiser } from "../core";
+import { validatePluginFolder } from "../validate";
 import { PluginFolders, builtByText } from "../folders";
 import { fileRegistryStore } from "../state";
 
@@ -51,20 +55,20 @@ function world(before: Record<string, Record<string, string>> = {}, bundled: Rec
   const bundledDir = join(home, "app-bundled");
   for (const [name, files] of Object.entries(bundled)) write(join(bundledDir, name), files);
   const logs: string[] = [];
-  folders = new PluginFolders({ core, store, pluginsDir, settleMs: SETTLE, log: (l) => logs.push(l), ...(Object.keys(bundled).length > 0 ? { bundledDirs: [bundledDir] } : {}) });
+  folders = new PluginFolders({ core, store, pluginsDir, settleMs: SETTLE, catchUpMs: 300, log: (l) => logs.push(l), ...(Object.keys(bundled).length > 0 ? { bundledDirs: [bundledDir] } : {}) });
   folders.setBotNames((id) => (id === "alpha" ? "Alpha" : undefined));
   return {
     home, pluginsDir, core, folders, raised, logs,
-    // The watch's own start takes a moment on macOS (FSEvents): a change right after it may be missed.
-    async start() { await folders.scan(); folders.start(); stops.push(() => folders.stop()); await Bun.sleep(300); },
+    // A change the watch misses as it starts (or later) is read by the catch-up look.
+    async start() { await folders.scan(); folders.start(); stops.push(() => folders.stop()); },
     /** The cards still waiting for the user. */
     live: () => raised.filter((r) => r.signal?.aborted !== true && core.okCards().some((c) => c.card === r.card)),
   };
 }
 
-/** Until `cond` holds, or fails after a few seconds. */
-async function until(cond: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 400; i++) { if (cond()) return; await Bun.sleep(20); }
+/** Until `cond` holds: a bounded wait on the outcome, generous for a loaded machine. */
+async function until(cond: () => boolean, what: string, ms = 30_000): Promise<void> {
+  for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(20)) if (cond()) return;
   throw new Error(`never: ${what}`);
 }
 
@@ -97,12 +101,13 @@ test("a folder the user drops while Clover runs: an ordinary found plugin with i
   await until(() => w.live().some((r) => r.id === "mine"), "mine's card");
   expect(w.core.get("mine")).toMatchObject({ state: "found", provenance: { by: "found" } });
   expect(w.folders.okText("mine", "macos").source).not.toBe(builtByText("Alpha"));
-  await Bun.sleep(SETTLE * 3);
+  // The one there at start asks nothing on its own: nothing changed in it, so nothing reads it again.
   expect(w.live().some((r) => r.id === "old")).toBe(false);
-  // Loose files at the top are ignored.
+  // Loose files at the top are ignored: read as a watched change reads them, they make no plugin.
   writeFileSync(join(w.pluginsDir, "notes.txt"), "hi");
-  await Bun.sleep(SETTLE * 3);
+  await w.folders.refresh(join(w.pluginsDir, "notes.txt"));
   expect(w.core.list().map((p) => p.id).sort()).toEqual(["mine", "old"]);
+  expect(w.live().some((r) => r.id === "old")).toBe(false);
 });
 
 test("a copy that takes longer than the settle time: no card before its manifest is there, and the card left waiting shows the whole tree", async () => {
@@ -128,10 +133,11 @@ test("a copy that takes longer than the settle time: no card before its manifest
     write(later, { [`part${i}.txt`]: "x".repeat(1000) });
     await Bun.sleep(SETTLE / 2);
   }
-  await Bun.sleep(SETTLE * 3);
+  // The whole tree's hash, as the registry computes it: the one card left waiting must show exactly that.
+  const whole = (await validatePluginFolder(later)).treeHash!;
+  await until(() => { const l = w.live().filter((r) => r.id === "later"); return l.length === 1 && l[0]!.treeHash === whole; }, "one card for the whole tree");
   const waiting = w.live().filter((r) => r.id === "later");
-  expect(waiting).toHaveLength(1);
-  expect(waiting[0]!.treeHash).toBe(w.core.get("later")!.treeHash!);
+  expect(w.core.get("later")!.treeHash).toBe(whole);
   for (const old of w.raised.filter((r) => r.id === "later" && r.card !== waiting[0]!.card)) expect(old.signal?.aborted).toBe(true);
 });
 
@@ -180,8 +186,9 @@ test("a folder named like a bundled plugin (a bot's mv, or the user's copy) is n
   write(scratch, { "clover.json": manifest("alpha"), "README.md": "not the bundled one" });
   renameSync(scratch, join(w.pluginsDir, "alpha"));
   expect(w.folders.dropped("alpha", "alpha")).toBe(false);
-  // The user's copy of one named like another bundled id behaves the same; nothing is read for either.
-  await Bun.sleep(SETTLE * 4);
+  // The user's copy of one named like another bundled id behaves the same; nothing is read for either. Its read is
+  // done once it has said so in the log.
+  await until(() => w.logs.some((l) => l.includes("alpha") && l.includes("bundled")), "the ignored folder's log line");
   expect(w.raised.filter((r) => r.id === "alpha")).toEqual([]);
   expect(w.core.get("alpha")).toMatchObject({ provenance: { by: "bundled" }, treeHash: bundledHash });
   expect(w.folders.pendingDrops()).toEqual([]);

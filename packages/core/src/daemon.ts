@@ -4293,6 +4293,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           levelOf: (c) => node?.registry.get(c)?.level,
           // The drop: a bot's file-tool write into a folder it makes new in the plugins folder names it as the builder.
           dropped: (name: string, bot: string) => void partsRegistry?.folders.dropped(name, bot),
+          // A bot's file-tool write into the plugins folder: the registry reads that plugin once it settles, whatever the
+          // OS's file watch delivered.
+          touched: (path: string) => partsRegistry?.folders.touched(path),
           // A bot's Bash sandbox is drawn from this computer's fence at its level (lane C's `botSandboxSettings`, below):
           // no network, writes to its own folders and temp at ask for risky actions, so a command it holds runs.
           commandsSandboxed: true,

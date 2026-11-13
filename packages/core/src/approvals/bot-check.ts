@@ -452,6 +452,9 @@ export function botApprovalCheck(
      *  the fence just allowed it, is recorded for that bot (`PluginFolders.dropped`), so the registry's read names it
      *  as the plugin's builder. */
     dropped?: (name: string, bot: string) => void;
+    /** A write the fence let through into the plugins folder (a bot editing its plugin): the registry reads that folder
+     *  once it settles, without waiting for the OS's file watch (`PluginFolders.touched`). */
+    touched?: (path: string) => void;
     /** The folder this computer's privacy settings keep Clover out of on the way to a path (`unreachableFolder`), or
      *  undefined. Default: looked up on this computer's disk. */
     unreachable?: (path: string) => string | undefined;
@@ -564,6 +567,7 @@ export function botApprovalCheck(
             if (!there) opts.dropped(name, ctx.botId);
           }
         }
+        if (opts.touched !== undefined) for (const p of req.paths) if (insideFolder(p, join(home!, "plugins"))) opts.touched(p);
         return { behavior: "allow", updatedInput: withRealPaths(tool, input, req, hostTools) };
       }
     }
