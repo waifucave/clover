@@ -23,7 +23,7 @@
 //   so the app delivers it to that plugin's layer only (a listener can't cross the layer path), and a host half's
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
-import { foldTitle } from "@waifucave/clover-plugin-sdk";
+import { foldTitle, ROUTINE_FIRE_PAYLOAD_MAX } from "@waifucave/clover-plugin-sdk";
 import type { BotView, Caller, DeviceView } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { BotSide } from "../../bots/wiring";
@@ -311,6 +311,17 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       await side().host.deliver(id, { from: "plugin", pluginId: ctx.pluginId, text });
     },
 
+    // A plugin's own trigger fired (§7): the engine checks the plugin adds that trigger type and the routine uses it,
+    // and runs it here; the payload reaches the run marked as the trigger's.
+    "routines.fire": async (ctx, args) => {
+      const routine = stringArg(args, 0, "the routine");
+      const type = stringArg(args, 1, "the trigger type", 64);
+      const payload = args[2];
+      if (payload !== undefined && (typeof payload !== "string" || payload.length > ROUTINE_FIRE_PAYLOAD_MAX)) throw new ContractError("invalid", `a trigger's payload is a string of at most ${ROUTINE_FIRE_PAYLOAD_MAX} characters`);
+      const engine = side().routines ?? notRunning("the routines");
+      await engine.fire(routine, type, { pluginId: ctx.pluginId }, payload, { detach: true });
+      return null;
+    },
     "bots.list": () => side().bots.list(),
     "bots.get": (_ctx, args) => {
       const id = stringArg(args, 0, "the bot");

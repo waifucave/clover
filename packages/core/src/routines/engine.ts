@@ -343,14 +343,16 @@ export class RoutineEngine {
   /** A plugin trigger fired (lane B's API, for the plugin that armed it). */
   /** A plugin's trigger fired a routine. Only a plugin that contributes that trigger type (an active `triggers`
    *  entry, `triggerOwners`) fires it; the bundled schedule and webhook types are the core's own, never fired so. */
-  async fire(id: string, type: string, from: { pluginId: string }, payload?: string): Promise<void> {
+  async fire(id: string, type: string, from: { pluginId: string }, payload?: string, o: { detach?: boolean } = {}): Promise<void> {
     if (type === "schedule" || type === "webhook") throw new ContractError("refused", `${type} triggers are the core's own; no plugin fires them`);
     const owners = this.#o.triggerOwners?.(type) ?? [];
     if (!owners.includes(from.pluginId)) throw new ContractError("refused", `${from.pluginId} doesn't contribute the ${type} trigger, so it can't fire it`);
     const l = this.#must(id);
     if (!l.routine.triggers.some((t) => t.type === type)) throw new ContractError("refused", `the routine ${id} has no ${type} trigger`);
     if (l.state !== "active") return;
-    await this.#run(l, `its ${type} trigger`, payload === undefined ? undefined : untrusted(`the ${type} trigger`, payload));
+    const run = this.#run(l, `its ${type} trigger`, payload === undefined ? undefined : untrusted(`the ${type} trigger`, payload));
+    // `detach`: the plugin's call answers once the run has started (a run is a whole turn); its refusals come before.
+    if (o.detach !== true) await run;
   }
 
   /** Reads every file again. With `catchUp`, missed fires follow the missed-run rule. */

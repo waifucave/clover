@@ -1159,6 +1159,34 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
   return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`, agents];
 }
 
+/** The OK card's line for host code that runs without being asked (§5.2): a `host.start`, or `triggers` (which start
+ *  at once on each computer), by where it runs. */
+export const HOST_START_OK_LINES = {
+  each: "It runs in the background from the moment Clover starts, on every computer it's installed on.",
+  main: "It runs in the background from the moment Clover starts, on your main computer.",
+  chosen: "It runs in the background from the moment Clover starts, on the computer you add it on.",
+} as const;
+
+/** What a plugin tree runs without being asked, for its OK (§5.2, §7): the routine triggers it adds (a routine that
+ *  uses one runs when the plugin says so), and where its host code runs in the background. The plugin and its children
+ *  together; none for a tree with neither. */
+export function backgroundOkLines(reports: readonly ManifestReport[]): string[] {
+  const types: string[] = [];
+  const where = new Set<keyof typeof HOST_START_OK_LINES>();
+  for (const r of reports) {
+    const m = r.manifest as { host?: { start?: unknown }; contributes?: { triggers?: unknown } } | undefined;
+    const triggers = Array.isArray(m?.contributes?.triggers) ? m.contributes.triggers : [];
+    for (const t of triggers) if (typeof (t as { type?: unknown }).type === "string") types.push((t as { type: string }).type);
+    if (triggers.length > 0) where.add("each");
+    const start = m?.host?.start;
+    if (start === "each" || start === "main" || start === "chosen") where.add(start);
+  }
+  const lines: string[] = [];
+  if (types.length > 0) lines.push(`It adds routine triggers (${[...new Set(types)].sort().join(", ")}): a routine that uses one runs whenever the plugin says so.`);
+  for (const w of ["each", "main", "chosen"] as const) if (where.has(w)) lines.push(HOST_START_OK_LINES[w]);
+  return lines;
+}
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(

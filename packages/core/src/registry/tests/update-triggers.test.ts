@@ -1,5 +1,5 @@
 // The controller's principle for updates: every line the OK card shows from the tree is covered. For each kind of line
-// the card builder can emit (describeOk, hookOkLines, agentEnvLines), an update whose manifest adds or alters that line
+// the card builder can emit (describeOk, hookOkLines, backgroundOkLines, agentEnvLines), an update whose manifest adds or alters that line
 // asks for the OK again (`updateAddsTrigger`); a plain code change doesn't. The lines left out on purpose say why.
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -59,6 +59,9 @@ describe("every OK-card line an update adds or alters asks again", () => {
       // The agent backend line (the controller's ruling) and agentEnvLines.
       ["an agent backend", withContrib({ agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "bin/agent" }] }), { "bin/agent": "#!/bin/sh\n" }],
       ["what an agent backend gets from your environment", withContrib({ agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "bin/agent", quirks: "quirks.json" }] }), { "bin/agent": "#!/bin/sh\n", "quirks.json": JSON.stringify({ launch: { envAllow: ["HOME_TOKEN"] } }) }],
+      // backgroundOkLines: what it runs without being asked.
+      ["host code that starts at once (host.start)", withContrib({}, { host: { entry: "host/index.js", start: "each" } }), { "host/index.js": "export {};\n" }],
+      ["routine triggers", withContrib({ triggers: [{ type: "luna-ping", title: "Ping", handler: "ping" }] }, { host: { entry: "host/index.js" } }), { "host/index.js": "export const ping = {};\n" }],
       // The card's title and the plugin list name it: the label.
       ["its name", { ...BASE, version: "1.1.0", name: "Clover Settings" }],
       ["its author", { ...BASE, version: "1.1.0", author: { name: "waifucave" } }],
@@ -73,6 +76,13 @@ describe("every OK-card line an update adds or alters asks again", () => {
     const a1 = await snap(agent("bin/agent"), { "bin/agent": "#!/bin/sh\n", "bin/agent2": "#!/bin/sh\n" });
     const a2 = await snap({ ...agent("bin/agent2"), version: "1.2.0" }, { "bin/agent": "#!/bin/sh\n", "bin/agent2": "#!/bin/sh\n" });
     expect(updateAddsTrigger(a1.snapshot, a2.snapshot)).toBe("it adds or changes an agent backend");
+    // Host code that already ran on demand now starts at once, or moves from the main to every computer: its line alters.
+    const host = (start?: string) => withContrib({}, { host: { entry: "host/index.js", ...(start ? { start } : {}) } });
+    const h0 = await snap(host(), { "host/index.js": "export {};\n" });
+    const h1 = await snap({ ...host("main"), version: "1.2.0" }, { "host/index.js": "export {};\n" });
+    const h2 = await snap({ ...host("each"), version: "1.3.0" }, { "host/index.js": "export {};\n" });
+    expect(updateAddsTrigger(h0.snapshot, h1.snapshot)).toContain("It runs in the background from the moment Clover starts, on your main computer.");
+    expect(updateAddsTrigger(h1.snapshot, h2.snapshot)).toContain("on every computer it's installed on");
     // A data plugin that now runs code: its first line alters.
     const data = await snap({ manifest: 1, id: "luna", name: "Luna", version: "1.0.0" }, {});
     expect(updateAddsTrigger(data.snapshot, base.snapshot)).toBe("it now runs code");

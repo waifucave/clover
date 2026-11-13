@@ -331,11 +331,11 @@ describe("the examples' host halves run in the real plugin host", () => {
     expect(call!.result).toEqual({ content: [{ type: "text", text: "Hello, Ada!" }] });
   }, 60_000);
 
-  test("ex-trigger: its handler object answers check, next and missed", async () => {
-    const call = (method: string, args: unknown) => ph.host.invoke({ pluginId: "ex-trigger", handler: "exTrigger", method, args, caller: USER });
-    expect(await call("check", { fields: { every: 30 } })).toEqual({ ok: true, summary: "every 30 minutes" });
-    expect(await call("next", { fields: { every: 30 }, after: 0 })).toEqual({ at: 1_800_000 });
-    expect(await call("missed", { fields: { every: 30 }, after: 0, until: 1 })).toEqual({ at: [] });
+  test("ex-trigger: its handler object arms a routine (refusing fields that don't read) and disarms it", async () => {
+    const call = (method: string, args: unknown) => ph.host.invoke({ pluginId: "ex-trigger", handler: "exTrigger", method, args, caller: { kind: "core" } });
+    expect(await call("arm", { routine: "r_extrig01", type: "ex-trigger", fields: { every: 30 } })).toBeUndefined();
+    await expect(call("arm", { routine: "r_extrig02", type: "ex-trigger", fields: { every: 0 } })).rejects.toThrow("`every` is a whole number of minutes");
+    expect(await call("disarm", { routine: "r_extrig01", type: "ex-trigger" })).toBeUndefined();
   }, 60_000);
 
   test("ex-timeline: its start reads the synced store, the page's calls and the bot's tools change one timeline, kept across a restart", async () => {

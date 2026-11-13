@@ -498,6 +498,27 @@ export interface BotsApi {
 export interface RoutinesApi {
   list(filter?: { bot?: string }): Promise<RoutineView[]>;
   runs(routine: string, page?: { cursor?: string; limit?: number }): Promise<{ runs: RoutineRunView[]; next?: string }>;
+  /** A trigger of this plugin's fired for a routine its handler was armed for (`TriggerHandler.arm`): the routine runs
+   *  on this computer. Host halves only, and only for a trigger `type` the plugin's own `triggers` entry has; needs no
+   *  capability (its card says it starts routines). `payload` (at most `ROUTINE_FIRE_PAYLOAD_MAX` characters) reaches
+   *  the run as text marked as the trigger's, never as the user's. */
+  fire(routine: string, type: string, payload?: string): Promise<void>;
+}
+
+/** The longest payload a trigger hands a routine's run (`RoutinesApi.fire`), in characters. */
+export const ROUTINE_FIRE_PAYLOAD_MAX = 64 * 1024;
+
+/** A `triggers` entry's handler (§7): an object the routine engine calls with `method`, as the core (never a user). A
+ *  routine file that names the trigger's `type` arms it with its fields; the plugin then watches whatever it watches
+ *  and calls `api.routines.fire(routine, type, payload?)` when it should run, with the API its `start` was given (a
+ *  call's own `ctx.api` ends with the call). The engine arms each such routine on the
+ *  computer that holds its file, and arms it again whenever the plugin's host half starts (a restart, an update, a
+ *  crash), so `arm` replaces what it had for that routine. */
+export interface TriggerHandler {
+  /** Start watching for a routine. Throws when the fields don't read; the engine notes it on the routine. */
+  arm(args: { routine: string; type: string; fields: Record<string, unknown> }, ctx: HandlerContext): Promise<void> | void;
+  /** Stop: the routine is gone, paused, changed (armed again after), or names the trigger no more. */
+  disarm(args: { routine: string; type: string }, ctx: HandlerContext): Promise<void> | void;
 }
 
 /** `computers.read` gives the registry; `computers.control` gives holds, the user-working mark, Clover's own windows
@@ -783,8 +804,8 @@ export interface PluginApi {
   /** Not served yet. */
   readonly memory?: NotYet<MemoryApi>;
   readonly bots?: BotsApi;
-  /** Not served yet. */
-  readonly routines?: NotYet<RoutinesApi>;
+  /** `fire` for a host half's own triggers; `list` and `runs` (`routines.read`) aren't served yet. */
+  readonly routines?: NotYet<RoutinesApi, "list" | "runs">;
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
   readonly devices?: DevicesApi;

@@ -105,6 +105,9 @@ export interface DaemonBotsInput {
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
+  /** Lane B's plugin triggers' arm and disarm, where the daemon gives no `pluginHost` (whose webhook ingress this
+   *  leaves off): a routine file that names a plugin's trigger type is armed through that plugin. */
+  pluginTriggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
@@ -523,6 +526,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
       writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
     } : {}),
     ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
+    ...(!host?.triggers && b.pluginTriggers ? { pluginTriggers: b.pluginTriggers } : {}),
   };
   return {
     ...(relay ? { relay } : {}),

@@ -83,6 +83,9 @@ export const API_CALLS = {
   "memory.list": notYet(both("memory.read"), NO_SERVICE), "memory.read": notYet(both("memory.read"), NO_SERVICE),
   "bots.list": both("bots.read"), "bots.get": both("bots.read"), "bots.watch": both("bots.read"),
   "routines.list": notYet(both("routines.read"), NO_SERVICE), "routines.runs": notYet(both("routines.read"), NO_SERVICE),
+  /** A host half's own trigger firing a routine it was armed for: no capability, the core checks the plugin contributes
+   *  that trigger type (its card says it starts routines). */
+  "routines.fire": { where: "host" },
   "computers.list": both("computers.read"), "computers.get": both("computers.read"), "computers.watch": both("computers.read"),
   "computers.holds": both("computers.control"), "computers.takeHold": { capability: "computers.control", where: "host" },
   "computers.releaseHold": { capability: "computers.control", where: "host" }, "computers.setUserWorking": { capability: "computers.control", where: "host" },

@@ -1696,6 +1696,26 @@ async function main(): Promise<void> {
         try { return readFileSync(logFile, "utf8").includes("acceptance-start: started with no call") ? true : undefined; } catch { return undefined; }
       });
       started = `${s.id} (host.start: each, nothing to call) started on its OK alone: its start() line is in its log`;
+      // A plugin's routine trigger (§7): a routine of Alpha's names acceptance-ping before the plugin is there; once
+      // the plugin has its OK the routine is armed through it, it fires, and the routine runs (its run is listed).
+      const routineFile = join(home, "routines", "alpha", "acceptance-ping.md");
+      mkdirSync(join(routineFile, ".."), { recursive: true });
+      writeFileSync(routineFile, "---\nid: r_accping1\nname: Acceptance ping\ntriggers:\n  - type: acceptance-ping\n---\nACCEPTANCE-ROUTINE-PING: answer done.\n");
+      await until("the routine r_accping1 to be listed", 30_000, async () => (await c.request<{ routines: { id: string }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.id === "r_accping1"));
+      const triggerFolder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-trigger");
+      cpSync(join(import.meta.dir, "fixtures", "acceptance-trigger"), triggerFolder, { recursive: true });
+      const t = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: triggerFolder } }, 60_000);
+      const tCard = await until("acceptance-trigger's OK card", 30_000, async () => (await cards(c)).find((k) => (t.card !== undefined && k.id === t.card) || k.pluginId === t.id));
+      const tShown = await c.request<{ card: Card }>("card.get", { id: tCard.id });
+      if (!JSON.stringify(tShown.card).includes("It adds routine triggers (acceptance-ping)")) fail(`${t.id}'s OK card doesn't say it adds routine triggers`);
+      await approve(c, tCard);
+      const ran = await until("the routine's run from its plugin trigger", 120_000, async () => {
+        const r = await c.request<{ runs: { outcome: string; session: string }[] }>("routine.runs", { id: "r_accping1" }).catch(() => undefined);
+        return r?.runs.find((x) => x.outcome !== "running");
+      });
+      const tLog = readLog(join(home, "logs", "plugins", `${t.id}.log`));
+      if (!tLog.includes("acceptance-trigger: armed r_accping1") || tLog.includes("fire failed")) fail(`${t.id}'s log doesn't show the routine armed and fired: ${tLog.slice(-300)}`);
+      started += `; ${t.id}'s card says it adds routine triggers, the routine Alpha had was armed through it on its OK, it fired, and the routine ran (${ran.outcome}, ${ran.session})`;
     }
     record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read; ${reviewed}; ${pressing ? "its Approve pressed in the window (the app signed, the broker checked the proof)" : "approved over RPC (--no-press)"}; now ${state}; ${started}${oldNotAsserted.size > 0 ? `; not asserted on the old build: ${[...oldNotAsserted].join(", ")}` : ""}`);
   } catch (err) {

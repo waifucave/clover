@@ -3767,7 +3767,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginMain: MainHere | undefined | "later" = opts.links === false ? undefined : "later";
   const setPluginMain = (m: MainHere | undefined): void => {
     pluginMain = m;
-    pluginHost?.setMain(m);
+    // (A test's stand-in host may have no `setMain`.)
+    pluginHost?.setMain?.(m);
   };
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
@@ -4084,6 +4085,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(leftovers !== undefined ? { leftovers: (id: string, treeHash: string | undefined, from: Partial<PluginProvenance>) => leftovers.settle(id, { ...(treeHash !== undefined ? { treeHash } : {}), provenance: { by: "bot", at: 0, ...from } }) } : {}),
     });
   };
+  const notStartedHost = (): never => { throw new Error("the plugin host isn't running"); };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`), and their hooks and MCP servers from its host.
     const host = pluginHost;
@@ -4118,6 +4120,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // §6.6: the bots' voices stream from their voice plugins on the plugin host, and each piece goes to this
       // computer's app (`voice.play`), which plays it and lip-syncs the avatar.
       ...(pluginHost !== undefined ? { voiceHost: pluginHost.host } : {}),
+      // §7: a routine file that names a plugin's trigger type is armed through that plugin (read at each call: the plugin
+      // host may have started again since).
+      pluginTriggers: {
+        arm: async (type, routine, fields) => (pluginHost?.triggers ?? notStartedHost()).arm(type, routine, fields),
+        disarm: async (type, routine) => (pluginHost?.triggers ?? notStartedHost()).disarm(type, routine),
+      },
       voicePlay: (p) => {
         for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
       },
