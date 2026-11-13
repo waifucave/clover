@@ -95,15 +95,16 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
       const c = sessionOf(ctx);
       const filter = obj(args[0]);
       if (filter.owner !== undefined) assertOwn(c, filter.owner);
-      const computer = typeof filter.computer === "string" ? filter.computer : undefined;
-      return run(() => svc().list(caller(ctx), { owner: ownerOfSession(c), ...(computer !== undefined ? { computer } : {}) }));
+      if (typeof filter.computer === "string" && filter.computer !== svc().computerName) throw new ContractError("refused", "the Browser tool works on this computer's tabs only", { code: "not_yours" });
+      return run(() => svc().list(caller(ctx), { owner: ownerOfSession(c) }));
     },
     "browser.open": async (ctx, args) => {
       const c = sessionOf(ctx);
       const o = obj(args[0]);
       if (o.owner !== undefined) assertOwn(c, o.owner);
-      // A tab on another computer, or shown at once in a view, is not the tool's to ask for.
-      if (o.computer !== undefined || o.show !== undefined) throw new ContractError("refused", "the Browser tool opens a tab on this computer, drawn out of sight");
+      // A tab on another computer (no peers are served), or shown at once in a view, is not the tool's to ask for; this
+      // computer, named as the tool names it, is the one place it opens.
+      if ((o.computer !== undefined && o.computer !== svc().computerName) || o.show !== undefined) throw new ContractError("refused", "the Browser tool opens a tab on this computer, drawn out of sight");
       const url = o.url === undefined ? undefined : str(o.url, "url");
       const mine = await run(() => svc().list(caller(ctx), { owner: ownerOfSession(c) }));
       if (mine.length > 0) throw new ContractError("refused", `${c.bot !== undefined ? `${c.bot} has` : "this session has"} a tab open already (${mine[0]!.id}): navigate it instead of opening another`, { code: "one_tab" });

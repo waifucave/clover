@@ -55,6 +55,9 @@ describe("the Browser tool's browser.* calls", () => {
   test("a tab on another computer, or shown in a view, isn't the tool's to ask for", async () => {
     const { call } = setup();
     await expect(call("browser.open", alpha, { computer: "Other" })).rejects.toThrow(/this computer/);
+    await expect(call("browser.tabs", alpha, { computer: "Other" })).rejects.toThrow(/this computer/);
+    // This computer, named as the tool names it, is where it opens.
+    expect(await call("browser.open", alpha, { computer: "Studio" })).toMatchObject({ computer: "Studio" });
     await expect(call("browser.open", alpha, { show: { view: "x", viewport: { width: 10, height: 10 } } })).rejects.toThrow(/out of sight/);
   });
 
