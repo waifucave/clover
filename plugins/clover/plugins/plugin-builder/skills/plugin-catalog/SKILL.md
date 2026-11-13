@@ -139,7 +139,7 @@ How to read it:
 - **devices.read**: `devices.list` (both), `devices.watch` (both)
 - **approvals**: `approvals.pending` (ui), `approvals.watch` (ui)
 - **files**: `files.glob` (both), `files.grep` (both), `files.list` (both), `files.move` (both), `files.onDrop` (ui), `files.path` (host), `files.pickFolder` (ui), `files.pickOpen` (ui), `files.pickSave` (ui), `files.readBytes` (both), `files.readText` (both), `files.remove` (both), `files.stat` (both), `files.url` (ui), `files.watch` (both), `files.write` (both)
-- **browser**: `browser.cdp` (both), `browser.close` (both), `browser.hide` (both), `browser.navigate` (both), `browser.onCdpEvent` (ui; NOT SERVED YET: a page's DevTools events aren't streamed to components yet), `browser.open` (both), `browser.screenshot` (both), `browser.show` (both), `browser.tabs` (both), `browser.toolCaller` (both), `browser.watch` (ui)
+- **browser**: `browser.cdp` (both), `browser.close` (both), `browser.hide` (both), `browser.navigate` (both), `browser.onCdpEvent` (ui; NOT SERVED YET: a page's DevTools events aren't streamed to components yet), `browser.open` (both), `browser.screenshot` (both), `browser.show` (both), `browser.tabs` (both), `browser.toolCaller` (host), `browser.watch` (ui)
 - **terminal**: `terminal.close` (ui), `terminal.input` (ui), `terminal.onData` (ui), `terminal.open` (ui), `terminal.resize` (ui)
 - **shell.read**: `shell.account` (ui), `shell.apps` (ui), `shell.state` (ui), `shell.watch` (ui)
 - **shell.control**: `shell.closePanel` (ui), `shell.dragWindow` (ui), `shell.go` (ui), `shell.openBotEditor` (ui), `shell.openPanel` (ui), `shell.openSettings` (ui), `shell.provide` (ui), `shell.setSidebar` (ui), `shell.togglePanel` (ui), `shell.toggleSidebar` (ui)
