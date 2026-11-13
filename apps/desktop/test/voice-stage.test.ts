@@ -85,6 +85,7 @@ describe("the voice player", () => {
     expect(c.frames).toBeGreaterThan(0);
     expect(c.speaking).toEqual([]);
     expect(c.overlap).toBe(1);
+    expect(c.cut).toBe(0);
   });
 
   test("a stage that subscribes mid-sentence hears the frames still ahead", () => {
@@ -120,6 +121,8 @@ describe("the voice player", () => {
     expect(stage.speaking("mira")).toBe(true);
     // The player itself plays two bots at once; the voice mode's queue is what keeps it from happening.
     expect(stage.counters().overlap).toBe(2);
+    // Luna's u1 was sounding when u2 came: one utterance cut.
+    expect(stage.counters().cut).toBe(1);
   });
 
   test("stop silences the bot at once and its late pieces are dropped", () => {

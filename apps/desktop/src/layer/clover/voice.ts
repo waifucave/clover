@@ -11,8 +11,8 @@
 //   piece of one already replaced is dropped. A piece out of order waits for the ones before it.
 // * A stage that isn't shown still has its bot's sound. The frames are kept ahead of the clock, and a feed's subscriber hears
 //   those still ahead when it subscribes, so a stage that mounts mid-sentence is in time.
-// * Test-build counters: pieces received, frames produced and the most bots speaking at once (`counters()`), read by the
-//   acceptance run.
+// * Test-build counters: pieces received, frames produced, the most bots speaking at once and the utterances cut by a newer
+//   one of the same bot (`counters()`), read by the acceptance run.
 import type { VoicePiece } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { speechFrames, type SpeechFeed, type SpeechFrame } from "../../../../../plugins/clover/plugins/vrm/src/lipsync/index";
 
@@ -123,6 +123,9 @@ export class VoiceStage {
   private framesMade = 0;
   /** The most bots that have spoken at once on this device (the acceptance run's check that two voices never overlap). */
   private overlapMost = 0;
+  /** Utterances cut off while they sounded by a newer one of the same bot (the run's check that a plugin's sound waits
+   *  its turn instead of cutting a reply). */
+  private cutCount = 0;
   private readonly timeout: (fn: () => void, ms: number) => unknown;
   private readonly untimeout: (h: unknown) => void;
 
@@ -132,8 +135,8 @@ export class VoiceStage {
   }
 
   /** The player's counts, for the acceptance run (test builds only show them). */
-  counters(): { pieces: number; frames: number; speaking: string[]; overlap: number } {
-    return { pieces: this.pieces, frames: this.framesMade, speaking: [...this.states].filter(([, s]) => s).map(([b]) => b), overlap: this.overlapMost };
+  counters(): { pieces: number; frames: number; speaking: string[]; overlap: number; cut: number } {
+    return { pieces: this.pieces, frames: this.framesMade, speaking: [...this.states].filter(([, s]) => s).map(([b]) => b), overlap: this.overlapMost, cut: this.cutCount };
   }
 
   /** Called after each piece and each speaking change (the test build's counters); never otherwise. */
@@ -194,6 +197,7 @@ export class VoiceStage {
     if (this.retired.includes(`${p.bot}\u0000${p.utterance}`)) return;
     let u = this.now.get(p.bot);
     if (u !== undefined && u.id !== p.utterance) {
+      if (this.states.get(p.bot) === true) this.cutCount++;
       this.retire(p.bot, u);
       u = undefined;
     }

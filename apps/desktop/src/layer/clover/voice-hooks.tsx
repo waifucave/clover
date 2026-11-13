@@ -15,7 +15,7 @@ let made: (() => VoiceStage) | undefined;
 export function voiceStage(): VoiceStage {
   if (stage === undefined) {
     stage = (made ?? (() => new VoiceStage({ audio: () => new AudioContext({ sampleRate: 48_000 }) as unknown as AudioContextLike })))();
-    // The acceptance run's counters (pieces received, frames made, who speaks, most bots speaking at once), on the document's root element: test and
+    // The acceptance run's counters (pieces received, frames made, who speaks, most bots speaking at once, utterances cut), on the document's root element: test and
     // acceptance builds only (the define is `false` in a real build and this is compiled out).
     if (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") {
       const s = stage;
@@ -25,6 +25,7 @@ export function voiceStage(): VoiceStage {
         document.documentElement.dataset.voiceFrames = String(c.frames);
         document.documentElement.dataset.voiceSpeaking = c.speaking.join(",");
         document.documentElement.dataset.voiceOverlap = String(c.overlap);
+        document.documentElement.dataset.voiceCut = String(c.cut);
       };
       s.onChange(show);
       show();
