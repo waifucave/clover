@@ -66,23 +66,13 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** The commands of plugins that are on, OK'd and running (a plugin is `running` only after its OK), the bot's own
  *  plugin's first (a bot's id is its plugin's, §6.1), then the rest in the registry's order. */
 async function commandsFor(r: ComposerRoute, c: ComposerMount): Promise<ComposerCommand[]> {
-  const [listed, plugins] = await Promise.all([r.asApp("command.list", {}), r.asApp("plugin.list", {})]);
-  const live = new Map<string, Record<string, unknown>>();
-  for (const p of (isObject(plugins) && Array.isArray(plugins.plugins) ? plugins.plugins : []) as unknown[]) {
-    if (isObject(p) && typeof p.id === "string" && p.enabled === true && p.state === "running") live.set(p.id, p);
-  }
   const out: ComposerCommand[] = [];
-  for (const cmd of (isObject(listed) && Array.isArray(listed.commands) ? listed.commands : []) as unknown[]) {
-    if (!isObject(cmd) || typeof cmd.name !== "string" || typeof cmd.pluginId !== "string") continue;
-    const plugin = live.get(cmd.pluginId);
-    const top = cmd.pluginId.split("/")[0]!;
-    // A child runs only while its top-level plugin does.
-    if (plugin === undefined || (top !== cmd.pluginId && !live.has(top))) continue;
+  for (const { cmd, plugin, top } of await liveCommands(r.asApp)) {
     const scope = plugin.scope === "bots" || plugin.scope === "agents" || plugin.scope === "both" ? plugin.scope : undefined;
     out.push({
-      name: cmd.name,
-      pluginId: cmd.pluginId,
-      pluginName: typeof plugin.name === "string" ? plugin.name : cmd.pluginId,
+      name: cmd.name as string,
+      pluginId: cmd.pluginId as string,
+      pluginName: typeof plugin.name === "string" ? plugin.name : (cmd.pluginId as string),
       description: typeof cmd.description === "string" ? cmd.description : "",
       ...(isObject(cmd.args) ? { args: cmd.args } : {}),
       ...(scope !== undefined ? { scope } : {}),
@@ -90,6 +80,26 @@ async function commandsFor(r: ComposerRoute, c: ComposerMount): Promise<Composer
     });
   }
   return [...out.filter((x) => x.own), ...out.filter((x) => !x.own)];
+}
+
+/** The commands whose plugin is on, OK'd and running (and its top-level plugin too, for a child): the registry's
+ *  `command.list` rows with their plugin's `plugin.list` row. The slash menu and a command's key both ask this. */
+export async function liveCommands(asApp: (method: string, params: unknown) => Promise<unknown>): Promise<{ cmd: Record<string, unknown>; plugin: Record<string, unknown>; top: string }[]> {
+  const [listed, plugins] = await Promise.all([asApp("command.list", {}), asApp("plugin.list", {})]);
+  const live = new Map<string, Record<string, unknown>>();
+  for (const p of (isObject(plugins) && Array.isArray(plugins.plugins) ? plugins.plugins : []) as unknown[]) {
+    if (isObject(p) && typeof p.id === "string" && p.enabled === true && p.state === "running") live.set(p.id, p);
+  }
+  const out: { cmd: Record<string, unknown>; plugin: Record<string, unknown>; top: string }[] = [];
+  for (const cmd of (isObject(listed) && Array.isArray(listed.commands) ? listed.commands : []) as unknown[]) {
+    if (!isObject(cmd) || typeof cmd.name !== "string" || typeof cmd.pluginId !== "string") continue;
+    const plugin = live.get(cmd.pluginId);
+    const top = cmd.pluginId.split("/")[0]!;
+    // A child runs only while its top-level plugin does.
+    if (plugin === undefined || (top !== cmd.pluginId && !live.has(top))) continue;
+    out.push({ cmd, plugin, top });
+  }
+  return out;
 }
 
 const short = (v: unknown, max: number): string | undefined => (typeof v === "string" && v.length > 0 && v.length <= max ? v : undefined);

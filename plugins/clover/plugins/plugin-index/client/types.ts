@@ -143,6 +143,8 @@ export interface PluginDetailView extends InstalledPlugin {
   grants?: GrantRow[];
   /** The things whose computers the user ticks (its host half, its local servers), each with the computers ticked now. */
   computerTargets?: { target: string; ticked: string[] }[];
+  /** Each command that names a default key, and what became of it (bound, or why not). */
+  commandKeys?: { name: string; key: string; bound: boolean; note: string }[];
 }
 
 /** A file or folder the user picked for a plugin (`plugin.grant.list`). */

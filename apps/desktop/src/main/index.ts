@@ -59,6 +59,7 @@ import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sd
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
+import { PluginKeys } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
@@ -1019,6 +1020,9 @@ function answerKey(): AnswerKey {
   return answerKeyValue;
 }
 
+/** The default keys of the running plugins' commands (plugin-keys.ts), refilled with the registry. */
+const pluginKeys = new PluginKeys(process.platform);
+
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleReload(): void {
   clearTimeout(reloadTimer);
@@ -1060,6 +1064,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
     optional.call(client, "ui.settings"),
     client.request<unknown>("pair.status").catch(() => undefined),
   ]);
+  void pluginKeys.refresh((method, params) => client.request(method, params ?? {})).catch((err) => log(`keys: reading the commands' keys failed: ${why(err)}`));
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
@@ -1922,7 +1927,16 @@ function nativeMenu(win: BrowserWindow, items: MenuItem[], point: { x: number; y
 /** The app's shortcuts, ahead of every layer (`shortcuts.ts`). */
 function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void {
   const which = appShortcut(input, process.platform);
-  if (which === undefined) return;
+  if (which === undefined) {
+    // The app's own keys won above; a plugin command's default key runs that command as the user (the press is theirs).
+    const command = pluginKeys.match({ type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat });
+    if (command !== undefined) {
+      event.preventDefault();
+      log(`keys: ${command} ran from its key`);
+      void pair.client?.request("command.run", { name: command }, 30_000).catch((err: unknown) => log(`keys: ${command} failed: ${why(err)}`));
+    }
+    return;
+  }
   event.preventDefault();
   if (which === "quit") void requestQuit("shortcut");
   else if (which === "close-window") win.close();

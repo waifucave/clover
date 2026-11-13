@@ -164,6 +164,7 @@ export interface CoreMethods {
   "plugin.setComputers": FromB<typeof Proto.PLUGINS_METHODS.pluginSetComputers>;
   "plugin.confirmAdult": FromB<typeof Proto.PLUGINS_METHODS.pluginConfirmAdult>;
   "computer.list": FromB<typeof Proto.COMPUTERS_METHODS.computerList>;
+  "command.list": FromB<typeof Proto.PLUGINS_METHODS.commandList>;
   "plugin.dev.remove": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRemove>;
   "plugin.dev.renew": FromB<typeof Proto.PLUGINS_METHODS.pluginDevRenew>;
   // The app's own (the main process answers them, tree-calls.ts), for the Plugins page only.

@@ -1090,8 +1090,50 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, async () => `its page says ${JSON.stringify(lastAsked || "nothing")}; ${await dumpFrames(cdp)}`);
       await until("its layer's connection", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connected to the core`) ? true : undefined));
       const frames = (await layerDocs()).length;
+      // The page's own reads: its `data-` attributes and its translated line, in whichever frame of its layer holds them.
+      const pageRead = async (expr: string) => {
+        for (const d of await layerDocs()) {
+          const v = await cdp.evaluate(d.session, expr).catch(() => undefined);
+          if (v !== undefined && v !== null && v !== "") return String(v);
+        }
+        return "";
+      };
+      const HELLO = "document.querySelector('[data-acceptance-ui=\"hello\"]')?.textContent ?? ''";
+      // A translated string in the window (§5.5 "Translations"): the page's `t("acceptance-ui.hello")` reads in the app's
+      // language. A German app shows the fixture's German line; back to English it shows the English one, with no restart.
+      // (A packaged core's CLI-role connection can't set the app's language: the line then must be one of the two.)
+      let translated = "";
+      const setLanguage = (language: string) => rpc.request("ui.set", { patch: { language } }).catch(() => undefined).then((r) => r !== undefined);
+      if (await setLanguage("de")) {
+        await until("the page's line in German", 30_000, async () => ((await pageRead(HELLO)) === "Hallo aus dem Fixture" ? true : undefined), async () => `it reads ${JSON.stringify(await pageRead(HELLO))}`);
+        await setLanguage("en");
+        await until("the page's line in English again", 30_000, async () => ((await pageRead(HELLO)) === "Hello from the fixture" ? true : undefined), async () => `it reads ${JSON.stringify(await pageRead(HELLO))}`);
+        translated = "its page's t() line read \"Hallo aus dem Fixture\" with the app in German and \"Hello from the fixture\" in English again, no restart";
+      } else {
+        const line = await pageRead(HELLO);
+        if (line !== "Hallo aus dem Fixture" && line !== "Hello from the fixture") fail(`its page's t() line reads ${JSON.stringify(line)}, not one of its two strings`);
+        translated = `its page's t() line read ${JSON.stringify(line)} (the app's language couldn't be set on this core)`;
+      }
+      // A command's default key (§5.4 `commands[].key`): the fixture's `ping` names mod+shift+y. The press is a real key press
+      // in the window (CDP's trusted input, which main's before-input-event sees as the user's); main runs the command
+      // as the user, its host half tells the page, and the page shows a count. A press before main has read the
+      // commands' keys is lost, so it is pressed again until the page counts one.
+      const keyShell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
+      const chord = process.platform === "darwin" ? 4 | 8 : 2 | 8;
+      let presses = 0;
+      let pinged = "0";
+      await until("its key to run its command", 40_000, async () => {
+        pinged = await pageRead("document.querySelector('[data-acceptance-ui=\"main\"]')?.getAttribute('data-pinged') ?? ''");
+        if (pinged !== "" && pinged !== "0") return true;
+        presses += 1;
+        for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Y", code: "KeyY", windowsVirtualKeyCode: 89, modifiers: chord }, keyShell.session).catch(() => undefined);
+        await sleep(1_500);
+        return undefined;
+      }, async () => `its page counts ${JSON.stringify(pinged)} after ${presses} press(es); the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-3).join(" | ") || "no keys: line"}`);
+      if (!ctx.appLog().includes(`keys: ${id}.ping ran from its key`)) fail(`its page counted a ping, but the app's log has no "keys: ${id}.ping ran from its key"`);
+      const keyed = `its command ${id}.ping, bound to mod+shift+y, ran from a real key press in the window (${presses} press(es) until main had the key; its page counted ${pinged}); ${translated}`;
       // The Plugins page, the user's way: the sidebar's Plugins entry, Installed, its row's Open, Turn off.
-      const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
+      const shell = keyShell;
       for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
       await sleep(300);
       await clickText("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
@@ -1101,7 +1143,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} off`, 20_000, async () => ((await stateOf()) === "off" ? true : undefined));
       await until("its frames out of the window", 20_000, async () => ((await layerDocs()).length === 0 ? true : undefined), () => dumpFrames(cdp));
       await until("its layer's connection closed", 15_000, async () => (ctx.appLog().includes(`layers: ${id}'s layer connection closed`) ? true : undefined));
-      summary13 = `${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
+      summary13 = `${keyed}; ${id} installed from its folder as it is (a TSX client, no react shipped; built by the registry at load), OK'd on its card ${ok}, its page (opened from its sidebar button) in ${frames} frame(s) of its own layer, answered by the core; Turn off in the Plugins page: off, no frame of its layer left, and main closed its layer's connection`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
     }

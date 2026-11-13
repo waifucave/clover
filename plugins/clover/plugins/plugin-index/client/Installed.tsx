@@ -300,6 +300,18 @@ export function Detail(props: DetailProps) {
         )}
       </Section>
 
+      {p.commandKeys !== undefined && p.commandKeys.length > 0 && (
+        <Section title={S.keysTitle}>
+          <ul className="cl-plugin-index__facts" aria-label={S.keysTitle}>
+            {p.commandKeys.map((k) => (
+              <li key={k.name} className="cl-plugin-index__tool" data-key-bound={k.bound ? "" : undefined}>
+                <kbd>{k.key}</kbd> {k.name}: {k.note}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {!p.notYet && p.adult === true && props.adultConfirmed === false && props.onConfirmAdult && (
         <Section title={S.adultTitle}>
           <div className="cl-plugin-index__index cl-plugin-index__setting" data-adult="">

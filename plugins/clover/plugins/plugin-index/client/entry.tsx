@@ -175,10 +175,23 @@ export function toDetailSetting(s: SettingRow, lang = "en"): DetailSetting {
   return { key: s.key, title, secret: false, value: words, ...(control ? { control } : {}), ...(s.asks === true ? { asks: true } : {}) };
 }
 
+/** The keys of a plugin's commands (its manifest's `key`s) and what the core made of each (`command.list`'s `keyState`). */
+export function commandKeys(d: PluginDetail, listed: readonly { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] | undefined): { name: string; key: string; bound: boolean; note: string }[] {
+  const cmds = ((d.manifest as { contributes?: { commands?: { name?: unknown; key?: unknown }[] } }).contributes?.commands ?? []);
+  const out: { name: string; key: string; bound: boolean; note: string }[] = [];
+  for (const c of cmds) {
+    if (typeof c.name !== "string" || typeof c.key !== "string") continue;
+    const st = listed?.find((l) => l.pluginId === d.id && l.name.endsWith(`.${c.name}`))?.keyState;
+    const note = st === undefined ? S.keyOff : st.state === "bound" ? S.keyBound : st.state === "app" ? S.keyApp(st.what ?? "the app") : st.state === "clash" ? S.keyClash(st.with ?? []) : S.keyBare;
+    out.push({ name: c.name, key: c.key, bound: st?.state === "bound", note });
+  }
+  return out;
+}
+
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[] },
+  more: { settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[]; commands?: { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
@@ -227,6 +240,7 @@ export function toDetail(
     adult: d.adult,
     grants: more.grants ?? [],
     computerTargets: computerTargets(d),
+    commandKeys: commandKeys(d, more.commands),
   };
 }
 
@@ -318,8 +332,9 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("plugin.logs", { id: open, lines: 200 })),
       quiet(core.call("notify.mutes", {})),
       quiet(core.call("plugin.grant.list", { pluginId: open })),
+      quiet(core.call("command.list", {})),
     ]).then(
-      ([d, settings, auth, logs, mutes, grants]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}) }, "en", icons)),
+      ([d, settings, auth, logs, mutes, grants, cmds]) => live && setDetail(toDetail(d.plugin, { ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)),
       () => live && setOpen(null),
     );
     return () => {
