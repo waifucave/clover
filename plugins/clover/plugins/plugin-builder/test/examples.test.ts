@@ -17,6 +17,8 @@ import { buildPluginModule } from "../../../../../packages/core/src/registry/bui
 import { pluginToolReadOnly } from "../../../../../packages/core/src/registry/read-only-tools";
 import { validatePluginFolder } from "../../../../../packages/core/src/registry/validate";
 import { handlerFields, visibleEntries } from "../../../../../packages/core/src/plugin-host/api/points";
+import { buildModelPluginSet, readModelPlugins } from "../../../../../packages/core/src/runtime-sdk/model-plugins/load";
+import { catalogModelListings } from "../../../../../packages/core/src/runtime-sdk/models-list";
 import { readExamples, type Example } from "./examples";
 
 const examples = readExamples();
@@ -124,6 +126,13 @@ describe("all of them load through the registry in a temp home", () => {
     expect(opened.registry.get("ex-board-widget")!.reason).toBe("waiting for `ex-board.widgets`");
     expect(opened.registry.get("ex-board")!.reason).toBe("waiting for `settings.section`");
     for (const id of ["ex-tool", "ex-bot", "ex-buddy", "ex-model", "ex-theme", "ex-trigger", "ex-timeline"]) expect({ id, state: opened.registry.get(id)!.state }).toEqual({ id, state: "running" });
+  });
+
+  test("ex-model's model is offered: its catalog is taken in whole and the picker's list (`models.list`) has it", () => {
+    const set = buildModelPluginSet(readModelPlugins(opened.registry));
+    expect(set.refused.filter((r) => r.pluginId === "ex-model")).toEqual([]);
+    const listed = catalogModelListings(set.catalog, new Set()).filter((m) => m.provider === "ex-model");
+    expect(listed.map((m) => ({ id: m.id, name: m.name }))).toEqual([{ id: "ex-model/example-model", name: "Example model" }]);
   });
 
   test("the timeline's read tool is read-only as its OK showed it (no card); its writes are not", () => {

@@ -49,6 +49,9 @@ const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 const readme = (name: string, body: string): string => `# ${name}\n\n${body}\n\nCheck it with \`clover plugin validate\`, and try it on this computer with \`clover plugin dev .\`.\n`;
 
+/** A model row's capability evidence, as the provider's own documentation states it (provider-catalog's shape). */
+const evidence = (value: unknown) => ({ value, source: "official-doc", confidence: "declared" });
+
 /** A camel-case word from an id, for names in code: `my-tool` becomes `myTool`. */
 const camel = (id: string): string => id.replace(/-([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
 /** And a type-case one: `my-tool` becomes `MyTool`. */
@@ -168,8 +171,34 @@ export function ${component}() {
           }],
         },
       }),
-      "catalog.json": json({ catalog: 1, provider: { protocols: ["openai-chat-completions"], authKinds: ["api-key"] }, models: [{ id: "example-model", name: "Example model" }] }),
-      "README.md": readme(name, "A model provider. Put the provider's endpoint in `clover.json` (`endpoint.baseUrl`, and the protocol it speaks), and its models in `catalog.json`. Clover asks for the API key when someone signs in. The endpoint's host is the plugin's network: the example's `api.example.com` shows as a network host on the OK card, so put the provider's own there."),
+      // The catalog file Clover reads (provider-catalog's model-plugin format): `catalog: 1` and one row per model. The
+      // provider's own facts (its protocol, how it signs in) come from the `models` entry in `clover.json`.
+      "catalog.json": json({
+        catalog: 1,
+        rows: [{
+          key: `${id}/example-model`, providerId: id, upstreamId: "example-model", displayName: "Example model",
+          canonicalModelId: "example-model", modelFamily: "other",
+          aliases: [], endpoints: ["chat"], unsupportedParameters: [], status: "supported",
+          inputModalities: evidence(["text"]), outputModalities: evidence(["text"]),
+          toolCalling: evidence("native"), nativeTools: evidence(true),
+        }],
+      }),
+      "README.md": readme(name, `A model provider. Put the provider's endpoint in \`clover.json\` (\`endpoint.baseUrl\`, and the protocol it speaks), and its models in \`catalog.json\`. Clover asks for the API key when someone signs in. The endpoint's host is the plugin's network: the example's \`api.example.com\` shows as a network host on the OK card, so put the provider's own there.
+
+Each row of \`catalog.json\` is one model, and every field in the example is required:
+
+- \`key\`: \`<provider>/<model id>\`, the provider being the \`provider\` of the \`models\` entry in \`clover.json\`.
+- \`providerId\`: that provider. \`upstreamId\`: the model's id as the endpoint takes it (the key's second half).
+- \`displayName\`: the name the model picker shows.
+- \`canonicalModelId\`: the model's own identity (often the same as \`upstreamId\`). \`modelFamily\`: \`"other"\`.
+- \`aliases\`: other ids the endpoint takes for it (often none). \`endpoints\`: \`["chat"]\`.
+- \`unsupportedParameters\`: request parameters the endpoint refuses (often none).
+- \`status\`: \`"supported"\` for a model the picker offers.
+- \`inputModalities\`, \`outputModalities\`: what it reads and writes (\`["text"]\`, or with \`"image"\`).
+- \`toolCalling\`: \`"native"\` when the endpoint takes tools (a bot needs them; the picker leaves out a model without).
+- \`nativeTools\`: \`true\` with \`toolCalling: "native"\`.
+
+The last four are evidence: \`{ "value": …, "source": "official-doc", "confidence": "declared" }\` says the provider's own documentation states it. Optional fields (\`contextWindow\`, \`maxOutputTokens\`, \`pricing\`, \`reasoning\`) take the same shape.`),
     }),
   },
 

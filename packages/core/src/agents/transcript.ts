@@ -124,7 +124,9 @@ export function isFolderNoise(name: string): boolean {
 export function isAgentTranscriptFolder(dir: string): boolean {
   if (!realFolder(dir)) return false;
   try {
-    return readdirSync(dir, { withFileTypes: true }).every((e) => isFolderNoise(e.name) || (e.isFile() && TRANSCRIPT_FILE_NAMES.has(e.name)));
+    // At least one of the writer's files: an empty folder (or one with only Finder's) is nobody's transcript.
+    const entries = readdirSync(dir, { withFileTypes: true });
+    return entries.some((e) => e.isFile() && TRANSCRIPT_FILE_NAMES.has(e.name)) && entries.every((e) => isFolderNoise(e.name) || (e.isFile() && TRANSCRIPT_FILE_NAMES.has(e.name)));
   } catch {
     return false;
   }

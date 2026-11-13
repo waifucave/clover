@@ -226,7 +226,7 @@ import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, run
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
-import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
+import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
 import { localScopeKeyFor, projectScopeRootFor, projectScopeTrust, projectScopeTrusted, runHomeInputFor } from "./runtime-sdk/run-home-input";
 import { reservedMcpServerNames } from "./capabilities/names";
@@ -986,7 +986,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // A home that is not the old layout and holds no Migration C manifest is marked current here, before anything of
   // this boot writes a folder the old layout names (`agents/` takes botless agents' transcripts): from then on it is
   // never read as the old layout, whatever it holds.
-  const oldLayout = linkedRouterSupportsRunHome() ? oldLayoutMarkers(home) : [];
+  let oldLayout = linkedRouterSupportsRunHome() ? oldLayoutMarkers(home) : [];
+  if (oldLayout.length > 0 && ranOnRunHomeBuild(home)) {
+    console.error(`migration C: ${home} reads as the old layout (${oldLayout.join("; ")}), but a run-home build already ran on it — marked current, nothing migrated`);
+    oldLayout = [];
+  }
   if (linkedRouterSupportsRunHome() && oldLayout.length === 0 && migrationCState(home).kind === "absent" && !markCurrentLayout(home)) {
     console.error(`migration C: couldn't mark ${home} as the current layout`);
   }

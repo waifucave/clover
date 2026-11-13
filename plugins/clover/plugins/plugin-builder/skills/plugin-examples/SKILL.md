@@ -283,18 +283,44 @@ File `catalog.json`:
 ```json
 {
   "catalog": 1,
-  "provider": {
-    "protocols": [
-      "openai-chat-completions"
-    ],
-    "authKinds": [
-      "api-key"
-    ]
-  },
-  "models": [
+  "rows": [
     {
-      "id": "example-model",
-      "name": "Example model"
+      "key": "ex-model/example-model",
+      "providerId": "ex-model",
+      "upstreamId": "example-model",
+      "displayName": "Example model",
+      "canonicalModelId": "example-model",
+      "modelFamily": "other",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "unsupportedParameters": [],
+      "status": "supported",
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "declared"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared"
+      }
     }
   ]
 }
@@ -305,6 +331,21 @@ File `README.md`:
 # Ex model
 
 A model provider. Put the provider's endpoint in `clover.json` (`endpoint.baseUrl`, and the protocol it speaks), and its models in `catalog.json`. Clover asks for the API key when someone signs in. The endpoint's host is the plugin's network: the example's `api.example.com` shows as a network host on the OK card, so put the provider's own there.
+
+Each row of `catalog.json` is one model, and every field in the example is required:
+
+- `key`: `<provider>/<model id>`, the provider being the `provider` of the `models` entry in `clover.json`.
+- `providerId`: that provider. `upstreamId`: the model's id as the endpoint takes it (the key's second half).
+- `displayName`: the name the model picker shows.
+- `canonicalModelId`: the model's own identity (often the same as `upstreamId`). `modelFamily`: `"other"`.
+- `aliases`: other ids the endpoint takes for it (often none). `endpoints`: `["chat"]`.
+- `unsupportedParameters`: request parameters the endpoint refuses (often none).
+- `status`: `"supported"` for a model the picker offers.
+- `inputModalities`, `outputModalities`: what it reads and writes (`["text"]`, or with `"image"`).
+- `toolCalling`: `"native"` when the endpoint takes tools (a bot needs them; the picker leaves out a model without).
+- `nativeTools`: `true` with `toolCalling: "native"`.
+
+The last four are evidence: `{ "value": …, "source": "official-doc", "confidence": "declared" }` says the provider's own documentation states it. Optional fields (`contextWindow`, `maxOutputTokens`, `pricing`, `reasoning`) take the same shape.
 
 Check it with `clover plugin validate`, and try it on this computer with `clover plugin dev .`.
 ```
