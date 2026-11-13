@@ -261,6 +261,15 @@ export const APP_METHODS = {
     result: z.object({ text: utf16(100_000).optional() }),
     doc: "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
   }),
+  /** Whether a `voice.listen` for the bot would be taken now: the bot has a voice, its voice plugin is installed and on,
+   *  and that entry listens. The app shows its hold-to-talk control only when it does. It reads the same entry the
+   *  listening itself does, so the control and the call never disagree; it asks nothing of the plugin and never a card. */
+  voiceStatus: defineMethod({
+    name: "voice.status", owner: "D", roles: ["app"],
+    params: z.object({ bot: BotId }),
+    result: z.object({ listens: z.boolean() }),
+    doc: "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
+  }),
   /** One piece of a bot's spoken reply, to every app connection. The contract the app's player codes against:
    *  * `utterance` names one reply's speech; its pieces come in order, `seq` 0, 1, 2…, each `audio` base64 of at most
    *    2 MB (about 1.5 MB of samples). The last piece has `final: true` and empty `audio`: the utterance is complete.

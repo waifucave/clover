@@ -23,6 +23,8 @@
 //   read      a read; `part` limits it to a part, none: any tree part.
 //   settings  a write of the user's own preference: only the named part.
 //   gesture   a call that counts only inside the user's own key press or click (the SendGate).
+//   held      a call that counts only while a hold the user's own press opened is live (push-to-talk's `voice.listen`: the
+//             composer's `listenStart` took the gesture, listen.ts keeps the hold, and the shell's pieces ride it).
 //   card      trust-changing (levels, devices, the main computer): never on this route.
 //   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
@@ -30,10 +32,11 @@ import { TopPluginId } from "@waifucave/clover-protocol";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { resend } from "./resend";
 import { messageAction } from "./message-action";
+import type { ListenHolds } from "./listen";
 /** The bundled tree whose notices are the app's own: never muted. */
 const CLOVER_TREE = "clover";
 
-export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
+export type Disposition = "read" | "settings" | "gesture" | "held" | "card" | "unserved";
 
 export interface TreeCall {
   disposition: Disposition;
@@ -61,6 +64,9 @@ export const CONVERSATION_PART = "clover/conversation";
 /** The character stage: the bundled character plugin's part. */
 export const CHARACTER_PART = "clover/character";
 
+/** The window's shell: the bundled shell plugin's part, the document that records for push-to-talk. */
+export const SHELL_PART = "clover/shell";
+
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // Class 1: the core's settings and the user layers.
   "ui.settings": { disposition: READ },
@@ -72,6 +78,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART], gesture: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART] },
   // The character stage's stop button: the user's click ends that bot's speech (the core ends the utterance).
   "voice.stop": { disposition: "gesture", part: CHARACTER_PART },
+  // The shell's pieces of a recording the user is holding (push-to-talk): audio and whether it is the last, nothing else. Main
+  // names the bot and the utterance, numbers the pieces and refuses any with no hold open (`ListenHolds.piece`); the hold
+  // itself began with the composer's `listenStart`, inside the user's press.
+  "voice.listen": { disposition: "held", part: SHELL_PART },
   // The speak button under a bot's reply (the conversation view): the user's click asks to hear that one reply. The page
   // names the session and the reply's seq; the core reads the text from the log.
   "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
@@ -109,6 +119,11 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
+  // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.
+  "plugin.grant.list": { disposition: READ, part: PLUGINS_PART },
+  "computer.list": { disposition: READ, part: PLUGINS_PART },
+  // Every command with what became of its default key (bound, or the app's, too bare, or shared): the detail's "Keys" lines.
+  "command.list": { disposition: READ, part: PLUGINS_PART },
   // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
   "notify.mutes": { disposition: READ, part: PLUGINS_PART },
   // main's own dialog, for the use the page names: the Plugins page's folders (an install, a development folder) and the
@@ -128,6 +143,12 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.dev.add": PAGE,
   "plugin.dev.remove": PAGE,
   "plugin.dev.renew": PAGE,
+  // The user's own choices on a plugin's page: take a picked file or folder back, where it works (bots, agents), the computers
+  // it runs on, and that they are 18 or older (before an adult plugin is switched on).
+  "plugin.grant.remove": PAGE,
+  "plugin.setScope": PAGE,
+  "plugin.setComputers": PAGE,
+  "plugin.confirmAdult": PAGE,
   "notify.setMuted": PAGE,
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
@@ -322,7 +343,7 @@ const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
 export function pageParams(method: string, params: unknown, part: string, tokens: PickTokens): { params: unknown } | { why: string } {
   const raw = (params !== null && typeof params === "object" && !Array.isArray(params) ? params : {}) as Record<string, unknown>;
   const p = Object.fromEntries(Object.entries(raw).filter(([k]) => !CALLER_KEYS.has(k)));
-  if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "which plugin?" };
+  if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true, ...(p.deleteData === true ? { deleteData: true } : {}) } } : { why: "which plugin?" };
   if (method === "plugin.update") {
     if (p.list === true) return { params: { ...(typeof p.id === "string" ? { id: p.id } : {}), list: true } };
     return typeof p.id === "string" ? { params: { id: p.id, card: true } } : { why: "an update is applied one plugin at a time, the one the user picked" };
@@ -393,6 +414,8 @@ export interface TreeRoute {
   log(line: string): void;
   /** How a refusal is thrown. */
   refuse(why: string): Error;
+  /** The window's push-to-talk holds (listen.ts): `voice.listen` rides one; without it the call is refused. */
+  listens?: Pick<ListenHolds, "piece">;
   /** The picked folders' tokens (the Plugins page's); absent, `ui.pick` and a picked install are refused. */
   tokens?: PickTokens;
   /** Main's native folder or file dialog over the window: the path chosen, or undefined when the user cancels. */
@@ -504,6 +527,10 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
       throw r.refuse(shaped.why);
     }
     return r.request("ui.set", shaped.params);
+  }
+  if (r.method === "voice.listen") {
+    if (r.listens === undefined) throw r.refuse("this app can't record");
+    return r.listens.piece(r.tree.windowId, r.params);
   }
   if (r.method === "voice.stop") {
     const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;

@@ -385,7 +385,8 @@
     display: none;
   }
 }
-@container (max-width: 380px) {
+/* The model's name matters more than its effort: the effort goes first, while the whole name still fits. */
+@container (max-width: 460px) {
   .cl-composer__pill:not([data-level]) .cl-composer__pill-detail {
     display: none;
   }

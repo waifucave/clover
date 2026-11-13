@@ -217,6 +217,11 @@ export type LayerMessage =
   | { type: "avatar-up"; child: string; message: AvatarUp }
   /** One piece of a bot's spoken reply (`voice.play`), to the main window's `clover` shell only: its player plays it. */
   | { type: "voice"; piece: VoicePiece }
+  /** Push-to-talk, to the main window's `clover` shell only, which records (a plugin never gets the microphone): `start` is sent
+   *  only after the user's own press reached main (the composer's `listenStart`) and carries the utterance main minted; `stop`
+   *  after their release (or the cap). The shell sends the audio back as `voice.listen` pieces, which main numbers and checks. */
+  | { type: "listen"; op: "start"; bot: string; utterance: string; maxMs: number }
+  | { type: "listen"; op: "stop"; utterance: string }
   /** An act of the window a bot's own frame asked for through `shell.*` (main checked the capability, the user's press and whose tab shows), to the main
    *  window's `clover` shell only. */
   | { type: "shell-act"; act: ShellAct }
@@ -379,8 +384,10 @@ export interface LayerBridge {
   windowDrag(mount: string): void;
   /** The `composer` spot's host callbacks (spec §5.5), for the entry the core mounted there: `models` and `commands`,
    *  and the acting `setModel`, `interrupt`, `stop` and `runCommand`, each of which counts only inside the user's own key
-   *  press or click. `commands` and `runCommand` are the bundled composer's only. */
-  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown): Promise<unknown>;
+   *  press or click. `commands` and `runCommand` are the bundled composer's only, and so are the push-to-talk three:
+   *  `listenStatus` (a read: does the bot's voice listen), `listenStart` (the user's press: the app records) and
+   *  `listenStop` (the release: what was heard, as text). */
+  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand" | "listenStatus" | "listenStart" | "listenStop", args?: unknown): Promise<unknown>;
   /** `PluginApi.shell` from a component: the window's state and apps, or an act of the window's own. Main checks the plugin's capability, that a bot of
    *  the plugin shows its tab, and for an act the user's own key press or click in this frame. */
   shell(mount: string, method: ShellMethod, args?: unknown): Promise<unknown>;

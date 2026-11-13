@@ -60,7 +60,10 @@ import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, se
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
+import { LAYER_SCHEME } from "./ui/documents";
+import { LISTEN_REQUEST_MS, ListenHolds, micPermission } from "./ui/listen";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
+import { PluginKeys } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
@@ -156,6 +159,8 @@ const safeMode = start.safeMode || args.safeMode;
 
 let runtime: UiRuntime;
 let pair: Pair;
+/** The windows' push-to-talk holds (ui/listen.ts), made at ready. */
+let listens: ListenHolds | undefined;
 let browser: BrowserHost | undefined;
 let tray: AppTray | undefined;
 let mainWindow: BrowserWindow | undefined;
@@ -227,6 +232,16 @@ function why(err: unknown): string {
   return typeof code === "string" || typeof code === "number" ? `${err.name} ${String(code).replace(/[^\w.-]/g, "").slice(0, 40)}` : err.name;
 }
 
+/** The operating system's microphone permission, asked on a real app's first press: undefined when it is granted, else a sentence
+ *  saying why not. On Windows and Linux Chromium's own permission (the handler above) is the whole gate. */
+async function microphoneProblem(): Promise<string | undefined> {
+  if (process.platform !== "darwin") return undefined;
+  const status = systemPreferences.getMediaAccessStatus("microphone");
+  if (status === "granted") return undefined;
+  if (status === "denied" || status === "restricted") return "Microphone access is off for Clover. Turn it on in System Settings, under Privacy & Security, Microphone.";
+  return (await systemPreferences.askForMediaAccess("microphone")) ? undefined : "Microphone access wasn't allowed for Clover.";
+}
+
 async function ready(): Promise<void> {
   if (process.platform === "darwin") {
     app.setActivationPolicy("accessory");
@@ -245,6 +260,26 @@ async function ready(): Promise<void> {
   await hardenSession(session.defaultSession, log);
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
+  // Push-to-talk (listen.ts): the one place a microphone may open is the main window's `clover` shell, for audio, while the
+  // user's own press has a recording open in that window. `hardenSession` refused every permission to every frame; these two
+  // handlers (the request and the check, Chromium asks both) are the only exception, for this session alone.
+  const holds = listens = new ListenHolds({
+    shell: (windowId, message) => runtime.shellMessage(windowId, message),
+    request: (method, params) => {
+      const client = pair?.client;
+      if (client === undefined) return Promise.reject(new Error("Clover isn't running"));
+      return client.request(method, params, LISTEN_REQUEST_MS);
+    },
+    // The operating system's own question, on the first press of a real app; a test or acceptance build never asks (its shell
+    // records from a generated clip, never the microphone).
+    ...(typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? {} : { ensureMic: microphoneProblem }),
+    log,
+  });
+  ui.setPermissionRequestHandler((wc, permission, callback, details) => {
+    callback(micPermission({ permission, mediaTypes: "mediaTypes" in details ? details.mediaTypes : undefined, requestingUrl: details.requestingUrl, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME));
+  });
+  ui.setPermissionCheckHandler((wc, permission, origin, details) =>
+    micPermission({ permission, mediaTypes: details.mediaType === undefined || details.mediaType === "unknown" ? undefined : [details.mediaType], requestingUrl: details.requestingUrl ?? origin, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME));
 
   runtime = new UiRuntime({
     os, platform: process.platform, safeMode, log,
@@ -300,6 +335,7 @@ async function ready(): Promise<void> {
   });
   const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
+    listens: holds,
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     shellState: (id, state) => shellStates.set(id, state),
     rootCommand: (_id, name) => {
@@ -556,6 +592,28 @@ async function ready(): Promise<void> {
     };
     follow();
     watchFile(file, { interval: 250 }, follow);
+  }
+  // The acceptance run's key press (a headless test-marked or acceptance build only, compiled out of a release; the marker
+  // gate's TEST_ONLY_APP_STRINGS checks it): a key chord from a file the harness writes, `{ n, key, modifiers }`, pressed
+  // in the main window with `sendInputEvent`, the one way a synthesized press reaches the window's before-input-event
+  // (CDP key events don't). Each new `n` is one press.
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_KEY_FILE) {
+    const file = process.env.CLOVER_TEST_KEY_FILE;
+    let last = 0;
+    watchFile(file, { interval: 250 }, () => {
+      try {
+        const v = JSON.parse(readFileSync(file, "utf8")) as { n?: unknown; key?: unknown; modifiers?: unknown };
+        if (typeof v.n !== "number" || v.n <= last || typeof v.key !== "string" || !Array.isArray(v.modifiers)) return;
+        last = v.n;
+        const modifiers = v.modifiers.filter((m): m is "shift" | "control" | "alt" | "meta" => m === "shift" || m === "control" || m === "alt" || m === "meta");
+        const w = mainWindow;
+        if (w === undefined || w.isDestroyed()) return;
+        for (const type of ["keyDown", "keyUp"] as const) w.webContents.sendInputEvent({ type, keyCode: v.key, modifiers });
+        log(`keys: pressed ${modifiers.join("+")}+${v.key} in the window`);
+      } catch {
+        // Not written yet.
+      }
+    });
   }
   // The acceptance run's narrow window (row 40; a headless test-marked or acceptance build only, compiled out of a
   // release; the marker gate's TEST_ONLY_APP_STRINGS checks it): the main window's real content size from a file the
@@ -1069,6 +1127,10 @@ function answerKey(): AnswerKey {
   return answerKeyValue;
 }
 
+/** The default keys of the running plugins' commands (plugin-keys.ts), refilled with the registry. */
+const pluginKeys = new PluginKeys(process.platform);
+pluginKeys.onSet = (size) => log(`keys: ${size} command key(s) bound`);
+
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleReload(): void {
   clearTimeout(reloadTimer);
@@ -1110,6 +1172,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
     optional.call(client, "ui.settings"),
     client.request<unknown>("pair.status").catch(() => undefined),
   ]);
+  void pluginKeys.refresh((method, params) => client.request(method, params ?? {})).catch((err) => log(`keys: reading the commands' keys failed: ${why(err)}`));
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
@@ -1978,6 +2041,7 @@ function watchWindow(win: BrowserWindow): void {
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
+    listens?.closeWindow(id);
     windowDrags.forget(id);
     cursors.delete(id);
     pointers.forget(id);
@@ -2030,7 +2094,20 @@ function nativeMenu(win: BrowserWindow, items: MenuItem[], point: { x: number; y
 /** The app's shortcuts, ahead of every layer (`shortcuts.ts`). */
 function shortcut(event: Electron.Event, input: Input, win: BrowserWindow): void {
   const which = appShortcut(input, process.platform);
-  if (which === undefined) return;
+  if (which === undefined) {
+    // The app's own keys won above; a plugin command's default key runs that command as the user (the press is theirs).
+    const command = pluginKeys.match({ type: input.type, key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift, isAutoRepeat: input.isAutoRepeat });
+    // A test-marked or acceptance build says which chord an unbound press made (the harness reads it); a release never does.
+    if (command === undefined && (input.type === "keyDown" || input.type === "rawKeyDown") && (input.meta || input.control) && (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string")) {
+      log(`keys: an unbound ${input.type} made ${pluginKeys.chordOf({ key: input.key, code: input.code, control: input.control, meta: input.meta, alt: input.alt, shift: input.shift }) ?? "no chord"}`);
+    }
+    if (command !== undefined) {
+      event.preventDefault();
+      log(`keys: ${command} ran from its key`);
+      void pair.client?.request("command.run", { name: command }, 30_000).catch((err: unknown) => log(`keys: ${command} failed: ${why(err)}`));
+    }
+    return;
+  }
   event.preventDefault();
   if (which === "quit") void requestQuit("shortcut");
   else if (which === "close-window") win.close();

@@ -3625,6 +3625,81 @@
                   "type": "string",
                   "maxLength": 64
                 },
+                "keyState": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "bound"
+                        },
+                        "chord": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "chord"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "app"
+                        },
+                        "what": {
+                          "type": "string",
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "what"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "bare"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "clash"
+                        },
+                        "with": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 128
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "with"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
                 "runsOn": {
                   "type": "string",
                   "enum": [

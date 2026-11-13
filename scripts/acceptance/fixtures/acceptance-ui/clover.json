@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-ui",
   "name": "Acceptance UI",
-  "description": "The acceptance run's third-party plugin with UI, installed from a folder: its client is TSX that imports React and the UI SDK, and the folder ships no react (each layer's import map serves them). Its page, opened from its sidebar app button, asks the core once, so its layer has a connection of its own. Turned off in the Plugins page, its page leaves the window and its layer's connection closes.",
+  "description": "The acceptance run's third-party plugin with UI, installed from a folder: its client is TSX that imports React and the UI SDK, and the folder ships no react (each layer's import map serves them). Its page, opened from its sidebar app button, asks the core once, so its layer has a connection of its own. Turned off in the Plugins page, its page leaves the window and its layer's connection closes. It also has one command, ping, bound to mod+shift+y (the key's press, in the window, makes its page show a count), and an English and a German string (the page shows the one for the app's language).",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -26,6 +26,28 @@
         "opens": "acceptance-ui",
         "order": 950
       }
+    ],
+    "commands": [
+      {
+        "name": "ping",
+        "description": "Tells its page it was pinged",
+        "handler": "ping",
+        "key": "mod+shift+y"
+      }
+    ],
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      },
+      {
+        "lang": "de",
+        "file": "locales/de.json"
+      }
     ]
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
   }
 }

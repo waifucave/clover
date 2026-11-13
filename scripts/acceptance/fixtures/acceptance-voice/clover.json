@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "acceptance-voice",
   "name": "Acceptance voice",
-  "description": "The acceptance run's fixture voice: it speaks any text as a short generated tone (pcm16-24k), with no key and no network, so a run can see a bot's reply reach the app as speech and the avatar's mouth move.",
+  "description": "The acceptance run's fixture voice: it speaks any text as a short generated tone (pcm16-24k) and listens to push-to-talk pieces (pcm16-16k), answering with how many pieces and bytes reached it, with no key and no network, so a run can see a bot's reply reach the app as speech and the avatar's mouth move, and the app's recording reach a listening voice.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
@@ -13,7 +13,7 @@
   },
   "contributes": {
     "voices": [
-      { "id": "acceptance-voice", "name": "Acceptance voice", "speak": true, "handler": "voice" }
+      { "id": "acceptance-voice", "name": "Acceptance voice", "speak": true, "listen": true, "handler": "voice" }
     ]
   }
 }
