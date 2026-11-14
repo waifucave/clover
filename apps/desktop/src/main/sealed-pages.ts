@@ -229,8 +229,10 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     if (b2 !== null) io.observe(b2);
   });
   // The button's own size, for a part that gives a labelled button the room it takes (numbers only).
-  const send = () => { const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); try { parent.postMessage({ cloverSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ } };
-  window.addEventListener("DOMContentLoaded", send);
+  // A reading of no size is no reading (the page is laid out in a frame that starts at nothing, and a first look can find the
+  // button without a box): it is said again when the button takes its size, so the frame is never left at nothing.
+  const send = () => { const r = document.querySelector(".seal-button"); if (r === null) return; const q = r.getBoundingClientRect(); if (q.width <= 0 || q.height <= 0) return; try { parent.postMessage({ cloverSealedSize: { width: Math.ceil(q.width), height: Math.ceil(q.height) } }, "*"); } catch (e) { /* no parent */ } };
+  window.addEventListener("DOMContentLoaded", () => { const r = document.querySelector(".seal-button"); if (r !== null) new ResizeObserver(send).observe(r); send(); });
   window.addEventListener("load", send);
   // A click inside the button only, the renderer's own handed-over press (a page's own dispatch's isTrusted reads
   // false), after enough time visible and a beat after the page was shown. isTrusted and the 400 ms open-delay are
