@@ -9,6 +9,11 @@
 //   there is no node, no timer and no listener work: an idle player costs nothing.
 // * One utterance per bot at a time. A piece of a new utterance of the same bot replaces the playing one at once; a late
 //   piece of one already replaced is dropped. A piece out of order waits for the ones before it.
+// * One bot at a time on the device (the voice slot, spec §6.6): a bot whose pieces come while another bot's utterance
+//   is still here waits its turn, first come first served; its pieces are kept and start once the one before has ended
+//   here (played out, stopped or cut). The voice mode's queue already sends them in turn, but its "done" can come before
+//   the sound has ended here (a player whose clock started late reports late, and the queue's fallback lets go), so the
+//   one sink holds the rule itself: two bots are never marked speaking and their sounds never play together.
 // * A stage that isn't shown still has its bot's sound. The frames are kept ahead of the clock, and a feed's subscriber hears
 //   those still ahead when it subscribes, so a stage that mounts mid-sentence is in time.
 // * When an utterance ends here (played out, stopped, cut by a newer one, or dropped while muted) the player says so
@@ -67,6 +72,8 @@ class Utterance {
   readonly sources = new Set<AudioSourceLike>();
   /** The pieces that came out of order, by seq. */
   readonly waiting = new Map<number, VoicePiece>();
+  /** The pieces in order that wait for this bot's turn on the device (another bot's utterance is still here). */
+  readonly held: VoicePiece[] = [];
   next = 0;
   /** Where on the audio clock the next piece starts (not before now). */
   cursor = 0;
@@ -115,6 +122,8 @@ function pcm16(base64: string): Float32Array {
 export class VoiceStage {
   private ctx: AudioContextLike | undefined;
   private readonly now: UtteranceMap = new Map();
+  /** The bots with an utterance here, in the order their first pieces came: the first sounds, the rest wait their turn. */
+  private readonly turns: string[] = [];
   private readonly retired: string[] = [];
   private readonly feeds = new Map<string, BotFeed>();
   private readonly states = new Map<string, boolean>();
@@ -150,7 +159,8 @@ export class VoiceStage {
 
   /** Every bot's sound stops at once (the user holding push-to-talk). */
   stopAll(): void {
-    for (const bot of [...this.now.keys()]) this.stop(bot);
+    // The waiting ones first, so none of them gets its turn as the one sounding stops.
+    for (const bot of [...this.turns].reverse()) this.stop(bot);
   }
 
   /** Called after each piece and each speaking change (the test build's counters); never otherwise. */
@@ -163,7 +173,7 @@ export class VoiceStage {
     if (this.muted === muted) return;
     this.muted = muted;
     for (const l of [...this.muteWatchers]) l(muted);
-    if (muted) for (const bot of [...this.now.keys()]) this.stop(bot);
+    if (muted) this.stopAll();
   }
 
   isMuted(): boolean {
@@ -222,23 +232,49 @@ export class VoiceStage {
     if (u === undefined) {
       u = new Utterance(p.utterance);
       this.now.set(p.bot, u);
+      // A newer utterance of a bot keeps its bot's place; a bot with none here takes the last.
+      if (!this.turns.includes(p.bot)) this.turns.push(p.bot);
     }
     u.waiting.set(p.seq, p);
-    // Play what is in order now; a gap waits for the missing piece.
+    // Play what is in order now (held while another bot has the device); a gap waits for the missing piece.
+    const mine = this.turns[0] === p.bot;
     for (let q = u.waiting.get(u.next); q !== undefined; q = u.waiting.get(u.next)) {
       u.waiting.delete(u.next);
       u.next++;
-      this.schedule(p.bot, u, q);
+      if (mine) this.schedule(p.bot, u, q);
+      else u.held.push(q);
     }
     this.settle(p.bot, u);
   }
 
-  /** The user stopped a bot's speech, or the core ended it: what plays stops at once. */
+  /** The user stopped a bot's speech, or the core ended it: what plays stops at once (and the next bot's turn comes). */
   stop(bot: string): void {
     const u = this.now.get(bot);
     if (u === undefined) return;
     this.retire(bot, u);
     this.setSpeaking(bot, false);
+    this.leave(bot);
+  }
+
+  /** A bot's utterance is over here: it gives up its place, and if it had the device, the next bot's turn begins. */
+  private leave(bot: string): void {
+    const at = this.turns.indexOf(bot);
+    if (at < 0) return;
+    this.turns.splice(at, 1);
+    if (at === 0) this.nextTurn();
+  }
+
+  /** The first bot waiting gets the device: what it holds starts from now. */
+  private nextTurn(): void {
+    const bot = this.turns[0];
+    if (bot === undefined) return;
+    const u = this.now.get(bot);
+    if (u === undefined) {
+      this.turns.shift();
+      return this.nextTurn();
+    }
+    for (const q of u.held.splice(0)) this.schedule(bot, u, q);
+    this.settle(bot, u);
   }
 
   private clockNow(): number {
@@ -266,6 +302,7 @@ export class VoiceStage {
       s.disconnect?.();
     }
     u.sources.clear();
+    u.held.length = 0;
     this.feeds.get(bot)?.clear();
   }
 
@@ -308,7 +345,8 @@ export class VoiceStage {
 
   /** After a piece or when a source ends: the utterance is over once its last piece has played; waiting for a missing piece or a final that never came, it ends on a stall. */
   private settle(bot: string, u: Utterance): void {
-    if (this.now.get(bot) !== u) return;
+    // One waiting its turn neither ends nor stalls: its time starts when its turn does.
+    if (this.now.get(bot) !== u || this.turns[0] !== bot) return;
     if (u.stall !== undefined) {
       this.untimeout(u.stall);
       u.stall = undefined;
@@ -319,6 +357,7 @@ export class VoiceStage {
       this.feeds.get(bot)?.clear();
       this.setSpeaking(bot, false);
       this.ended?.(bot, u.id);
+      this.leave(bot);
       return;
     }
     if (this.states.get(bot) === true || u.waiting.size > 0) {
