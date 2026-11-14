@@ -15,7 +15,7 @@ import { CAPABILITIES, capabilityOkText, isCapability, parseCapability, parseSet
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
-import { SAME_ON_EVERY_TAB, SPOT_NAMES, botsOffer, foldTitle, isReservedPluginName, spotInfo } from "../catalogs/spots";
+import { OWN_PANEL_KEY_RE, SAME_ON_EVERY_TAB, SPOT_NAMES, botsOffer, foldTitle, isOwnPanelKey, isReservedPluginName, spotInfo } from "../catalogs/spots";
 import { holdsBot, marksAppParts, pluginParts, skillItem } from "./parts";
 import { treePathProblem } from "../formats/tree-hash";
 import { parseJsonc } from "../jsonc";
@@ -1035,6 +1035,19 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     }
     if (e.key !== undefined && spot.shape !== "keyed") f.warn("ui_key", [...at, "key"], `"${spotName}" is not keyed; \`key\` is ignored`);
   }
+  // A `panel` entry whose key isn't a stock panel's adds a panel of its own (§5.5): it needs a title for its button, and a key that is
+  // a plain word (it is part of the panel's id in the window).
+  if (spotName === "panel" && e.hide !== true && isOwnPanelKey(typeof e.key === "string" ? e.key : undefined)) {
+    const key = e.key as string;
+    if (!OWN_PANEL_KEY_RE.test(key)) {
+      f.error("entry", "panel_key", [...at, "key"], `A panel's key is lower-case words and digits joined with hyphens (up to 32 characters); "${key}" isn't. A key that is not one of the stock panels' (session, terminal, diff, browser, files, agent) adds a panel.`);
+      return false;
+    }
+    if ((e.component !== undefined || e.web !== undefined) && e.title === undefined) {
+      f.error("entry", "panel_title", [...at, "title"], `The panel "${key}" adds a panel of its own: it needs a \`title\`, which names its button.`);
+      return false;
+    }
+  }
   // Whoever owns a plug sets the rules for what plugs into it (§5.5, the owner's rule of November 14).
   const when = isObject(e.when) ? e.when.bot : undefined;
   const bots = when === undefined ? [] : Array.isArray(when) ? when : [when];
@@ -1053,7 +1066,7 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     }
     if (spotName === "panel" && !botsOffer(spotName, typeof e.key === "string" ? e.key : undefined)) {
       const which = typeof e.key === "string" ? `"${e.key}" isn't one of them` : "an entry with no key would fill every panel";
-      f.error("entry", "bot_panel_not_offered", [...at, typeof e.key === "string" ? "key" : "spot"], `Bots offers the Browser and agent panels on ${bot}'s tab; ${which}.`);
+      f.error("entry", "bot_panel_not_offered", [...at, typeof e.key === "string" ? "key" : "spot"], `Bots offers the Browser and agent panels on ${bot}'s tab, and a panel of its own (any other key, with a title); ${which}.`);
       return false;
     }
     // A spot outside the catalog is one a plugin declares (a bot's own component's, inside its tab): judged where it is.
@@ -1285,6 +1298,30 @@ export function botPartLines(manifest: Manifest | undefined): string[] {
   return lines;
 }
 
+/** The tab kinds an added panel's `when.session` names, as the OK card says them. */
+const PANEL_KIND_WORDS: Readonly<Record<string, string>> = { bot: "bots' tabs", agent: "agents' tabs", "side-thread": "side threads' tabs", coding: "coding sessions" };
+
+/** The OK card's line for each panel a plugin adds (a `panel` entry whose key isn't a stock panel's, §5.5): its title, and where it
+ *  shows: on its bot's tab alone when it is inside a bot's plugin, else on the right of every tab of the kinds it names. */
+export function ownPanelLines(manifest: Manifest | undefined): string[] {
+  const bot = holdsBot(manifest) ? (botNameOf(manifest) ?? "its bot") : undefined;
+  const lines: string[] = [];
+  for (const e of manifest?.contributes?.ui ?? []) {
+    const u = e as { spot?: string; key?: string; app?: boolean; title?: unknown; component?: unknown; web?: unknown; when?: { session?: unknown } };
+    if (u.spot !== "panel" || !isOwnPanelKey(u.key) || (u.component === undefined && u.web === undefined)) continue;
+    const title = typeof u.title === "string" ? u.title : isObject(u.title) && typeof u.title.en === "string" ? u.title.en : (u.key as string);
+    if (bot !== undefined && u.app !== true) {
+      lines.push(`It adds a panel, "${title}", to ${bot}'s tab, with a button of its own beside the right panels' buttons.`);
+      continue;
+    }
+    const raw = u.when?.session;
+    const kinds = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).filter((k): k is string => typeof k === "string");
+    const where = kinds.length === 0 ? "every tab" : kinds.map((k) => PANEL_KIND_WORDS[k] ?? k).join(", ");
+    lines.push(`It adds a panel, "${title}", on the right of ${where}, with a button of its own beside the right panels' buttons.`);
+  }
+  return lines;
+}
+
 export function describeOk(
   report: ManifestReport,
   opts: {
@@ -1317,6 +1354,7 @@ export function describeOk(
   if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
   lines.push(...botPartLines(report.manifest));
+  lines.push(...ownPanelLines(report.manifest));
   if (report.contributions.some((c) => c.point === "island.line")) lines.push(ISLAND_LINE_OK_LINE);
   if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0) {
     lines.push(VOICE_MODE_OK_LINE);

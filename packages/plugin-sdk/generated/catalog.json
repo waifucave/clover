@@ -1121,7 +1121,7 @@
       "context": [
         "session"
       ],
-      "doc": "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder.",
+      "doc": "The panel host, keyed by panel: each stock panel (session, terminal, diff, files, browser, agent) is a plugin of its own, and replaceable. An entry whose key is not a stock one ADDS a panel of the plugin's own, with a button of its own beside the stock ones: it needs a `title`, `icon` is optional, and `when.session` (`bot`, `agent`, `coding`) says which tabs show it (all when absent). Inside a bot's plugin it shows on that bot's tab only; beside the bot (`\"app\": true`) or in a plugin with no bot, on every tab of the kinds it names. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a stock key no plugin fills shows the host's placeholder.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

@@ -12,7 +12,8 @@ import { createContext, useContext, useLayoutEffect, type ReactNode } from "reac
 import type { BotRef } from "../runtime/types";
 import { IconChevronDown, IconEdit, IconSidebar } from "./icons";
 import { PanelToggleButton } from "./PanelToggles";
-import type { PanelViewId, SessionKind } from "./panel-types";
+import { OwnPanelToggles } from "./OwnPanelToggles";
+import type { OwnPanel, SessionKind } from "./panel-types";
 import { Spot } from "./sdk";
 import { S } from "./strings";
 
@@ -27,7 +28,9 @@ export interface ChromeApi {
   open: readonly string[];
   /** The panel views something fills (a toggle is offered only for these). */
   available: readonly string[];
-  toggleView(id: PanelViewId): void;
+  toggleView(id: string): void;
+  /** The panels plugins add on this tab (their buttons follow the stock ones in the row). */
+  own: readonly OwnPanel[];
   editBot(): void;
   sidebarCollapsed: boolean;
   toggleSidebar(): void;
@@ -103,6 +106,7 @@ export function ChromeActionRow({ skip = [] }: { skip?: readonly ChromePartId[] 
       {!not.has("action:edit") && <ChromeEditButton />}
       <div className="cl-panel-toggles" data-kind={c.kind}>
         {(["session", "browser"] as const).filter((id) => !not.has(`action:${id}`) && c.available.includes(id)).map((id) => <PanelToggleButton key={id} id={id} kind={c.kind!} open={c.open} onToggle={c.toggleView} />)}
+        <OwnPanelToggles own={c.own} open={c.open} onToggle={c.toggleView} />
       </div>
     </div>
   );

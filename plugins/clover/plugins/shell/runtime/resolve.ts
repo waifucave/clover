@@ -58,6 +58,9 @@ export interface Resolved {
   conflict: boolean;
 }
 
+/** The stock right panels: a `panel` entry with any other key adds a panel (the same list as the plugin SDK's `STOCK_PANEL_KEYS`). */
+const STOCK_PANELS: readonly string[] = ["session", "terminal", "diff", "browser", "files", "agent"];
+
 export const entryRef = (e: Pick<UiEntry, "pluginId" | "id">) => `${e.pluginId}#${e.id}`;
 
 const asList = <T>(v: T | readonly T[] | undefined): readonly T[] | undefined => (v === undefined ? undefined : Array.isArray(v) ? v : [v as T]);
@@ -110,6 +113,13 @@ export function resolveSpot(
       return (a.order ?? 500) - (b.order ?? 500) || a.pluginId.localeCompare(b.pluginId) || a.id.localeCompare(b.id);
     });
     return { entries: shown, conflict: false };
+  }
+
+  // The panels plugins add (the panel spot's `*`): every entry whose key isn't a stock panel's, in order (the app's runtime lists the same).
+  if (spot === "panel" && key === "*") {
+    const added = here.filter((e) => !e.hide && e.key !== undefined && !STOCK_PANELS.includes(e.key) && !e.key.endsWith("*"));
+    added.sort((a, b) => (a.order ?? 500) - (b.order ?? 500) || a.pluginId.localeCompare(b.pluginId) || a.id.localeCompare(b.id));
+    return { entries: added, conflict: false };
   }
 
   const kept = key !== undefined && (decl.keep ?? []).includes(key);

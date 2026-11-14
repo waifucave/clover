@@ -15,7 +15,7 @@ import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import { NO_CHOICES, SpotTree, botScope, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
+import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, botScope, entryRef, ownPanelCandidates, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
@@ -692,6 +692,8 @@ export class UiRuntime {
     if (spot === "bot.tab" && m.plugin?.topId === "clover") return true;
     // The slim column of a bot's stock tab is the shell's own (it draws it beside the tab, for the bot that shows), though the tab declares it.
     if (spot === "bot.side" && m.plugin?.topId === "clover" && m.plugin.source === "bundled") return true;
+    // Where a bot's layout places `chrome.panels`, the shell's own part draws the panels the user opens: it holds the `panel` spot as the shell does.
+    if (spot === "panel" && m.entryId === "chrome-panels" && m.plugin?.topId === "clover" && m.plugin.source === "bundled") return true;
     const entry = m.plugin?.entries.find((e) => e.id === m.entryId);
     return entry?.declares[spot] !== undefined;
   }
@@ -739,6 +741,18 @@ export class UiRuntime {
     const part = this.partIn(frame, mountId);
     if (!this.declares(part, spot)) return [];
     const { cellKey, ctx } = this.cellOf(doc, part, spot, key, { ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) });
+    // Every panel a plugin adds, as the shell's toggles list them (the panel spot's `*`).
+    if (spot === "panel" && key === OWN_PANELS_KEY) {
+      return ownPanelCandidates({ plugins: this.plugins, ctx }).map((c) => ({
+        ref: entryRef(c.entry),
+        id: c.entry.id,
+        pluginId: c.plugin.id,
+        pluginName: c.plugin.name ?? c.plugin.id,
+        bundled: c.plugin.source === "bundled",
+        ...(c.entry.key !== undefined ? { key: c.entry.key } : {}),
+        fields: c.entry.fields,
+      }));
+    }
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     return cell.shown.map((c) => ({
       ref: entryRef(c.entry),

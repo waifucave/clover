@@ -72,6 +72,8 @@ const COMPONENTS: Record<string, EntryComponent> = {
   Browser: stub("panel:browser"),
   Dead: () => <iframe data-clover-entry="juniper#browser" />,
   Status: stub("status"),
+  Sheets: stub("panel:sheets"),
+  Notes: stub("panel:notes"),
 };
 
 const entry = (pluginId: string, spot: string, component: string, extra: Partial<UiEntry> = {}): UiEntry => ({ pluginId, id: extra.id ?? `${spot}${extra.key ? `:${extra.key}` : ""}`, spot, component, source: "bundled", enabledAt: 0, ...extra });
@@ -90,7 +92,7 @@ const ENTRIES: UiEntry[] = [
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void) {
+async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}) {
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
@@ -107,13 +109,16 @@ async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<strin
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
     ...(kept ? { kept } : {}),
   });
-  render(
+  const tree = (extraProps: Record<string, unknown>) => (
     <UiRuntimeProvider runtime={runtime}>
-      <Spot name="app.root" props={start ? { start } : {}} />
-    </UiRuntimeProvider>,
+      <Spot name="app.root" props={start ? { start, ...extraProps } : extraProps} />
+    </UiRuntimeProvider>
   );
+  const rendered = render(tree(shellProps));
   await act(() => settle(6));
-  return { core, approvals };
+  /** The window's `act` prop arriving after it has drawn (what a bot's own frame's `shell.openPanel` becomes). */
+  const send = async (extraProps: Record<string, unknown>) => { rendered.rerender(tree(extraProps)); await act(() => settle(4)); };
+  return { core, approvals, send };
 }
 
 const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
@@ -139,6 +144,94 @@ describe("the shell's session list", () => {
     const ended = [s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-f", { kind: "coding", startedAt: 5, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })];
     expect(newestCoding(ended)?.id).toBe("code-d");
     expect(newestCoding([s("code-e", { kind: "coding", archived: true })])).toBeUndefined();
+  });
+});
+
+describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock panel's", () => {
+  const added = (pluginId: string, key: string, title: string, extra: Partial<UiEntry> = {}) => entry(pluginId, "panel", "Sheets", { key, id: `panel-${key}`, source: "installed", fields: { title }, ...extra });
+  const views = () => [...document.querySelectorAll(".cl-panel__view")].map((v) => v.getAttribute("data-view"));
+  const press = (name: string) => fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}$`) }));
+
+  test("its button follows the stock ones on the tabs of the kinds it names, and is not on the others", async () => {
+    const sheets = added("sheets", "sheets", "Sheets", { when: { session: ["coding"] } });
+    await mount({ route: { route: "agent", params: { session: "code-1" } } }, [sheets]);
+    expect(toggles()).toEqual(["Session", "Terminal", "Sheets"]);
+    cleanup();
+    // A bot's tab: not a coding session's panel.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [sheets]);
+    expect(document.querySelector('[data-own-panel="sheets#sheets"]')).toBeNull();
+    cleanup();
+    // No `when.session`: every tab, a bot's included.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [added("docs", "docs", "Documents")]);
+    expect(document.querySelector('[data-own-panel="docs#docs"]')).not.toBeNull();
+  });
+
+  test("it opens beside a stock panel and draws; a third view pushes the oldest out (at most two)", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets")]);
+    expect(views()).toEqual(["terminal"]);
+    press("Sheets");
+    await act(() => settle(4));
+    expect(views()).toEqual(["terminal", "sheets#sheets"]);
+    expect(stubText("panel:sheets")).toContain('"app":"sheets"');
+    expect(screen.getByRole("button", { name: "Sheets" }).getAttribute("aria-pressed")).toBe("true");
+    press("Session");
+    press("Terminal");
+    await act(() => settle(4));
+    expect(views()).toEqual(["sheets#sheets"]);
+  });
+
+  test("an inside-a-bot panel is on that bot's tab only", async () => {
+    const mine = added("luna", "notes", "Notes", { component: "Notes", botPlugin: "luna" });
+    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [mine]);
+    expect(toggles()).toContain("Notes");
+    cleanup();
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [mine]);
+    expect(toggles()).not.toContain("Notes");
+  });
+
+  test("two plugins' panels with one key are two panels: the ids are namespaced by plugin", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("one", "notes", "One notes"), added("two", "notes", "Two notes")]);
+    expect(toggles()).toEqual(["Session", "Terminal", "One notes", "Two notes"]);
+    press("Two notes");
+    await act(() => settle(4));
+    expect(views()).toEqual(["terminal", "two#notes"]);
+    press("One notes");
+    await act(() => settle(4));
+    expect(views()).toEqual(["two#notes", "one#notes"]);
+  });
+
+  test("past three, the rest are in one menu button, never an overflowing bar", async () => {
+    const five = ["a", "b", "c", "d", "e"].map((k) => added(`p-${k}`, k, `Panel ${k.toUpperCase()}`, { order: 500 + k.charCodeAt(0) }));
+    await mount({ route: { route: "agent", params: { session: "code-1" } } }, five);
+    expect(toggles()).toEqual(["Session", "Terminal", "Panel A", "Panel B", "Panel C", "Other panels"]);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Other panels" }));
+    const items = [...document.querySelectorAll('[role="menuitemcheckbox"]')].map((i) => i.textContent);
+    expect(items).toEqual(["Panel D", "Panel E"]);
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Panel E" }));
+    await act(() => settle(4));
+    expect(views()).toEqual(["p-e#e"]);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Other panels" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("a panel whose part draws nothing shows the host's placeholder", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets", { component: "Missing" })]);
+    press("Sheets");
+    await act(() => settle(4));
+    expect(document.querySelector('[data-empty-view="sheets#sheets"]')).not.toBeNull();
+  });
+
+  test("a bot's own frame may open its own panel (`shell.openPanel`): the act names it by its plugin", async () => {
+    const mine = added("luna", "notes", "Notes", { component: "Notes", botPlugin: "luna" });
+    const opened = await mount({ route: { route: "bot", params: { bot: "luna" } } }, [mine]);
+    await opened.send({ act: { n: 1, act: { kind: "panel", view: "luna#notes", to: "open" } } });
+    expect(views()).toEqual(["luna#notes"]);
+    cleanup();
+    // A panel that isn't on this tab (another plugin's, or not listed here) is not opened.
+    const other = await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [mine]);
+    await other.send({ act: { n: 1, act: { kind: "panel", view: "luna#notes", to: "open" } } });
+    expect(views()).toEqual([]);
   });
 });
 

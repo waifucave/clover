@@ -138,6 +138,15 @@
         "icon": "assets/icon.svg",
         "opens": "example-notes",
         "order": 900
+      },
+      {
+        "spot": "panel",
+        "key": "recent-notes",
+        "component": "NotesPanel",
+        "title": {
+          "en": "Notes",
+          "ja": "ノート"
+        }
       }
     ]
   }

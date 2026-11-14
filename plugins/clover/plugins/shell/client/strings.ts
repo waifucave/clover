@@ -19,6 +19,8 @@ export const S = {
   botColumn: "Details",
   toggle: (label: string, open: boolean) => (open ? `Hide ${label}` : `Show ${label}`),
   more: "More panels",
+  /** The one button for the panels a plugin adds beyond the third. */
+  otherPanels: "Other panels",
   close: (title: string) => `Close ${title}`,
   expand: (title: string) => `Expand ${title}`,
   panel: "Panel",

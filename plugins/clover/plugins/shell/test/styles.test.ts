@@ -19,6 +19,8 @@ const POSITIONED: string[] = [
   // A bot's shape (SHELL_SHAPE): the shell's own panel lifted over the page (shell over frames, never a frame over the shell),
   // and the no-bar fallback (a place to drag, the sidebar's button), all inside the window.
   ".cl-window[data-panel-over] .cl-window__panel", ".cl-chrome-drag--fallback", ".cl-chrome-fallback",
+  // The one menu for the panels plugins add beyond the third button (`OwnPanelToggles`): it opens under its button, in the bar's own width.
+  ".cl-panel-toggles__menu",
 ];
 // (`.cl-skin-paint` and its layers are empty paint under the bar, which holds no card: the bot's shell skin.)
 

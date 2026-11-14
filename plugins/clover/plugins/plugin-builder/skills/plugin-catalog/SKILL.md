@@ -58,7 +58,7 @@ How to read it:
 | `sidebar.bot` | keyed | shell | — | A bot's row in the sidebar, keyed by bot: its state and what waits for the user. |
 | `sidebar.app` | list | shell | — | App buttons in the sidebar; `opens` names the `main` and `panel` key it shows. |
 | `main` | keyed | shell | — | The main area, keyed by route: bot, agent, settings, plugins, app. |
-| `panel` | keyed | shell | — | The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `"coding"`)… |
+| `panel` | keyed | shell | — | The panel host, keyed by panel: each stock panel (session, terminal, diff, files, browser, agent) is a plugin of its own, and replaceable. An entry whose key is not a stock one ADDS a panel of the plugin's own, with a b… |
 | `panel.view` | keyed | shell | — | A spot inside each panel view, keyed by the view's id. |
 | `settings.section` | list | settings | — | A section of the settings screen, which the settings part (`main` key `settings`) declares. |
 | `bot.editor.section` | list | bot-editor | — | A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. The avatar's… |
