@@ -170,7 +170,8 @@ describe("the dialog layer's keyboard (review minor)", () => {
 
 describe("the dialog layer's keyboard, the focus outside it", () => {
   test("Escape closes the dialog when the focus has left it (what held it went away)", async () => {
-    render(<Host cardPending={false} />);
+    const onClose = mock(() => undefined);
+    render(<Host cardPending={false} onClose={onClose} />);
     act(() => screen.getByRole("button", { name: "Open settings" }).click());
     expect(screen.queryByRole("dialog")).not.toBeNull();
     (document.activeElement as HTMLElement | null)?.blur();
@@ -184,7 +185,7 @@ describe("the dialog layer's keyboard, the focus outside it", () => {
     try {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 15_000 });
     } catch (e) {
-      throw new Error(`the dialog stayed open; keydowns seen: ${JSON.stringify(seen)}; active: ${document.activeElement?.nodeName}; roots: ${document.body.children.length}`, { cause: e });
+      throw new Error(`the dialog stayed open; keydowns seen: ${JSON.stringify(seen)}; active: ${document.activeElement?.nodeName}; roots: ${document.body.children.length}; host onClose calls: ${onClose.mock.calls.length}; dialog still there: ${screen.queryByRole("dialog") !== null}`, { cause: e });
     } finally {
       document.removeEventListener("keydown", watch, true);
       document.removeEventListener("keydown", watch);

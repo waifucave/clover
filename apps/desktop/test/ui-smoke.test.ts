@@ -232,7 +232,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   }, 120_000);
 
   test("only a plugin that asks for it gets a cross-origin isolated layer (SharedArrayBuffer); the media URL, sealed cards and the shell are as before", () => {
-    const r = smoke(electron(), [root], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
     const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
     expect(text("media", "clover-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");
