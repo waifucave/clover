@@ -22,11 +22,11 @@ const SESSIONS = [
   s("code-3", { kind: "coding", root: "home/Laptop/code/tarot", title: "Spreads" }),
 ];
 
-async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
+async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; onWatch?: (listener: (s: SessionView) => void) => void } = {}) {
   const core = fakeCore({ "account.status": () => ({ signedIn: true, user: { id: "u1", name: "Sam" } }) });
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
-    conversation: { list: async () => SESSIONS },
+    conversation: { list: async () => SESSIONS, watch: (l) => { opts.onWatch?.(l); return () => undefined; } },
     computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask", link: "self", isMain: true })] },
   });
   const routes: ShellRoute[] = [];
@@ -62,6 +62,19 @@ describe("the sidebar entry", () => {
     expect(agentStatus(s("x", { status: "failed", failure: "stalled" }))).toBe("stalled");
     expect(botStatus(bot("a", "A", { state: "thinking" }), s("m", { status: "prompting" }))).toBe("working");
     expect(botStatus(bot("a", "A", { state: "asleep" }), s("m", { needsYou: { cards: 1, questions: 0 } }))).toBe("needs-you");
+  });
+
+  test("a coding session started outside the window shows on the Code side without a remount, and a change to it is followed", async () => {
+    let emit: ((v: SessionView) => void) | undefined;
+    await mount({ route: "bot", params: { bot: "alpha" } }, { onWatch: (l) => (emit = l) });
+    expect(emit).toBeDefined();
+    fireEvent.click(screen.getByRole("radio", { name: /Code/ }));
+    expect(screen.queryByText("From the CLI")).toBeNull();
+    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", status: "ready" })));
+    expect(screen.getByText("From the CLI")).toBeTruthy();
+    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "Renamed by the CLI", status: "stopped" })));
+    expect(screen.queryByText("From the CLI")).toBeNull();
+    expect(screen.getByText("Renamed by the CLI")).toBeTruthy();
   });
 
   test("the bots, each with its agents, the account and the apps", async () => {

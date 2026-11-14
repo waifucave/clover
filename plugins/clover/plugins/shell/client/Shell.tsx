@@ -91,6 +91,11 @@ function useNarrow(on: boolean): boolean {
   return narrow;
 }
 
+/** The newest coding session (by when it started): where the Code side goes. */
+export function newestCoding(sessions: readonly SessionView[]): SessionView | undefined {
+  return sessions.filter((x) => x.kind === "coding").reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+}
+
 export function Shell({ props }: EntryProps<ShellProps>) {
   const api = usePluginApi();
   const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
@@ -112,7 +117,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
 
   const dialog = route?.route === "settings" ? route : undefined;
   const shown = dialog ? under : route;
-  const sessions = useLoad(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), [api, tabKey(shown)]);
+  // Read once and followed through `conversation.watch`: a session started outside the window (the CLI, another window, a bot's agent) is known at once.
+  const sessions = useLiveList<SessionView>(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), api.conversation?.watch, (a, b) => a.id === b.id, [api]);
   const bot = shown?.route === "bot" ? bots?.find((b) => b.id === shown.params.bot) : undefined;
   const botRef: BotRef | undefined = bot ? { id: bot.id, name: plain(bot.name) } : undefined;
   const session = shown?.route === "agent" ? sessions?.find((s) => s.id === shown.params.session) : undefined;
@@ -309,7 +315,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       else if ("app" in t) l.navigate({ route: t.app, params: {} });
       else if ("page" in t) l.navigate({ route: t.page, params: {} });
       else if (t.side === "code") {
-        const code = l.sessions?.find((x) => x.kind === "coding");
+        const code = newestCoding(l.sessions ?? []);
         if (code) l.navigate({ route: "agent", params: { session: code.id } });
       } else if (l.bots?.[0]) l.navigate({ route: "bot", params: { bot: l.bots[0].id } });
     }

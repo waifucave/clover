@@ -728,11 +728,11 @@ export class UiRuntime {
   /** A spot the part declares, as its entries (lane B's `useSpotEntries`, lane G's ask): for a part that draws them
    *  one at a time with `<Spot entry>` (the island's tabs, the pill's targets). In the spot's order; only the
    *  declaring part lists it. */
-  entries(frame: FrameRef, mountId: string, spot: string, key?: string, bot?: string): SpotEntryView[] {
+  entries(frame: FrameRef, mountId: string, spot: string, key?: string, bot?: string, session?: string): SpotEntryView[] {
     const doc = this.requireDoc(frame);
     const part = this.partIn(frame, mountId);
     if (!this.declares(part, spot)) return [];
-    const { cellKey, ctx } = this.cellOf(doc, part, spot, key, bot !== undefined ? { bot } : {});
+    const { cellKey, ctx } = this.cellOf(doc, part, spot, key, { ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) });
     const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     return cell.shown.map((c) => ({
       ref: entryRef(c.entry),

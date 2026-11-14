@@ -72,7 +72,7 @@ export const API_CALLS = {
   "keys.publicKey": { where: "clover" }, "keys.open": { where: "clover" }, "keys.delete": { where: "clover" },
   "settings.get": both(), "settings.watch": both(), "settings.set": both(),
   "conversation.list": both("conversation.read"), "conversation.get": both("conversation.read"),
-  "conversation.history": both("conversation.read"), "conversation.follow": both("conversation.read"),
+  "conversation.history": both("conversation.read"), "conversation.watch": both("conversation.read"), "conversation.follow": both("conversation.read"),
   "conversation.note": both("conversation.post"), "conversation.send": both("conversation.post"), /** A component's only, and only as the user's own answer (the conversation part answers the question card the user filled
    *  in, through the app's `session.answer`): no host half answers a question as the user. */
   "conversation.answer": { capability: "conversation.post", where: "ui" },

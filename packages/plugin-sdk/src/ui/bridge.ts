@@ -337,7 +337,7 @@ export interface LayerBridge {
    *  kind of session the part shows, for `when.session`) is heard from the `clover` layer only. */
   resolve(mount: string, spot: string, key?: string, hints?: { session?: string; entry?: string; bot?: string }): Promise<SpotView>;
   /** A spot the part declares, as its entries, in the spot's order. */
-  entries(mount: string, spot: string, key?: string, bot?: string): Promise<readonly SpotEntryView[]>;
+  entries(mount: string, spot: string, key?: string, bot?: string, session?: string): Promise<readonly SpotEntryView[]>;
   /** New props for a child frame. */
   setProps(child: string, props: unknown): void;
   /** The speech an `avatar` child frame lip-syncs to: a batch of numbers (`SpeechMessage`), only to a child of this
