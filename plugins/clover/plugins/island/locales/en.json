@@ -5,6 +5,7 @@
     "clover.island.label": "Clover island.",
     "clover.island.nothingNeedsYou": "Nothing needs you",
     "clover.island.lines": "Updates from plugins",
+    "clover.island.stripLine": "{from}: {text}. Open the island.",
     "clover.island.lineProgress": "{percent} percent",
     "clover.island.linesMore": {
       "one": "1 more",

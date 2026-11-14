@@ -53,7 +53,7 @@ A head under review is named where it changes a row.
 | `bot.avatar` and the `avatar` renderers (VRM, Live2D) | works | A placeholder VRM model today. Live2D from whatever model the user loads is lane E's next step; no model file of the owner's goes in the repo. |
 | `client` components, bot-tab spots (`bot.tab`, `bot.header`, `bot.stage`, `bot.side`, `conversation.message`, `tool.result` …) | works | Her stage component, which draws the stage document, and her transcript's styling: lane E's work in progress, not on `int/next` yet. |
 | `island.tab`, `app.surface`, `sidebar.bot`, `status`, `settings.section`, `panel` | works | Lane E's choice. A third-party island tab carries its plugin's name and can't raise the island. |
-| `island.line` | works | A plugin's handler (`points.call`, no capability) gives one line of plain text, an icon from the island's named set and a progress; the island draws it in its own style on the open Needs you tab with the plugin's name beside it, and decides count, order and how long it lasts. |
+| `island.line` | works | A plugin's handler (`points.call`, no capability) gives one line of plain text, an icon from the island's named set and a progress; the island draws it in its own style on the open Needs you tab (below the cards) and the first one on the closed strip, only when Clover isn't in front, with the plugin's name beside it, and decides count, order and how long it lasts. |
 | `pill.target` | works | None: the pill already messages bots. |
 
 ## Third-party plugins: the SDK's examples

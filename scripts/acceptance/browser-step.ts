@@ -8,8 +8,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTurn, until, type ExampleCtx } from "./example-steps";
-import { islandCardHolds, islandDrawsOkCard, islandShooter, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
+import { callTurn, sleep, until, type ExampleCtx } from "./example-steps";
+import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
 export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
 
@@ -349,9 +349,21 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     lines.push(`island line: the third-party plugin's line is drawn in the island's rows with its name and the bot's: ${lineRead}`);
     lines.push(`devices tab read: ${/\[devices\] (.*)/.exec(island!)?.[1]?.slice(0, 120) ?? ""}`);
     lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens; a third-party plugin's tab sits on the dots and draws its own words");
+    // The closed strip's line (the owner's ruling: when Clover isn't in front): shown under the closed strip, gone while the window
+    // is in front, back after; then a card waiting (the plugin's own removal card) takes the strip, and the line does not come back
+    // over it.
+    if (ctx.setMainFront === undefined) fail("this run has no seam to say the window is in front");
+    const stripRead = await islandStripLine(ctx.cdp, { say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000), front: ctx.setMainFront! }).catch((e: unknown) => fail(`the island's closed strip line: ${(e as Error).message}`));
+    lines.push(`closed strip line: ${stripRead}`);
     // Removed again, so no later step meets its tab.
     const gone = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: tabId }).catch(() => undefined);
-    if (gone?.card !== undefined) await ctx.pressCard("the third-party tab's removal card", (c) => c.id === gone.card);
+    if (gone?.card !== undefined) {
+      await until("the strip's line gone while a card waits", 30_000, async () => ((await islandStripLineShown(ctx.cdp)) ? undefined : true));
+      await sleep(2_500);
+      if (await islandStripLineShown(ctx.cdp)) fail("the strip's line came back over a waiting card");
+      lines.push("closed strip line: a waiting card took the strip (the line went, and stayed gone while the card waited)");
+      await ctx.pressCard("the third-party tab's removal card", (c) => c.id === gone.card);
+    }
   }
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);

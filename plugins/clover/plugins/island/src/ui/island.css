@@ -709,7 +709,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 20px 12px;
+  padding: 4px 20px 12px;
 }
 
 .clv-line {
@@ -769,6 +769,50 @@
   padding-left: 24px;
   font-size: 11px;
   color: var(--clover-island-muted, #8B8B8B);
+}
+
+/* The first line on the closed strip: the island's own small pill under it, one row. */
+
+.clv-stripline {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--clover-island-surface, #000000);
+  color: var(--clover-island-text, #FFFFFF);
+  box-shadow:
+    inset 0 0 0 1px var(--clover-island-rim, #FFFFFF17),
+    0 3px 20px #00000073;
+  font-family: inherit;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.clv-stripline .clv-line-icon {
+  flex: none;
+  padding-top: 0;
+}
+
+.clv-stripline .clv-line-from {
+  flex: none;
+  max-width: 34%;
+}
+
+.clv-stripline .clv-line-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--clover-font-size-label, 13px);
+  line-height: 16px;
+}
+
+.clv-stripline .clv-line-bar {
+  flex: none;
+  width: 40px;
+  margin-top: 0;
 }
 
 .clv-empty {

@@ -99,7 +99,8 @@ and its host module `export async function sepia(args, ctx) { … }`. The editor
 ## Putting a line on the island
 
 The island takes small items from any plugin and draws them itself. Fill its point `island.line` with an entry and give
-it a handler; the island calls the handler while its open Needs you tab is up and draws what it returns.
+it a handler; the island calls the handler when Clover isn't in front and draws what it returns: the first line on its closed strip,
+the lines on its open Needs you tab.
 
 ```json
 "contributes": { "island.line": [{ "id": "render", "handler": "islandLine" }] }
@@ -117,12 +118,13 @@ export async function islandLine() {
   other name draws no icon. `progress` is a number from 0 to 1 (a bar; anything else draws none). `bot` is the id of the
   bot the line is about. The island writes your plugin's id, and the bot's name, beside the words: you never set those.
 - The island decides everything else: its style and size, how many lines show (at most four, two from one plugin, in
-  the order plugins were installed; the rest are counted), how often it asks (every two seconds while the tab is up, and
-  when plugins change), and how long a line lasts: exactly as long as your handler returns it. Return nothing to remove
+  the order plugins were installed; the rest are counted), how often it asks (every two seconds on the open tab, about every six on the closed strip, never while Clover is in
+  front or when no plugin fills the point; a handler that returns nothing a few times is left alone until plugins change or a bot starts work), and how long a line lasts: exactly as long as your handler returns it. Return nothing to remove
   it; a plugin that is turned off, stopped or removed has no line. A handler that takes more than 1.5 seconds or throws
   shows nothing that time, and one that fails three times running is left alone for 30 seconds.
-- A line never opens the island or raises it over the user's work: it is drawn only while the island is already open
-  on Needs you. Your handler runs as your plugin with your own capabilities and needs no `call:` and no capability of
+- A line never opens the island or raises it over the user's work: it is drawn on the closed strip (small, below it, only when
+  no card is waiting and Clover isn't in front) or on the open Needs you tab, below the cards. The bot's name is written only
+  when your plugin is that bot's own (your id is the bot's id). Your handler runs as your plugin with your own capabilities and needs no `call:` and no capability of
   its own; keep it quick and read your state, don't start work in it. A plugin whose handler needs a host half has one.
 - Your OK card says the plugin puts a line of text on the island, so the user has seen that before it shows.
 - Not here: a picture of your own (only the named icons), colours, sizes, links or buttons, and anything about another

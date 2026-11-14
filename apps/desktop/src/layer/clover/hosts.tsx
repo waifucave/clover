@@ -104,6 +104,8 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
       entries: async () => (await points.entries("island.line")).map((e) => ({ pluginId: e.pluginId, entryId: e.entryId })),
       call: (entry) => points.call("island.line", entry, "handler", undefined, { timeoutMs: 2000 }),
       watch: (listener) => points.watch("island.line", () => listener()),
+      // A bot starting or stopping work is when a plugin's line is likely to change (the island holds `bots.read`).
+      ...(api.bots?.watch !== undefined ? { watchWork: (listener: () => void) => api.bots!.watch(() => listener()) } : {}),
     };
   }, [api]);
   const [bots, setBots] = useState<readonly { id: string; name: string }[]>([]);
@@ -111,7 +113,7 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
     const list = api.bots?.list;
     if (list === undefined) return;
     let live = true;
-    void list().then((all) => { if (live) setBots(all.map((b) => ({ id: b.id, name: b.name }))); }, () => undefined);
+    void list().then((all) => { if (live) setBots(all.map((b) => ({ id: b.id, name: typeof b.name === "string" ? b.name : b.name.en }))); }, () => undefined);
     return () => { live = false; };
   }, [api]);
   const host: IslandHost | undefined = environment === undefined ? undefined : {

@@ -126,6 +126,7 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
       tabs={props.tabs}
       botNames={props.botNames}
       lines={props.lines}
+      mainFront={front}
       botName={props.botName}
       onAnswerQuestion={props.onAnswerQuestion}
       alwaysOpen={placement.mode === "window"}

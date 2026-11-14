@@ -1212,7 +1212,7 @@ export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to speak or 
 
 /** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
  *  island, so the user has seen that before it can. */
-export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, while the island's Needs you tab is open.";
+export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, when Clover isn't in front.";
 
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */

@@ -65,9 +65,10 @@ export const onToolAfter = (args: HookArgs) => { movedAt = Date.now(); return ho
 export const onTurnEnd = (args: HookArgs) => { movedAt = 0; return hooks().onTurnEnd(args); };
 
 /** Her line on the island (`island.line`, the island's own point: `{ id: "activity", handler: "islandLine" }`): what she is
- *  doing now, in words and one icon, while a turn is running; nothing otherwise. The island asks while its Needs you tab is
- *  up and draws it in its own style under her name; she sets only these words. The tool's label is the one her stage already
- *  shows (its name and a file's name, never a path). */
+ *  doing now, in words and one icon, while a turn is running; nothing otherwise. The island asks when Clover isn't in front,
+ *  and stops asking while she answers nothing until a bot starts work; idle, this is one comparison and no read. It draws the
+ *  line in its own style under her name; she sets only these words. The tool's label is the one her stage already shows (its
+ *  name and a file's name, never a path). */
 export async function islandLine(): Promise<{ text: string; icon: string; bot: string } | undefined> {
   if (store === undefined || Date.now() - movedAt > ACTIVITY_LINE_MS) return undefined;
   const a = (await store.read()).state.activity;

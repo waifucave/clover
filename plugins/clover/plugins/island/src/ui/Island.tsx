@@ -27,7 +27,7 @@ import {
   type QuestionCard,
   type QuestionDraft,
 } from "../model/cards";
-import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripRect, tabForPart, waitingRect, type StripPart } from "../model/geometry";
+import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripLineRect, stripRect, tabForPart, waitingRect, type StripPart } from "../model/geometry";
 import { FLUID, fluidSeconds } from "../model/fluid";
 import { beginClosing, beginOpening, MORPH, morphSeconds, type MorphClock } from "../model/morph";
 import { IslandQueue } from "../model/queue";
@@ -35,7 +35,7 @@ import { NEEDS_YOU, guestTabs, select, selectedTab, tabState, type GuestTab, typ
 import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
-import { useLines, type LineSource } from "./Lines";
+import { StripLine, useLines, type LineSource } from "./Lines";
 import { NeedsYou, OpenIsland } from "./OpenIsland";
 import { Strip } from "./Strip";
 import { useSealedKit } from "./sealed";
@@ -77,6 +77,8 @@ export interface IslandProps {
   botNames?: readonly string[];
   /** The plugins' lines (`island.line`): asked for only while the open island's Needs you tab is up. */
   lines?: LineSource;
+  /** Clover's main window is the one in front: no line is asked for or drawn, on the strip or in the open island. */
+  mainFront?: boolean;
   /** A bot's name for its id, for a line that names a bot. */
   botName?: (id: string) => string | undefined;
   /** The tab the working wing opens on; the island's current one when absent. */
@@ -204,8 +206,12 @@ export function Island(props: IslandProps): ReactElement {
 
   const isOpen = alwaysOpen || morph.openedAt !== null;
   // The plugins' lines are asked for only while they can be seen: the island open, on Needs you, and not on its way out.
+  // Also on the closed strip (the owner's ruling: "when Clover isn't in front"): the first line shows under it while nothing
+  // waits and Clover's window is not the one in front. While the window is in front nothing is asked at all.
+  const front = props.mainFront === true;
   const needsYouUp = isOpen && !morph.closing && (selectedTab(tabs)?.id ?? NEEDS_YOU.id) === NEEDS_YOU.id;
-  const lines = useLines(props.lines, needsYouUp);
+  const stripLineUp = !alwaysOpen && !isOpen && cards.length === 0 && !front;
+  const lines = useLines(props.lines, front ? "off" : needsYouUp ? "open" : stripLineUp ? "closed" : "off");
   const now = timers.now();
   const current = queue.current ? byId.get(queue.current.id) : undefined;
   const showCurrent = current !== undefined && (!gated || !isSealed(current) || whole[current.id] === true);
@@ -415,6 +421,10 @@ export function Island(props: IslandProps): ReactElement {
       regions.push({ ...pill, x: left + pill.x });
     }
   }
+  // The first line, under the closed strip (never while a card waits, the island is open or the window is in front).
+  const stripLine = stripLineUp && lines.lines.length > 0 ? lines.lines[0]! : undefined;
+  const stripLineAt = stripLine !== undefined ? stripLineRect(shape) : undefined;
+  if (stripLineAt !== undefined) regions.push(stripLineAt);
   const drawn: Rect[] = [...regions];
   if (returning && back) {
     const g = cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true });
@@ -434,6 +444,9 @@ export function Island(props: IslandProps): ReactElement {
           <Strip shape={shape} counts={counts} hovered={stripHovered && !isOpen} onPart={onStripPart} />
         </span>
       )}
+      {stripLine !== undefined && stripLineAt !== undefined ? (
+        <StripLine line={stripLine} left={stripLineAt.x} top={stripLineAt.y} width={stripLineAt.width} height={stripLineAt.height} botName={props.botName} onOpen={() => open(NEEDS_YOU.id)} />
+      ) : null}
       {returning && back ? (
         <div className="clv-returning" aria-hidden="true">
           <LiquidCard geometry={cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true })} seconds={backSeconds}>
