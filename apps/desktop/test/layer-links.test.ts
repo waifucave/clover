@@ -134,7 +134,7 @@ describe("a plugin's own events, latest-wins", () => {
     box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "box", box: { canvas: { width: 2, height: 2 } } } });
     box.flush();
     expect(got.filter(([p]) => p === "clover").map(([, e]) => e)).toEqual(cues);
-    expect(got.filter(([p]) => p === "alpha").map(([, e]) => (e as { value: { kind: string } }).value)).toEqual([{ kind: "catalogue", catalogue: { outfits: [] } }, { kind: "box", box: { canvas: { width: 2, height: 2 } } }]);
+    expect<unknown>(got.filter(([p]) => p === "alpha").map(([, e]) => (e as { value: unknown }).value)).toEqual([{ kind: "catalogue", catalogue: { outfits: [] } }, { kind: "box", box: { canvas: { width: 2, height: 2 } } }]);
   });
 });
 
