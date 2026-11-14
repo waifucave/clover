@@ -222,7 +222,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     homes.push(h);
     const video = join(h, "dropped.webm");
     copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
-    const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
     const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
     expect(frame!.text, stoppedWhy(r) || r.output).toContain("drop: dropped.webm read token");
     expect(frame!.text).not.toContain(h);
