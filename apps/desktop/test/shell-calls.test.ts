@@ -94,6 +94,10 @@ describe("shell.* from a plugin's frame", () => {
     const r = cleanReport({ state: { ...state(), extra: "no", panels: { open: ["session", "../x", 3], available: ["browser"] }, safeArea: { left: 80, top: -5 } }, apps: [{ id: "archive", title: "Archive", icon: "x" }, { id: "bad id!", title: "no" }, "junk"] });
     expect(r?.state.panels).toEqual({ open: ["session"], available: ["browser"] });
     expect(r?.state.safeArea).toEqual({ left: 80, top: 0 });
+    // The sidebar's measured width is kept as a whole number; one that isn't a sane width is dropped, and absent stays absent.
+    expect(r?.state.sidebar).toEqual({ collapsed: false, side: "bots" });
+    expect(cleanReport({ state: { ...state(), sidebar: { collapsed: true, side: "bots", width: 80.6 } } })?.state.sidebar).toEqual({ collapsed: true, side: "bots", width: 81 });
+    for (const width of [-1, Number.NaN, 1e9, "248"]) expect(cleanReport({ state: { ...state(), sidebar: { collapsed: false, side: "bots", width } } })?.state.sidebar).toEqual({ collapsed: false, side: "bots" });
     expect(r?.apps).toEqual([{ id: "archive", title: "Archive", icon: "x" }]);
     expect(cleanReport({ state: state(), account: { name: "Delta", detail: "laptop", extra: 1 } })?.account).toEqual({ name: "Delta", detail: "laptop" });
     // Settings over the tab: `dialog` is kept as that one word, anything else dropped.

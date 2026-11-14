@@ -228,6 +228,11 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // one), kept for the window's life.
   const [collapsedBy, setCollapsedBy] = useKept<Record<string, boolean>>("shell.sidebar", () => ({}));
   const sidebarCollapsed = collapsedBy["*"] ?? false;
+  // The sidebar's drawn width (Window measures it): a tab starts at its right edge, so a bot's frames size themselves by it.
+  const [sidebarWidth, setSidebarWidth] = useState<number | undefined>();
+  // The window's own controls' reach, from the frame's variables (macOS: the traffic lights, 80 px; Windows and Linux draw theirs at the other end: 0).
+  const px = (v: unknown, or: number) => { const n = Number.parseFloat(String(v ?? "")); return Number.isFinite(n) && n >= 0 ? Math.round(n) : or; };
+  const safeArea = { left: px(tokens["frame.window.controls"], 80), top: px(tokens["frame.inset.top"], 44) };
   const setCollapsed = (v: boolean) => setCollapsedBy((c) => ({ ...c, "*": v }));
   const chrome: Omit<ChromeApi, "place" | "panels"> | undefined = botRef && kind
     ? {
@@ -247,9 +252,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     tab: { kind: !shown ? "other" : shown.route === "bot" ? "bot" : shown.route === "agent" ? "agent" : shown.route === "bot-editor" ? "bot-editor" : shown.route === "settings" || shown.route === "plugins" || shown.route === "archive" ? shown.route : "app", ...(shown?.params.bot ?? shown?.params.session !== undefined ? { id: (shown?.params.bot ?? shown?.params.session)! } : shown !== undefined && !["bot", "agent", "bot-editor", "settings", "plugins", "archive"].includes(shown.route) ? { id: shown.route } : {}) },
     ...(botRef ? { bot: botRef.id } : {}),
     ...(dialog ? { dialog: "settings" as const } : {}),
-    sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots" },
+    sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots", ...(sidebarWidth !== undefined ? { width: sidebarWidth } : {}) },
     panels: { open, available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [] },
-    safeArea: { left: 80, top: 44 },
+    safeArea,
   };
   const appsOut: ShellApp[] = appEntries.flatMap((e) => (typeof e.fields?.opens === "string" && fieldText(e.fields?.title) !== undefined ? [{ id: e.fields.opens, title: fieldText(e.fields.title)!, ...(typeof e.fields?.icon === "string" ? { icon: e.fields.icon } : {}) }] : []));
   // The account row's data, as the stock sidebar reads it: who is signed in and which computer this is. Said only when a plugin's frame may read it.
@@ -310,6 +315,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       shape={shape}
       chrome={chrome}
       provides={props.provides}
+      onSidebarWidth={setSidebarWidth}
+      safeArea={safeArea}
       barFill={botRef ? (stock) => <Spot name="bar" forBot={botRef.id} props={{ bot: botRef, title }} fallback={stock} /> : undefined}
       sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, collapsed: sidebarCollapsed, onCollapsedChange: setCollapsed }} />}
       title={title}

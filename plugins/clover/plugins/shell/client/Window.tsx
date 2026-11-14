@@ -121,6 +121,12 @@ export interface WindowProps {
   /** The handles the bot's own plugin says its controls offer (`shell.provide`): the sidebar's toggle and a drag region. With no bar, the window adds
    *  a minimal one for each nothing offers. Neither ever drops the window's sidebar. */
   provides?: { sidebar: boolean; drag: boolean };
+  /** Told the sidebar's drawn width (its rule included, whole CSS pixels) when the window first lays it out and whenever it
+   *  changes (a fold, a sidebar plugin's own width): the shell says it in `shell.state`, where a tab learns where it starts. */
+  onSidebarWidth?: (px: number) => void;
+  /** How far the window's own controls reach (window coordinates, `shell.state`'s `safeArea`): a layout's CSS reads it as
+   *  `--cl-safe-left` / `--cl-safe-top`. The macOS traffic lights by default. */
+  safeArea?: { left: number; top: number };
   /** A dialog over the window: settings, the language chooser. */
   dialog?: ReactNode;
   /** Any card (an approval or a question) this window will draw is waiting: the shown session's, an agent's
@@ -201,7 +207,7 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
 
 const STANDARD_SHAPE: ChromeShape = { bar: "standard", panel: "column", vars: {} };
 
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, skin, shape = STANDARD_SHAPE, chrome, barFill, provides }: WindowProps) {
+export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, skin, shape = STANDARD_SHAPE, chrome, barFill, provides, onSidebarWidth, safeArea }: WindowProps) {
   // The colours stay as the last skin left them while the paint fades out, so text never jumps ahead of its ground.
   const [shown, setShown] = useState(skin);
   useEffect(() => { if (skin) setShown(skin); }, [skin]);
@@ -247,7 +253,26 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   const needDrag = noBar && settled && !placed.has("drag") && provides?.drag !== true;
 
   // The window controls' reach (the macOS buttons the sidebar already leaves 80 px for): nothing of a layout's may sit under them.
-  const chromeVars: Record<string, string> = { ...shape.vars, "--cl-safe-left": "var(--cl-window-controls, 80px)", "--cl-safe-top": "44px" };
+  const chromeVars: Record<string, string> = { ...shape.vars, "--cl-safe-left": safeArea ? `${safeArea.left}px` : "var(--cl-window-controls, 80px)", "--cl-safe-top": `${safeArea?.top ?? 44}px` };
+
+  // The sidebar's drawn width, measured: said once laid out and again only when it changes (no width animates, so a fold is one report).
+  const sidebarBox = useRef<HTMLDivElement>(null);
+  const toldWidth = useRef<((px: number) => void) | undefined>(onSidebarWidth);
+  toldWidth.current = onSidebarWidth;
+  useLayoutEffect(() => {
+    const el = sidebarBox.current;
+    if (el === null) return;
+    let last = -1;
+    const measure = () => {
+      const px = Math.round(el.getBoundingClientRect().width);
+      if (px !== last) { last = px; toldWidth.current?.(px); }
+    };
+    measure();
+    if (typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   if (shape.bar === "standard" && shape.vars["--cl-shape-bar-height"] !== undefined) chromeVars["--clover-plugin-clover-bar-height"] = shape.vars["--cl-shape-bar-height"];
 
   const stockBar = (
@@ -280,7 +305,7 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
     <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined} data-skin={groupsOf(skin)}
       data-bar-mode={shape.bar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-panel-mode={shape.panel} data-panel-over={shape.panel !== "column" || undefined}
       style={{ ...vars, ...chromeVars } as CSSProperties}>
-      <div className="cl-window__sidebar">
+      <div className="cl-window__sidebar" ref={sidebarBox}>
         <div className="cl-window__sidebar-content">{sidebar}</div>
       </div>
       <section className="cl-window__main" aria-label={title}>
