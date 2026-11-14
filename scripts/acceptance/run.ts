@@ -95,7 +95,7 @@ import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULE
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
-import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
+import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
@@ -2211,6 +2211,25 @@ async function main(): Promise<void> {
       // bot stays; a bot's entry on the sidebar (the same on every tab) is refused.
       const sidebar = await refusedWith(writeBotOnSidebar(src), BOT_SIDEBAR_REFUSAL);
       if (sidebar !== undefined) wrong.push(`a bot's entry on the sidebar: ${sidebar.slice(0, 300)}`);
+      // 1.97: the rest of Bots' closed offer list, one install each, each refusal read by its own words.
+      const refusedSeen: string[] = [];
+      const refusals = writeRefusals(src);
+      for (const r of refusals) {
+        const got = await refusedWith(r.folder, r.words);
+        if (got !== undefined) wrong.push(`1.97 ${r.what} (${r.code}): the install answered ${got.slice(0, 300)}`);
+        else refusedSeen.push(`${r.code} for ${r.what} ("${r.words.length > 70 ? `${r.words.slice(0, 69)}…` : r.words}")`);
+      }
+      // A theme with the sidebar's old shell names: it loads, each name is a warning, and the window takes none of them.
+      const old = await install({ from: "folder", path: writeOldSidebarTheme(src) });
+      const oldPlugin = (await c.request<{ plugin?: { state?: string; issues?: { code?: string; severity?: string; path?: string }[] } }>("plugin.get", { id: old.id })).plugin;
+      const oldWarned = (oldPlugin?.issues ?? []).filter((i) => i.code === "shell_not_offered").map((i) => `${i.severity} ${i.path}`).sort();
+      const oldTaken = oldSidebarTaken();
+      if (oldPlugin?.state !== "running" && oldPlugin?.state !== "enabled") wrong.push(`1.97 the theme with the sidebar's old names is ${oldPlugin?.state ?? "missing"}, not loaded`);
+      else if (JSON.stringify(oldWarned) !== JSON.stringify(["warning /shell/sidebar", "warning /shell/sidebar.mode"])) wrong.push(`1.97 the theme with the sidebar's old names: its shell_not_offered issues are ${JSON.stringify(oldWarned)} (all its issues: ${JSON.stringify(oldPlugin?.issues ?? []).slice(0, 300)})`);
+      else if (oldTaken.length > 0) wrong.push(`1.97 the window's resolveShell takes the old sidebar names ${oldTaken.join(", ")}`);
+      if (refusedSeen.length === refusals.length && oldWarned.length === 2 && oldTaken.length === 0 && (oldPlugin?.state === "running" || oldPlugin?.state === "enabled")) {
+        done.push(`1.97 Bots' offer list refused on install, each by its words: ${refusedSeen.join("; ")}; ${old.id}'s theme with the sidebar's old shell names loaded (${oldPlugin?.state}) with shell_not_offered on /shell/sidebar and /shell/sidebar.mode, and the window's resolveShell takes no sidebar name from it`);
+      }
       const alphaModel = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
       if (alphaModel === undefined) wrong.push("Alpha has no model to give the bot fixture");
       else {
@@ -2234,6 +2253,23 @@ async function main(): Promise<void> {
           await c.request("session.attach", { id: own });
           const alphaTools = await offeredOn(session, "juniper alpha offer");
           const botTools = await offeredOn(own, "juniper own offer");
+          // 1.99: per-entry own-bot. Her skill and agent definition are in her Glossary and not in Alpha's (her shared
+          // skill in both); her command, run through her beside tool's `commands.run` for the session it serves, runs
+          // for her and is refused for Alpha's session.
+          const answerOf = async (s: string, text: string) => {
+            const seen = fake!.requests.length;
+            await turn(c, s, text, 150_000);
+            return fake!.requests.slice(seen).map((r) => r.toolResult).find((x) => x !== undefined)?.text ?? "no tool result";
+          };
+          const glossary = `ACCEPTANCE-CALL Glossary ${JSON.stringify({ query: OWN_BOT_MARK })}`;
+          const own99 = {
+            juniperGlossary: await answerOf(own, glossary), alphaGlossary: await answerOf(session, glossary),
+            juniperRun: await answerOf(own, "ACCEPTANCE-CALL JuniperRun {}"), alphaRun: await answerOf(session, "ACCEPTANCE-CALL JuniperRun {}"),
+          };
+          const listed = (text: string) => [OWN_BOT_ITEMS.skill, OWN_BOT_ITEMS.agent, OWN_BOT_ITEMS.shared].filter((n) => text.includes(n)).join(", ") || "none of hers";
+          const ownWrong = ownBotWrong(own99);
+          if (ownWrong.length > 0) wrong.push(`1.99 ${ownWrong.join("; ")}`);
+          else done.push(`1.99 per-entry own-bot: Glossary "${OWN_BOT_MARK}" in ${BOT_PARTS_BOT}'s turn lists ${listed(own99.juniperGlossary)}, in Alpha's ${listed(own99.alphaGlossary)}; ${BOT_COMMAND} through JuniperRun's commands.run answered ${BOT_PARTS_BOT}'s session ${own99.juniperRun.slice(0, 60)} and Alpha's "${own99.alphaRun.slice(0, 120)}"`);
           // Its app parts off: the plugin and its bot run on.
           await c.request("plugin.setEnabled", { id: juniper.id, enabled: false, part: "app" });
           const after = await until(`${juniper.id}'s app parts off`, 30_000, async () => {

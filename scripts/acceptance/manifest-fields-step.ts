@@ -9,8 +9,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
+import { resolveShell } from "../../packages/plugin-sdk/src/formats/shell";
 
-export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words";
+export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session";
 
 export const ENGINES = { clover: "^1.0.0" } as const;
 
@@ -26,14 +27,18 @@ export const FIELDS_IDS = {
   cc: "acc-cc",
   bot: "acc-juniper",
   botSidebar: "acc-bot-sidebar",
+  oldSidebar: "acc-old-sidebar",
 } as const;
 
-/** A host half that serves the named host MCP servers, each with its tools, every tool answering `<tool>-pong`; and
- *  the handlers given (name → body of an async function `(args, ctx)`). */
-export function hostSource(servers: Record<string, string[]>, handlers: Record<string, string> = {}): string {
+/** A host half that serves the named host MCP servers, each with its tools, every tool answering `<tool>-pong` unless
+ *  `calls` names it (tool → body of an async function of the host's `api`, run while serving the call, so its API calls
+ *  act for the session the call serves; what it returns is the answer, and what it throws comes back as `refused: …`);
+ *  and the handlers given (name → body of an async function `(args, ctx)`). */
+export function hostSource(servers: Record<string, string[]>, handlers: Record<string, string> = {}, calls: Record<string, string> = {}): string {
   const lines = [
     "// The acceptance run's manifest-fields fixture (written by the run): host MCP servers whose tools answer `<tool>-pong`, and its handlers.",
-    "const serve = (tools) => async (transport) => {",
+    `const calls = { ${Object.entries(calls).map(([tool, body]) => `${JSON.stringify(tool)}: async (api) => { ${body} }`).join(", ")} };`,
+    "const serve = (tools) => async (transport, api) => {",
     "  const reply = (id, body) => void transport.send({ jsonrpc: \"2.0\", id, ...body }).catch(() => {});",
     "  transport.onmessage = (m) => {",
     "    if (m.id === undefined) return;",
@@ -41,6 +46,10 @@ export function hostSource(servers: Record<string, string[]>, handlers: Record<s
     "    if (m.method === \"initialize\") reply(m.id, { result: { protocolVersion: typeof p.protocolVersion === \"string\" ? p.protocolVersion : \"2025-06-18\", capabilities: { tools: {} }, serverInfo: { name: \"acceptance-fields\", version: \"1\" } } });",
     "    else if (m.method === \"ping\") reply(m.id, { result: {} });",
     "    else if (m.method === \"tools/list\") reply(m.id, { result: { tools: tools.map((name) => ({ name, description: `The acceptance run's ${name}.`, inputSchema: { type: \"object\", properties: {}, additionalProperties: false } })) } });",
+    "    else if (m.method === \"tools/call\" && tools.includes(p.name) && calls[p.name] !== undefined) {",
+    "      const text = (t) => reply(m.id, { result: { content: [{ type: \"text\", text: t }] } });",
+    "      Promise.resolve().then(() => calls[p.name](api)).then((v) => text(String(v)), (err) => text(`refused: ${err?.message ?? String(err)}`));",
+    "    }",
     "    else if (m.method === \"tools/call\" && tools.includes(p.name)) reply(m.id, { result: { content: [{ type: \"text\", text: `${p.name}-pong` }] } });",
     "    else reply(m.id, { error: { code: -32601, message: `unknown: ${String(m.method)}` } });",
     "  };",
@@ -168,17 +177,51 @@ export function writeBotParts(root: string, model: string, o: { client?: string;
       bot: { name: BOT_PARTS_BOT, instructions: "bot/instructions.md", model: { default: model } },
       mcpServers: {
         stage: { type: "host", scope: "own-bot", tools: { JuniperStage: "preload" } },
-        notes: { type: "host", tools: { JuniperNotes: "preload" } },
+        notes: { type: "host", tools: { JuniperNotes: "preload", JuniperRun: "preload" } },
       },
+      // Inside her, entry by entry (`scope: "own-bot"`), and one skill beside her for every bot.
+      skills: [{ path: "skills/mine/SKILL.md", scope: "own-bot" }, "skills/shared/SKILL.md"],
+      agents: [{ id: "helper", name: "Juniper's helper", backend: "clover-code", instructions: "agents/helper.md", scope: "own-bot" }],
+      commands: [{ name: "scene", description: "Sets Juniper's scene", handler: "scene", scope: "own-bot", args: { type: "object", additionalProperties: false } }],
       ui: [
         { spot: "island.tab", id: "day", title: "Juniper's day", component: "Day", app: true },
         { spot: "panel", key: "browser", component: "Browser" },
       ],
     },
-  }, hostSource({ stage: ["JuniperStage"], notes: ["JuniperNotes"] }), {
+  }, hostSource({ stage: ["JuniperStage"], notes: ["JuniperNotes", "JuniperRun"] }, { scene: "return { text: \"scene-ran\" };" }, {
+    // Beside her (every bot is offered it): runs her own-bot command for the session whose call it serves.
+    JuniperRun: `return JSON.stringify(await api.commands.run(${JSON.stringify(BOT_COMMAND)}, {}));`,
+  }), {
     "bot/instructions.md": "You are the acceptance run's bot.\n",
     "client/index.js": o.client ?? "export const Day = () => null;\nexport const Browser = () => null;\n",
+    "skills/mine/SKILL.md": `---\nname: mine\ndescription: ${OWN_BOT_MARK} Juniper's own way to set a scene\n---\nSet the scene the way Juniper does.\n`,
+    "skills/shared/SKILL.md": `---\nname: shared\ndescription: ${OWN_BOT_MARK} a skill for every bot\n---\nShared by every bot.\n`,
+    "agents/helper.md": `${OWN_BOT_MARK}: help Juniper set her scenes.\n`,
   });
+}
+
+/** The word Juniper's skills and agent definition carry, which a Glossary search finds them by. */
+export const OWN_BOT_MARK = "juniperkit";
+/** Her own-bot command's full name, as `command.run` and `commands.run` take it. */
+export const BOT_COMMAND = `${FIELDS_IDS.bot}.scene`;
+/** Her parts inside her, as Glossary names them, and the one beside her. */
+export const OWN_BOT_ITEMS = { skill: `${FIELDS_IDS.bot}:mine`, agent: `${FIELDS_IDS.bot}:helper`, shared: `${FIELDS_IDS.bot}:shared` } as const;
+/** What the command says when another bot's session runs it (packages/core/src/registry/commands.ts). */
+export const BOT_COMMAND_REFUSAL = `${BOT_COMMAND} is ${FIELDS_IDS.bot}'s own: only you and ${FIELDS_IDS.bot} run it`;
+
+/** What the per-entry own-bot reads got wrong (row 1.99); empty when right. Each `…Glossary` is a Glossary search's
+ *  answer for `OWN_BOT_MARK`; each `…Run` the answer of JuniperRun (her command run through `commands.run` for the
+ *  session whose call it serves). */
+export function ownBotWrong(o: { juniperGlossary: string; alphaGlossary: string; juniperRun: string; alphaRun: string }): string[] {
+  const wrong: string[] = [];
+  for (const [what, name] of [["skill", OWN_BOT_ITEMS.skill], ["agent definition", OWN_BOT_ITEMS.agent]] as const) {
+    if (!o.juniperGlossary.includes(name)) wrong.push(`Juniper's Glossary doesn't list her own-bot ${what} ${name}`);
+    if (o.alphaGlossary.includes(name)) wrong.push(`Alpha's Glossary lists Juniper's own-bot ${what} ${name}`);
+  }
+  if (!o.alphaGlossary.includes(OWN_BOT_ITEMS.shared)) wrong.push(`Alpha's Glossary doesn't list ${OWN_BOT_ITEMS.shared} (beside Juniper), so its search proves nothing`);
+  if (!o.juniperRun.includes("scene-ran")) wrong.push(`Juniper's session couldn't run her own command ${BOT_COMMAND}: ${o.juniperRun.slice(0, 200)}`);
+  if (!o.alphaRun.includes(BOT_COMMAND_REFUSAL)) wrong.push(`Alpha's session running ${BOT_COMMAND} wasn't refused as hers: ${o.alphaRun.slice(0, 200)}`);
+  return wrong;
 }
 
 /** What the window run needs of the plugin with a bot: a Browser panel that draws a marker (`drawing`), or one that never
@@ -196,7 +239,7 @@ export const BOT_PARTS_SETTINGS = {
 /** Its OK card's lines for its parts (packages/plugin-sdk/src/manifest/validate.ts's `botPartLines`), and its checkbox
  *  for the parts beyond its bot's tab (packages/core/src/registry/core.ts). */
 export const BOT_PARTS_LINES = [
-  "Everywhere, with a switch of its own: an island tab, tools.",
+  "Everywhere, with a switch of its own: an island tab, tools, skills.",
   `It replaces the Browser panel on ${BOT_PARTS_BOT}'s tab.`,
 ] as const;
 export const BOT_PARTS_CHECKBOX = { id: `${FIELDS_IDS.bot}#app`, label: `Its parts beyond ${BOT_PARTS_BOT}'s tab`, checked: true } as const;
@@ -209,6 +252,58 @@ export function writeBotOnSidebar(root: string): string {
   }, undefined, { "bot/instructions.md": "You are a bot.\n", "client/index.js": "export const Side = () => null;\n" });
 }
 export const BOT_SIDEBAR_REFUSAL = "Bots doesn't offer \"sidebar\" to Sidebar bot: a bot's plugin dresses only its own tab";
+
+/** The rest of Bots' closed offer list (row 1.97): one fixture per refusal, each with the code validation gives and the
+ *  words the app's install answers with (packages/plugin-sdk/src/manifest/validate.ts's `checkUi`; an install's
+ *  refusal carries the words, the code is named by them). A bot's own entries (the bot Rowan): a panel key other than
+ *  Browser and agent, an entry tied to another bot (Alpha), an unmarked entry on a spot Bots doesn't offer. Then each
+ *  spot that looks the same on every tab, tied to a bot (`when.bot`) by a plugin with no bot of its own. */
+export interface Refusal { code: string; what: string; folder: string; words: string }
+export const REFUSAL_BOT = "Rowan";
+export function writeRefusals(root: string): Refusal[] {
+  const bot = (id: string, entry: Record<string, unknown>) => writePlugin(join(root, id), {
+    manifest: 1, id, name: `Acceptance ${id}`, version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    contributes: { bot: { name: REFUSAL_BOT, instructions: "bot/instructions.md" }, ui: [entry] },
+  }, undefined, { "bot/instructions.md": "You are a bot.\n", "client/index.js": "export const Part = () => null;\n" });
+  const tied = (id: string, entry: Record<string, unknown>) => writePlugin(join(root, id), {
+    manifest: 1, id, name: `Acceptance ${id}`, version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    contributes: { ui: [{ component: "Part", when: { bot: "alpha" }, ...entry }] },
+  }, undefined, { "client/index.js": "export const Part = () => null;\n", "icon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n" });
+  const out: Refusal[] = [
+    { code: "bot_panel_not_offered", what: "a panel key other than Browser and agent", folder: bot("acc-refuse-panel", { spot: "panel", key: "terminal", component: "Part" }),
+      words: `Bots offers the Browser and agent panels on ${REFUSAL_BOT}'s tab; "terminal" isn't one of them.` },
+    { code: "bot_when_other_bot", what: "an entry tied to another bot (Alpha)", folder: bot("acc-refuse-other-bot", { spot: "composer", component: "Part", when: { bot: "alpha" } }),
+      words: `"composer" inside ${REFUSAL_BOT}'s tab is ${REFUSAL_BOT}'s; dressing other bots' tabs is an app part: add "app": true.` },
+    { code: "bot_spot_not_offered", what: "an unmarked entry on a spot Bots doesn't offer (status)", folder: bot("acc-refuse-status", { spot: "status", component: "Part" }),
+      words: `Bots doesn't offer "status" to ${REFUSAL_BOT}: a bot's plugin dresses only its own tab` },
+  ];
+  const never: [string, Record<string, unknown>][] = [
+    ["sidebar", {}],
+    ["sidebar.bot", { key: "alpha" }],
+    ["sidebar.app", { title: "Tied", icon: "icon.svg", opens: "settings" }],
+    ["settings.section", { title: "Tied" }],
+    ["bot.editor.section", { title: "Tied" }],
+  ];
+  for (const [spot, fields] of never) {
+    out.push({ code: "bot_tied_not_offered", what: `${spot} tied to a bot`, folder: tied(`acc-refuse-tied-${spot.replace(/\./g, "-")}`, { spot, ...fields }),
+      words: `"${spot}" looks the same on every tab: nothing tied to a bot's tab dresses it.` });
+  }
+  return out;
+}
+
+/** A plugin whose theme still names the sidebar's old shell names (before §5.5): it loads, each name is a warning
+ *  (`shell_not_offered`), and the window ignores them (`resolveShell` never gives them back). */
+export const OLD_SIDEBAR_SHELL = { tokens: { bar: "#F6F2FF", "bar.text": "#221A33", "bar.rule": "#C9BDEB", sidebar: "#16132B", "sidebar.mode": "none" } } as const;
+export function writeOldSidebarTheme(root: string): string {
+  return writePlugin(join(root, FIELDS_IDS.oldSidebar), {
+    manifest: 1, id: FIELDS_IDS.oldSidebar, name: "Acceptance old sidebar", version: "0.0.1", engines: ENGINES,
+    contributes: { themes: [{ id: "old-sidebar", file: "theme/old.json" }] },
+  }, undefined, { "theme/old.json": `${JSON.stringify({ theme: 1, name: "Old sidebar", tokens: { "color.surface": "#FFFDF6" }, shell: OLD_SIDEBAR_SHELL }, null, 2)}\n` });
+}
+/** The sidebar names the window takes from that theme's shell (none, when it ignores them), light and dark. */
+export function oldSidebarTaken(): string[] {
+  return (["light", "dark"] as const).flatMap((a) => Object.keys(resolveShell(OLD_SIDEBAR_SHELL as never, a, "#FFFDF6", "both").values).filter((k) => k.startsWith("sidebar")));
+}
 
 /** What the plugin-with-a-bot fixture's turns were offered wrong; empty when right. `alpha` and `bot`: Alpha's and
  *  Juniper's turns with its app parts on; `after`: Juniper's turn with them off. */
