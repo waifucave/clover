@@ -103,7 +103,7 @@ export function islandShooter(cdp: Cdp, dir: string, setAppearance?: (scheme: "d
   };
 }
 
-export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string }): Promise<string> {
+export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string; say?: (line: { text?: string; progress?: number }) => Promise<unknown> }): Promise<string> {
   const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
   // A card on top rests small; the strip at the top opens the island (its tab dots live there).
   await shoot?.("1-closed-strip");
@@ -206,7 +206,39 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
     });
     await shoot?.("5-open-third-party");
   }
-  return `${text}\n[devices] ${rows.slice(0, 300)}`;
+  // The plugin's own line (its `island.line` entry, called by the island while its Needs you tab is up): the island draws its words
+  // in its own rows with the plugin's name and the bot's, an update shows, and removing it clears it.
+  let lineNote = "";
+  if (thirdParty?.say !== undefined) {
+    const say = thirdParty.say;
+    /** The plugin's line as drawn (the island's `.clv-line` rows of the acceptance plugin), or undefined. */
+    const drawn = async (): Promise<{ from: string; text: string; icon: boolean; bar: string | null; style: string | null } | undefined> => {
+      for (const d of await here()) {
+        const v = await cdp.evaluate(d.session, `(() => { const r = document.querySelector('.clv-line[data-plugin="acceptance-tab"]'); if (!r) return null; const b = r.querySelector('[role=progressbar]'); return JSON.stringify({ from: r.querySelector('.clv-line-from')?.textContent ?? '', text: r.querySelector('.clv-line-text')?.textContent ?? '', icon: r.querySelector('svg[data-glyph]') !== null, bar: b ? b.getAttribute('aria-valuenow') : null, style: r.getAttribute('style') }); })()`).catch(() => null);
+        if (typeof v === "string") return JSON.parse(v);
+      }
+      return undefined;
+    };
+    await say({ text: "Rendering 1 of 3", progress: 0.33 });
+    await choose("Needs you");
+    const first = await until("the third-party plugin's line on Needs you", 40_000, async () => {
+      const l = await drawn();
+      return l !== undefined && l.text === "Rendering 1 of 3" ? l : undefined;
+    }, async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    if (!/^acceptance-tab/.test(first.from) || !/alpha/i.test(first.from)) throw new Error(`the line says it is from "${first.from}", not the plugin and the bot`);
+    if (first.bar !== "33" || !first.icon) throw new Error(`the line's icon/progress read ${JSON.stringify(first)}`);
+    if (first.style !== null) throw new Error(`the sender's row carries a style of its own (${first.style})`);
+    await say({ text: "Rendering 2 of 3", progress: 0.66 });
+    const second = await until("the update shown", 40_000, async () => {
+      const l = await drawn();
+      return l !== undefined && l.text === "Rendering 2 of 3" ? l : undefined;
+    }, async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    if (second.bar !== "66") throw new Error(`the updated line's progress reads ${second.bar}`);
+    await say({});
+    await until("the line removed", 40_000, async () => ((await drawn()) === undefined ? true : undefined), async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    lineNote = `\n[line] ${first.from} | ${first.text} (${first.bar}%) -> ${second.text} (${second.bar}%) -> removed`;
+  }
+  return `${text}\n[devices] ${rows.slice(0, 300)}${lineNote}`;
 }
 
 /** A pending card on the island's top, with the pointer put on it (the card grows a little under the pointer) and watched for

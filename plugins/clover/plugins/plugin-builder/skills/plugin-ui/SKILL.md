@@ -96,6 +96,38 @@ An effect plugin's manifest then holds `"ex-editor.effects": [{ "id": "sepia", "
 and its host module `export async function sepia(args, ctx) { … }`. The editor calls it with
 `await api.points.call("ex-editor.effects", { pluginId: e.pluginId, entryId: e.entryId }, "apply", { frame })`.
 
+## Putting a line on the island
+
+The island takes small items from any plugin and draws them itself. Fill its point `island.line` with an entry and give
+it a handler; the island calls the handler while its open Needs you tab is up and draws what it returns.
+
+```json
+"contributes": { "island.line": [{ "id": "render", "handler": "islandLine" }] }
+```
+
+```ts
+// host/index.ts: no arguments; return a line, or nothing when there is nothing to show
+export async function islandLine() {
+  return job ? { text: `Rendering frame ${job.done} of ${job.total}`, icon: "sync", progress: job.done / job.total } : undefined;
+}
+```
+
+- A line is `{ text, icon?, progress?, bot? }`. `text` is plain text, one line: no markup (it is drawn as text), control
+  characters become spaces, at most 80 characters. `icon` is one of `bolt`, `check`, `clock`, `info`, `sync`, `link`; any
+  other name draws no icon. `progress` is a number from 0 to 1 (a bar; anything else draws none). `bot` is the id of the
+  bot the line is about. The island writes your plugin's id, and the bot's name, beside the words: you never set those.
+- The island decides everything else: its style and size, how many lines show (at most four, two from one plugin, in
+  the order plugins were installed; the rest are counted), how often it asks (every two seconds while the tab is up, and
+  when plugins change), and how long a line lasts: exactly as long as your handler returns it. Return nothing to remove
+  it; a plugin that is turned off, stopped or removed has no line. A handler that takes more than 1.5 seconds or throws
+  shows nothing that time, and one that fails three times running is left alone for 30 seconds.
+- A line never opens the island or raises it over the user's work: it is drawn only while the island is already open
+  on Needs you. Your handler runs as your plugin with your own capabilities and needs no `call:` and no capability of
+  its own; keep it quick and read your state, don't start work in it. A plugin whose handler needs a host half has one.
+- Your OK card says the plugin puts a line of text on the island, so the user has seen that before it shows.
+- Not here: a picture of your own (only the named icons), colours, sizes, links or buttons, and anything about another
+  plugin's lines.
+
 ## Asking the user
 
 `api.confirm("Delete the whole project?")` (a component or the host half; no capability) shows a sealed card that

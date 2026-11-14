@@ -337,13 +337,16 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     await ctx.inspectTurn(session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "click", ref: otherButton })}`, 150_000, async () => {
       const renders = process.env.CLOVER_ACCEPT_RENDERS;
       const shooter = renders ? islandShooter(ctx.cdp, renders, ctx.setAppearance) : undefined;
-      try { island = await islandUsageText(ctx.cdp, shooter?.shoot, { label: "Weather · Acceptance tab", words: "21 degrees and clear" }); } catch (e) { islandError = (e as Error).message; }
+      try { island = await islandUsageText(ctx.cdp, shooter?.shoot, { label: "Weather · Acceptance tab", words: "21 degrees and clear", say: (line) => ctx.rpc.request("command.run", { name: "acceptance-tab.say", args: line }, 30_000) }); } catch (e) { islandError = (e as Error).message; }
       await shooter?.done();
     });
     if (islandError !== undefined || island === undefined) fail(`the island's Usage tab: ${islandError ?? "the click raised no card to hold the island open"}`);
     const islandProblem = usageDrawnProblem(island!);
     if (islandProblem !== undefined) fail(`the island's Usage tab drew, but ${islandProblem}`);
     if (!/\[devices\] Computers \d+ of \d+ online/.test(island!)) fail(`the island's Devices tab drew no rows (${island!.slice(-200)})`);
+    const lineRead = /\[line\] (.*)/.exec(island!)?.[1];
+    if (lineRead === undefined) fail(`the island drew no line from the third-party plugin (${island!.slice(-200)})`);
+    lines.push(`island line: the third-party plugin's line is drawn in the island's rows with its name and the bot's: ${lineRead}`);
     lines.push(`devices tab read: ${/\[devices\] (.*)/.exec(island!)?.[1]?.slice(0, 120) ?? ""}`);
     lines.push("usage drawn: the Settings Usage section and the island's Usage tab show Clover's counted tokens; a third-party plugin's tab sits on the dots and draws its own words");
     // Removed again, so no later step meets its tab.

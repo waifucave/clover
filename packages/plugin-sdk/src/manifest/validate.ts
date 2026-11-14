@@ -1210,6 +1210,10 @@ export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it as
 /** A voice provider's line (`voices`): its entry is an endpoint other plugins may call. */
 export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to speak or transcribe, using your account with it.";
 
+/** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
+ *  island, so the user has seen that before it can. */
+export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, while the island's Needs you tab is open.";
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(
@@ -1243,6 +1247,7 @@ export function describeOk(
   if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
   if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
+  if (report.contributions.some((c) => c.point === "island.line")) lines.push(ISLAND_LINE_OK_LINE);
   if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0) {
     lines.push(VOICE_MODE_OK_LINE);
     if (!report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);

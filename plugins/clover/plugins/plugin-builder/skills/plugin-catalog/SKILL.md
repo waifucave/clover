@@ -90,6 +90,7 @@ How to read it:
 ## Data points other plugins declared (a top-level `contributes` key each)
 
 - `webhook.ingress` (list, code, declared by clover/trigger-webhook): Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7).
+- `island.line` (list, code, declared by clover/island): A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island c…
 - `avatar.formats` (list, data, declared by clover/character): A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is ha…
 - `avatar.packs` (list, data, declared by clover/character): Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).
 
