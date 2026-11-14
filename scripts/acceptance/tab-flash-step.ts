@@ -6,8 +6,9 @@
 // after: which layout shows (the stock tab's `.cl-bot-tab`, her layout's part), whether the stock sidebar shows, whether
 // "This is the start of your conversation" shows and how many rows the conversation has, and each of her frames
 // (`alpha#…`: still loading, drawn, asleep; shown or not). A sample is a flash when her tab shows (her layout, or the
-// stock tab with no app page) and any of: the stock tab, the stock sidebar, the empty state, or one of her frames shown
-// before it has drawn.
+// stock tab with no app page) and any of: the stock tab, the empty state, or one of her frames shown before it has drawn.
+// The stock sidebar is no flash: it is beside her tab as on every tab (Bots doesn't offer a bot the sidebar); every press
+// here is the user's own, on the window's own sidebar.
 import { join, resolve } from "node:path";
 import type { Cdp } from "./cdp";
 import { fail, sleep, until, type ExampleCtx } from "./example-steps";
@@ -73,7 +74,6 @@ export function flashOf(s: FlashSample): string | undefined {
   if (!herTab) return undefined;
   const why: string[] = [];
   if (s.stockTab) why.push("the stock bot tab");
-  if (s.stockSidebar) why.push("the stock sidebar");
   if (s.empty) why.push("the empty conversation");
   if (s.loadingNote) why.push("a loading note");
   // Her frames shown before their documents drew, or asleep; an inline part of hers (her layout, drawn by the window's own
@@ -96,12 +96,12 @@ async function windowDoc(cdp: Cdp): Promise<string> {
   return d;
 }
 
-/** Opens her tab when the window shows something else (her layout not showing): presses the stock sidebar's Alpha row. */
+/** Opens her tab when the window shows something else (her layout not showing): presses the sidebar's Alpha row. */
 async function openHerTab(cdp: Cdp): Promise<void> {
   const win = await windowDoc(cdp);
   const hers = await cdp.evaluate(win, `[...document.querySelectorAll("[data-clover-layout-part]")].some((el) => el.getClientRects().length > 0)`).catch(() => false);
   if (hers === true) return;
-  const at = await until("the stock sidebar's Alpha row", 20_000, async () => {
+  const at = await until("the sidebar's Alpha row", 20_000, async () => {
     for (const d of await treeDocs(cdp)) {
       const c = await cdp.centerOf(d.session, STOCK_ROWS, "Alpha").catch(() => undefined);
       if (c !== undefined) return { session: d.session, c };
@@ -121,7 +121,7 @@ async function herTabSettled(cdp: Cdp, minRows: number): Promise<void> {
   }, () => dumpFrames(cdp));
 }
 
-/** Presses something (in any tree document: the shell's, or her room's dock), sampling the window's document from just
+/** Presses something (in any tree document: the shell's, the window's own sidebar), sampling the window's document from just
  *  before the press for `ms`. */
 async function sampled(cdp: Cdp, what: string, press: { selector: string; text?: string }, ms = 1_500): Promise<(FlashSample & { n: number })[]> {
   const win = await windowDoc(cdp);
@@ -139,8 +139,8 @@ async function sampled(cdp: Cdp, what: string, press: { selector: string; text?:
   return (JSON.parse(r) as { out: (FlashSample & { n: number })[] }).out;
 }
 
-const DOCK = ".as__row";
 const STOCK_ROWS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]";
+const SETTINGS = "button[aria-label=Settings]";
 
 /** The window at its start: the window's document sampled from the moment the shell is there until her tab has settled
  *  (at most `ms`). */
@@ -189,29 +189,27 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
     // 0. The window's start (sampled from the moment the shell was there, before anything else ran).
     if (launch !== undefined) judge("the window's start", launch, true);
 
-    // 1. Her tab → the app's page (her dock), and back by the stock sidebar's Alpha row: the owner's path.
-    judge("her tab → the app's page", await sampled(cdp, "her dock's app row", { selector: DOCK, text: APP_TITLE }), false);
+    // 1. Her tab → the app's page (the sidebar's app row), and back by the sidebar's Alpha row: the owner's path.
+    judge("her tab → the app's page", await sampled(cdp, "the sidebar's app row", { selector: STOCK_ROWS, text: APP_TITLE }), false);
     await until("the app's page", 20_000, async () => ((await treeDocs(cdp)).length > 0 ? true : undefined));
     await sleep(1_000);
-    judge("the app's page → her tab", await sampled(cdp, "the stock sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
+    judge("the app's page → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
     await herTabSettled(cdp, 2);
 
     // 2. The Plugins page, and back.
-    judge("her tab → Plugins", await sampled(cdp, "her dock's Plugins row", { selector: DOCK, text: "Plugins" }), false);
+    judge("her tab → Plugins", await sampled(cdp, "the sidebar's Plugins row", { selector: STOCK_ROWS, text: "Plugins" }), false);
     await sleep(1_000);
-    judge("Plugins → her tab", await sampled(cdp, "the stock sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
+    judge("Plugins → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
     await herTabSettled(cdp, 2);
 
-    // 3. The Archive (from the Plugins page's stock sidebar), and back.
-    await sampled(cdp, "her dock's Plugins row", { selector: DOCK, text: "Plugins" }, 300);
-    await sleep(800);
-    judge("Plugins → Archive", await sampled(cdp, "the stock sidebar's Archive row", { selector: STOCK_ROWS, text: "Archive" }), false);
+    // 3. The Archive (from her tab, the sidebar's Archive row), and back.
+    judge("her tab → Archive", await sampled(cdp, "the sidebar's Archive row", { selector: STOCK_ROWS, text: "Archive" }), false);
     await sleep(1_000);
-    judge("Archive → her tab", await sampled(cdp, "the stock sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
+    judge("Archive → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
     await herTabSettled(cdp, 2);
 
     // 4. The Settings dialog over her tab, closed with Escape.
-    judge("her tab → Settings", await sampled(cdp, "her dock's Settings row", { selector: DOCK, text: "Settings" }), false);
+    judge("her tab → Settings", await sampled(cdp, "the sidebar's Settings button", { selector: SETTINGS }), false);
     await sleep(800);
     const win = await windowDoc(cdp);
     await cdp.evaluate(win, SAMPLER(1_500));
@@ -223,7 +221,7 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
     // 5. A minute away (her frames out of sight long enough to sleep), and back. Away until they have slept: past the
     // app's sleep time (the layer's minute, or the seam's when the row runs alone), and, where any frame of hers is a
     // sleeping kind, until every such frame says so (seen in the window's document), so the way back wakes them.
-    await sampled(cdp, "her dock's app row", { selector: DOCK, text: APP_TITLE }, 300);
+    await sampled(cdp, "the sidebar's app row", { selector: STOCK_ROWS, text: APP_TITLE }, 300);
     const away = sleepAfterMs ?? 60_000;
     const left = Date.now();
     await sleep(away + 1_000);
@@ -236,7 +234,7 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
       return f.every((x) => !x.endsWith(":IFRAME")) ? f : undefined;
     }, async () => `her frames: ${(await framesNow()).join(", ") || "none"}`);
     lines.push(`away ${((Date.now() - left) / 1000).toFixed(1)} s (sleep after ${Math.round(away / 1000)} s): ${slept.join(", ") || "no frames"}`);
-    judge("the app's page, a minute later → her tab", await sampled(cdp, "the stock sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }, 2_500), true);
+    judge("the app's page, a minute later → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }, 2_500), true);
     await herTabSettled(cdp, 2);
   } finally {
     await rpc.request("plugin.remove", { id: APP_ID }).catch(() => undefined);

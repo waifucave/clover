@@ -86,10 +86,10 @@ export async function until<T>(what: string, ms: number, probe: () => Promise<T 
   }
 }
 
-/** The clover tree's documents (the shell, the sidebar, the Plugins page). */
-// Alpha's own frames too: while her tab shows, her sidebar (not the stock one) is what the user presses.
+/** The clover tree's documents (the shell, the sidebar, the Plugins page), and Alpha's own frames (her controls). */
 export const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
-export const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
+/** The window's own sidebar's items: the stock sidebar is beside every tab, Alpha's too (Bots doesn't offer a bot the sidebar). */
+export const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]";
 export const layerDocs = async (cdp: Cdp, id: string) => (await cdp.documents()).filter((d) => d.url.startsWith(`clover-plugin://${id}/`));
 export const frames = async (cdp: Cdp) => (await cdp.documents()).map((d) => `${d.url.slice(0, 50)}: ${d.text.replace(/\s+/g, " ").slice(0, 80)}`).join(" || ");
 

@@ -23,7 +23,7 @@ import type { CloverClient } from "./client";
 import { shellDoc, treeDocs } from "./ui-steps";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link], .as__row";
+const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]";
 const say = (line: string) => process.stdout.write(`${line}\n`);
 
 async function openTab(cdp: Cdp, name: string): Promise<void> {
