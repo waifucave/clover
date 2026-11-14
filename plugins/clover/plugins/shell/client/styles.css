@@ -545,6 +545,16 @@ button.cl-window__title:hover {
   line-height: var(--clover-font-line-body);
 }
 
+.cl-panel__text-button {
+  padding: 3px 10px;
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
 .cl-panel__empty-action {
   margin-top: var(--clover-space-s);
   padding: 5px 12px;

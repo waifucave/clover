@@ -22,10 +22,13 @@ import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
 import { KeptTab } from "./KeptTab";
+import { ReplacedPanel } from "./ReplacedPanel";
 import type { ChromeApi } from "./chrome";
 
 /** The panel keys besides the session column, each a `panel` entry's key. */
 const PANEL_KEYS = ["terminal", "diff", "browser", "files", "agent"] as const;
+/** The panels a bot's plugin may replace on its own tab and that fall back to the stock one when the replacement does not draw. */
+const REPLACEABLE = ["browser", "agent"] as const;
 
 /** What `main` shows: B's `main` props (`route`, `params`). */
 export interface ShellRoute {
@@ -76,9 +79,12 @@ function NothingHere({ title }: { title: string }) {
   );
 }
 
-/** The newest coding session (by when it started): where the Code side goes. */
+/** Where the Code side goes: the newest coding session (by when it started) that is live; with none live, the newest
+ *  that has stopped (it stays in the lists, marked). An archived one never. */
 export function newestCoding(sessions: readonly SessionView[]): SessionView | undefined {
-  return sessions.filter((x) => x.kind === "coding").reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+  const newest = (list: readonly SessionView[]) => list.reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+  const mine = sessions.filter((x) => x.kind === "coding" && x.archived !== true);
+  return newest(mine.filter((x) => x.status !== "stopped")) ?? newest(mine);
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {
@@ -150,15 +156,27 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // Which panels anything fills (the `panel` spot by key; a bot's column is `bot.side`): a toggle is offered only for one that
   // does, and an open panel whose filler goes away closes. A constant list of hooks, whatever the tab.
   const answers: boolean[] = [];
-  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => {
+  const entriesOf = (spot: string, key: string | undefined, props: Record<string, unknown>) => {
     const r = useSpotEntries(spot, key, { ...props, forSessionKind: props.sessionKind });
     answers.push((r as { loaded?: boolean }).loaded !== false);
-    return r.entries.length > 0;
+    return r.entries;
   };
-  const filledList = [
-    kind === "bot" ? fills("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : fills("panel", "session", panelProps("session")),
-    ...PANEL_KEYS.map((id) => fills("panel", id, panelProps(id))),
+  const entryLists = [
+    kind === "bot" ? entriesOf("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : entriesOf("panel", "session", panelProps("session")),
+    ...PANEL_KEYS.map((id) => entriesOf("panel", id, panelProps(id))),
   ];
+  const filledList = entryLists.map((l) => l.length > 0);
+  // A bot's own plugin may fill the Browser or its agent's panel on its tab (the winner is not a shipped part): such a panel is watched, and
+  // when it does not draw the stock one shows in its place until the person asks to try the bot's again.
+  const replacedOnTab = (id: string): boolean => {
+    const i = PANEL_KEYS.indexOf(id as (typeof PANEL_KEYS)[number]);
+    return botRef !== undefined && (REPLACEABLE as readonly string[]).includes(id) && i >= 0 && entryLists[i + 1]?.[0] !== undefined && !entryLists[i + 1]![0]!.pluginId.startsWith("clover/");
+  };
+  const [fell, setFell] = useState<Record<string, boolean>>({});
+  const [tries, setTries] = useState<Record<string, number>>({});
+  // The person chose Clover's panel over the bot's for a tab's panel (kept while the window is open; no setting).
+  const [stockChosen, setStockChosen] = useState<Record<string, boolean>>({});
+  const fellKey = (id: string) => `${key}|${id}`;
   const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
   // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
   const settled = (shown?.route !== "agent" || session !== undefined) && (agent === undefined || agentSession !== undefined);
@@ -171,18 +189,45 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const views: PanelView[] = kind
     ? open
         .filter((id) => id !== "session")
-        .map((id) => ({
-          id,
-          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id),
-          content: (header: HTMLElement | null, usedLast: boolean) => (
-            <Spot
-              name="panel"
-              spotKey={id}
-              props={{ ...panelProps(id), header, usedLast }}
-              fallback={<PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />}
-            />
-          ),
-        }))
+        .map((id) => {
+          const base = id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id);
+          const empty = <PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />;
+          if (replacedOnTab(id) && botRef) {
+            const hasFell = fell[fellKey(id)] === true;
+            const chosen = stockChosen[fellKey(id)] === true;
+            const showStock = hasFell || chosen;
+            const back = () => {
+              setTries((t) => ({ ...t, [fellKey(id)]: (t[fellKey(id)] ?? 0) + 1 }));
+              setFell((f) => ({ ...f, [fellKey(id)]: false }));
+              setStockChosen((c) => ({ ...c, [fellKey(id)]: false }));
+            };
+            return {
+              id,
+              title: hasFell ? S.fellBack(botRef.name, S.views[id] ?? id) : base,
+              // The way back lives in the host's header, outside the replacement's frame: whatever the replacement draws (or
+              // doesn't), the person can ask for Clover's panel, and from it for the bot's again. It lasts while the window is open.
+              actions: showStock ? (
+                <button type="button" className="cl-panel__text-button" onClick={back}>
+                  {hasFell ? S.tryAgain(botRef.name) : S.useBots(botRef.name)}
+                </button>
+              ) : (
+                <button type="button" className="cl-panel__text-button" onClick={() => setStockChosen((c) => ({ ...c, [fellKey(id)]: true }))}>
+                  {S.showClovers}
+                </button>
+              ),
+              content: (header: HTMLElement | null, usedLast: boolean) => (
+                <ReplacedPanel key={`${fellKey(id)}|${tries[fellKey(id)] ?? 0}`} id={id} props={panelProps(id)} header={header} usedLast={usedLast} fell={showStock} onFell={() => setFell((f) => (f[fellKey(id)] ? f : { ...f, [fellKey(id)]: true }))} empty={empty} bot={botRef.id} />
+              ),
+            };
+          }
+          return {
+            id,
+            title: base,
+            content: (header: HTMLElement | null, usedLast: boolean) => (
+              <Spot name="panel" spotKey={id} {...(botRef ? { forBot: botRef.id } : {})} props={{ ...panelProps(id), header, usedLast }} fallback={empty} />
+            ),
+          };
+        })
         .filter((v) => belongsIn(v, kind))
     : [];
 

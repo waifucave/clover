@@ -131,6 +131,7 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
     dev: p.dev,
     children: p.children.map((c) => named.get(c) ?? c),
     ...(p.labels !== undefined && p.labels.length > 0 ? { labels: p.labels } : {}),
+    ...(p.parts?.app !== undefined ? { appParts: { enabled: p.parts.app.enabled, has: p.parts.app.has, ...(p.parts.app.bot !== undefined ? { bot: plain(p.parts.app.bot as never) || p.parts.app.bot } : {}) } } : {}),
     ...(() => {
       const parts = plugins.filter((c) => c.parent === p.id).map((c) => ({ name: named.get(c.id) ?? c.id, labels: c.labels ?? [] }));
       return parts.length > 0 ? { parts } : {};
@@ -598,6 +599,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
               setStatus(undefined);
             }}
             onSwitch={(on) => act(() => core.call("plugin.setEnabled", { id, enabled: on }))}
+            onAppParts={(on) => act(() => core.call("plugin.setEnabled", { id, enabled: on, part: "app" }))}
             onRestart={() => act(() => core.call("plugin.restart", { id }))}
             onRemove={() => act(async () => {
               const r = await core.call("plugin.remove", { id });
@@ -638,7 +640,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
               ))}
             </div>
             {tab === "installed" ? (
-              <Installed plugins={installed ?? []} {...(installed === undefined ? { loading: true } : {})} query={mine} onQuery={setMine} onOpen={(p) => setOpen(p)} />
+              <Installed plugins={installed ?? []} {...(installed === undefined ? { loading: true } : {})} query={mine} onQuery={setMine} onOpen={(p) => setOpen(p)} onAppParts={(pid, on) => void act(() => core!.call("plugin.setEnabled", { id: pid, enabled: on, part: "app" }))} />
             ) : tab === "updates" ? (
               <Updates updates={updates} checking={checking} onCheck={check} onApply={apply} onPin={pin} {...(updateStatus ? { status: updateStatus } : {})} />
             ) : tab === "indexes" ? (

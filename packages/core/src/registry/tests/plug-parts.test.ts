@@ -34,7 +34,7 @@ describe("the switch for the parts beside a bot", () => {
     const store = memoryRegistryStore();
     const reg = new RegistryCore({ catalog: catalogPointDecl, store });
     reg.putAll([{ id: "mika", manifest: MIKA(), treeHash: "sha256:1", approved: true }]);
-    expect(reg.get("mika")?.parts).toEqual({ app: { enabled: true, has: ["island.tab", "mcpServers"] } });
+    expect(reg.get("mika")?.parts).toEqual({ app: { enabled: true, has: ["island.tab", "mcpServers"], bot: "Mika" } });
     expect(await reg.setEnabled("mika", false, { part: "app" })).toEqual({ applied: true });
     expect(reg.get("mika")?.state).toBe("running");
     expect(reg.get("mika")?.parts?.app.enabled).toBe(false);

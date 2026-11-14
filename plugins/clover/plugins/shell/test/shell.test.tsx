@@ -70,6 +70,7 @@ const COMPONENTS: Record<string, EntryComponent> = {
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
   Browser: stub("panel:browser"),
+  Dead: () => <iframe data-clover-entry="juniper#browser" />,
   Status: stub("status"),
 };
 
@@ -132,6 +133,12 @@ describe("the shell's session list", () => {
     const list = [s("code-a", { kind: "coding", startedAt: 1 }), s("code-c", { kind: "coding", startedAt: 9 }), s("code-b", { kind: "coding", startedAt: 4 }), s("agent-x", { kind: "agent", startedAt: 20 })];
     expect(newestCoding(list)?.id).toBe("code-c");
     expect(newestCoding([s("agent-x", { kind: "agent" })])).toBeUndefined();
+    // A live one is preferred over a newer one that stopped; an archived one is never where the Code side goes.
+    expect(newestCoding([...list, s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })])?.id).toBe("code-c");
+    // With none live, the newest that stopped.
+    const ended = [s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-f", { kind: "coding", startedAt: 5, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })];
+    expect(newestCoding(ended)?.id).toBe("code-d");
+    expect(newestCoding([s("code-e", { kind: "coding", archived: true })])).toBeUndefined();
   });
 });
 
@@ -198,6 +205,48 @@ describe("the shell", () => {
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session", "browser"] }, [entry("clover/browser-view", "panel", "Browser", { key: "browser" })]);
     expect(toggles()).toEqual(["Session", "Terminal", "Browser"]);
     expect(stubText("panel:browser")).toContain('"app":"browser"');
+  });
+
+  test("a bot's own Browser panel that does not draw gives way to the stock one's place, says so, and tries again on the person's word", async () => {
+    // The replacement is a frame that never reports a size; the stand-in resolver has no stock-placement hint, so what shows is the title, the retry button and the marks.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
+      entry("clover/browser-view", "panel", "Browser", { key: "browser" }),
+      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
+    ]);
+    const region = () => document.querySelector('.cl-panel__view[data-view="browser"]')!;
+    expect(region().getAttribute("aria-label")).toBe("Browser");
+    expect(document.querySelector('[data-replaced-panel="browser"]')).not.toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 2300)));
+    expect(region().getAttribute("aria-label")).toBe("Alpha's browser panel didn't draw; showing Clover's.");
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Try Alpha's again" }));
+    await act(() => settle(3));
+    expect(region().getAttribute("aria-label")).toBe("Browser");
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(false);
+  });
+
+  test("a bot's replacement panel always has its way back in the host's header: Show Clover's panel, and Use the bot's again", async () => {
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
+      entry("clover/browser-view", "panel", "Browser", { key: "browser" }),
+      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
+    ]);
+    const marked = () => document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell");
+    // While the replacement shows (before anything has gone wrong), the button is there and sits in the host's own header, outside the frame.
+    const show = screen.getByRole("button", { name: "Show Clover's panel" });
+    expect(show.closest(".cl-panel__actions")).not.toBeNull();
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.contains(show)).toBe(false);
+    expect(marked()).toBe(false);
+    fireEvent.click(show);
+    await act(() => settle(3));
+    expect(marked()).toBe(true);
+    // The person's choice keeps the panel's ordinary title (nothing failed), and lasts past the draw timer.
+    expect(document.querySelector('.cl-panel__view[data-view="browser"]')!.getAttribute("aria-label")).toBe("Browser");
+    await act(() => new Promise((r) => setTimeout(r, 2300)));
+    expect(marked()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Use Alpha's panel" }));
+    await act(() => settle(3));
+    expect(marked()).toBe(false);
+    expect(screen.getByRole("button", { name: "Show Clover's panel" })).toBeTruthy();
   });
 
   test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {

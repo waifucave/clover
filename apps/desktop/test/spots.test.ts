@@ -40,6 +40,20 @@ const panelDiff = plugin("clover/panel-diff", [{ spot: "panel", key: "diff", com
 const panelSession = plugin("clover/panel", [{ spot: "panel", key: "session", component: "SessionView" }]);
 const DEFAULT = [shell, sidebar, composer, conversation, panelDiff, panelSession];
 
+describe("a cell's runner-up", () => {
+  test("a bot's own entry on a right panel takes the cell on its tab; the stock entry is its runner-up, and only there", () => {
+    const browser = plugin("clover/browser-view", [{ spot: "panel", key: "browser", component: "BrowserPanel" }]);
+    const mine = plugin("juniper", [{ spot: "panel", key: "browser", component: "MyBrowser" }], { isBot: true });
+    const all = [shell, browser, mine];
+    const on = resolveCell({ plugins: all, ctx: inTab("juniper") }, "panel", "browser");
+    expect(shownRefs(on)).toEqual(["juniper#panel"]);
+    expect(on.runnersUp.map((c) => entryRef(c.entry))).toEqual(["clover/browser-view#panel"]);
+    const elsewhere = resolveCell({ plugins: all, ctx: inTab("alpha") }, "panel", "browser");
+    expect(shownRefs(elsewhere)).toEqual(["clover/browser-view#panel"]);
+    expect(elsewhere.runnersUp).toEqual([]);
+  });
+});
+
 describe("single spots and keyed defaults", () => {
   test("the shell fills app.root", () => {
     expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx }, "app.root"))).toEqual(["clover/shell#app.root"]);

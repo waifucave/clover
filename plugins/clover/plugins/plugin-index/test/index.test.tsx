@@ -149,6 +149,21 @@ describe("the Plugins page: what is installed", () => {
     expect(listed.find((p) => p.id === "weather-routine")?.labels).toBeUndefined();
   });
 
+  test("a plugin with a bot and parts beside it has a second switch, which sets only those parts and keeps the plugin on", async () => {
+    const { core } = await mount({});
+    const row = screen.getByRole("button", { name: "Open Tarot panel" }).closest("li")!;
+    const sw = within(row).getByRole("switch", { name: "Its parts beyond Tarot's tab" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    // In a person's words, the row's chip words, never a point's name; a switch, not a button saying On.
+    expect(row.textContent).toContain("Its parts beyond Tarot's tab: Island tab, Tools");
+    expect(row.textContent).not.toMatch(/island\.tab|mcpServers/);
+    expect(sw.textContent).toBe("");
+    expect(within(screen.getByRole("button", { name: "Open Clover" }).closest("li")!).queryByRole("switch")).toBeNull();
+    fireEvent.click(sw);
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.setEnabled")?.params).toEqual({ id: "tarot-panel", enabled: false, part: "app" });
+  });
+
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);
@@ -316,7 +331,7 @@ describe("the Plugins page: what is installed", () => {
     // A bot's setting: its value and where it is set, no control.
     const voice = settings.querySelector("[data-setting='voice']")!;
     expect(voice.querySelector("input, select, button")).toBeNull();
-    expect(voice.textContent).toContain("Set per bot, in that bot's settings.");
+    expect(voice.textContent).toContain("Set per bot, on that bot's Edit page.");
   });
 
   test("a plugin that holds notify: its notifications' mute switch reads notify.mutes and sets it on a click; its agent definitions", async () => {
@@ -601,4 +616,10 @@ describe("the Plugins page: updates and indexes", () => {
   });
 });
 
-
+describe("the words for the parts beside a bot", () => {
+  test("every word is one the row's chips use (contributionLabels)", async () => {
+    const { CONTRIBUTION_LABEL_ORDER } = await import("../../../../../packages/plugin-sdk/src/manifest/labels");
+    const { PART_WORDS } = await import("../client/Installed");
+    for (const w of Object.values(PART_WORDS)) expect(CONTRIBUTION_LABEL_ORDER as readonly string[]).toContain(w);
+  });
+});

@@ -108,7 +108,7 @@ export const PluginSummary = z.object({
   dev: z.boolean(),
   /** A plugin with a bot and parts beside it (§5.5, the owner's rule of November 14): their own switch (`plugin.setEnabled`
    *  with `part: "app"`), and what they are (a `ui` entry's spot, else its point: `island.tab`, `mcpServers`, `skills`). */
-  parts: z.object({ app: z.object({ enabled: z.boolean(), has: z.array(utf16(256)).max(64) }) }).optional(),
+  parts: z.object({ app: z.object({ enabled: z.boolean(), has: z.array(utf16(256)).max(64), /** The bot's name (its `en` text), for the switch's words. */ bot: utf16(200).optional() }) }).optional(),
 });
 export type PluginSummary = z.infer<typeof PluginSummary>;
 

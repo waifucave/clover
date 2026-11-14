@@ -69,6 +69,8 @@ export interface InstalledPlugin {
   children: string[];
   /** The small labels for what it brings (Bot, Tools, Island tab…), from its contributions; its children's included. */
   labels?: string[];
+  /** A plugin with a bot and parts beside it: their own switch (`plugin.setEnabled` with `part: "app"`), and what they are. */
+  appParts?: { enabled: boolean; has: string[]; bot?: string };
   /** Each child with its own labels, for the detail. */
   parts?: { name: string; labels: string[] }[];
   /** Clover's own plugin this build can't run yet (the registry's `off` with `NOT_AVAILABLE_YET`): one plain line, a
@@ -165,6 +167,8 @@ export interface InstalledProps {
   query: string;
   onQuery: (query: string) => void;
   onOpen: (id: string) => void;
+  /** Switches only a plugin's parts beside its bot (`plugin.setEnabled` with `part: "app"`). */
+  onAppParts?: (id: string, on: boolean) => void;
   loading?: boolean;
 }
 
@@ -178,6 +182,7 @@ export interface DetailProps {
   plugin: PluginDetailView;
   onBack: () => void;
   onSwitch: (on: boolean) => void;
+  onAppParts?: (on: boolean) => void;
   onRestart: () => void;
   onRemove: () => void;
   /** Removes it and deletes its data too (`plugin.remove` with `deleteData`). */

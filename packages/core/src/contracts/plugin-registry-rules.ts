@@ -266,7 +266,9 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     const hasCode = m.host !== undefined || m.client !== undefined || m.helper !== undefined;
     const parent = parentOf(id);
     // Its parts beside its bot (§5.5), when it holds a bot and has some: their own switch and what they are.
-    const parts = (held.beside?.refs.length ?? 0) > 0 ? { app: { enabled: held.appParts !== false, has: [...new Set(held.beside!.kinds)] } } : undefined;
+    const botField = (m.contributes as { bot?: { name?: unknown } } | undefined)?.bot?.name;
+    const botName = typeof botField === "string" ? botField : typeof (botField as { en?: unknown } | undefined)?.en === "string" ? (botField as { en: string }).en : undefined;
+    const parts = (held.beside?.refs.length ?? 0) > 0 ? { app: { enabled: held.appParts !== false, has: [...new Set(held.beside!.kinds)], ...(botName !== undefined ? { bot: botName } : {}) } } : undefined;
     records.set(id, {
       id,
       ...(parent === undefined ? {} : { parent }),
