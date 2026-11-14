@@ -6,7 +6,7 @@
 /* The figure's framing is the renderer's own: a 3D or Live2D figure reads --clover-avatar-framing / -crop / -headroom (layout.css, on the
    stage cell) and frames what it draws, so the canvas is exactly the stage's box (the renderer's own style). It was once drawn larger
    than the stage and shifted so the stage's edge cropped her; that fitted the whole model canvas into an oversized box, and a model with
-   a big canvas came out huge and low, over her own dock. */
+   a big canvas came out huge and low, over her room's tools. */
 
 /* At the wide size her room has a left column (the name, the chips, today's tally, the stage tools) over the left of the stage: a Live2D
    figure is drawn in what is right of it, so no wing of hair or sleeve lies over the column's words. (The canvas, not the stage's box:
