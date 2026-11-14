@@ -65,7 +65,21 @@ function Labels({ labels }: { labels: readonly string[] | undefined }) {
   );
 }
 
-function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
+/** The second switch of a plugin with a bot and parts beside it: only those parts, the bot kept. */
+function AppPartsSwitch({ p, onChange }: { p: InstalledPlugin; onChange: ((on: boolean) => void) | undefined }) {
+  if (p.appParts === undefined) return null;
+  const label = S.appParts(p.name);
+  return (
+    <span className="cl-plugin-index__app-parts">
+      <span className="cl-plugin-index__line">{label}{p.appParts.has.length > 0 ? ` (${p.appParts.has.join(", ")})` : ""}</span>
+      <button type="button" role="switch" aria-checked={p.appParts.enabled} aria-label={label} className="cl-plugin-index__button" disabled={onChange === undefined || !p.enabled} onClick={() => onChange?.(!p.appParts!.enabled)}>
+        {p.appParts.enabled ? S.appPartsOn : S.appPartsOff}
+      </button>
+    </span>
+  );
+}
+
+function Row({ p, onOpen, onAppParts }: { p: InstalledPlugin; onOpen: () => void; onAppParts?: (on: boolean) => void }) {
   return (
     <li className="cl-plugin-index__result" data-state={p.state}>
       <PluginIcon icon={p.icon} />
@@ -79,6 +93,7 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         </span>
         <Labels labels={p.labels} />
         {p.description && <span className="cl-plugin-index__line" title={p.description}>{p.description}</span>}
+        <AppPartsSwitch p={p} onChange={onAppParts} />
         {p.notYet && <span className="cl-plugin-index__description" data-not-yet="">{S.notYet}</span>}
         {!p.notYet && p.notYetParts !== undefined && p.notYetParts.length > 0 && <span className="cl-plugin-index__line" data-not-yet-parts="">{S.notYetPartsLine(p.notYetParts.length)}</span>}
         {p.state === "off" && !p.notYet && p.reason !== undefined && p.reason.startsWith(NOT_HERE) && (
@@ -121,7 +136,7 @@ export function Installed(props: InstalledProps) {
             <h2 className="cl-plugin-index__subhead">{S.groups[g.group]}</h2>
             <ul className="cl-plugin-index__results" aria-label={S.groups[g.group]}>
               {g.plugins.map((p) => (
-                <Row key={p.id} p={p} onOpen={() => props.onOpen(p.id)} />
+                <Row key={p.id} p={p} onOpen={() => props.onOpen(p.id)} {...(props.onAppParts ? { onAppParts: (on: boolean) => props.onAppParts!(p.id, on) } : {})} />
               ))}
             </ul>
           </section>
@@ -236,6 +251,7 @@ export function Detail(props: DetailProps) {
       </header>
       <p className="cl-plugin-index__meta">{[p.id, p.version, p.source, p.pinned ? S.pinned : undefined].filter(Boolean).join(" · ")}</p>
       <Labels labels={p.labels} />
+      <AppPartsSwitch p={p} onChange={props.onAppParts} />
       <p className="cl-plugin-index__intro">{p.provenance}</p>
       {p.description && <p className="cl-plugin-index__intro">{p.description}</p>}
       {p.notYet ? (

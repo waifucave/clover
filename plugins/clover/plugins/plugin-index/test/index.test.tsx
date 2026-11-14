@@ -149,6 +149,17 @@ describe("the Plugins page: what is installed", () => {
     expect(listed.find((p) => p.id === "weather-routine")?.labels).toBeUndefined();
   });
 
+  test("a plugin with a bot and parts beside it has a second switch, which sets only those parts and keeps the plugin on", async () => {
+    const { core } = await mount({});
+    const row = screen.getByRole("button", { name: "Open Tarot panel" }).closest("li")!;
+    const sw = within(row).getByRole("switch", { name: "Its parts beyond Tarot panel's tab" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    expect(within(screen.getByRole("button", { name: "Open Clover" }).closest("li")!).queryByRole("switch")).toBeNull();
+    fireEvent.click(sw);
+    await act(() => settle());
+    expect(core.calls.find((c) => c.method === "plugin.setEnabled")?.params).toEqual({ id: "tarot-panel", enabled: false, part: "app" });
+  });
+
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);

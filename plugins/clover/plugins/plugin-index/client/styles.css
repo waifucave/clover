@@ -461,3 +461,12 @@
   line-height: 18px;
   white-space: nowrap;
 }
+
+/* The second switch under a plugin that has a bot and parts beside it. */
+.cl-plugin-index__app-parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
