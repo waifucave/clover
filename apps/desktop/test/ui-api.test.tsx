@@ -136,7 +136,7 @@ const VnPage = () => {
   vnApi = ui.usePluginApi();
   return h("p", null, "vn");
 };
-const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; loaded?: () => boolean; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
 /** The stage's speech, as the app would feed it: frames pushed by the test, on a clock of its own. */
 const stageSpeech = (() => {
@@ -189,6 +189,7 @@ describe("the UI API in a layer", () => {
       hooks.t = ui.useT();
       const list = ui.useSpotEntries("island.tab");
       hooks.entries = () => list.entries;
+      hooks.loaded = () => list.loaded;
       const q = ui.useQuestions();
       hooks.questions = () => q.questions;
       hooks.userSend = ui.useUserSend();
@@ -393,6 +394,8 @@ describe("the UI API in a layer", () => {
   test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the clover tree's parts have useUserSend", async () => {
     await tick();
     expect(hooks.entries!().map((e) => e.ref)).toEqual(["clover/island#usage", "vn#tab"]);
+    // Answered: a list that is empty before the first answer says so (`loaded` false), so a host does not read it as the spot being unfilled.
+    expect(hooks.loaded!()).toBe(true);
     expect(fake.calls).toContainEqual({ op: "entries", args: ["m2", "island.tab", undefined] });
     // The questions the core sends (to a plugin that may read them), kept current.
     expect(hooks.questions!()).toEqual([]);

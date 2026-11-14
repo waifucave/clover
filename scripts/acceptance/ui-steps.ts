@@ -51,11 +51,13 @@ const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADU
 /** A coding session in a folder of the run's user home (`alpha-code-work`, holding `tiny.png`), started with `agent.start` as the
  *  app starts one when the run has none; its id (the newest coding session `session.list` gives). It is started while the window
  *  is up and never announced to it: the window learns it from `conversation.watch`. */
-async function ensureCodingSession(ctx: Ctx): Promise<string | undefined> {
+async function ensureCodingSession(ctx: Ctx, o: { withFile?: boolean } = {}): Promise<string | undefined> {
   const rpc = ctx.rpc;
-  const newest = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0]?.id;
-  const have = await newest();
-  if (have !== undefined) return have;
+  const newestView = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0];
+  const newest = async () => (await newestView())?.id;
+  const have = await newestView();
+  // With a file: the newest coding session must be the one in the run's folder that holds it (an earlier step's coding session, in another folder, has none).
+  if (have !== undefined && (o.withFile !== true || (have.root ?? "").endsWith("/alpha-code-work"))) return have.id;
   const computerName = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {}).catch(() => ({ computers: [] }))).computers[0]?.name;
   if (ctx.home === undefined || computerName === undefined) return undefined;
   const dir = join(dirname(ctx.home), "alpha-code-work");
@@ -2351,14 +2353,33 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return undefined;
     };
     const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, () => find(sel), () => dumpFrames(cdp));
+    /** Where the plugin's frames are in the window, and whether each sleeps (a frame away from the screen sleeps and wakes when it comes near: §5.5). */
+    const placed = async () => {
+      const out: string[] = [];
+      for (const d of await treeDocs(cdp)) {
+        const v = await cdp.evaluate(d.session, `(() => { const vis = document.visibilityState; const els = [...document.querySelectorAll('[data-clover-entry^="${id}#"]')].map((e) => { const b = e.getBoundingClientRect(); return e.tagName.toLowerCase() + (e.hasAttribute('data-clover-asleep') ? ' asleep' : '') + ' ' + Math.round(b.top) + ',' + Math.round(b.height); }); return els.length ? vis + ': ' + els.join('; ') : ''; })()`).catch(() => "");
+        if (typeof v === "string" && v !== "") out.push(v);
+      }
+      return out.join(" | ");
+    };
+    /** Brings the plugin's frames into view one at a time, as a person scrolls the conversation to a message further up: a part in a
+     *  long conversation is away from the screen, asleep, and wakes when it comes near. */
+    let revealed = 0;
+    const reveal = async () => {
+      for (const d of await treeDocs(cdp)) {
+        await cdp.evaluate(d.session, `(() => { const els = [...document.querySelectorAll('[data-clover-entry^="${id}#"]')]; const e = els[${revealed++} % Math.max(els.length, 1)]; if (e) e.scrollIntoView({ block: 'center', behavior: 'instant' }); return els.length; })()`).catch(() => undefined);
+      }
+    };
     const press = async (what: string, sel: string) => {
+      let tries = 0;
       const at = await until(what, 20_000, async () => {
         for (const d of await layerDocs()) {
           const c = await cdp.centerOf(d.session, sel).catch(() => undefined);
           if (c !== undefined) return { session: d.session, c };
         }
+        if (++tries % 3 === 0) await reveal();
         return undefined;
-      }, () => dumpFrames(cdp));
+      }, async () => `${await placed()}; ${await dumpFrames(cdp)}`);
       await cdp.click(at.session, at.c.x, at.c.y);
     };
     const openApp = async (label: string) => {
@@ -2516,7 +2537,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
       await escape();
       // A coding session started now, from outside the window: her Code switch goes to it with no tab change after it.
-      const codeId = await ensureCodingSession(ctx) ?? fail("this run could not start a coding session");
+      const codeId = await ensureCodingSession(ctx, { withFile: true }) ?? fail("this run could not start a coding session");
       if ((await inTree<boolean>(cdp, "!!document.querySelector('.as__opt')")) === undefined) {
         await pressIn("Bots in the stock sidebar", ".cl-sidebar button", "Bots").catch(() => undefined);
         await pressIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
