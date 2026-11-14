@@ -1434,20 +1434,22 @@ export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined
 
 /** A spot this part declares, as its entries in the spot's order, kept current (lane B's `useSpotEntries`): for a part
  *  that draws one at a time with `<Spot entry>` (the island's tabs, the pill's targets). */
-export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown; /** The kind of session the part shows (`when.session`): the `clover` layer's say, heeded by the main process from that layer only. */ readonly forSessionKind?: unknown }): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe } {
+export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown; /** The kind of session the part shows (`when.session`): the `clover` layer's say, heeded by the main process from that layer only. */ readonly forSessionKind?: unknown }): { readonly entries: readonly SpotEntryView[]; /** False until the first answer: an empty list before it is not yet the spot's answer (a window document that loads again starts so). */ readonly loaded: boolean; subscribe(listener: () => void): Unsubscribe } {
   const part = usePart();
   // The bot whose tab shows, by id or as the props a `<Spot>` there is given (`{ bot }`, a reference or an id): the spots a bot's own entries fill.
   const b = typeof forProps === "string" ? forProps : forProps?.bot;
   const forBot = typeof b === "string" ? b : typeof (b as { id?: unknown } | undefined)?.id === "string" ? (b as { id: string }).id : undefined;
   const kind = typeof forProps === "object" && typeof forProps?.forSessionKind === "string" ? forProps.forSessionKind : undefined;
   const [entries, setEntries] = useState<readonly SpotEntryView[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => {
     let live = true;
     const load = () => void rt().bridge.entries(part.mount, name, spotKey, forBot, kind).then((e) => {
       if (!live) return;
       setEntries((old) => (JSON.stringify(old) === JSON.stringify(e) ? old : e));
-    }, () => undefined);
+      setLoaded(true);
+    }, () => { if (live) setLoaded(true); });
     load();
     const off = onLayerMessage((m) => {
       if (m.type === "respot") load();
@@ -1462,11 +1464,12 @@ export function useSpotEntries(name: string, spotKey?: string, forProps?: string
   }, [entries]);
   return useMemo(() => ({
     entries,
+    loaded,
     subscribe: (listener: () => void) => {
       listeners.current.add(listener);
       return () => listeners.current.delete(listener);
     },
-  }), [entries]);
+  }), [entries, loaded]);
 }
 
 /** Questions waiting in any session the plugin may read, with their text (lane B's `useQuestions`; the core sends them

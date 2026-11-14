@@ -164,7 +164,12 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   // Which panels anything fills (the `panel` spot by key; a bot's column is `bot.side`): a toggle is offered only for one that
   // does, and an open panel whose filler goes away closes. A constant list of hooks, whatever the tab.
-  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, { ...props, forSessionKind: props.sessionKind }).entries.length > 0;
+  const answers: boolean[] = [];
+  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => {
+    const r = useSpotEntries(spot, key, { ...props, forSessionKind: props.sessionKind });
+    answers.push((r as { loaded?: boolean }).loaded !== false);
+    return r.entries.length > 0;
+  };
   const filledList = [
     kind === "bot" ? fills("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : fills("panel", "session", panelProps("session")),
     ...PANEL_KEYS.map((id) => fills("panel", id, panelProps(id))),
@@ -172,7 +177,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
   // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
   const settled = (shown?.route !== "agent" || session !== undefined) && (agent === undefined || agentSession !== undefined);
-  const closing = kind && settled ? open.filter((id) => !filled.has(id)) : [];
+  // Nor before every spot has answered once: a window document that loads again (a plugin's layer first served) starts with empty
+  // lists, and an open panel is not one whose filler went away.
+  const closing = kind && settled && answers.every(Boolean) ? open.filter((id) => !filled.has(id)) : [];
   useEffect(() => {
     if (closing.length > 0) setOpen(open.filter((id) => filled.has(id)));
   }, [closing.join("|"), key]);
