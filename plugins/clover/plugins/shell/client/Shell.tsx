@@ -189,7 +189,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
                   }
                 : {}),
               content: (header: HTMLElement | null, usedLast: boolean) => (
-                <ReplacedPanel key={`${fellKey(id)}|${tries[fellKey(id)] ?? 0}`} id={id} props={panelProps(id)} header={header} usedLast={usedLast} fell={hasFell} onFell={() => setFell((f) => (f[fellKey(id)] ? f : { ...f, [fellKey(id)]: true }))} empty={empty} />
+                <ReplacedPanel key={`${fellKey(id)}|${tries[fellKey(id)] ?? 0}`} id={id} props={panelProps(id)} header={header} usedLast={usedLast} fell={hasFell} onFell={() => setFell((f) => (f[fellKey(id)] ? f : { ...f, [fellKey(id)]: true }))} empty={empty} bot={botRef.id} />
               ),
             };
           }
@@ -197,7 +197,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
             id,
             title: base,
             content: (header: HTMLElement | null, usedLast: boolean) => (
-              <Spot name="panel" spotKey={id} props={{ ...panelProps(id), header, usedLast }} fallback={empty} />
+              <Spot name="panel" spotKey={id} {...(botRef ? { forBot: botRef.id } : {})} props={{ ...panelProps(id), header, usedLast }} fallback={empty} />
             ),
           };
         })

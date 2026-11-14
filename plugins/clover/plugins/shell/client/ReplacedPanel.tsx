@@ -20,9 +20,11 @@ export interface ReplacedPanelProps {
   fell: boolean;
   onFell: (id: string) => void;
   empty: ReactNode;
+  /** The bot whose tab shows: a plugin's own panel for it is found in that bot's context (the shell's document is the whole window's). */
+  bot: string;
 }
 
-export function ReplacedPanel({ id, props, header, usedLast, fell, onFell, empty }: ReplacedPanelProps) {
+export function ReplacedPanel({ id, props, header, usedLast, fell, onFell, empty, bot }: ReplacedPanelProps) {
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (fell) return;
@@ -56,9 +58,9 @@ export function ReplacedPanel({ id, props, header, usedLast, fell, onFell, empty
   return (
     <div ref={root} className="cl-panel__replaced" data-replaced-panel={id} data-fell={fell || undefined} style={{ display: "contents" }}>
       {fell ? (
-        <Spot name="panel" spotKey={id} entry="stock" props={{ ...props, header, usedLast }} fallback={empty} />
+        <Spot name="panel" spotKey={id} entry="stock" forBot={bot} props={{ ...props, header, usedLast }} fallback={empty} />
       ) : (
-        <Spot name="panel" spotKey={id} props={{ ...props, usedLast }} fallback={empty} />
+        <Spot name="panel" spotKey={id} forBot={bot} props={{ ...props, usedLast }} fallback={empty} />
       )}
     </div>
   );
