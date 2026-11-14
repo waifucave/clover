@@ -2650,7 +2650,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // (this plugin has no `browser` capability, so main refuses to place a view for it, and says so).
       await until("the probe's frame box and surface answers", 20_000, async () => ((await attrOf("viewframe")) !== "" && (await attrOf("surfaceenv")) !== "" ? true : undefined), async () => `page said ${JSON.stringify((await find('[data-acceptance-window="page"]'))?.attrs)}`);
       // The frame is laid out after the probe mounts (and a row run after others finds it grown later), so the probe says its element's box again
-      // whenever it changes and the row waits for the drawn box (a width, 24 tall) that the harness's own measure of the element agrees with.
+      // whenever it changes and the row brings the frame into view when it has no box and waits for the drawn box (a width, 24 tall) the harness's own measure agrees with.
       const ownBox = async () => {
         for (const d of await layerDocs()) {
           const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acceptance-window="box"]'); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), vw: innerWidth, vh: innerHeight }; })()`).catch(() => null);
@@ -2664,6 +2664,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const f = parsed(said);
         const o = await ownBox();
         if (f === undefined || o === undefined) return undefined;
+        // In a long conversation (the whole `main` unit's) the probe's frame is far up the transcript, away from the screen with no box: scrolled to, as a person would.
+        if (f[2] === 0 || o.w === 0) { await reveal(); await sleep(400); return undefined; }
         return f[2] > 0 && f[3] === 24 && Math.abs(f[2] - o.w) <= 3 && Math.abs(f[3] - o.h) <= 1 && Math.abs(f[0] - o.x) <= 3 && Math.abs(f[1] - o.y) <= 3 ? { said, f, o } : undefined;
       }, async () => `the probe said ${JSON.stringify(await attrOf("viewframe"))}, the harness measured ${JSON.stringify(await ownBox())}`);
       const frameSaid = settled.said;
