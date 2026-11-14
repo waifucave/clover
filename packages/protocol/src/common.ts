@@ -62,6 +62,14 @@ export const AnyPluginId = utf16(PLUGIN_ID_MAX * 2 + 1).regex(new RegExp(ANY_PLU
 /** A bot's id is its plugin's id (§6.1), a child's included (`pack/luna`). */
 export const BotId = AnyPluginId;
 
+/** A plugin's parts beside its bot as one switch (§5.5, the owner's rule of November 14), where a plugin OK's checkboxes
+ *  name it beside its children: `<plugin id>#app`. */
+export const APP_PARTS_SUFFIX = "#app";
+export const AppPartsId = utf16(PLUGIN_ID_MAX * 2 + 1 + APP_PARTS_SUFFIX.length)
+  .refine((v) => v.endsWith(APP_PARTS_SUFFIX) && isAnyPluginId(v.slice(0, -APP_PARTS_SUFFIX.length)), { message: "not a plugin's app parts: `<plugin id>#app`" });
+/** A plugin OK's checkbox: a child plugin, or the plugin's own parts beside its bot. */
+export const OkCheckboxId = z.union([AnyPluginId, AppPartsId]);
+
 /** The plugins we ship (§5.1). No core rule names any other plugin (§5.3). */
 export const BUNDLED_ROOT_PLUGIN = "clover";
 

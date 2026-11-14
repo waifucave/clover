@@ -16,6 +16,7 @@ export type * from "./manifest/types";
 export * from "./manifest/interpolation";
 export * from "./manifest/hook-command";
 export * from "./manifest/names";
+export * from "./manifest/parts";
 export * from "./manifest/validate";
 export * from "./manifest/tree";
 export * from "./manifest/args";

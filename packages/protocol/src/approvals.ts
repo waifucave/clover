@@ -23,7 +23,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, CardId, MAX_CHILD_PLUGINS, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
+  AnyPluginId, BotId, CardId, MAX_CHILD_PLUGINS, ComputerName, DeviceId, Empty, OkCheckboxId, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -169,7 +169,7 @@ export const Card = CardMeta.extend({
   fields: z.partialRecord(CardFieldName, SealedValue),
   options: z.array(CardOption).min(1).max(8),
   /** A plugin OK covers the plugin and its children, with a checkbox per child (§5.1). */
-  children: z.array(z.object({ id: AnyPluginId, label: Text, checked: z.boolean() })).max(MAX_CHILD_PLUGINS).optional(),
+  children: z.array(z.object({ id: OkCheckboxId, label: Text, checked: z.boolean() })).max(MAX_CHILD_PLUGINS + 1).optional(),
 });
 export type Card = z.infer<typeof Card>;
 
@@ -252,7 +252,7 @@ export function callBindingInput(method: string, params: unknown): string {
 export const SignedCardAnswer = z.object({
   card: Card,
   option: CardOptionId,
-  children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS).optional(),
+  children: z.array(OkCheckboxId).max(MAX_CHILD_PLUGINS + 1).optional(),
   device: DeviceId,
   at: Timestamp,
   /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
@@ -293,8 +293,8 @@ export const APPROVALS_METHODS = {
     name: "card.answer", owner: "C", roles: ["app", "remote", "peer"],
     params: z.object({
       id: CardId, hash: Sha256Hex, option: CardOptionId, proof: CardAnswerProof,
-      /** A plugin OK's checked children; a device signs them too. */
-      children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS).optional(),
+      /** A plugin OK's checked children (and its parts beside its bot, `<id>#app`); a device signs them too. */
+      children: z.array(OkCheckboxId).max(MAX_CHILD_PLUGINS + 1).optional(),
     }),
     result: z.object({ accepted: z.boolean(), reason: utf16(500).optional() }),
     doc: "Answers a card from a sealed frame, or with a paired device's signature; the first answer wins.",
