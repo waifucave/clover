@@ -43,21 +43,30 @@ export const UI_STEPS = [
   "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
   "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
   "a third-party plugin fills the window's spots in Alpha's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
+  "a third-party plugin fills file.preview for images: a coding session's Files panel shows a picture through the plugin's own component (its name and media type), with no \"no preview\" note",
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
 ] as const;
 
-/** A coding session in a folder of the run's user home, started when the run has none (`agent.start` as
- *  the app starts one); true when one is listed by `session.list`. Its folder: `alpha-code-work`. */
-async function ensureCodingSession(ctx: Ctx): Promise<boolean> {
+/** A tiny 1x1 PNG, for the Files panel's preview step. */
+const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+
+/** A coding session in a folder of the run's user home (`alpha-code-work`, holding `tiny.png`), started with `agent.start` as the
+ *  app starts one when the run has none; its id (the newest coding session `session.list` gives). It is started while the window
+ *  is up and never announced to it: the window learns it from `conversation.watch`. */
+async function ensureCodingSession(ctx: Ctx, o: { withFile?: boolean } = {}): Promise<string | undefined> {
   const rpc = ctx.rpc;
-  const listed = async () => (await rpc.request<{ sessions: { kind?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.some((x) => x.kind === "coding");
-  if (await listed()) return true;
+  const newestView = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0];
+  const newest = async () => (await newestView())?.id;
+  const have = await newestView();
+  // With a file: the newest coding session must be the one in the run's folder that holds it (an earlier step's coding session, in another folder, has none).
+  if (have !== undefined && (o.withFile !== true || (have.root ?? "").endsWith("/alpha-code-work"))) return have.id;
   const computerName = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {}).catch(() => ({ computers: [] }))).computers[0]?.name;
-  if (ctx.home === undefined || computerName === undefined) return false;
+  if (ctx.home === undefined || computerName === undefined) return undefined;
   const dir = join(dirname(ctx.home), "alpha-code-work");
   mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "tiny.png"), TINY_PNG);
   await rpc.request("agent.start", { backend: "clover-code", computer: computerName, root: `home/${computerName}/alpha-code-work` }, 60_000);
-  return listed();
+  return newest();
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -2064,11 +2073,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // 6. Back to Alpha by the sidebar's row: her chrome returns.
       await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
+      // A coding session started now, outside the window, with no tab change after it: her Code switch must go to it (the session's id is on screen).
+      const codeId = await ensureCodingSession(ctx);
       let side = "this run could not start a coding session, so her Code switch had nowhere to go (not pressed)";
-      if (code) {
+      if (codeId !== undefined) {
         await press("her Code switch", ".as__opt", "Code");
-        await until("the stock bar on the Code side", 20_000, async () => ((await win("!!document.querySelector('.cl-window__bar') && w.dataset.barMode")) === "standard" ? true : undefined));
-        side = "her Code switch brought the stock bar and sidebar";
+        await until("the coding session shown (its id in the sidebar's current row)", 30_000, async () => (((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined) ? true : undefined), async () => `${await win("w.dataset.barMode")} || ${(await treeText(cdp)).replace(/\s+/g, " ").slice(0, 400)}`);
+        side = `her Code switch went to the coding session ${codeId} started just before, from outside the window (its row is the current one in the sidebar)`;
+        await press("Bots in the stock sidebar", ".cl-sidebar button", "Bots");
         await press("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha");
       }
       const rows = (JSON.parse(herSide) as { rows: string[] }).rows.length;
@@ -2425,14 +2437,33 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return undefined;
     };
     const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, () => find(sel), () => dumpFrames(cdp));
+    /** Where the plugin's frames are in the window, and whether each sleeps (a frame away from the screen sleeps and wakes when it comes near: §5.5). */
+    const placed = async () => {
+      const out: string[] = [];
+      for (const d of await treeDocs(cdp)) {
+        const v = await cdp.evaluate(d.session, `(() => { const vis = document.visibilityState; const els = [...document.querySelectorAll('[data-clover-entry^="${id}#"]')].map((e) => { const b = e.getBoundingClientRect(); return e.tagName.toLowerCase() + (e.hasAttribute('data-clover-asleep') ? ' asleep' : '') + ' ' + Math.round(b.top) + ',' + Math.round(b.height); }); return els.length ? vis + ': ' + els.join('; ') : ''; })()`).catch(() => "");
+        if (typeof v === "string" && v !== "") out.push(v);
+      }
+      return out.join(" | ");
+    };
+    /** Brings the plugin's frames into view one at a time, as a person scrolls the conversation to a message further up: a part in a
+     *  long conversation is away from the screen, asleep, and wakes when it comes near. */
+    let revealed = 0;
+    const reveal = async () => {
+      for (const d of await treeDocs(cdp)) {
+        await cdp.evaluate(d.session, `(() => { const els = [...document.querySelectorAll('[data-clover-entry^="${id}#"]')]; const e = els[${revealed++} % Math.max(els.length, 1)]; if (e) e.scrollIntoView({ block: 'center', behavior: 'instant' }); return els.length; })()`).catch(() => undefined);
+      }
+    };
     const press = async (what: string, sel: string) => {
+      let tries = 0;
       const at = await until(what, 20_000, async () => {
         for (const d of await layerDocs()) {
           const c = await cdp.centerOf(d.session, sel).catch(() => undefined);
           if (c !== undefined) return { session: d.session, c };
         }
+        if (++tries % 3 === 0) await reveal();
         return undefined;
-      }, () => dumpFrames(cdp));
+      }, async () => `${await placed()}; ${await dumpFrames(cdp)}`);
       await cdp.click(at.session, at.c.x, at.c.y);
     };
     const openApp = async (label: string) => {
@@ -2566,13 +2597,80 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     }
   });
 
-  // 25: the plug rule in the window (the owner, November 14; design/plug-rule-2026-11-14.md). A plugin with a bot (lane B's
+  // 25: a third-party plugin (the acceptance-preview fixture) fills `file.preview` for image/*: in a coding session's Files
+  // panel a tiny PNG picked in the tree is drawn by the plugin's own component (name and media type), not the "no preview" note.
+  await step(25, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = "acceptance-preview";
+    const folder = join(import.meta.dir, "fixtures", id);
+    const pressIn = async (what: string, selector: string, text?: string, ms = 20_000, diag?: () => Promise<string>) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, diag ?? (() => dumpFrames(cdp)));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(700);
+    };
+    const installed = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    try {
+      if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
+      const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
+      await escape();
+      // A coding session started now, from outside the window: her Code switch goes to it with no tab change after it.
+      const codeId = await ensureCodingSession(ctx, { withFile: true }) ?? fail("this run could not start a coding session");
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.as__opt')")) === undefined) {
+        await pressIn("Bots in the stock sidebar", ".cl-sidebar button", "Bots").catch(() => undefined);
+        await pressIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      }
+      await pressIn("her Code switch", ".as__opt", "Code");
+      await until("the coding session shown", 30_000, async () => (((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined) ? true : undefined), () => dumpFrames(cdp));
+      // The plugin's layer is first served when the first preview asks for it, which loads the window's frame once more and closes the
+      // open panel (the app logs "loads again to frame a layer installed after it was served"): the panel is opened again until it draws.
+      const clickIn = async (sel: string, text?: string) => {
+        for (const d of await treeDocs(cdp)) {
+          const v = await cdp.evaluate(d.session, `(() => { const e = [...document.querySelectorAll(${JSON.stringify(sel)})].find((x) => ${JSON.stringify(text ?? "")} === "" || (x.textContent || '').includes(${JSON.stringify(text ?? "")})); if (!e) return false; e.click(); return true; })()`).catch(() => false);
+          if (v === true) return true;
+        }
+        return false;
+      };
+      const drawnIn = async () => {
+        for (const d of await cdp.documents()) {
+          if (!d.url.startsWith(`clover-plugin://${id}/`)) continue;
+          const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acceptance-preview="main"]'); return e ? e.textContent || "" : "" })()`).catch(() => "");
+          if (typeof v === "string" && v !== "") return v;
+        }
+        return undefined;
+      };
+      let drawn: string | undefined;
+      for (let attempt = 0; attempt < 4 && drawn === undefined; attempt++) {
+        await until("the Files toggle", 30_000, async () => ((await clickIn("button.cl-panel-toggle[aria-label=Files][aria-pressed=false]")) || (await inTree<boolean>(cdp, "!!document.querySelector('button.cl-panel-toggle[aria-label=Files][aria-pressed=true]')")) !== undefined ? true : undefined), async () => `the toggles: ${JSON.stringify((await inTree<string>(cdp, "document.querySelector('.cl-window__bar') ? [...document.querySelectorAll('.cl-panel-toggle')].map((b) => b.getAttribute('aria-label') + '=' + b.getAttribute('aria-pressed')).join(',') : null"))?.value)}`);
+        await until("tiny.png in the Files tree", 20_000, async () => ((await clickIn("[role=treeitem]", "tiny.png")) ? true : undefined), () => dumpFrames(cdp)).catch(() => undefined);
+        for (let i = 0; i < 12 && drawn === undefined; i++) {
+          await sleep(1_000);
+          drawn = await drawnIn();
+        }
+      }
+      if (drawn === undefined) fail(`the plugin's own preview of the picture never drew (4 tries); ${(await treeText(cdp)).replace(/\s+/g, " ").slice(0, 200)}`);
+      if (!drawn!.includes("tiny.png") || !drawn!.includes("image/png")) fail(`the plugin's preview drew ${JSON.stringify(drawn!.slice(0, 120))}, not the file's name and media type`);
+      if ((await inTree<boolean>(cdp, "[...document.querySelectorAll('.cl-files__empty-text')].some((e) => /preview/i.test(e.textContent || ''))")) !== undefined) fail("the Files panel still shows its no-preview note beside the plugin's preview");
+      await pressIn("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+      return `${id} installed from its folder, OK'd on its card ${ok}; a coding session's Files panel (opened from Alpha's Code switch) listed tiny.png and, picked, drew it through the plugin's file.preview component (${JSON.stringify(drawn!.slice(0, 60))}), not the no-preview note`;
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+    }
+  });
+
+  // 26: the plug rule in the window (the owner, November 14; design/plug-rule-2026-11-14.md). A plugin with a bot (lane B's
   // Juniper fixture: an island tab beside it, a Browser panel of its own, settings): on Juniper's tab its Browser panel replaces
   // the stock one, on Alpha's tab the stock one shows; Juniper's Edit page has a section of the plugin's settings headed with her
   // name (a switch pressed, read back from the daemon); the Plugins page's second switch (the parts beside the bot) is pressed and
   // the plugin keeps running with the bot kept. Then the same plugin with a Browser panel that never draws: after two seconds the
   // panel says so and shows Clover's own, and its button tries the bot's again.
-  await step(25, async () => {
+  await step(26, async () => {
     if (ctx.pressCard === undefined) fail("this run can't press a card");
     const id = FIELDS_IDS.bot;
     const parent = mkdtempSync(join(tmpdir(), "clover-plug-app-"));

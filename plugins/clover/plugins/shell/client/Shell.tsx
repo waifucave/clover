@@ -79,6 +79,26 @@ function NothingHere({ title }: { title: string }) {
   );
 }
 
+/** Whether the window is narrower than 900 CSS pixels (only watched while `on`). */
+function useNarrow(on: boolean): boolean {
+  const q = "(max-width: 899px)";
+  const [narrow, setNarrow] = useState(() => on && typeof matchMedia === "function" && matchMedia(q).matches);
+  useEffect(() => {
+    if (!on || typeof matchMedia !== "function") { setNarrow(false); return; }
+    const m = matchMedia(q);
+    const f = () => setNarrow(m.matches);
+    f();
+    m.addEventListener("change", f);
+    return () => m.removeEventListener("change", f);
+  }, [on]);
+  return narrow;
+}
+
+/** The newest coding session (by when it started): where the Code side goes. */
+export function newestCoding(sessions: readonly SessionView[]): SessionView | undefined {
+  return sessions.filter((x) => x.kind === "coding").reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+}
+
 export function Shell({ props }: EntryProps<ShellProps>) {
   const api = usePluginApi();
   const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
@@ -100,7 +120,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
 
   const dialog = route?.route === "settings" ? route : undefined;
   const shown = dialog ? under : route;
-  const sessions = useLoad(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), [api, tabKey(shown)]);
+  // Read once and followed through `conversation.watch`: a session started outside the window (the CLI, another window, a bot's agent) is known at once.
+  const sessions = useLiveList<SessionView>(() => api.conversation?.list?.() ?? Promise.resolve([] as SessionView[]), api.conversation?.watch, (a, b) => a.id === b.id, [api]);
   const bot = shown?.route === "bot" ? bots?.find((b) => b.id === shown.params.bot) : undefined;
   const botRef: BotRef | undefined = bot ? { id: bot.id, name: plain(bot.name) } : undefined;
   const session = shown?.route === "agent" ? sessions?.find((s) => s.id === shown.params.session) : undefined;
@@ -146,7 +167,12 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   // Which panels anything fills (the `panel` spot by key; a bot's column is `bot.side`): a toggle is offered only for one that
   // does, and an open panel whose filler goes away closes. A constant list of hooks, whatever the tab.
-  const entriesOf = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, props).entries;
+  const answers: boolean[] = [];
+  const entriesOf = (spot: string, key: string | undefined, props: Record<string, unknown>) => {
+    const r = useSpotEntries(spot, key, { ...props, forSessionKind: props.sessionKind });
+    answers.push((r as { loaded?: boolean }).loaded !== false);
+    return r.entries;
+  };
   const entryLists = [
     kind === "bot" ? entriesOf("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : entriesOf("panel", "session", panelProps("session")),
     ...PANEL_KEYS.map((id) => entriesOf("panel", id, panelProps(id))),
@@ -164,7 +190,9 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
   // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
   const settled = (shown?.route !== "agent" || session !== undefined) && (agent === undefined || agentSession !== undefined);
-  const closing = kind && settled ? open.filter((id) => !filled.has(id)) : [];
+  // Nor before every spot has answered once: a window document that loads again (a plugin's layer first served) starts with empty
+  // lists, and an open panel is not one whose filler went away.
+  const closing = kind && settled && answers.every(Boolean) ? open.filter((id) => !filled.has(id)) : [];
   useEffect(() => {
     if (closing.length > 0) setOpen(open.filter((id) => filled.has(id)));
   }, [closing.join("|"), key]);
@@ -322,7 +350,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       else if ("app" in t) l.navigate({ route: t.app, params: {} });
       else if ("page" in t) l.navigate({ route: t.page, params: {} });
       else if (t.side === "code") {
-        const code = l.sessions?.find((x) => x.kind === "coding");
+        const code = newestCoding(l.sessions ?? []);
         if (code) l.navigate({ route: "agent", params: { session: code.id } });
       } else if (l.bots?.[0]) l.navigate({ route: "bot", params: { bot: l.bots[0].id } });
     }
