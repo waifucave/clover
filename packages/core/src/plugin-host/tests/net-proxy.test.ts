@@ -479,8 +479,8 @@ console.log(JSON.stringify(out));
       };
       const node = await run("node probe-node.mjs");
       // The proxy's refusal reaches Node's fetch as a 403 response, or (a newer undici, Node 24.22) as a rejected request: either way nothing came back from the unlisted host.
-      const seen = JSON.parse(node.last) as { unlisted: unknown };
-      expect([403, "rejected"]).toContain(seen.unlisted);
+      const seen = JSON.parse(node.last) as { unlisted: number | string };
+      expect(seen.unlisted === 403 || seen.unlisted === "rejected").toBe(true);
       expect({ ...seen, unlisted: 403 }).toMatchObject({ proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) });
       // And with the variable taken away, it reaches nothing: the proxy is its only way out, never a direct one.
       const without = await run("env -u NODE_USE_ENV_PROXY node probe-node.mjs");
