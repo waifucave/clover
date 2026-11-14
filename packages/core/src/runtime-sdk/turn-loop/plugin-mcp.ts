@@ -642,6 +642,9 @@ export class PluginMcp {
           try { this.#o.onListed?.(); } catch { /* a listener never fails a listing */ }
         } catch (err) {
           if (this.#closed) return;
+          // Its plugin went while the listing was on (removed, switched off; the host closes its channels then): the server
+          // isn't wanted any more, so nothing failed and there is nothing to say (refresh already dropped what it had).
+          if (this.#want.get(key) === undefined) return;
           const said = err instanceof Error ? err.message : String(err);
           // A server whose command, arguments or environment name a key or setting the user hasn't set yet isn't broken:
           // it waits for the user (the re-list starts it once they set it, `relist`).

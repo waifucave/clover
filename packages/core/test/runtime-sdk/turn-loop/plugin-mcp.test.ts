@@ -580,6 +580,34 @@ test("after close(), refresh does nothing and a channel that opens late is close
   expect(mcp.servers("bot")).toEqual([]);
 });
 
+test("a plugin removed while its server is being listed: its channel closes, and no line says the listing failed", async () => {
+  const entries = [entry("acme", "tools", { type: "host" }), entry("acme", "broken", { type: "host" })];
+  const registry = fakeRegistry(entries, { acme: "/nonexistent" });
+  const fake = fakeHost();
+  let close!: () => void;
+  const held = new Promise<void>((_r, reject) => { close = () => reject(new ContractError("closed", "the plugin's MCP channel was closed")); });
+  fake.gate((_p, server) => (server === "tools" ? held : server === "broken" ? Promise.reject(new Error("no such program")) : undefined));
+  const lines: string[] = [];
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: (l) => lines.push(l) });
+  try {
+    const pending = mcp.refresh();
+    await Bun.sleep(10);
+    // The removal, in the daemon's order: the registry says it went (the host closes its channels on that change), then
+    // the channel under the listing rejects.
+    entries.splice(0, 1);
+    registry.changed();
+    close();
+    await pending;
+    await Bun.sleep(10);
+    expect(lines.filter((l) => l.includes("acme/tools"))).toEqual([]);
+    expect(names(mcp)).toEqual([]);
+    // A server still wanted whose listing fails says so, as before.
+    expect(lines.some((l) => l.includes("acme/broken") && l.includes("couldn't be listed: no such program"))).toBe(true);
+  } finally {
+    mcp.close();
+  }
+});
+
 test("a call to a tool the server didn't list is refused", async () => {
   const mcp = new PluginMcp({ registry: fakeRegistry([entry("clover", "web", { type: "host" })], { clover: "/nonexistent" }), host: fakeHost().host, self: () => "Studio" });
   try {
