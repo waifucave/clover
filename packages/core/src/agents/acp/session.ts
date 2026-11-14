@@ -104,9 +104,9 @@ export interface OpenOptions {
   /** How long a mode switch may take to be confirmed (`MODE_CONFIRM_MS`). */
   modeConfirmMs?: number;
   /** For an agent whose permission requests don't name an MCP call's server and tool (`mcpNames: null`), the agent's
-   *  own side can: the call's server and tool by its tool call id, or undefined (clover-code, in the daemon, gives a
-   *  plugin tool on its own bridge, from the runtime's real tool name). */
-  mcpCallOf?: (toolCallId: string) => { server: string; tool: string } | undefined;
+   *  own side can: the call's server and tool by its tool call id and the request's own title and kind, or undefined
+   *  (clover-code, in the daemon, gives a plugin tool on its own bridge, from the runtime's real tool name). */
+  mcpCallOf?: (toolCallId: string, asked: { title?: string; kind?: string }) => { server: string; tool: string } | undefined;
 }
 
 /** A writer's mode floor at a level (absent: the strictest). */
@@ -647,7 +647,8 @@ export class AcpAgentSession implements AgentSession {
     const options = readPermissionOptions(params?.["options"]);
     const turn = this.#turn;
     const names = this.#quirks.permissions.mcpNames;
-    const own = names ? undefined : this.#mcpCallOf?.(id);
+    // The request's own title and kind (never the merged record's): what the call it names was asked as.
+    const own = names ? undefined : this.#mcpCallOf?.(id, { ...(str(toolCall?.["title"]) === undefined ? {} : { title: str(toolCall?.["title"])! }), ...(str(toolCall?.["kind"]) === undefined ? {} : { kind: str(toolCall?.["kind"])! }) });
     const server = names ? str(at(record, names.server)) : own?.server;
     const tool = names ? str(at(record, names.tool)) : own?.tool;
     const ask: AgentPermissionAsk = {

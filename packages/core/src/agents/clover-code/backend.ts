@@ -46,6 +46,9 @@ import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
 export const CLOVER_CODE_ID = "clover-code";
 
+/** A plugin's tool on the session's bridge being asked about: its bridge name, and the runtime's tool name for it. */
+interface BridgeCall { tool: string; name: string }
+
 /** What `serve` needs: the session's root (a folder that exists), its model and effort, and its fence. */
 export type CodeAgentServeSpec = Pick<AcpStartSpec, "root" | "model" | "effort" | "fence">;
 
@@ -292,10 +295,16 @@ export class CloverCodeBackend implements AgentBackend {
       selections: { keeper: this.#selections, backend: this.id },
       readOnlyMode: CLOVER_CODE_READ_ONLY_MODE,
       ...(readOnly ? { readOnly: true } : {}),
-      // A plugin's tool on the session's bridge, by the call the runtime is asking about (its real tool name).
-      mcpCallOf: (id) => {
-        const tool = bridgeCalls.get(id);
-        return tool === undefined ? undefined : { server: bridge.name, tool };
+      // A plugin's tool on the session's bridge, by the call the runtime is asking about (its real tool name). The record
+      // is consumed on its first lookup, and answers only a request for the runtime tool it was made for: an MCP tool is
+      // ACP kind `other`, titled by its name (then a path, pattern, address or query from its input), so a Bash, a Write or
+      // another tool given the same tool call id never takes it.
+      mcpCallOf: (id, asked) => {
+        const call = bridgeCalls.get(id);
+        if (call === undefined) return undefined;
+        bridgeCalls.delete(id);
+        if (asked.kind !== "other" || asked.title === undefined || (asked.title !== call.name && !asked.title.startsWith(`${call.name} `))) return undefined;
+        return { server: bridge.name, tool: call.tool };
       },
     });
   }
@@ -330,7 +339,7 @@ export class CloverCodeBackend implements AgentBackend {
 
   /** What `start` and `serve` share: the session's query on the embedded runtime and its options (the coding tools,
    *  the fence's sandbox and deny rules, the pause and the fence's hooks), checked and filled. */
-  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController; bridgeCalls: ReadonlyMap<string, string> }> {
+  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController; bridgeCalls: Map<string, BridgeCall> }> {
     const deps = this.#deps;
     // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
     if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
@@ -410,9 +419,9 @@ export class CloverCodeBackend implements AgentBackend {
     };
     await fillProvider(deps.fillProvider ? { provider: (m, o) => deps.fillProvider!(m, o) } : {}, options);
     const run = deps.query ?? sdkQuery;
-    // The calls being asked about now that are a plugin's tool on the session's bridge (tool call id → its bridge name),
-    // for the ACP request's server and tool: never one of the bridge's own tools, which ask as before.
-    const bridgeCalls = new Map<string, string>();
+    // The calls being asked about now that are a plugin's tool on the session's bridge (tool call id → its bridge name and
+    // the runtime's tool name), for the ACP request's server and tool: never one of the bridge's own tools, which ask as before.
+    const bridgeCalls = new Map<string, BridgeCall>();
     const bridgePrefix = bridge === undefined ? undefined : `mcp__${bridge.name}__`;
     const ownTools = new Set(bridgeOwnTools(spec.bot).map((t) => t.name));
     // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed (served to
@@ -429,12 +438,14 @@ export class CloverCodeBackend implements AgentBackend {
         if (runLater !== undefined) return { behavior: "deny", message: runLater };
         const onBridge = bridgePrefix !== undefined && name.startsWith(bridgePrefix) ? name.slice(bridgePrefix.length) : undefined;
         const pluginTool = onBridge !== undefined && onBridge !== "" && !ownTools.has(onBridge) && opts.toolUseID ? onBridge : undefined;
-        if (pluginTool !== undefined) bridgeCalls.set(opts.toolUseID, pluginTool);
+        const call: BridgeCall | undefined = pluginTool === undefined ? undefined : { tool: pluginTool, name };
+        if (call !== undefined) bridgeCalls.set(opts.toolUseID, call);
         let answer: Awaited<ReturnType<CanUseTool>>;
         try {
           answer = await ask(name, input, opts);
         } finally {
-          if (pluginTool !== undefined) bridgeCalls.delete(opts.toolUseID);
+          // Never one another call put under the same id since.
+          if (call !== undefined && bridgeCalls.get(opts.toolUseID) === call) bridgeCalls.delete(opts.toolUseID);
         }
         if (answer?.behavior === "allow" && !(await holdWhilePaused(gate, AbortSignal.any([opts.signal, abort.signal])))) return { behavior: "deny", message: PAUSED };
         return answer;

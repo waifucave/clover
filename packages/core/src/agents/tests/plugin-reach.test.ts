@@ -17,12 +17,12 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { botApprovalCheck } from "../../approvals/bot-check";
 import type { BotSessionContext } from "../../bots/service";
-import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { buildCoreBrand } from "../../runtime-sdk/brand";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
 import { botChildFor } from "../bot-child";
-import { CLOVER_CODE_ID, CloverCodeBackend } from "../clover-code/backend";
+import { CLOVER_CODE_ID, CloverCodeBackend, type CloverCodeDeps } from "../clover-code/backend";
 import { thisPlatform } from "../../registry/core";
 import { openPluginRegistry } from "../../registry/open";
 import type { TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
@@ -137,7 +137,7 @@ async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSett
 const CODE_BRIDGE = "clover_reachbridge";
 const CODE_MODEL = "winter-test/calls";
 /** Clover's coding agent (`clover-code`) on the embedded runtime, beside the scripted one, as clover-code.test.ts makes it. */
-const codeBackend = (spawn: SpawnClaudeCodeProcess): WorldOptions => ({
+const codeBackend = (spawn: SpawnClaudeCodeProcess, query?: CloverCodeDeps["query"]): WorldOptions => ({
   bridgeServerName: CODE_BRIDGE,
   extraBackends: (wire, self) => [new CloverCodeBackend({
     clock: { now: () => Date.now() } as never, wire, defaultModel: () => CODE_MODEL, sandboxReady: () => true,
@@ -149,8 +149,21 @@ const codeBackend = (spawn: SpawnClaudeCodeProcess): WorldOptions => ({
       return { brand: buildCoreBrand(undefined, self.cloverHome), model: x.model, cwd: x.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
     },
     pause: { mayAct: () => true },
+    ...(query === undefined ? {} : { query }),
   })],
 });
+/** A runtime that, at the prompt, asks about the calls `script` makes through the agent's own `canUseTool` (the backend's
+ *  wrapper over the ACP agent's), then ends the turn: what a provider giving two tool uses one id would make it ask. */
+const askingQuery = (script: (can: CanUseTool) => Promise<void>) => ((args: { prompt: AsyncIterable<string>; options: Options & { canUseTool: CanUseTool } }) => {
+  async function* run() {
+    yield { type: "system", subtype: "init", model: CODE_MODEL, permissionMode: "default" };
+    for await (const _ of args.prompt) {
+      await script(args.options.canUseTool);
+      yield { type: "result", subtype: "success", is_error: false, usage: { input_tokens: 1, output_tokens: 1 } };
+    }
+  }
+  return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+}) as unknown as CloverCodeDeps["query"];
 
 async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting } = {}) {
   let tools: BridgeToolSource | undefined;
@@ -414,6 +427,68 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's c
     await waitFor(() => wire(w, r.transcript).includes("stopReason"), "the turn's end");
     expect(wire(w, r.transcript)).not.toContain(`${tool} ran with`);
     expect(kinds(r.sessionId)).toEqual([]);
+  });
+
+  /** Answers (deny) every card raised for the session until `done`, saying each card's kind and the call it shows. */
+  const denyUntil = async (w: World, session: () => string | undefined, done: () => boolean) => {
+    const shown: string[] = [];
+    await waitFor(async () => {
+      const id = session();
+      for (const c of id === undefined ? [] : mine(w, id)) {
+        shown.push(`${c.kind}: ${JSON.stringify(c.fields["command"] ?? c.fields["what"])}`);
+        await approve(w, c.id, (c.options.find((o) => o.kind === "deny") ?? c.options[c.options.length - 1]!).id);
+      }
+      return done();
+    }, "the calls' answers");
+    return shown;
+  };
+  const can = (call: CanUseTool, name: string, input: Record<string, unknown>, id: string) => call(name, input, { signal: new AbortController().signal, toolUseID: id } as Parameters<CanUseTool>[2]).then((r) => `${name.startsWith("mcp__") ? "plugin" : name}: ${r?.behavior}`);
+
+  test("two tool uses with one id: the plugin call's record is consumed on its first lookup and bound to its own tool, so the other (a Bash naming the tool) still asks on agent-permission", async () => {
+    const answers: string[] = [];
+    let finished = false;
+    const plugin = `mcp__${CODE_BRIDGE}__${short}`;
+    const bash = { command: plugin };
+    const query = askingQuery(async (call) => {
+      // The plugin call asked first, then a Bash under the same id while its ask is out: the Bash finds no record.
+      answers.push(...await Promise.all([can(call, plugin, {}, "toolu_same_a"), can(call, "Bash", bash, "toolu_same_a")]));
+      // The Bash asked first, the plugin call's record made while the Bash's request is on its way: the Bash's lookup
+      // finds a record for another tool (bound: not taken) and consumes it, so the plugin call asks on a card too.
+      answers.push(...await Promise.all([can(call, "Bash", bash, "toolu_same_b"), can(call, plugin, {}, "toolu_same_b")]));
+      finished = true;
+    });
+    const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "ask" });
+    let id: string | undefined;
+    const started = code(w, "anything").then((r) => { id = r.sessionId; });
+    const shown = await denyUntil(w, () => id, () => finished);
+    await started;
+    const bashCard = `agent-permission: ${JSON.stringify({ type: "code", code: plugin })}`;
+    // The first pair: the plugin call through to the bridge's judge with no card; the Bash on its card, denied.
+    expect(answers.slice(0, 2)).toEqual(["plugin: allow", "Bash: deny"]);
+    // The second pair: both on agent-permission cards, both denied; nothing passed by the bridge rule.
+    expect(answers.slice(2)).toEqual(["Bash: deny", "plugin: deny"]);
+    // Three agent-permission cards: the two Bashes (their command names the tool) and the second plugin call (with no
+    // input, its card shows its title, its own name).
+    expect(shown).toEqual([bashCard, bashCard, bashCard]);
+  });
+
+  test("the bridge's own tools (Glossary; SendMessage for a bot's agent) still ask on agent-permission", async () => {
+    let finished = 0;
+    const answers: string[] = [];
+    const query = askingQuery(async (call) => {
+      answers.push(await (finished === 0 ? can(call, `mcp__${CODE_BRIDGE}__Glossary`, { query: "haiku" }, "toolu_glossary") : can(call, `mcp__${CODE_BRIDGE}__SendMessage`, { message: "halfway" }, "toolu_send")));
+      finished++;
+    });
+    const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "ask" });
+    let id: string | undefined;
+    void code(w, "anything").then((r) => { id = r.sessionId; });
+    const user = await denyUntil(w, () => id, () => finished === 1);
+    let agentId: string | undefined;
+    void w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Report", model: CODE_MODEL, prompt: "anything" }).then((r) => { agentId = r.sessionId; });
+    const agent = await denyUntil(w, () => agentId, () => finished === 2);
+    expect(answers).toEqual(["plugin: deny", "plugin: deny"]);
+    expect([user.length, agent.length]).toEqual([1, 1]);
+    expect([user[0]!.startsWith("agent-permission: "), agent[0]!.startsWith("agent-permission: ")]).toEqual([true, true]);
   });
 
   test("a tool that isn't a plugin's on the bridge still asks on the agent-permission card", async () => {
