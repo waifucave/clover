@@ -36,6 +36,10 @@ export const ISLAND = {
   waitingHeight: 32,
   waitingWidth: 280,
   waitingGap: 8,
+  /** The closed strip's line (a plugin's `island.line`): a small pill just below the strip. */
+  stripLineWidth: 320,
+  stripLineHeight: 28,
+  stripLineGap: 6,
   rowCorner: 16,
   rowGap: 8,
   listInset: 14,
@@ -86,6 +90,12 @@ export function stripRect(shape: ScreenShape, showsWings: boolean): Rect | null 
   }
   const height = Math.max(shape.menuBarHeight, 22);
   return { x: -ISLAND.stripWidthWithoutHousing / 2, y: 0, width: ISLAND.stripWidthWithoutHousing, height };
+}
+
+/** Where the closed strip's line sits: centred under the strip (its room is the strip's height with wings, or the menu bar's). */
+export function stripLineRect(shape: ScreenShape): Rect {
+  const top = stripRect(shape, true)?.height ?? 22;
+  return { x: -ISLAND.stripLineWidth / 2, y: top + ISLAND.stripLineGap, width: ISLAND.stripLineWidth, height: ISLAND.stripLineHeight };
 }
 
 export type StripPart = "waitingWing" | "housing" | "workingWing";

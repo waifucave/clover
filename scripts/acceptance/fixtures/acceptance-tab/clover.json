@@ -2,12 +2,14 @@
   "manifest": 1,
   "id": "acceptance-tab",
   "name": "Acceptance tab",
-  "description": "The browser row's island clause's fixture: a third-party plugin, installed from its folder, whose one entry is a tab of the island. Its client is TSX that draws a line of its own words. Nothing else: no host, no server, no network.",
+  "description": "The browser row's island clauses' fixture: a third-party plugin, installed from its folder, with an entry that is a tab of the island and another that puts a line on it (the island's island.line point). Its client is TSX that draws a line of its own words; its host half keeps the one line the run tells it to show (the command acceptance-tab.say). No network.",
   "version": "0.0.1",
   "engines": {
     "clover": "^1.0.0"
   },
-  "capabilities": ["files"],
+  "capabilities": [
+    "files"
+  ],
   "client": {
     "entry": "client/index.tsx"
   },
@@ -20,6 +22,36 @@
         "title": "Weather",
         "order": 950
       }
+    ],
+    "island.line": [
+      {
+        "id": "job",
+        "handler": "islandLine"
+      }
+    ],
+    "commands": [
+      {
+        "name": "say",
+        "description": "Sets the line the plugin puts on the island, or clears it when no text is given.",
+        "args": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "progress": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        "handler": "say"
+      }
     ]
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
   }
 }

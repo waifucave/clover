@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -627,6 +627,19 @@ describe("a host of its own that runs programs (`host.programs`, the owner's vid
     // Without the declaration, an own host's OK says nothing of programs.
     const plain = validateManifest({ ...base, host: { entry: "host/index.ts", process: "own" } });
     expect([plain.hostPrograms, describeOk(plain).some((l) => l.startsWith("It runs programs"))]).toEqual([false, false]);
+  });
+});
+
+describe("the OK says a plugin puts a line on the island", () => {
+  test("a plugin that fills island.line says so, once, after what it adds; a plugin that doesn't says nothing of it", () => {
+    const withLine = validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts" }, contributes: { "island.line": [{ id: "job", handler: "islandLine" }] } });
+    expect(withLine.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const lines = describeOk(withLine);
+    expect(lines.filter((l) => l === ISLAND_LINE_OK_LINE)).toHaveLength(1);
+    expect(lines).toContain("It adds: island.line.");
+    expect(lines.indexOf(ISLAND_LINE_OK_LINE)).toBe(lines.indexOf("It adds: island.line.") + 1);
+    const without = validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts" }, contributes: {} });
+    expect(describeOk(without)).not.toContain(ISLAND_LINE_OK_LINE);
   });
 });
 

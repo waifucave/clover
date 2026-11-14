@@ -5,6 +5,8 @@ export { IslandApp, IslandHostContext, useIslandHost, type IslandHost, type Isla
 export { Island, BROWSER_TIMERS, type IslandProps, type IslandTabEntry, type IslandTimers } from "../src/ui/Island";
 export { IslandSurface, type IslandSurfaceProps, type SurfaceHostApi } from "../src/ui/IslandSurface";
 export { DevicesTab, DevicesList, type DevicesSource } from "../src/ui/DevicesTab";
+export { LineRows, useLines, type LineSource, type LinesProps } from "../src/ui/Lines";
+export * from "../src/model/lines";
 export { Strip, stripLabel, type StripProps } from "../src/ui/Strip";
 export { LiquidCard, Melt, restingFluid, HOVER_EASING, type LiquidCardProps } from "../src/ui/Liquid";
 export { WaitingPill, type WaitingPillProps } from "../src/ui/WaitingPill";

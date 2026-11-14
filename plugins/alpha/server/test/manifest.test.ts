@@ -70,6 +70,7 @@ test("every handler her manifest names is an export of her server; her settings'
   const names = [
     ...manifest.contributes.hooks.map((h: { handler: string }) => h.handler),
     ...manifest.contributes.commands.map((c: { handler: string }) => c.handler),
+    ...manifest.contributes["island.line"].map((l: { handler: string }) => l.handler),
   ];
   for (const n of names) expect([n, typeof (server as Record<string, unknown>)[n]]).toEqual([n, "function"]);
   expect(typeof server.mcp.stage).toBe("function");
