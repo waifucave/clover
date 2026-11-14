@@ -56,14 +56,16 @@ describe("plugin.grant.add: what a pick can be", () => {
 
   test("never the disk, the home, a folder holding it, Clover's folder or anything in it, a secret place, a fenced place, or a folder holding one", () => {
     const { home, clover, grants, lock } = world();
+    // ~/Library/Mail is a secret place on macOS only.
+    const mac = process.platform === "darwin";
     lock("Library/Mail");
     const refused = (path: string, kind: "file" | "folder" = "folder", access: "read" | "write" = "read") => {
       try { grants.add({ pluginId: "cutter", token: T4, path, kind, access }); return "added"; } catch (e) { return (e as { code?: string }).code ?? "threw"; }
     };
-    for (const p of ["/", home, dirname(home), clover, join(clover, "plugins"), join(clover, "plugins/cutter"), join(home, ".ssh"), join(home, "Library"), join(home, "Library/Mail")]) {
+    for (const p of ["/", home, dirname(home), clover, join(clover, "plugins"), join(clover, "plugins/cutter"), join(home, ".ssh"), join(home, "Library"), ...(mac ? [join(home, "Library/Mail")] : [])]) {
       expect([p, refused(p)]).toEqual([p, "refused"]);
     }
-    for (const p of [join(home, ".ssh/id_ed25519"), join(home, ".zshrc"), join(clover, "settings.json"), join(home, "Library/Mail/V10/inbox.mbox")]) {
+    for (const p of [join(home, ".ssh/id_ed25519"), join(home, ".zshrc"), join(clover, "settings.json"), ...(mac ? [join(home, "Library/Mail/V10/inbox.mbox")] : [])]) {
       expect([p, refused(p, "file", "write")]).toEqual([p, "refused"]);
     }
     // The sentence main shows.
