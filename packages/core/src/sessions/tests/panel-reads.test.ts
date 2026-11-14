@@ -99,6 +99,33 @@ describe("session.diff's folder read", () => {
     await folderDiff(dir);
     expect(await Bun.file(marker).exists()).toBe(false);
   });
+
+  test("the user's global config, their home's attributes file and a clean filter they name are not used", async () => {
+    const dir = repo();
+    const home = temp("user-home");
+    const marker = join(temp("marker"), "ran");
+    const filter = join(home, "filter.sh");
+    writeFileSync(filter, `#!/bin/sh\ntouch ${marker}\ncat\n`, { mode: 0o755 });
+    const attributes = join(home, "attributes");
+    writeFileSync(attributes, "* filter=evil\n");
+    // The global config defines the filter and names an attributes file; the home's default attributes file names it too.
+    writeFileSync(join(home, ".gitconfig"), `[filter "evil"]\n\tclean = ${filter}\n[core]\n\tattributesFile = ${attributes}\n`);
+    mkdirSync(join(home, ".config", "git"), { recursive: true });
+    writeFileSync(join(home, ".config", "git", "attributes"), "* filter=evil\n");
+    const was = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const d = await folderDiff(dir);
+      expect(d.files.find((f) => f.path === "kept.txt")).toMatchObject({ status: "modified", added: 2, removed: 1 });
+      // The home's default attributes file alone, with the filter defined in the repository's own config: still unused.
+      const dir2 = repo();
+      git(dir2, "config", "filter.evil.clean", filter);
+      await folderDiff(dir2);
+    } finally {
+      process.env.HOME = was;
+    }
+    expect(await Bun.file(marker).exists()).toBe(false);
+  });
 });
 
 describe("the session panels' reads", () => {

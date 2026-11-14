@@ -1,10 +1,15 @@
 // A coding session's or an agent's changes in its folder, for the diff panel (`session.diff`): the working tree against
 // HEAD, per file with its hunks, untracked files as added. Read only: git runs with no optional locks (it never writes
-// the index), no fsmonitor, no external diff and no textconv driver (none of the folder's own config runs a program),
-// and a symlink is shown as its target's path, never followed. Bounded: at most DIFF_FILES_MAX files, DIFF_FILE_MAX_LINES
-// lines and DIFF_FILE_MAX_BYTES of text a file, DIFF_TOTAL_MAX_BYTES in all; what a bound cuts is listed without its
-// lines and said in the notice.
-import { lstatSync, openSync, readSync, closeSync, readlinkSync } from "node:fs";
+// the index), no fsmonitor, no external diff and no textconv driver, and with the user's global and system config and
+// their attributes file out of the picture (`GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`,
+// `core.attributesFile=/dev/null`). A symlink is shown as its target's path, never followed, and an untracked file is
+// opened with O_NOFOLLOW. Bounded: at most DIFF_FILES_MAX files, DIFF_FILE_MAX_LINES lines and DIFF_FILE_MAX_BYTES of
+// text a file, DIFF_TOTAL_MAX_BYTES in all; what a bound cuts is listed without its lines and said in the notice.
+//
+// Known residual: the repository's own `filter.<name>.clean` (its `.git/config` with a `.gitattributes` naming it) still
+// runs when git compares a changed file with HEAD. The fence keeps an agent from writing `.git/config`; a folder the user
+// cloned with such a filter runs it here as it would in their own `git diff`.
+import { closeSync, constants, fstatSync, lstatSync, openSync, readlinkSync, readSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionDiff, SessionDiffFile } from "@waifucave/clover-protocol";
 
@@ -26,11 +31,13 @@ async function git(dir: string, args: string[], maxBytes = 4 * 1024 * 1024): Pro
   const env: Record<string, string> = {};
   for (const k of ["PATH", "HOME", "USER", "TMPDIR", "SYSTEMROOT"]) if (process.env[k] !== undefined) env[k] = process.env[k]!;
   env.GIT_OPTIONAL_LOCKS = "0";
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_CONFIG_GLOBAL = "/dev/null";
   env.GIT_TERMINAL_PROMPT = "0";
   env.LC_ALL = "C";
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args], { cwd: dir, env, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+    proc = Bun.spawn(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotepath=false", "-c", "core.attributesFile=/dev/null", ...args], { cwd: dir, env, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
   } catch {
     return undefined;
   }
@@ -141,11 +148,17 @@ function untrackedFile(dir: string, path: string): { file: SessionDiffFile; byte
   } else if (st.size > DIFF_FILE_MAX_BYTES) {
     return { file: { path, status: "added", added: 0, removed: 0, tooLarge: true }, bytes: 0 };
   } else {
-    const buf = Buffer.alloc(st.size);
+    let buf: Buffer;
+    let read = 0;
     let fd: number | undefined;
     try {
-      fd = openSync(full, "r");
-      let read = 0;
+      // O_NOFOLLOW: a file swapped for a link after the lstat is refused, not followed (O_NONBLOCK: one swapped for a
+      // FIFO doesn't hold the open). What was opened is checked again: a regular file, within the bound.
+      fd = openSync(full, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      const opened = fstatSync(fd);
+      if (!opened.isFile()) return { file: { path, status: "added", added: 0, removed: 0 }, bytes: 0 };
+      if (opened.size > DIFF_FILE_MAX_BYTES) return { file: { path, status: "added", added: 0, removed: 0, tooLarge: true }, bytes: 0 };
+      buf = Buffer.alloc(opened.size);
       while (read < buf.length) {
         const n = readSync(fd, buf, read, buf.length - read, read);
         if (n <= 0) break;
@@ -156,6 +169,7 @@ function untrackedFile(dir: string, path: string): { file: SessionDiffFile; byte
     } finally {
       if (fd !== undefined) closeSync(fd);
     }
+    buf = buf.subarray(0, read);
     if (buf.subarray(0, 8_000).includes(0)) return { file: { path, status: "added", added: 0, removed: 0, binary: true }, bytes: 0 };
     text = buf.toString("utf8");
   }
