@@ -1930,7 +1930,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
           const b = e.getBoundingClientRect(), x = cs(e);
           return [t, Math.round(b.left), Math.round(b.width), Math.round(b.height), x.color, x.backgroundColor, x.fontWeight, x.boxShadow].join('|');
         }).filter((x) => x !== null);
-        return JSON.stringify({ box: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], ground: c.backgroundColor, rule: c.borderRightColor + ' ' + c.borderRightWidth, material: c.backdropFilter,
+        // Its height is the window's (an earlier row's render may have left the window at another size).
+        return JSON.stringify({ box: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.abs(r.height - innerHeight) < 2 ? 'window height' : Math.round(r.height)], ground: c.backgroundColor, rule: c.borderRightColor + ' ' + c.borderRightWidth, material: c.backdropFilter,
           accent: k.getPropertyValue('--clover-color-accent').trim(), text: k.getPropertyValue('--clover-color-text').trim(), ink: k.color, rows });
       })()`));
     };
@@ -2021,7 +2022,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await press(`${name} in the sidebar`, SIDEBAR_ITEMS, name);
       await until("the stock bar back", 20_000, async () => ((await win("!!document.querySelector('.cl-window__bar') && w.dataset.barMode")) === "standard" ? true : undefined), async () => `${await win("w.dataset.barMode")} || ${await dumpFrames(cdp)}`);
       const plainSide = await sidebarLook();
-      if (plainSide !== herSide) fail(`the sidebar beside Alpha's tab isn't the one beside a plain bot's:\n  hers  ${herSide}\n  plain ${plainSide}`);
+      if (plainSide !== herSide) fail(`the sidebar beside Alpha's tab isn't the one beside a plain bot's: hers ${herSide}; plain ${plainSide}`);
       const plainTokens = await until("the plain bot's composer in the all-bots style", 20_000, async () => { const t = await composerTokens(); return t !== undefined && t.surface === EVERY.surface && t.composer === EVERY.composer ? t : undefined; }, async () => `its composer reads ${JSON.stringify(await composerTokens())}`);
       // 6. Back to Alpha by the sidebar's row: her chrome returns.
       await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
