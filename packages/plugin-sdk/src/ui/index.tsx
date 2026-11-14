@@ -523,8 +523,8 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
   const hints = useContext(SpotHints);
   const r = rt();
   const [view, setView] = useState<SpotView | undefined>(undefined);
-  // The kind of session the part shows: the `clover` layer's say, from its hints or the `sessionKind` of the props it gives the spot (the main process heeds it from that layer only).
-  const propKind = (props as { sessionKind?: unknown } | undefined)?.sessionKind;
+  // A panel's `when.session` is the kind of session the shell shows it for: the `clover` layer says so in the props it gives the spot (the main process heeds it from that layer only).
+  const propKind = name === "panel" ? (props as { sessionKind?: unknown } | undefined)?.sessionKind : undefined;
   const session = hints.session ?? (typeof propKind === "string" ? propKind : undefined);
   const resolve = useCallback(() => {
     const h = { ...(session !== undefined ? { session } : {}), ...(entry !== undefined ? { entry } : {}), ...(forBot !== undefined ? { bot: forBot } : {}) };
@@ -1434,12 +1434,12 @@ export function useDrag(): { offer(offer: DragOffer): Promise<string | undefined
 
 /** A spot this part declares, as its entries in the spot's order, kept current (lane B's `useSpotEntries`): for a part
  *  that draws one at a time with `<Spot entry>` (the island's tabs, the pill's targets). */
-export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown; readonly sessionKind?: unknown }): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe } {
+export function useSpotEntries(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown; /** The kind of session the part shows (`when.session`): the `clover` layer's say, heeded by the main process from that layer only. */ readonly forSessionKind?: unknown }): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe } {
   const part = usePart();
   // The bot whose tab shows, by id or as the props a `<Spot>` there is given (`{ bot }`, a reference or an id): the spots a bot's own entries fill.
   const b = typeof forProps === "string" ? forProps : forProps?.bot;
   const forBot = typeof b === "string" ? b : typeof (b as { id?: unknown } | undefined)?.id === "string" ? (b as { id: string }).id : undefined;
-  const kind = typeof forProps === "object" && typeof forProps?.sessionKind === "string" ? forProps.sessionKind : undefined;
+  const kind = typeof forProps === "object" && typeof forProps?.forSessionKind === "string" ? forProps.forSessionKind : undefined;
   const [entries, setEntries] = useState<readonly SpotEntryView[]>([]);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => {

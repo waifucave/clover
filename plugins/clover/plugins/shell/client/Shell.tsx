@@ -164,7 +164,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   // Which panels anything fills (the `panel` spot by key; a bot's column is `bot.side`): a toggle is offered only for one that
   // does, and an open panel whose filler goes away closes. A constant list of hooks, whatever the tab.
-  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, props).entries.length > 0;
+  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, { ...props, forSessionKind: props.sessionKind }).entries.length > 0;
   const filledList = [
     kind === "bot" ? fills("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : fills("panel", "session", panelProps("session")),
     ...PANEL_KEYS.map((id) => fills("panel", id, panelProps(id))),
