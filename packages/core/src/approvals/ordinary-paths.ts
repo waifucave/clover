@@ -182,6 +182,77 @@ const SCAN_SKIPPED = new Set(["node_modules", "Library", ".Trash", ".cache", ".n
 const SCAN_DIRS_MAX = 3_000;
 const SCAN_DEPTH_MAX = 6;
 
+/** A folder's entries as the look last read them, with the folder's stamp then (`stampOf`). */
+interface Listing {
+  stamp: string;
+  /** When it was read (ms): a folder changed within `RACY_MS` before that is read again next time. */
+  readAt: number;
+  usedAt: number;
+  entries: { name: string; dir: boolean; link: boolean }[];
+  /** More entries than `LISTING_KEEP`: only the first ones are kept, and a look that gets past them reads it again. */
+  cut: boolean;
+}
+/** The folders the look read, by path. Reading a folder costs much more than looking at its stamp: a crowded temp
+ *  folder (thousands of folders) took a second or more to read whole at every look, and its folders rarely change
+ *  between two looks. A folder's entries change only with its stamp (an entry made, removed or renamed changes the
+ *  folder's modification and change times; a folder replaced, or one mounted over it, has another device or inode), so
+ *  a folder whose stamp is the one it had when read lists the same entries in the same order, and the look gives the
+ *  same answer without reading it again. */
+const LISTINGS = new Map<string, Listing>();
+let folderReads = 0;
+/** A file system whose times are coarse (a second, two on some) could hide a change made in the tick it was read in. */
+const RACY_MS = 2_000;
+/** The entries kept of one folder: more than any look takes from one folder (its budget is spent first). */
+const LISTING_KEEP = 10_000;
+/** The most folders kept; past it, the ones no look used in the last minute go, then all of them. */
+const LISTINGS_MAX = 50_000;
+
+/** A folder's stamp: device, inode, modification and change times. Undefined when it can't be looked at. */
+function folderStamp(dir: string): string | undefined {
+  try {
+    const st = statSync(dir);
+    return `${st.dev}:${st.ino}:${st.mtimeMs}:${st.ctimeMs}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A folder's entries in the order the system gives them: the kept listing when the folder's stamp is the one it was
+ *  read with (and it wasn't changed just before), else read now. Undefined when it can't be read. */
+function listingOf(dir: string, now: number): Listing | undefined {
+  const stamp = folderStamp(dir);
+  if (stamp === undefined) { LISTINGS.delete(dir); return undefined; }
+  const kept = LISTINGS.get(dir);
+  if (kept !== undefined && kept.stamp === stamp && !racy(stamp, kept.readAt)) {
+    kept.usedAt = now;
+    return kept;
+  }
+  let entries: Dirent[];
+  folderReads++;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { LISTINGS.delete(dir); return undefined; }
+  const fresh: Listing = {
+    stamp, readAt: Date.now(), usedAt: now, cut: entries.length > LISTING_KEEP,
+    entries: entries.slice(0, LISTING_KEEP).map((e) => ({ name: e.name, dir: e.isDirectory(), link: e.isSymbolicLink() })),
+  };
+  LISTINGS.set(dir, fresh);
+  return fresh;
+}
+/** Whether a stamp's modification or change time is within `RACY_MS` of when its folder was read. */
+function racy(stamp: string, readAt: number): boolean {
+  const [, , m, c] = stamp.split(":");
+  return Number(m) >= readAt - RACY_MS || Number(c) >= readAt - RACY_MS;
+}
+/** How many folders the look has read in all (the kept listings' tests). */
+export function scanFolderReads(): number { return folderReads; }
+/** Forgets the kept listings, so the next look reads every folder (tests). */
+export function forgetScanListings(): void { LISTINGS.clear(); }
+/** Keeps the kept listings bounded. */
+function trimListings(now: number): void {
+  if (LISTINGS.size <= LISTINGS_MAX) return;
+  for (const [dir, l] of LISTINGS) if (l.usedAt < now - 60_000) LISTINGS.delete(dir);
+  if (LISTINGS.size > LISTINGS_MAX) LISTINGS.clear();
+}
+
 /** What git would run later for a write root's repositories (the adversarial review on stage 2): every git directory
  *  found by its content (`HEAD`, `objects`, and `config` or `refs`) whatever its name, whole; and the places the
  *  config of the repository `root` is in, or of any repository found under it (a `.git` folder or file, or such a git
@@ -201,15 +272,22 @@ export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget:
   // A root inside a git directory is held whole (the root is then left out: a deny wins).
   if (rootRepo.kind === "git-dir") return { places: [root], complete };
   take(rootRepo);
+  const now = Date.now();
   const walk = (dir: string, depth: number) => {
     if (depth > SCAN_DEPTH_MAX) { complete = false; return; }
-    let entries: Dirent[];
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
+    let listing = listingOf(dir, now);
+    if (listing === undefined) return;
+    // Past the kept entries of a very big folder (a budget bigger than any look's): read whole, as before.
+    if (listing.cut && budget.left >= listing.entries.length) {
+      let all: Dirent[];
+      try { all = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      listing = { ...listing, entries: all.map((x) => ({ name: x.name, dir: x.isDirectory(), link: x.isSymbolicLink() })) };
+    }
+    for (const e of listing.entries) {
       if (--budget.left < 0) { complete = false; return; }
       const at = p.join(dir, e.name);
       if (e.name === ".git") {
-        const gitDir = e.isDirectory() ? at : (() => {
+        const gitDir = e.dir ? at : (() => {
           const m = /^gitdir:\s*(.+?)\s*$/m.exec(readGitConfigFile(at) ?? "");
           return m === null ? undefined : p.resolve(dir, m[1]!);
         })();
@@ -218,7 +296,7 @@ export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget:
         else places.push(...cfg);
         continue;
       }
-      if (!e.isDirectory() || e.isSymbolicLink() || SCAN_SKIPPED.has(e.name)) continue;
+      if (!e.dir || e.link || SCAN_SKIPPED.has(e.name)) continue;
       const head = p.join(at, "HEAD");
       if (existsSync(head) && existsSync(p.join(at, "objects")) && (existsSync(p.join(at, "config")) || existsSync(p.join(at, "refs")))) {
         // A git directory by its content, whatever its name (a bare repository not named `*.git`): held whole, as a
@@ -233,6 +311,7 @@ export function gitRunLaterPlaces(root: string, o: OrdinaryPathsOptions, budget:
     }
   };
   walk(root, 1);
+  trimListings(now);
   return { places: [...new Set(places)], complete };
 }
 
