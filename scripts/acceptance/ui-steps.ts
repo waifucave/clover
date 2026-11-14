@@ -1921,8 +1921,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const cs = (e) => getComputedStyle(e), r = side.getBoundingClientRect(), c = cs(side), k = cs(content);
         const skip = new Set(["Alpha", ${JSON.stringify(name)}]);
         const rows = [...document.querySelectorAll('.cl-sidebar__row')].filter((e) => e.getClientRects().length > 0).map((e) => {
-          const t = (e.innerText || e.getAttribute('aria-label') || '').trim().split('\\n')[0];
-          if (skip.has(t) || e.getAttribute('aria-current') === 'page') return null;
+          const words = (e.innerText || '').trim().split('\\n').map((l) => l.trim()).filter((l) => l !== '');
+          const t = e.getAttribute('aria-label') || words.find((l) => l.length > 1) || words[0] || '';
+          if (words.some((l) => skip.has(l)) || skip.has(t) || e.getAttribute('aria-current') === 'page') return null;
           const b = e.getBoundingClientRect(), x = cs(e);
           return [t, Math.round(b.left), Math.round(b.width), Math.round(b.height), x.color, x.backgroundColor, x.fontWeight, x.boxShadow].join('|');
         }).filter((x) => x !== null);
@@ -1980,7 +1981,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
           await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1240, height: 800, deviceScaleFactor: 1, mobile: false }, appTop!.session);
           movedTo = await until("her bubble moving with the box (avatar.watch)", 30_000, async () => { const v = await bubble(); return v !== undefined && v !== placedAt ? v : undefined; }, async () => `still ${await bubble()}`);
         } finally {
-          await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appTop!.session).catch(() => undefined);
+          // Back to the window's own size (the sidebar's look is compared at it below).
+          await cdp.send("Emulation.clearDeviceMetricsOverride", {}, appTop!.session).catch(() => undefined);
         }
         const nums = (v: string | undefined) => (v ?? "").match(/-?\d+(\.\d+)?/g)?.map(Number) ?? [];
         const near = (v: string | undefined, w: string) => { const x = nums(v), y = nums(w); return x.length === y.length && x.length > 0 && x.every((n, i) => Math.abs(n - y[i]!) <= 8); };
