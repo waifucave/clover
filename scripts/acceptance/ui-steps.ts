@@ -1988,9 +1988,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       } finally {
         if (await collapsed()) await press("her sidebar toggle (back open)", ".ac__btn", "Show the sidebar").catch(() => undefined);
       }
-      // 3. Her panel control opens the panel sheet and closes it (the bundled browser view fills a panel a bot tab can open).
-      const control = (await inTree<string>(cdp, "(() => { const b = [...document.querySelectorAll('.ac__act')].find((e) => ['Browser', 'Session'].includes(e.getAttribute('aria-label'))); return b ? b.getAttribute('aria-label') : null; })()"))?.value;
-      if (control === undefined) fail(`her controls offer no panel (${(await inTree<string>(cdp, "JSON.stringify([...document.querySelectorAll('.ac__act')].map((e) => e.getAttribute('aria-label')))"))?.value ?? "no controls"})`);
+      // 3. Her panel control opens the panel sheet and closes it: the Browser panel, which the bundled browser view fills (her
+      // Session control opens the slim column beside her conversation, not a panel).
+      const control = "Browser";
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac__act[aria-label=Browser]')")) === undefined) fail(`her controls offer no Browser panel (${(await inTree<string>(cdp, "JSON.stringify([...document.querySelectorAll('.ac__act')].map((e) => e.getAttribute('aria-label')))"))?.value ?? "no controls"})`);
       await press(`her ${control} control`, ".ac__act", control);
       await until("the panel sheet open", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')"), () => dumpFrames(cdp));
       await press(`her ${control} control again`, ".ac__act", control);
