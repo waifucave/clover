@@ -50,8 +50,8 @@ const frameKey = (f: Pick<FrameRef, "processId" | "routingId">) => `${f.processI
 
 /** The spots keyed by bot: the cell's context is that bot's tab. */
 const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
-/** The window's own spots that offer `when.bot`: the `clover` shell says which bot's tab shows (`forBot`). */
-const BOT_FROM_SHELL = new Set(["sidebar", "bar", "bot.side"]);
+/** The window's own spots that offer `when.bot` (and a bot's own plugin's panel for its tab): the `clover` shell says which bot's tab shows (`forBot`). */
+const BOT_FROM_SHELL = new Set(["sidebar", "bar", "bot.side", "panel"]);
 
 interface Mount {
   id: string;

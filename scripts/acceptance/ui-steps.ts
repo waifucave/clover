@@ -2077,7 +2077,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const codeId = await ensureCodingSession(ctx);
       let side = "this run could not start a coding session, so her Code switch had nowhere to go (not pressed)";
       if (codeId !== undefined) {
-        await press("her Code switch", ".as__opt", "Code");
+        await press("her Code switch", ".as__opt, .cl-sidebar [role=radio]", "Code");
         await until("the coding session shown (its id in the sidebar's current row)", 30_000, async () => (((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined) ? true : undefined), async () => `${await win("w.dataset.barMode")} || ${(await treeText(cdp)).replace(/\s+/g, " ").slice(0, 400)}`);
         side = `her Code switch went to the coding session ${codeId} started just before, from outside the window (its row is the current one in the sidebar)`;
         await press("Bots in the stock sidebar", ".cl-sidebar button", "Bots");
@@ -2626,7 +2626,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await pressIn("Bots in the stock sidebar", ".cl-sidebar button", "Bots").catch(() => undefined);
         await pressIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       }
-      await pressIn("her Code switch", ".as__opt", "Code");
+      await pressIn("her Code switch", ".as__opt, .cl-sidebar [role=radio]", "Code");
       await until("the coding session shown", 30_000, async () => (((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined) ? true : undefined), () => dumpFrames(cdp));
       // The plugin's layer is first served when the first preview asks for it, which loads the window's frame once more and closes the
       // open panel (the app logs "loads again to frame a layer installed after it was served"): the panel is opened again until it draws.
