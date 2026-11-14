@@ -72,9 +72,18 @@ describe("the sidebar entry", () => {
     expect(screen.queryByText("From the CLI")).toBeNull();
     await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", status: "ready" })));
     expect(screen.getByText("From the CLI")).toBeTruthy();
-    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "Renamed by the CLI", status: "stopped" })));
+    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "Renamed by the CLI", status: "ready" })));
     expect(screen.queryByText("From the CLI")).toBeNull();
     expect(screen.getByText("Renamed by the CLI")).toBeTruthy();
+    // A session that ends (stopped) or is archived leaves the list; a failed one stays.
+    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "Renamed by the CLI", status: "stopped" })));
+    expect(screen.queryByText("Renamed by the CLI")).toBeNull();
+    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "Back again", status: "ready" })));
+    expect(screen.getByText("Back again")).toBeTruthy();
+    await act(async () => emit!(s("code-9", { kind: "coding", root: "home/Studio/projects/cli", title: "Back again", status: "idle", archived: true })));
+    expect(screen.queryByText("Back again")).toBeNull();
+    await act(async () => emit!(s("code-8", { kind: "coding", root: "home/Studio/projects/cli", title: "Broke", status: "failed" })));
+    expect(screen.getByText("Broke")).toBeTruthy();
   });
 
   test("the bots, each with its agents, the account and the apps", async () => {

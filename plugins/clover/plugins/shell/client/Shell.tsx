@@ -91,9 +91,9 @@ function useNarrow(on: boolean): boolean {
   return narrow;
 }
 
-/** The newest coding session (by when it started): where the Code side goes. */
+/** The newest coding session (by when it started) that hasn't ended or been archived: where the Code side goes. */
 export function newestCoding(sessions: readonly SessionView[]): SessionView | undefined {
-  return sessions.filter((x) => x.kind === "coding").reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+  return sessions.filter((x) => x.kind === "coding" && x.status !== "stopped" && x.archived !== true).reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {

@@ -134,6 +134,8 @@ export const SessionView = z.object({
    *  this computer held from there was kept aside and went to that computer, which shows it after its own, marked late
    *  ("Earlier on <computer>"). A client reads the history again when it changes. */
   rebasedAt: Timestamp.optional(),
+  /** The user put this session in the archive: the sidebar's lists leave it out (the Archive page is where it lives). Absent: not archived. */
+  archived: z.boolean().optional(),
 });
 export type SessionView = z.infer<typeof SessionView>;
 

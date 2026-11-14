@@ -132,6 +132,8 @@ describe("the shell's session list", () => {
     const list = [s("code-a", { kind: "coding", startedAt: 1 }), s("code-c", { kind: "coding", startedAt: 9 }), s("code-b", { kind: "coding", startedAt: 4 }), s("agent-x", { kind: "agent", startedAt: 20 })];
     expect(newestCoding(list)?.id).toBe("code-c");
     expect(newestCoding([s("agent-x", { kind: "agent" })])).toBeUndefined();
+    // One that ended or was archived is not where the Code side goes.
+    expect(newestCoding([...list, s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })])?.id).toBe("code-c");
   });
 });
 

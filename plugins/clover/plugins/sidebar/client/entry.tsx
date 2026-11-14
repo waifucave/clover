@@ -77,6 +77,12 @@ export function agentStatus(s: SessionView): AgentStatus {
   }
 }
 
+/** A session that has ended (stopped by the user) or been archived leaves the sidebar's lists: the Archive page is where it lives. A
+ *  failed one stays, marked, so what went wrong is seen. The tab it was open in still finds it. */
+export function leftTheList(s: SessionView): boolean {
+  return s.status === "stopped" || s.archived === true;
+}
+
 /** A bot's state as the sidebar draws it: what waits for the user comes first. */
 export function botStatus(b: BotView, main: SessionView | undefined): BotStatus {
   if (main?.needsYou && main.needsYou.cards + main.needsYou.questions > 0) return "needs-you";
@@ -136,7 +142,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
 
   const sidebarBots: SidebarBot[] = bots.map((b) => {
     const main = sessions.find((s) => s.id === b.mainSession);
-    const agents = sessions.filter((s) => s.kind === "agent" && (s.parent === b.mainSession || s.bot === b.id));
+    const agents = sessions.filter((s) => s.kind === "agent" && !leftTheList(s) && (s.parent === b.mainSession || s.bot === b.id));
     return {
       id: b.id,
       name: plain(b.name),
@@ -148,7 +154,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
   });
 
   const projects: SidebarProject[] = [];
-  for (const s of sessions.filter((x) => x.kind === "coding")) {
+  for (const s of sessions.filter((x) => x.kind === "coding" && !leftTheList(x))) {
     const path = s.root ?? `home/${s.computer}`;
     let project = projects.find((p) => p.path === path);
     if (!project) projects.push((project = { id: path, name: folderName(path), path, sessions: [] }));
