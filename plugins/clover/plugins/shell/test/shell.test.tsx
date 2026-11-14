@@ -225,6 +225,30 @@ describe("the shell", () => {
     expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(false);
   });
 
+  test("a bot's replacement panel always has its way back in the host's header: Show Clover's panel, and Use the bot's again", async () => {
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
+      entry("clover/browser-view", "panel", "Browser", { key: "browser" }),
+      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
+    ]);
+    const marked = () => document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell");
+    // While the replacement shows (before anything has gone wrong), the button is there and sits in the host's own header, outside the frame.
+    const show = screen.getByRole("button", { name: "Show Clover's panel" });
+    expect(show.closest(".cl-panel__actions")).not.toBeNull();
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.contains(show)).toBe(false);
+    expect(marked()).toBe(false);
+    fireEvent.click(show);
+    await act(() => settle(3));
+    expect(marked()).toBe(true);
+    // The person's choice keeps the panel's ordinary title (nothing failed), and lasts past the draw timer.
+    expect(document.querySelector('.cl-panel__view[data-view="browser"]')!.getAttribute("aria-label")).toBe("Browser");
+    await act(() => new Promise((r) => setTimeout(r, 2300)));
+    expect(marked()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Use Alpha's panel" }));
+    await act(() => settle(3));
+    expect(marked()).toBe(false);
+    expect(screen.getByRole("button", { name: "Show Clover's panel" })).toBeTruthy();
+  });
+
   test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {
     await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["agent", "browser"], agent: "agent-1" }, [entry("clover/browser-view", "panel", "Browser", { key: "browser" })]);
     // The newest opened is the one used last, until the person uses the other.

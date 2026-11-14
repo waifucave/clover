@@ -174,6 +174,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   };
   const [fell, setFell] = useState<Record<string, boolean>>({});
   const [tries, setTries] = useState<Record<string, number>>({});
+  // The person chose Clover's panel over the bot's for a tab's panel (kept while the window is open; no setting).
+  const [stockChosen, setStockChosen] = useState<Record<string, boolean>>({});
   const fellKey = (id: string) => `${key}|${id}`;
   const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
   // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
@@ -192,20 +194,29 @@ export function Shell({ props }: EntryProps<ShellProps>) {
           const empty = <PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />;
           if (replacedOnTab(id) && botRef) {
             const hasFell = fell[fellKey(id)] === true;
+            const chosen = stockChosen[fellKey(id)] === true;
+            const showStock = hasFell || chosen;
+            const back = () => {
+              setTries((t) => ({ ...t, [fellKey(id)]: (t[fellKey(id)] ?? 0) + 1 }));
+              setFell((f) => ({ ...f, [fellKey(id)]: false }));
+              setStockChosen((c) => ({ ...c, [fellKey(id)]: false }));
+            };
             return {
               id,
               title: hasFell ? S.fellBack(botRef.name, S.views[id] ?? id) : base,
-              ...(hasFell
-                ? {
-                    actions: (
-                      <button type="button" className="cl-panel__text-button" onClick={() => { setTries((t) => ({ ...t, [fellKey(id)]: (t[fellKey(id)] ?? 0) + 1 })); setFell((f) => ({ ...f, [fellKey(id)]: false })); }}>
-                        {S.tryAgain(botRef.name)}
-                      </button>
-                    ),
-                  }
-                : {}),
+              // The way back lives in the host's header, outside the replacement's frame: whatever the replacement draws (or
+              // doesn't), the person can ask for Clover's panel, and from it for the bot's again. It lasts while the window is open.
+              actions: showStock ? (
+                <button type="button" className="cl-panel__text-button" onClick={back}>
+                  {hasFell ? S.tryAgain(botRef.name) : S.useBots(botRef.name)}
+                </button>
+              ) : (
+                <button type="button" className="cl-panel__text-button" onClick={() => setStockChosen((c) => ({ ...c, [fellKey(id)]: true }))}>
+                  {S.showClovers}
+                </button>
+              ),
               content: (header: HTMLElement | null, usedLast: boolean) => (
-                <ReplacedPanel key={`${fellKey(id)}|${tries[fellKey(id)] ?? 0}`} id={id} props={panelProps(id)} header={header} usedLast={usedLast} fell={hasFell} onFell={() => setFell((f) => (f[fellKey(id)] ? f : { ...f, [fellKey(id)]: true }))} empty={empty} bot={botRef.id} />
+                <ReplacedPanel key={`${fellKey(id)}|${tries[fellKey(id)] ?? 0}`} id={id} props={panelProps(id)} header={header} usedLast={usedLast} fell={showStock} onFell={() => setFell((f) => (f[fellKey(id)] ? f : { ...f, [fellKey(id)]: true }))} empty={empty} bot={botRef.id} />
               ),
             };
           }

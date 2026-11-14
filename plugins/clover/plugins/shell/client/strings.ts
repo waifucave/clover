@@ -28,6 +28,8 @@ export const S = {
   // A bot's own replacement for a stock panel that did not draw: the stock one shows, with a way to try the bot's again.
   fellBack: (bot: string, title: string) => `${bot}'s ${title.toLowerCase()} panel didn't draw; showing Clover's.`,
   tryAgain: (bot: string) => `Try ${bot}'s again`,
+  showClovers: "Show Clover's panel",
+  useBots: (bot: string) => `Use ${bot}'s panel`,
   // The shell's own pages.
   editBot: (name: string) => `Edit ${name}`,
   settings: "Settings",
