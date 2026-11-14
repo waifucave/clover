@@ -7,6 +7,8 @@
 // * A tool server, a hook, a skill, an agent definition and a command are inside when their scope is `own-bot` (their
 //   own, else their plugin's, else their top plugin's): that bot alone, its side threads and the agents it starts.
 //   Any other scope is beside: every bot and coding agent the scope says, as usual.
+// * An entry on a point another plugin declares (`island.line`, `avatar.formats`) is beside: that plug's owner sets its
+//   rules, and it isn't the bot's tab. One on a point of the bot's own tree (`<its id>.…`) is inside.
 // * Themes are neither: the one `bot.theme` names applies on the bot's tab, and every theme stays one the user can pick.
 //
 // Every part beside the bot has one switch of its own (the registry's `appParts`), so the user can keep the bot and turn
@@ -92,6 +94,18 @@ export function pluginParts(manifest: unknown, top?: unknown): { inside: PluginP
     c.commands.forEach((e, i) => {
       if (!isObj(e) || typeof e.name !== "string") return;
       put(scoped(e.scope), { point: "commands", ref: `commands/${i}`, key: `commands:${e.name}`, kind: "commands" });
+    });
+  }
+  // An entry on a point another plugin declares (`island.line`, `avatar.formats`): that plug's owner sets its rules, and
+  // it isn't the bot's tab, so it is beside the bot. A point of the bot's own tree (`<its id or namespace>.…`) is inside.
+  const ownIds = [top, manifest].flatMap((m) => (isObj(m) ? [m.namespace, m.id] : [])).filter((v): v is string => typeof v === "string");
+  for (const [point, raw] of Object.entries(c)) {
+    if (!point.includes(".")) continue;
+    const own = ownIds.some((p) => point.startsWith(`${p}.`));
+    const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw];
+    list.forEach((e, i) => {
+      const id = isObj(e) && typeof e.id === "string" ? e.id : String(i);
+      put(!own, { point, ref: Array.isArray(raw) ? `${point}/${i}` : point, key: `${point}:${id}`, kind: point });
     });
   }
   return { inside, beside };

@@ -10,15 +10,17 @@ const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "../../../plugins/al
 const engines = { clover: "^1.0.0" };
 
 describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
-  test("Alpha: her UI, skills, agent, hooks and commands are inside her; her stage server (scope `bots`) is beside; her OK lines are as they were", () => {
+  test("Alpha: her UI, skills, agent, hooks and commands are inside her; her stage server (scope `bots`) and her island line are beside; her OK lines are as they were", () => {
     const r = validateManifest(ALPHA, { bundled: true });
     expect(r.issues).toEqual([]);
     const parts = pluginParts(r.manifest);
-    expect(parts.beside.map((p) => p.ref)).toEqual(["mcpServers/stage"]);
+    // The island's point is the island's plug, not her tab: beside her, under the switch.
+    expect(parts.beside.map((p) => p.ref)).toEqual(["mcpServers/stage", "island.line/0"]);
     expect(parts.inside.map((p) => p.ref)).toEqual(["ui/0", "ui/1", "ui/2", "ui/3", "ui/4", "ui/5", "locales/0", "locales/1", "skills/0", "agents/0", "hooks/0", "hooks/1", "hooks/2", "commands/0", "commands/1", "commands/2"]);
     expect(describeOk(r)).toEqual([
       "alpha runs code on your computers.",
-      "It adds: bot, themes, mcpServers, hooks, skills, agents, commands, locales, ui.",
+      "It adds: bot, themes, mcpServers, hooks, island.line, skills, agents, commands, locales, ui.",
+      "It puts a line of text on the island, with its name beside it, in the island's own style, when Clover isn't in front.",
       "It sees all your bots and their settings.",
       "It reads your conversations with all your bots.",
       "It lets its own buttons move around Clover's window.",
@@ -76,6 +78,14 @@ describe("the new fields", () => {
     expect(botPartLines(r.manifest)).toEqual(["Everywhere, with a switch of its own: an island tab, tools, skills.", "It replaces the Browser panel on Mika's tab."]);
     const lines = describeOk(r);
     expect(lines.indexOf("Everywhere, with a switch of its own: an island tab, tools, skills.")).toBe(lines.indexOf("It adds: bot, mcpServers, skills, ui.") + 1);
+  });
+
+  test("an entry on a point another plugin declares is beside the bot; one on a point of its own tree is inside", () => {
+    const parts = pluginParts({ id: "mika", contributes: { bot: { name: "Mika" }, "island.line": [{ id: "day", handler: "line" }], "mika.scenes": [{ id: "beach" }], "avatar.formats": [{ id: "png" }] } });
+    expect(parts.beside.map((p) => [p.ref, p.kind])).toEqual([["island.line/0", "island.line"], ["avatar.formats/0", "avatar.formats"]]);
+    expect(parts.inside.map((p) => p.ref)).toEqual(["mika.scenes/0"]);
+    // A child of a bot's tree: its parent's points are its tree's own.
+    expect(pluginParts({ contributes: { bot: { name: "Kid" }, "mika.scenes": [{ id: "cave" }] } }, { id: "mika" }).inside.map((p) => p.ref)).toEqual(["mika.scenes/0"]);
   });
 
   test("a plugin with no bot has no inside, no beside and no such line, whatever it marks", () => {

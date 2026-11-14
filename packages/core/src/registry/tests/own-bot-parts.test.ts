@@ -11,7 +11,7 @@ import { agentPluginParts } from "../../agents/plugin-reach";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
 import type { Manifest } from "../../contracts/sdk-types";
 import { agentDefinitionOf, glossaryIndex } from "../../runtime-sdk/turn-loop/glossary";
-import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
+import { partsServe, servesScope } from "../../runtime-sdk/turn-loop/only-backends";
 import { registryCommand, runCommand } from "../commands";
 
 const temps: string[] = [];
@@ -89,5 +89,14 @@ describe("own-bot per entry", () => {
     // Beside the bot: anyone, as before.
     await runCommand(o, { name: "mika.note" }, session(sessions.alpha));
     expect(ran.at(-1)).toBe("note");
+  });
+
+  test("`own-bot` is the bot of the plugin's own tree (a bot's id is its plugin's): a child serves its tree's bot, a plugin with no bot in its tree serves nobody", () => {
+    const all = Object.values(sessions) as { kind: string; bot?: string }[];
+    const served = (pluginId: string) => all.filter((s) => servesScope("own-bot", s as never, pluginId)).map((s) => `${s.kind}:${s.bot ?? "-"}`);
+    expect(served("mika")).toEqual(["bot:mika", "side-thread:mika", "agent:mika"]);
+    expect(served("mika/extras")).toEqual(["bot:mika", "side-thread:mika", "agent:mika"]);
+    expect(served("tarot")).toEqual([]);
+    expect(served("tarot/cards")).toEqual([]);
   });
 });

@@ -296,13 +296,17 @@ function partsKeysOf(m: Manifest | undefined): { inside: string[]; beside: strin
   return { inside: sorted(inside.map((p) => p.key)), beside: sorted(beside.map((p) => p.key)) };
 }
 
-/** Whether a part inside the bot at the OK is beside it now (an `own-bot` scope dropped, an `"app": true` added): what
- *  it reaches grew from one bot's tab and sessions to every tab and every bot. A snapshot kept before `parts` isn't
- *  compared. */
-function movedBeside(before: PluginFingerprint, after: PluginFingerprint): boolean {
-  if (before.parts === undefined || after.parts === undefined) return false;
+/** Whether a part beside the bot now wasn't beside it at the OK: `moved`, one that was inside the bot (an `own-bot` scope
+ *  dropped, an `"app": true` added), what it reaches grown from one bot's tab and sessions to every tab and every bot;
+ *  `added`, a new one (a second island tab, a new server with no `own-bot`), even when the OK card's words for the parts
+ *  beside it read the same. A snapshot kept before `parts` isn't compared. */
+function besideGrew(before: PluginFingerprint, after: PluginFingerprint): "moved" | "added" | undefined {
+  if (before.parts === undefined || after.parts === undefined) return undefined;
   const inside = new Set(before.parts.inside);
-  return after.parts.beside.some((k) => inside.has(k));
+  const beside = new Set(before.parts.beside);
+  const grown = after.parts.beside.filter((k) => !beside.has(k));
+  if (grown.length === 0) return undefined;
+  return grown.some((k) => inside.has(k)) ? "moved" : "added";
 }
 
 /** The files that style approval cards (theme and `style` files), with the tree's flag. */
@@ -407,7 +411,7 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || after.defaults !== before.defaults
     || reachesMore(before, after)
     || definitionsChanged(before, after)
-    || movedBeside(before, after)
+    || besideGrew(before, after) !== undefined
     || (after.dynamicHosts && !before.dynamicHosts);
 }
 
@@ -481,7 +485,9 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
     if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
     if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
-    if (movedBeside(before, after)) return `${who} moves a part from inside its bot to beside it, for every bot and every tab`;
+    const grew = besideGrew(before, after);
+    if (grew === "moved") return `${who} moves a part from inside its bot to beside it, for every bot and every tab`;
+    if (grew === "added") return `${who} adds a part beside its bot, for every bot and every tab`;
   }
   // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
   if (now.okLines !== undefined) {

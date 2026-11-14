@@ -113,4 +113,53 @@ describe("a part that moves from inside the bot to beside it asks again", () => 
     const old = { ...ok, plugins: Object.fromEntries(Object.entries(ok.plugins).map(([k, fp]) => [k, { ...fp, parts: undefined }])) };
     expect(updateAddsTrigger(old, moved)).toBeUndefined();
   });
+
+  test("a new part beside the bot asks too, even when the OK card's words for them read the same: a second island tab, a server with no `own-bot`", async () => {
+    const skills = [{ path: "skills/a/SKILL.md", scope: "own-bot" }, "skills/b/SKILL.md"];
+    const ok = await snap(withSkills(skills));
+    const tab = await snap(withSkills(skills, [...(MIKA().contributes!.ui as unknown[]), { spot: "island.tab", id: "night", title: "Mika's night", component: "Day", app: true }]));
+    const server = await snap(MIKA({ contributes: { ...(MIKA().contributes as object), skills, mcpServers: { stage: { type: "host", scope: "own-bot" }, notes: { type: "host" }, extra: { type: "host" } } } }));
+    for (const now of [tab, server]) {
+      expect(updateAddsTrigger(ok, now)).toBe("it adds a part beside its bot, for every bot and every tab");
+      expect(workshopAdds(ok, now)).toBe("it adds a part beside its bot, for every bot and every tab");
+      expect(classifyChange(ok, now)).toBe("asks-again");
+    }
+    // The same "Everywhere" words on both cards: the parts, not the lines, asked.
+    expect(tab.okLines?.filter((l) => l.startsWith("Everywhere"))).toEqual(ok.okLines?.filter((l) => l.startsWith("Everywhere")));
+    // A new part inside the bot is the bot's own: nothing beside it grew.
+    const inside = await snap(MIKA({ contributes: { ...(MIKA().contributes as object), skills, mcpServers: { stage: { type: "host", scope: "own-bot" }, notes: { type: "host" }, props: { type: "host", scope: "own-bot" } } } }));
+    expect(updateAddsTrigger(ok, inside) ?? "").not.toContain("beside its bot");
+  });
+});
+
+describe("the switch can't skip an OK", () => {
+  test("a plugin whose folder changed and waits for its OK: switching its app parts on raises its OK card and puts nothing in force", async () => {
+    let raised = 0;
+    let answer: ((a: { approved: boolean; children?: readonly string[] }) => void) | undefined;
+    const cards: OkCardRaiser = { raise: (_req, answered) => { raised++; answer = answered; return `card_ok00000${raised}`; } };
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore(), cards });
+    reg.putAll([{ id: "mika", manifest: MIKA(), treeHash: "sha256:1", approved: true }]);
+    await reg.setEnabled("mika", false, { part: "app" });
+    // Its folder changes in a way that asks again: found, waiting for its OK.
+    reg.putAll([{ id: "mika", manifest: MIKA(), treeHash: "sha256:2", change: "asks-again" }]);
+    expect(reg.get("mika")?.state).toBe("found");
+    const r = await reg.setEnabled("mika", true, { part: "app" });
+    expect(r).toEqual({ applied: false, card: "card_ok000001" });
+    expect([reg.get("mika")?.state, reg.get("mika")?.parts?.app.enabled]).toEqual(["found", false]);
+    expect(states(reg, "mcpServers")).toEqual([]);
+    // The OK with the box ticked: then they come on.
+    answer!({ approved: true, children: ["mika#app"] });
+    await Bun.sleep(0);
+    expect([reg.get("mika")?.state, reg.get("mika")?.parts?.app.enabled]).toEqual(["running", true]);
+    expect(states(reg, "mcpServers")).toEqual(["mcpServers/stage:active", "mcpServers/notes:active"]);
+  });
+
+  test("the Plugins page's labels count a part beside the bot like any other, on or off", async () => {
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
+    reg.putAll([{ id: "mika", manifest: MIKA(), treeHash: "sha256:1", approved: true }]);
+    const labels = reg.get("mika")?.labels;
+    expect(labels).toEqual(["Bot", "Tools", "Island tab"]);
+    await reg.setEnabled("mika", false, { part: "app" });
+    expect(reg.get("mika")?.labels).toEqual(labels);
+  });
 });

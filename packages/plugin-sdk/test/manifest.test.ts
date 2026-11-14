@@ -268,7 +268,7 @@ describe("contributes", () => {
     // Anything else: refused with what to do instead.
     expect(said(ui({ spot: "island.tab", component: "T", title: "Tarot" }), "bot_spot_not_offered")).toBe(
       "Bots doesn't offer \"island.tab\" to Luna: a bot's plugin dresses only its own tab (inside it, its top bar, its Browser and agent panels). To show it everywhere, add \"app\": true; it then gets a switch of its own.");
-    expect(has(ui({ spot: "menu.message", title: "Quote", command: "luna.quote" }), "bot_spot_not_offered")).toBe(true);
+    expect(has(ui({ spot: "status", component: "S" }), "bot_spot_not_offered")).toBe(true);
     expect(said(ui({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab; \"terminal\" isn't one of them.");
     expect(said(ui({ spot: "panel", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab; an entry with no key would fill every panel.");
     expect(said(ui({ spot: "bot.editor.section", component: "E" }), "bot_editor_stock")).toBe("Luna's Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.");

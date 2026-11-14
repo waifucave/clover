@@ -1246,7 +1246,7 @@ const BESIDE_LABELS: Readonly<Record<string, string>> = {
   status: "the status bar", "app.surface": "a window of its own", "pill.target": "a Dispatch pill target", sidebar: "the sidebar",
   "sidebar.bot": "the bots' sidebar rows", "bot.editor.section": "a section on bots' Edit pages", panel: "a panel", "panel.view": "a panel",
   "bot.tab": "other bots' tabs", locales: "translations", mcpServers: "tools", skills: "skills", hooks: "hooks",
-  agents: "agent definitions", commands: "commands",
+  agents: "agent definitions", commands: "commands", "island.line": "a line on the island",
 };
 /** The right panels Bots offers a bot to replace on its tab, as the OK card names them. */
 const PANEL_LABELS: Readonly<Record<string, string>> = { browser: "Browser", agent: "agent" };
