@@ -97,9 +97,14 @@ darwinTest("picks never count as crashes or notices; a crash-stopped plugin star
   const crashToStop = async (id: string) => {
     void ph.host.ensureStarted(id).catch(() => {});
     try {
+      // The fake clock moves only to a pending restart's due time, so each backoff passes but the earlier crashes stay in
+      // the crash window: a fixed step on every poll ran the clock past the window while a slow runner's real restart
+      // was under way, each crash then counted alone, and the plugin restarted for ever.
       await until(`${id} stopped by the crash rules`, 20_000, () => {
-        clock.advance(60_000);
-        return ph.host.status(id).state === "stopped" ? true : undefined;
+        const s = ph.host.status(id);
+        if (s.state === "stopped") return true;
+        if (s.state === "restarting" && s.restartAt !== undefined) clock.advance(Math.max(0, s.restartAt - clock.now()));
+        return undefined;
       });
     } catch (e) {
       // Where the crash loop stood, so a slow or odd runner's failure says why.
