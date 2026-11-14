@@ -717,8 +717,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, root!.session) as { data: string };
         writeFileSync(join(renders, name), Buffer.from(shot.data, "base64"));
       }
-      // Her tab with the window's own sidebar beside it, open and folded (her own toggle, the user's way), wide and narrow, in
-      // each scheme: `alpha-tab-<wide|narrow>-<open|folded>-<light|dark>.png`. The sidebar is left open and the scheme the system's.
+      // Her tab with the window's own sidebar beside it, open and folded (her own toggle, the user's way), at 1280 (the window the
+      // app opens: her wide room either way), 1060 (her mid room either way) and 700 (her narrow band), in each scheme:
+      // `alpha-tab-<wide|mid|narrow>-<open|folded>-<light|dark>.png`. The sidebar is left open and the scheme the system's.
       const folded = async () => (await inTree<string>(cdp, "(() => { const w = document.querySelector('.cl-window'); return w ? String(w.dataset.collapsed === 'true') : null; })()"))?.value === "true";
       const fold = async (want: boolean) => {
         if ((await folded()) === want) return;
@@ -735,7 +736,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
             await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, root!.session);
             await sleep(800);
             await fold(side === "folded");
-            for (const [size, width] of [["wide", 1280], ["narrow", 700]] as const) {
+            for (const [size, width] of [["wide", 1280], ["mid", 1060], ["narrow", 700]] as const) {
               await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 800, deviceScaleFactor: 1, mobile: false }, root!.session);
               await sleep(3000);
               const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, root!.session) as { data: string };
@@ -2009,6 +2010,17 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const outer = Number((await inTree<number>(cdp, "document.querySelector('.rm') ? window.outerWidth : null"))?.value ?? NaN);
       const inner = Number(await win("window.innerWidth"));
       if (!Number.isFinite(outer) || !Number.isFinite(inner) || Math.abs(outer - inner) > 40) fail(`outerWidth in her frame (${outer}) is not the window's width (${inner})`);
+      // 1b. The window the app opens (a tab of 1000 px or more beside the open sidebar, 1280 less 248) is her wide room, in her room's frame
+      // (its size from the sidebar's measured width) and in her layout (its container queries on the scene) alike; her controls start at her
+      // tab's own margin, since the sidebar lies under the window's own buttons.
+      const sideWidth = Number(await win("Math.round(document.querySelector('.cl-window__sidebar').getBoundingClientRect().width)"));
+      const herTab = inner - sideWidth;
+      const roomSaid = (await inTree<string>(cdp, "document.querySelector('.rm') ? document.querySelector('.rm').dataset.size : null"))?.value;
+      const leadShown = (await inTree<boolean>(cdp, "(() => { const e = document.querySelector('.alpha-pane-lead'); return e ? getComputedStyle(e).display !== 'none' : null; })()"))?.value;
+      const inset = (await inTree<string>(cdp, "document.querySelector('.ac') ? getComputedStyle(document.querySelector('.ac')).paddingLeft : null"))?.value;
+      if (herTab >= 1000 && (roomSaid !== "wide" || leadShown !== true)) fail(`her tab is ${herTab} px (the window ${inner} less the sidebar ${sideWidth}), her wide room's width, but her room says ${roomSaid} and her layout ${leadShown ? "wide" : "not wide"}`);
+      if (inset !== "16px") fail(`her controls start ${inset} in from her tab's edge beside the open sidebar, not her 16 px margin`);
+      const sizeSaid = `her ${herTab} px tab (the window ${inner} less the sidebar's measured ${sideWidth}) drawn as her ${roomSaid} room by her room and her layout alike, her controls ${inset} in`;
       // 2. Her toggle folds the window's own sidebar to its rail and opens it again (shell.setSidebar, given the state she read).
       const collapsed = async () => (await win("w.dataset.collapsed === 'true'")) === "true";
       await press("her sidebar toggle", ".ac__btn", "Hide the sidebar");
@@ -2082,13 +2094,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const codeId = await ensureCodingSession(ctx);
       let side = "this run could not start a coding session, so the Code switch had nowhere to go (not pressed)";
       if (codeId !== undefined) {
-        side = await toCodingSession(codeId);
+        side = await toCodingSession(cdp, codeId, press);
         await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots");
         await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
         await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
       }
       const rows = (JSON.parse(herSide) as { rows: string[] }).rows.length;
-      return `on Alpha's tab no stock bar (bar-mode none), her own controls, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back; ${side}`;
+      return `on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back; ${side}`;
     } finally {
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });

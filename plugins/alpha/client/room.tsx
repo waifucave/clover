@@ -3,7 +3,7 @@
 // doing now; and the grass (in front of the figure and behind everything else here). The way to the other tabs is the window's own sidebar, beside her
 // tab as on every tab (Bots doesn't offer a bot the sidebar). What the buttons do is the plugin API's: `avatar.*` for her figure, her stage's store
 // for the rest. Nothing here is special-cased for Alpha by the app: any bot plugin can draw its own.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
@@ -11,7 +11,7 @@ import { DARK_SCENES } from "./backdrop";
 import { Grass } from "./grass";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 import { localDay } from "./seen";
-import { roomSize, tabWidth } from "./room-size";
+import { controlsInset, roomSize, tabWidth, TOGGLE_GAP_PX, TOGGLE_PX } from "./room-size";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
 const UI = 'ui-rounded, "SF Pro Rounded", system-ui, "Hiragino Sans", sans-serif';
@@ -32,11 +32,12 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 :where(.rm) button { all: unset; box-sizing: border-box; cursor: pointer; }
 :where(.rm) button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
-/* The grass band along the bottom of the room (300px, 150px when narrow): she stands in it. */
+/* The grass band along the bottom of the room (300px; in the narrow band, across its lower part down under the pane's top edge, so the
+   band's foot, where the figure stops and the stage puts a credit plate, lies under the pane): she stands in it. */
 .rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }
 .rm .rm__grass svg { width: 100%; height: 100%; stroke: none; }
 .rm[data-size="wide"] .rm__grass { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); }
-.rm[data-size="narrow"] .rm__grass { top: 96px; bottom: auto; height: 144px; }
+.rm[data-size="narrow"] .rm__grass { top: 160px; bottom: auto; height: 100px; }
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
 
@@ -87,10 +88,12 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__say[data-attention] { box-shadow: 0 0 0 3px var(--gold), 0 16px 40px -14px rgba(0,0,0,.55); }
 
 .rm:not([data-size="wide"]) :is(.rm__left, .rm__chips, .rm__say, .rm__credit) { display: none; }
-.rm:not([data-size="wide"]) .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; }
+/* The mid room's one line: her name and how she is, in the top band beside her sidebar toggle (her controls' own frame: --rm-title-left is where the
+   toggle ends, from the same window state), level with it, above the pane. */
+.rm:not([data-size="wide"]) .rm__title { top: 24px; left: var(--rm-title-left, 68px); display: flex; align-items: baseline; gap: 12px; }
 .rm:not([data-size="wide"]) .rm__name { font-size: 30px; }
 .rm:not([data-size="wide"]) .rm__status { margin-top: 0; font-size: 13px; }
-/* A narrow tab (900 px or less): the figure is a band across the top, the pane under it takes the width; her title and stats stay out. */
+/* A narrow tab (800 px or less): the figure is a band across the top, the pane under it takes the width; her title and stats stay out. */
 .rm[data-size="narrow"] .rm__title { display: none; }
 @media (prefers-reduced-motion: reduce) { .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; } }
 `;
@@ -175,7 +178,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
     el.textContent = CSS;
     document.head.append(el);
   }, []);
-  // The window's state: whether its sidebar is open beside her tab, which sizes her room.
+  // The window's state: the sidebar beside her tab (its measured width sizes her room) and how far the window's own buttons reach.
   useEffect(() => shell?.watch?.(setWin), [shell]);
 
   const tool = seen.tool;
@@ -235,7 +238,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   })();
 
   return (
-    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
+    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} style={{ "--rm-title-left": `${controlsInset(win) + TOGGLE_PX + TOGGLE_GAP_PX}px` } as CSSProperties} aria-label="Alpha's room">
       <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} className="rm__grass" /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>

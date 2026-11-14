@@ -235,8 +235,8 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
     const shellCss = readFileSync(join(ALPHA, "../clover/plugins/shell/client/styles.css"), "utf8");
     expect(shellCss).toMatch(/\.cl-chrome-panels \{[^}]*position: relative;/);
     expect(shellCss).toMatch(/\.cl-chrome-panels:empty \{\s*display: none;/);
-    // The top strip is its 64 px and no more; the pane's transcript starts below it at every width (76 px, 56 px plus the
-    // 14 px lace, 240 px).
+    // The top strip is its 64 px and no more; the pane's transcript starts below it at every width (76 px wide, 72 px mid,
+    // 220 px under the narrow band).
     expect(css).toMatch(/\.alpha-topline \{[^}]*height: 64px;/);
     expect(css).toMatch(/\.alpha-pane \{ padding: 76px /);
     // The pane's row takes a pointer only on its sheet: its empty padding never blocks the band or her room.
@@ -252,10 +252,14 @@ describe("the narrow band's stage", () => {
     const css = readFileSync(join(ALPHA, "tab/layout.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     // Her tab's width, not the window's (the window's own sidebar sits beside it): a container query on the scene.
     expect(css).toMatch(/\.alpha-scene \{[^}]*container: alpha-scene \/ inline-size;/);
-    const narrow = /@container alpha-scene \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)![1]!;
-    expect(narrow).toMatch(/\.alpha-body \{[^}]*align-self: stretch;[^}]*height: 240px !important;/);
+    const narrow = /@container alpha-scene \(max-width: 800px\) \{([\s\S]*?)\n\}/.exec(css)![1]!;
+    expect(narrow).toMatch(/\.alpha-body \{[^}]*align-self: stretch;[^}]*height: 260px !important;/);
     expect(narrow).not.toMatch(/\.alpha-body \{[^}]*align-self: (flex-start|center|flex-end)/);
-    // The stage asks for the narrow crop there.
-    expect(narrow).toMatch(/\.alpha-figure \{[^}]*--clover-avatar-crop: 0\.3;[^}]*--clover-avatar-headroom: 0\.04;/);
+    // The stage asks for the narrow crop there, and her figure starts under the 64 px top band, so her controls never sit over her head.
+    expect(narrow).toMatch(/\.alpha-figure \{[^}]*--clover-avatar-crop: 0\.3;[^}]*--clover-avatar-headroom: 0\.04;[^}]*padding: 60px 0 0 !important;/);
+    // The pane covers the band's foot (where the figure stops and the stage's credit plate sits), so nothing is drawn half under her grass.
+    const paneTop = Number(/\.alpha-pane \{[^}]*padding: (\d+)px/.exec(narrow)![1]);
+    expect(paneTop).toBeLessThan(260 - 32);
+    expect(paneTop).toBeGreaterThan(64);
   });
 });
