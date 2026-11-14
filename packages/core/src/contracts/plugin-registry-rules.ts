@@ -32,6 +32,11 @@ export interface RegistryPlugin {
   class?: PluginClass;
   provenance?: PluginProvenance;
   dev?: boolean;
+  /** Its parts beside its bot are switched on (§5.5); default true. */
+  appParts?: boolean;
+  /** For a plugin with a bot: its parts beside the bot (§5.5), as the plugin SDK's `pluginParts` reads its manifest (the
+   *  caller's: the contracts read no SDK), by their entries' `ref` and what they are; absent or empty, none. */
+  beside?: { refs: readonly string[]; kinds: readonly string[] };
 }
 
 export interface RegistryRuleOptions {
@@ -145,9 +150,18 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
   }
   const on = ids.filter((id) => !offReason.has(id));
 
-  // Every entry of every plugin that is on.
+  // Every entry of every plugin that is on; a part beside its plugin's bot while those parts are switched off is listed
+  // `off` and takes part in nothing else (no entry id, no point, no state of its plugin's).
   const all: Contribution[] = [];
-  for (const id of on) all.push(...entriesOf(plugins, id));
+  const offParts: Contribution[] = [];
+  for (const id of on) {
+    const held = plugins.get(id)!;
+    const beside = held.appParts === false ? new Set(held.beside?.refs ?? []) : undefined;
+    for (const c of entriesOf(plugins, id)) {
+      if (beside?.has(c.ref)) offParts.push({ ...c, state: "off", reason: "its app parts are off" });
+      else all.push(c);
+    }
+  }
 
   // Unique entry ids among enabled plugins: the first in the synced order keeps one (§5.1).
   const owners = new Map<string, string>();
@@ -225,7 +239,7 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
   }
 
   const entries = new Map<string, Contribution[]>();
-  for (const c of all) {
+  for (const c of [...all, ...offParts]) {
     const list = entries.get(c.point) ?? [];
     list.push(c);
     entries.set(c.point, list);
@@ -248,6 +262,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
     const m = held.manifest;
     const hasCode = m.host !== undefined || m.client !== undefined || m.helper !== undefined;
     const parent = parentOf(id);
+    // Its parts beside its bot (§5.5), when it holds a bot and has some: their own switch and what they are.
+    const parts = (held.beside?.refs.length ?? 0) > 0 ? { app: { enabled: held.appParts !== false, has: [...new Set(held.beside!.kinds)] } } : undefined;
     records.set(id, {
       id,
       ...(parent === undefined ? {} : { parent }),
@@ -267,6 +283,7 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       adult: top.manifest.adult === true,
       children: ids.filter((c) => parentOf(c) === id),
       dev: held.dev ?? false,
+      ...(parts === undefined ? {} : { parts }),
       folder: held.folder ?? `/plugins/${id.replace("/", "/plugins/")}`,
       manifest: held.invalid === undefined ? structuredClone(m) : undefined,
       capabilities: [...(m.capabilities ?? [])],

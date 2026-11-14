@@ -18,6 +18,7 @@
 //   plugin, claude-code/placement.ts); `Glossary` on the bridge serves them to every agent. Command hooks are never
 //   given: an outside agent can't run one under its plugin's fence.
 import { createHash } from "node:crypto";
+import { skillItem } from "@waifucave/clover-plugin-sdk";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
@@ -229,8 +230,8 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
 /** Whether a plugin's skills and agent definitions reach the session: its `scope` covers the session (`servesScope`:
  *  a bot's delegated agent takes `bots` parts, its own bot's `own-bot` ones) and its `onlyBackends` its backend. A plugin
  *  that isn't running here gives no active entry at all. */
-function servesSession(d: Pick<AgentPluginReachDeps, "registry">, s: AgentSessionFacts, pluginId: string): boolean {
-  return partsServe(d.registry, pluginId, s);
+function servesSession(d: Pick<AgentPluginReachDeps, "registry">, s: AgentSessionFacts, pluginId: string, entryScope?: unknown): boolean {
+  return partsServe(d.registry, pluginId, s, entryScope);
 }
 
 /** `path` inside `folder`, by real paths: a link out of the plugin's folder is never followed. */
@@ -265,17 +266,19 @@ export function agentPluginParts(d: Pick<AgentPluginReachDeps, "registry" | "wat
       if (session === undefined) return NO_PARTS;
       const parts: PluginParts = { skills: [], agents: [], hooks: [] };
       for (const c of d.registry.entries("skills")) {
-        if (c.state !== "active" || typeof c.value !== "string" || !servesSession(d, session, c.pluginId)) continue;
+        // A skill item is a glob, or one with its own scope (`own-bot`: inside its plugin's bot).
+        const item = skillItem(c.value);
+        if (c.state !== "active" || item === undefined || !servesSession(d, session, c.pluginId, item.scope)) continue;
         const record = d.registry.get(c.pluginId);
         if (record === undefined) continue;
-        for (const dir of skillDirs(record.folder, c.value)) {
+        for (const dir of skillDirs(record.folder, item.path)) {
           const real = insideReal(record.folder, dir);
           if (real === undefined || !statSync(real).isDirectory()) continue;
           parts.skills.push({ name: partName(c.pluginId, dir.split(/[\\/]/).pop() ?? "skill"), pluginId: c.pluginId, dir: real });
         }
       }
       // Agent definitions as Glossary reads them (its `agent` items carry the file's words).
-      for (const item of glossaryIndex({ tools: () => [], registry: d.registry, serves: (pluginId) => servesSession(d, session, pluginId) })) {
+      for (const item of glossaryIndex({ tools: () => [], registry: d.registry, serves: (pluginId, entryScope) => servesSession(d, session, pluginId, entryScope) })) {
         if (item.kind !== "agent") continue;
         const [pluginId, id] = [item.name.slice(0, item.name.lastIndexOf(":")), item.name.slice(item.name.lastIndexOf(":") + 1)];
         const markdown = agentMarkdown(d.registry, pluginId, id);
@@ -326,7 +329,7 @@ export function agentGlossary(d: Pick<AgentPluginReachDeps, "registry" | "server
     const items: GlossaryItem[] = glossaryIndex({
       tools: () => tools.map(({ tool, name }) => ({ name, ...(tool.description === undefined ? {} : { description: tool.description }), inputSchema: tool.inputSchema })),
       registry: d.registry,
-      serves: (pluginId) => servesSession({ registry: d.registry }, session, pluginId),
+      serves: (pluginId, entryScope) => servesSession({ registry: d.registry }, session, pluginId, entryScope),
       // A plugin's own listing on the bridge: only the tools this session has.
       servers: () => [],
     }).filter((i) => i.kind !== "plugin" && i.kind !== "point");

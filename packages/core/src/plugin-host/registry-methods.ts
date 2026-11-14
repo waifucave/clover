@@ -227,11 +227,12 @@ export function pluginRegistryMethods(o: {
   return {
     [M.pluginList.name]: handler(M.pluginList, () => ({ plugins: registry.list().map(summaryOf), adultConfirmed: registry.adultConfirmed })),
     [M.pluginGet.name]: handler(M.pluginGet, ({ id }) => ({ plugin: detailOf(must(id), o.home, o.indexes?.isPinned(id) ?? false) })),
-    [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }, ctx) => {
+    [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots, part }, ctx) => {
       requireUser(ctx, "switch a plugin on or off");
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
       must(id);
-      return registry.setEnabled(id, enabled);
+      // `part: "app"`: only its parts beside its bot (§5.5), the bot kept.
+      return part === undefined ? registry.setEnabled(id, enabled) : registry.setEnabled(id, enabled, { part });
     }),
     [M.pluginRestart.name]: handler(M.pluginRestart, async ({ id }, ctx) => {
       requireUser(ctx, "restart a plugin");

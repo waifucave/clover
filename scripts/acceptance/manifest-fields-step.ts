@@ -10,7 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
 
-export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary";
+export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words";
 
 export const ENGINES = { clover: "^1.0.0" } as const;
 
@@ -24,6 +24,8 @@ export const FIELDS_IDS = {
   // characters, so a coding session gets it under its short form (`AGENTS_ONLY_SHORT`) and calls it by that.
   agents: "acceptance-agents-only",
   cc: "acc-cc",
+  bot: "acc-juniper",
+  botSidebar: "acc-bot-sidebar",
 } as const;
 
 /** A host half that serves the named host MCP servers, each with its tools, every tool answering `<tool>-pong`; and
@@ -149,6 +151,63 @@ export function writeClaudePlugin(root: string): string {
     [`skills/${CLAUDE_SKILL}/SKILL.md`]: `---\nname: ${CLAUDE_SKILL}\ndescription: The acceptance run's skill from a Claude Code plugin\n---\n${CLAUDE_MARK}: answer with the words "claude skill".\n`,
   });
   return dir;
+}
+
+/** The bot the plugin-with-a-bot fixture brings (§5.5, the owner's rule of November 14). */
+export const BOT_PARTS_BOT = "Juniper";
+
+/** A plugin with a bot: an island tab beside it (`"app": true`), a tool server inside it (`own-bot`, JuniperStage) and
+ *  one beside it (JuniperNotes), and its tab's Browser panel replaced. `model` is the model Alpha runs, so its bot's
+ *  turns reach the run's fake provider. */
+export function writeBotParts(root: string, model: string): string {
+  return writePlugin(join(root, FIELDS_IDS.bot), {
+    manifest: 1, id: FIELDS_IDS.bot, name: "Acceptance Juniper", version: "0.0.1", engines: ENGINES,
+    host: { entry: "host/index.js", runtime: "bun" }, client: { entry: "client/index.js" },
+    contributes: {
+      bot: { name: BOT_PARTS_BOT, instructions: "bot/instructions.md", model: { default: model } },
+      mcpServers: {
+        stage: { type: "host", scope: "own-bot", tools: { JuniperStage: "preload" } },
+        notes: { type: "host", tools: { JuniperNotes: "preload" } },
+      },
+      ui: [
+        { spot: "island.tab", id: "day", title: "Juniper's day", component: "Day", app: true },
+        { spot: "panel", key: "browser", component: "Browser" },
+      ],
+    },
+  }, hostSource({ stage: ["JuniperStage"], notes: ["JuniperNotes"] }), {
+    "bot/instructions.md": "You are the acceptance run's bot.\n",
+    "client/index.js": "export const Day = () => null;\nexport const Browser = () => null;\n",
+  });
+}
+
+/** Its OK card's lines for its parts (packages/plugin-sdk/src/manifest/validate.ts's `botPartLines`), and its checkbox
+ *  for the parts beyond its bot's tab (packages/core/src/registry/core.ts). */
+export const BOT_PARTS_LINES = [
+  "Everywhere, with a switch of its own: an island tab, tools.",
+  `It replaces the Browser panel on ${BOT_PARTS_BOT}'s tab.`,
+] as const;
+export const BOT_PARTS_CHECKBOX = { id: `${FIELDS_IDS.bot}#app`, label: `Its parts beyond ${BOT_PARTS_BOT}'s tab`, checked: true } as const;
+
+/** A plugin whose bot puts an entry on the sidebar, which looks the same on every tab: refused. */
+export function writeBotOnSidebar(root: string): string {
+  return writePlugin(join(root, FIELDS_IDS.botSidebar), {
+    manifest: 1, id: FIELDS_IDS.botSidebar, name: "Acceptance bot sidebar", version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    contributes: { bot: { name: "Sidebar bot", instructions: "bot/instructions.md" }, ui: [{ spot: "sidebar", component: "Side" }] },
+  }, undefined, { "bot/instructions.md": "You are a bot.\n", "client/index.js": "export const Side = () => null;\n" });
+}
+export const BOT_SIDEBAR_REFUSAL = "Bots doesn't offer \"sidebar\" to Sidebar bot: a bot's plugin dresses only its own tab";
+
+/** What the plugin-with-a-bot fixture's turns were offered wrong; empty when right. `alpha` and `bot`: Alpha's and
+ *  Juniper's turns with its app parts on; `after`: Juniper's turn with them off. */
+export function botPartsWrong(o: { alpha: readonly string[]; bot: readonly string[]; after: readonly string[] }): string[] {
+  const wrong: string[] = [];
+  if (offered(o.alpha, "JuniperStage")) wrong.push("Alpha was offered JuniperStage (inside Juniper: scope own-bot)");
+  if (!offered(o.alpha, "JuniperNotes")) wrong.push("Alpha wasn't offered JuniperNotes (beside Juniper)");
+  if (!offered(o.bot, "JuniperStage")) wrong.push("Juniper wasn't offered JuniperStage (her own)");
+  if (!offered(o.bot, "JuniperNotes")) wrong.push("Juniper wasn't offered JuniperNotes (beside her)");
+  if (!offered(o.after, "JuniperStage")) wrong.push("with its app parts off, Juniper wasn't offered JuniperStage (inside her, kept)");
+  if (offered(o.after, "JuniperNotes")) wrong.push("with its app parts off, Juniper was still offered JuniperNotes (beside her)");
+  return wrong;
 }
 
 /** Which offered tool names end in each suffix (a bot's `mcp__<server>__<tool>`, an agent's bridge `…__<server>__<tool>`). */

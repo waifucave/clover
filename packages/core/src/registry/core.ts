@@ -3,7 +3,7 @@
 // come from the contract's rules (`computeRegistry`), as the fake's do, so the conformance suite pins both. Where
 // plugins come from (folders, their tree hashes and what a change since the OK does) is `folders.ts`'s; this takes
 // each one as a `RegistryInput`.
-import { BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { APP_PARTS_SUFFIX, BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type {
   ApproveResult, Contribution, InstallFrom, PluginRecord, PluginRegistry, RegisteredPoint, RegistryChange, SwitchResult,
@@ -12,7 +12,7 @@ import {
   EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot,
 } from "../contracts/plugin-registry-rules";
 import type { CoreEntries, Manifest, PointDecl } from "../contracts/sdk-types";
-import { mayHoldCapability } from "@waifucave/clover-plugin-sdk";
+import { botNameOf, mayHoldCapability, pluginParts } from "@waifucave/clover-plugin-sdk";
 import type { ChangeKind } from "./changes";
 import type { PluginState as StoredState, RegistryStore } from "./state";
 
@@ -85,6 +85,8 @@ interface Held {
   stopped?: string;
   /** Its client didn't build at load (`client-builds.ts`), for this tree only. */
   buildFailed?: { hash: string; reason: string };
+  /** Its parts beside its bot are switched on (§5.5, the owner's rule of November 14): their own switch. */
+  appParts: boolean;
 }
 
 const stableHash = (m: Manifest) => `sha256:${new Bun.CryptoHasher("sha256").update(JSON.stringify(m)).digest("hex")}`;
@@ -132,9 +134,19 @@ export class RegistryCore implements PluginRegistry {
     return this.#snap.points.map((p) => structuredClone(p));
   }
 
-  async setEnabled(id: string, enabled: boolean): Promise<SwitchResult> {
+  async setEnabled(id: string, enabled: boolean, opts: { part?: "app" } = {}): Promise<SwitchResult> {
     const held = this.#mustGet(id);
     const state = this.#snap.records.get(id)?.state;
+    if (opts.part === "app") {
+      // Only its parts beside its bot (§5.5): the bot and the plugin's own switch stay as they are.
+      if (this.#snap.records.get(id)?.parts === undefined) throw new ContractError("refused", `${id} has no parts beside a bot to switch`);
+      if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+      // A found plugin's parts come on with its OK, by the card's checkbox for them.
+      if (enabled && state === "found") return { applied: false, card: await this.#raiseOk(parentOf(id) ?? id) };
+      held.appParts = enabled;
+      this.#update();
+      return { applied: true };
+    }
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
     if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     // The rules' not-yet state (the mark in Clover's own tree): its switch stays as it is.
@@ -180,6 +192,12 @@ export class RegistryCore implements PluginRegistry {
     for (const [child, on] of Object.entries(selection)) {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
+      // The checkbox for a plugin's parts beside its bot (`<id>#app`, §5.5): its own, or a child's that holds a bot.
+      if (child.endsWith(APP_PARTS_SUFFIX)) {
+        const owner = child.slice(0, -APP_PARTS_SUFFIX.length);
+        const o = this.#plugins.get(owner);
+        if (o && (owner === id || parentOf(owner) === id)) o.appParts = on;
+      }
     }
     if (held.input.dev !== true) this.#o.onOk?.(id, treeHash);
     this.#update();
@@ -324,6 +342,12 @@ export class RegistryCore implements PluginRegistry {
     const children = [...this.#plugins.entries()]
       .filter(([k]) => parentOf(k) === id)
       .map(([k, c]) => ({ id: k, label: String(typeof c.input.manifest.name === "string" ? c.input.manifest.name : k), checked: c.enabled }));
+    // A plugin with a bot and parts beside it (§5.5): one more checkbox, for those parts, ticked as they are switched.
+    for (const k of [id, ...children.map((c) => c.id)]) {
+      if (this.#snap.records.get(k)?.parts === undefined) continue;
+      const bot = botNameOf(this.#plugins.get(k)!.input.manifest) ?? k;
+      children.push({ id: `${k}${APP_PARTS_SUFFIX}`, label: `Its parts beyond ${bot}'s tab`, checked: this.#plugins.get(k)!.appParts });
+    }
     let card = "";
     const withdraw = new AbortController();
     const raised = this.#cards.raise({ id, treeHash, children }, (a) => {
@@ -400,6 +424,7 @@ export class RegistryCore implements PluginRegistry {
       refused: prev !== undefined && prev.refused && prev.hash === hash,
       ...(okHash === undefined ? {} : { okHash }),
       cardHeld,
+      appParts: this.#plugins.get(input.id)?.appParts ?? stored?.appParts ?? true,
     });
   }
 
@@ -432,6 +457,10 @@ export class RegistryCore implements PluginRegistry {
       const h = this.#plugins.get(id)!;
       const i = h.input;
       const p: RegistryPlugin = { id, manifest: i.manifest, approved: h.approved, refused: h.refused, enabled: h.enabled, hash: h.hash, cardHeld: h.cardHeld };
+      if (!h.appParts) p.appParts = false;
+      // Its parts beside its bot (§5.5), as the SDK reads its manifest (a child's scope defaults to its top plugin's).
+      const beside = pluginParts(i.manifest, this.#plugins.get(parentOf(id) ?? id)?.input.manifest).beside;
+      if (beside.length > 0) p.beside = { refs: beside.map((b) => b.ref), kinds: beside.map((b) => b.kind) };
       if (i.source !== undefined) p.source = i.source;
       if (h.okHash !== undefined) p.okHash = h.okHash;
       if (i.invalid !== undefined) p.invalid = i.invalid;
@@ -474,6 +503,7 @@ export class RegistryCore implements PluginRegistry {
       if (h.okHash !== undefined) s.okHash = h.okHash;
       if (h.refused) s.refusedHash = h.hash;
       if (h.cardHeld) s.cardHeld = true;
+      if (!h.appParts) s.appParts = false;
       plugins[id] = s;
     }
     // Records a development folder stood over while it was on (#drop keeps them): kept until the installed plugin is

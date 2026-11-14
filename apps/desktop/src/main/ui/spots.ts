@@ -173,7 +173,8 @@ const list = (v: string | readonly string[] | undefined): readonly string[] | un
 /** The bots an entry is limited to, or `all` (rule 4 and `when.bot`): a bot's own entries are limited to that bot; the
  *  user's ticks (the plugin's `bots`) replace `when.bot`. */
 export function botScope(plugin: UiPlugin, e: UiEntry): "all" | readonly string[] {
-  if (plugin.isBot) return [plugin.id];
+  // A part beside the bot (`app`, §5.5) follows the app's rules: limited only as any plugin's entry is.
+  if (plugin.isBot && e.app !== true) return [plugin.id];
   if (plugin.bots !== "all") return plugin.bots;
   return list(e.when?.bot) ?? "all";
 }
@@ -199,7 +200,7 @@ export function applies(plugin: UiPlugin, e: UiEntry, ctx: CellContext): boolean
 /** The key an entry fills: its own, or in a bot's own plugin, a keyless `bot.tab` entry takes the bot's id. */
 export function effectiveKey(plugin: UiPlugin, e: UiEntry): string | undefined {
   if (e.key !== undefined) return e.key;
-  if (plugin.isBot && e.spot === "bot.tab") return plugin.id;
+  if (plugin.isBot && e.spot === "bot.tab" && e.app !== true) return plugin.id;
   return undefined;
 }
 

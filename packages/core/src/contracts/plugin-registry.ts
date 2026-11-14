@@ -76,7 +76,8 @@ export interface PluginRecord extends PluginSummary {
   provenance: PluginProvenance;
 }
 
-export type ContributionState = "active" | "waiting" | "refused";
+/** `off`: a part beside its plugin's bot while the user has those parts switched off (§5.5): listed, never used. */
+export type ContributionState = "active" | "waiting" | "refused" | "off";
 
 /** The states in which a plugin's code runs and may use what its OK granted (the plugin API router's own rule). */
 export const RUNNING_STATES: ReadonlySet<PluginState> = new Set<PluginState>(["running", "waiting"]);
@@ -140,8 +141,9 @@ export interface PluginRegistry {
   points(): RegisteredPoint[];
   /** The user's switch (§5.1). On a found plugin it raises the sealed OK card (`{ applied: false, card }`) and loads
    *  nothing; on a plugin OK'd and switched off it applies. Rejects `refused` for a blocked, refused or invalid plugin,
-   *  and for switching the bundled `clover` plugin off. */
-  setEnabled(id: string, enabled: boolean): Promise<SwitchResult>;
+   *  and for switching the bundled `clover` plugin off. With `part: "app"`, only the plugin's parts beside its bot
+   *  (§5.5): the bot and the plugin's own switch stay; refused for a plugin with no such parts. */
+  setEnabled(id: string, enabled: boolean, opts?: { part?: "app" }): Promise<SwitchResult>;
   /** A plugin installed into the folder (`plugin.install`), from anywhere: found, with its sealed OK card raised at once
    *  (`card`). A plugin already OK'd for this tree, or not found, raises none. */
   installed(id: string, from: InstallFrom): Promise<{ state: PluginState; card?: string }>;

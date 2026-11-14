@@ -67,6 +67,15 @@ describe("single spots and keyed defaults", () => {
     expect(shownRefs(resolveCell({ plugins: [luna, tabs], ctx }, "bot.tab", "alpha"))).toEqual(["x-tabs#bot.tab"]);
   });
 
+  test("a bot plugin's part beside its bot (`app`, §5.5) follows the app's rules: not held to its own tab", () => {
+    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "every", component: "Everyone", app: true }], { isBot: true });
+    const e = luna.entries.find((x) => x.id === "every")!;
+    expect([e.app, e.fields]).toEqual([true, {}]);
+    // Its own tab look stays its own; the part beside it dresses every bot's composer, as any plugin's entry would.
+    expect(shownRefs(resolveCell({ plugins: [composer, luna], ctx }, "bot.tab", "alpha"))).toEqual([]);
+    expect(shownRefs(resolveCell({ plugins: [composer, luna], ctx: inTab("alpha") }, "composer"))).toEqual(["luna#every"]);
+  });
+
   test("`when.session`: a code-only panel shows only in a code session", () => {
     expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx: { os: "macos", session: "coding" } }, "panel", "diff"))).toEqual(["clover/panel-diff#panel"]);
     const bot = resolveCell({ plugins: DEFAULT, ctx: inTab("alpha", { session: "bot" }) }, "panel", "diff");

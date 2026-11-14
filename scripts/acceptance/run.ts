@@ -95,7 +95,7 @@ import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULE
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
-import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, CLAUDE_SKILL, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
+import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
@@ -2205,6 +2205,52 @@ async function main(): Promise<void> {
       if (!claude.text.includes("Clover made") && !claude.text.toLowerCase().includes("claude")) wrong.push(`${claude.id}'s OK card doesn't say it was made from a Claude Code plugin: ${claude.text.slice(0, 300)}`);
       else if (g === undefined || !g.text.includes(`${claude.id}:${CLAUDE_SKILL}`)) wrong.push(`after ${claude.id}'s OK, Alpha's Glossary search for its skill answered ${JSON.stringify((g?.text ?? "nothing").slice(0, 300))}`);
       else done.push(`1.33 a Claude Code plugin folder wrapped as ${claude.id}: OK'd, its skill ${claude.id}:${CLAUDE_SKILL} in Alpha's Glossary`);
+
+      // §5.5 (the owner's rule of November 14): a plugin with a bot. Its OK card says what of it goes beyond the bot's
+      // tab, with a checkbox for those parts; a tool inside the bot is that bot's alone; its app parts switch off and the
+      // bot stays; a bot's entry on the sidebar (the same on every tab) is refused.
+      const sidebar = await refusedWith(writeBotOnSidebar(src), BOT_SIDEBAR_REFUSAL);
+      if (sidebar !== undefined) wrong.push(`a bot's entry on the sidebar: ${sidebar.slice(0, 300)}`);
+      const alphaModel = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
+      if (alphaModel === undefined) wrong.push("Alpha has no model to give the bot fixture");
+      else {
+        const juniper = await install({ from: "folder", path: writeBotParts(src, alphaModel) });
+        const card = JSON.parse(juniper.text) as { children?: { id: string; label?: string; checked: boolean }[] };
+        const box = card.children?.find((ch) => ch.id === BOT_PARTS_CHECKBOX.id);
+        const cardWrong = [
+          ...BOT_PARTS_LINES.filter((line) => !juniper.text.includes(JSON.stringify(line).slice(1, -1))).map((line) => `its OK card lacks "${line}"`),
+          ...(box === undefined || box.label !== BOT_PARTS_CHECKBOX.label || box.checked !== true ? [`its OK card's checkbox for the parts beyond ${BOT_PARTS_BOT}'s tab is ${JSON.stringify(box ?? "missing")}`] : []),
+        ];
+        if (cardWrong.length > 0) wrong.push(`${juniper.id}: ${cardWrong.join("; ")}`);
+        const bots = (await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots;
+        const own = bots.find((x) => x.id === juniper.id)?.mainSession;
+        if (own === undefined) wrong.push(`${juniper.id} is on, but bot.list has no bot ${juniper.id}`);
+        else {
+          const offeredOn = async (s: string, tag: string) => {
+            const seen = fake!.requests.length;
+            await turn(c, s, `ACCEPTANCE-REPLY: ${tag}`, 150_000);
+            return fake!.requests.slice(seen).filter((r) => r.lastUserText.includes(tag)).flatMap((r) => r.tools);
+          };
+          await c.request("session.attach", { id: own });
+          const alphaTools = await offeredOn(session, "juniper alpha offer");
+          const botTools = await offeredOn(own, "juniper own offer");
+          // Its app parts off: the plugin and its bot run on.
+          await c.request("plugin.setEnabled", { id: juniper.id, enabled: false, part: "app" });
+          const after = await until(`${juniper.id}'s app parts off`, 30_000, async () => {
+            const p = (await c.request<{ plugin?: { state?: string; parts?: { app?: { enabled: boolean; has: string[] } } } }>("plugin.get", { id: juniper.id })).plugin;
+            return p?.parts?.app?.enabled === false ? p : undefined;
+          }).catch((err: unknown) => { wrong.push(why(err)); return undefined; });
+          const stillBot = (await c.request<{ bots: { id: string }[] }>("bot.list", {})).bots.some((x) => x.id === juniper.id);
+          const afterTools = after === undefined ? [] : await offeredOn(own, "juniper parts off");
+          const offer = botPartsWrong({ alpha: alphaTools, bot: botTools, after: afterTools });
+          const tools = (xs: string[]) => xs.filter((t) => t.includes("Juniper")).join(", ") || "none";
+          if (after !== undefined && (after.state !== "running" || !stillBot)) wrong.push(`with its app parts off, ${juniper.id} is ${after.state ?? "missing"} and its bot is ${stillBot ? "listed" : "gone"}`);
+          else if (offer.length > 0) wrong.push(`${offer.join("; ")} (Alpha: ${tools(alphaTools)}; ${BOT_PARTS_BOT}: ${tools(botTools)}; ${BOT_PARTS_BOT}, app parts off: ${tools(afterTools)})`);
+          else if (after !== undefined && sidebar === undefined && cardWrong.length === 0) {
+            done.push(`§5.5 a plugin with a bot: its OK card says "${BOT_PARTS_LINES.join(" ")}" with the checkbox "${BOT_PARTS_CHECKBOX.label}"; JuniperStage (own-bot) offered to ${BOT_PARTS_BOT}, not to Alpha, JuniperNotes to both; its app parts (${after.parts?.app?.has.join(", ")}) switched off: still running, ${BOT_PARTS_BOT} offered JuniperStage and not JuniperNotes; a bot's entry on the sidebar refused ("${BOT_SIDEBAR_REFUSAL.slice(0, 60)}…")`);
+          }
+        }
+      }
 
       if (wrong.length > 0) fail(`${wrong.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ") || "none"})`);
       manifestOutcome = { status: "PASS", detail: done.join("; ") };
