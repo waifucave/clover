@@ -76,9 +76,17 @@ function HooksProbe() {
     set("surface", `${typeof surface}; asked: ${String(surface({ visible: true }))}`);
     viewFrame(box.current);
     // useViewFrame: the element the hook was given, as this frame measured it right after (the window's real layout), and the viewport it is in.
-    const b = box.current?.getBoundingClientRect();
-    set("viewframe", b === undefined ? "no element" : `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)} in ${innerWidth}x${innerHeight}`);
-    return () => viewFrame(null);
+    // It is said again whenever the element's size changes: the frame is laid out after it mounts (a frame placed away from the screen or not grown yet
+    // has no box then), so the harness waits for the real box rather than for the first one.
+    const target = box.current;
+    const say = () => {
+      const b = target?.getBoundingClientRect();
+      set("viewframe", b === undefined ? "no element" : `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)} in ${innerWidth}x${innerHeight}`);
+    };
+    say();
+    const watch = typeof ResizeObserver === "undefined" || target === null ? undefined : new ResizeObserver(say);
+    if (target !== null) watch?.observe(target);
+    return () => { watch?.disconnect(); viewFrame(null); };
   }, []);
   // useSurfaceEnvironment: undefined in a tab's frame (it is no surface window's root); said after the core has had time to answer.
   useEffect(() => {
