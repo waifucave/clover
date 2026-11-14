@@ -37,6 +37,8 @@ export interface PluginState {
   refusedHash?: string;
   /** A card-styling change waits for its OK (§5.5). */
   cardHeld?: boolean;
+  /** Its parts beside its bot are switched off (§5.5, the owner's rule of November 14); absent, on. */
+  appParts?: false;
 }
 
 export interface DevFolderState {
@@ -129,6 +131,7 @@ const StoredPlugin = z.object({
   okHash: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
   refusedHash: z.string().optional(),
   cardHeld: z.boolean().optional(),
+  appParts: z.literal(false).optional(),
 });
 const StateSchema = z.object({
   v: z.literal(1),

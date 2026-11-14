@@ -5,7 +5,7 @@
 import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/clover-protocol";
 import { avatarFileProblem, BUNDLED_AVATAR_FORMATS, extensionOf, live2dReferences, type AvatarFormatDecl } from "../catalogs/avatars";
 import { AvatarFormatEntry } from "../catalogs/points";
-import { spotInfo } from "../catalogs/spots";
+import { BOT_TAB_INSIDE, spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
 import { DEFAULT_TAB_LAYOUT, LayoutContributionSchema, LayoutFileSchema, contributionProblems, isLayoutPatch, layoutPaths, layoutSpots, resolveLayoutFile } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
@@ -215,7 +215,8 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
     }
   }
   for (const [i, loc] of (c.locales ?? []).entries()) {
-    if (await must(loc.file, ["contributes", "locales", i, "file"], "entry")) await checkLocale(reader, base, loc.file, loc.lang, topId, isBot, f);
+    // A table marked `"app": true` is a part beside the bot (§5.5): it may translate other plugins' keys, as any plugin's.
+    if (await must(loc.file, ["contributes", "locales", i, "file"], "entry")) await checkLocale(reader, base, loc.file, loc.lang, topId, isBot && (loc as { app?: boolean }).app !== true, f);
   }
   for (const [i, model] of (c.models ?? []).entries()) if (typeof model.catalog === "string") await must(model.catalog, ["contributes", "models", i, "catalog"], "entry");
   for (const [i, agent] of (c.agents ?? []).entries()) {
@@ -344,8 +345,10 @@ async function checkLayout(reader: PluginFolderReader, base: string, path: strin
   }
   if (isBot) {
     for (const spot of layoutSpots(layout.root)) {
+      // The spots inside its tab, of what Bots offers (§5.5): the top bar and the panels are the window's, placed by the
+      // `chrome.*` parts.
       const info = spotInfo(spot);
-      if (info && !info.inBotTab) f.error(full, "contribution", "layout_foreign_spot", [], `a bot's layout places spots of its tab, and "${spot}" is outside it`);
+      if (info && !BOT_TAB_INSIDE.has(spot)) f.error(full, "contribution", "layout_foreign_spot", [], `a bot's layout places spots of its tab, and "${spot}" is outside it`);
     }
   }
   void file;
@@ -392,9 +395,9 @@ async function checkLocale(reader: PluginFolderReader, base: string, path: strin
   }
   if (parsed.data.lang !== lang) f.error(full, "entry", "locale_lang", ["lang"], `the file is "${parsed.data.lang}" but the manifest says "${lang}"`);
   if (isBot) {
-    // A bot's plugin translates only its own keys (§5.5); a pack for the rest can be a child in its folder.
+    // A bot's own table translates only its plugin's keys (§5.5); one marked `"app": true` beside the bot may do the rest.
     for (const key of Object.keys(parsed.data.strings)) {
-      if (localeKeyOwner(key) !== topId) f.error(full, "entry", "locale_foreign_key", ["strings", key], `a bot's plugin translates only its own keys (${topId}.…)`);
+      if (localeKeyOwner(key) !== topId) f.error(full, "entry", "locale_foreign_key", ["strings", key], `a bot's own table translates only its plugin's keys (${topId}.…); a table for the rest says "app": true`);
     }
   }
 }

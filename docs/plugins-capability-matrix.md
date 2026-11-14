@@ -115,8 +115,11 @@ What the pair found, and where it stands:
 2. **A stdio server that names a setting or a secret didn't restart when it changed** (for example, the key entered after
    install). Fixed: only the servers naming the changed key are listed again, at most once every half second. Until the
    user sets it, the daemon's log says the server waits for that key, not that it failed.
-3. **A bot plugin can't add UI outside its own tab.** By design (`bot_spot_outside_tab`): the example puts its bot in a
-   child plugin and keeps the page in the parent.
+3. **A bot plugin's UI outside its own tab.** Since §5.5 (whoever owns a plug sets its rules): an entry marked
+   `"app": true` shows beyond the bot's tab, with a switch of its own and a line on the OK card; unmarked, it fills only
+   what Bots offers on its tab (`bot_spot_not_offered`), and the left sidebar, Settings and the bot's Edit page take
+   nothing tied to a bot (`bot_tied_not_offered`). The example still keeps its bot in a child plugin and the page in the
+   parent.
 4. **A third-party bot's model.** With no `model`, the bot runs on the user's default model. With one the user holds a
    key for, the bot's first turn asks once on a sealed card before spending that provider (`bot-provider`). A yes holds
    for that bot and provider. This is by design: a plugin's choice of provider is never the user's. The example names

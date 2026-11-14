@@ -245,32 +245,43 @@ describe("a tree's children are bounded", () => {
     expect(r.children.length).toBe(MAX_CHILD_PLUGINS);
   });
 
-  // A third party draws its bot's bar and sidebar exactly as Alpha does: a child plugin of the bot's plugin, `when.bot` its own bot, the `shell.*` capabilities.
-  test("a non-bundled bot plugin fills `bar` and `sidebar` through a child, its install card names what it can do, and the bot itself may not fill them", async () => {
-    const chromeChild = {
+  // Whoever owns a plug sets the rules (§5.5, the owner's rule of November 14): Bots offers a bot its top bar, never the
+  // sidebar. A child tied to the bot's tab may dress the bar as any app plugin may, and nothing tied to a bot's tab
+  // dresses the sidebar; the bot's own plugin fills its bar directly.
+  test("a bot's top bar is its own to fill (directly, or through a child), and the sidebar no part tied to its tab dresses", async () => {
+    const chromeChild = (ui: Record<string, unknown>[]) => ({
       "plugins/chrome/clover.json": {
         manifest: 1, name: "Luna's chrome", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" },
-        capabilities: ["bots.read", "shell.read", "shell.control"],
-        contributes: { ui: [
-          { spot: "bar", id: "bar", component: "LunaBar", when: { bot: "luna" } },
-          { spot: "sidebar", id: "sidebar", component: "LunaSidebar", when: { bot: "luna" } },
-        ] },
+        capabilities: ["bots.read", "shell.read", "shell.control"], contributes: { ui },
       },
       "plugins/chrome/client/index.tsx": "export const LunaBar = () => null; export const LunaSidebar = () => null;",
-    };
-    const files = { ...LUNA, ...chromeChild };
-    const r = await validateTree(folder(files), { folderName: "luna" });
+    });
+    const r = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "bar", id: "bar", component: "LunaBar", when: { bot: "luna" } }]) }), { folderName: "luna" });
     expect(r.issues).toEqual([]);
-    expect(r.ok).toBe(true);
     const child = r.children.find((c) => c.folder === "chrome")!;
     expect([child.ok, child.report.id, child.report.class]).toEqual([true, "luna/chrome", "code"]);
     // The card names the two capabilities in words, so the user sees what the part may do before it installs.
     const card = describeOk(child.report, { treeCapabilities: r.top.capabilities.concat(child.report.capabilities) }).join(" ");
     expect(card).toContain("lets its own buttons move around Clover's window");
     expect(card).toContain("sees which tab and panels are showing");
-    // The bot's own plugin may not fill them (they are outside its tab): that is why the child exists.
-    const direct = { ...LUNA, "clover.json": { ...(LUNA["clover.json"] as { contributes: object }), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, ui: [{ spot: "sidebar", component: "X", when: { bot: "luna" } }] }, client: { entry: "client/index.tsx" } }, "client/index.tsx": "export const X = () => null;" };
-    const bad = await validateTree(folder(direct), { folderName: "luna" });
-    expect([...bad.issues, ...bad.top.issues].some((i) => i.code === "bot_spot_outside_tab")).toBe(true);
+    const sidebar = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "sidebar", id: "sidebar", component: "LunaSidebar", when: { bot: "luna" } }]) }), { folderName: "luna" });
+    expect(sidebar.children.find((c) => c.folder === "chrome")!.report.issues.some((i) => i.code === "bot_tied_not_offered")).toBe(true);
+    const withUi = (ui: Record<string, unknown>[]) => ({ ...LUNA, "clover.json": { ...(LUNA["clover.json"] as { contributes: object }), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, ui }, engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" } }, "client/index.tsx": "export const X = () => null;" });
+    const bar = await validateTree(folder(withUi([{ spot: "bar", component: "X" }])), { folderName: "luna" });
+    expect([...bar.issues, ...bar.top.issues]).toEqual([]);
+    const bad = await validateTree(folder(withUi([{ spot: "sidebar", component: "X" }])), { folderName: "luna" });
+    expect([...bad.issues, ...bad.top.issues].some((i) => i.code === "bot_spot_not_offered")).toBe(true);
+  });
+
+  test("a bot's own locale table translates only its keys; one marked `app` may translate the rest", async () => {
+    const withLocale = (app: boolean) => ({
+      ...LUNA,
+      "clover.json": { ...(LUNA["clover.json"] as { contributes: object }), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, locales: [{ lang: "fr", file: "fr.json", ...(app ? { app: true } : {}) }] } },
+      "fr.json": { locale: 1, lang: "fr", strings: { "luna.hello": "Salut", "clover.send": "Envoyer" } },
+    });
+    const own = await validateTree(folder(withLocale(false)), { folderName: "luna" });
+    expect([...own.issues, ...own.top.issues].some((i) => i.code === "locale_foreign_key")).toBe(true);
+    const app = await validateTree(folder(withLocale(true)), { folderName: "luna" });
+    expect([...app.issues, ...app.top.issues].some((i) => i.code === "locale_foreign_key")).toBe(false);
   });
 });

@@ -16,7 +16,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { join, sep } from "node:path";
 import { Glob } from "bun";
-import { foldTitle } from "@waifucave/clover-plugin-sdk";
+import { foldTitle, skillItem } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "../contracts/common";
 import type { PluginRegistry } from "../contracts/plugin-registry";
@@ -165,8 +165,9 @@ export class GlossaryIndex {
     for (const t of tools) out.push({ name: t.name, kind: "tool", description: t.description.slice(0, DESCRIPTION_MAX), inputSchema: t.inputSchema, ...(t.pluginId ? { pluginId: t.pluginId } : {}) });
     for (const c of this.#o.registry.entries("skills")) {
       const folder = records.get(c.pluginId)?.folder;
-      if (c.state !== "active" || folder === undefined || typeof c.value !== "string") continue;
-      for (const skill of this.#skills(folder, c.value)) {
+      const item = skillItem(c.value);
+      if (c.state !== "active" || folder === undefined || item === undefined) continue;
+      for (const skill of this.#skills(folder, item.path)) {
         out.push({ ...skill, name: owned(skill.name, c.pluginId), instructions: skillLabel(c.pluginId) + skill.instructions, kind: "skill", pluginId: c.pluginId });
       }
     }

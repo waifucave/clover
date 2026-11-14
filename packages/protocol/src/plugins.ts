@@ -106,6 +106,9 @@ export const PluginSummary = z.object({
   labels: z.array(utf16(40)).max(40).optional(),
   /** A development folder (§5.6), on this computer only. */
   dev: z.boolean(),
+  /** A plugin with a bot and parts beside it (§5.5, the owner's rule of November 14): their own switch (`plugin.setEnabled`
+   *  with `part: "app"`), and what they are (a `ui` entry's spot, else its point: `island.tab`, `mcpServers`, `skills`). */
+  parts: z.object({ app: z.object({ enabled: z.boolean(), has: z.array(utf16(256)).max(64) }) }).optional(),
 });
 export type PluginSummary = z.infer<typeof PluginSummary>;
 
@@ -369,9 +372,12 @@ export const PLUGINS_METHODS = {
       id: AnyPluginId, enabled: z.boolean(),
       /** For a plugin that dresses parts of bots' tabs: which bots, replacing its `when.bot` (§5.5). */
       bots: z.union([z.literal("all"), z.array(BotId)]).optional(),
+      /** `app`: only the plugin's parts beside its bot (§5.5), keeping the bot; the plugin's own switch is untouched.
+       *  Refused for a plugin with no such parts. */
+      part: z.literal("app").optional(),
     }),
     result: ChangeResult,
-    doc: "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
+    doc: "Switches a plugin or child on or off, or with `part: \"app\"` only its parts beside its bot; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
   }),
   pluginSetScope: defineMethod({
     name: "plugin.setScope", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",

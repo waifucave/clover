@@ -20,6 +20,7 @@
 //   local embedding model) is not here yet; keyword search is its stated fallback.
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
+import { skillItem } from "@waifucave/clover-plugin-sdk";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import type { BotMcpServer, CoreToolDef } from "./servers";
 
@@ -43,8 +44,9 @@ export interface GlossaryDeps {
   tools(): readonly { name: string; description?: string; inputSchema?: unknown }[];
   /** The plugin registry, for skills, agent definitions, plugins and points; the session's own scope applies. */
   registry?: Pick<PluginRegistry, "entries" | "get" | "list" | "points">;
-  /** Whether a plugin's entries reach this session (its `scope`, `onlyBackends`); every one by default. */
-  serves?(pluginId: string): boolean;
+  /** Whether a plugin's entries reach this session (its `scope`, or the entry's own `entryScope`, and `onlyBackends`);
+   *  every one by default. */
+  serves?(pluginId: string, entryScope?: unknown): boolean;
   /** The plugins' MCP servers this session has (each with its plugin, its instructions and its tools), for what a
    *  plugin offers. */
   servers?(): readonly Pick<BotMcpServer, "server" | "plugin" | "instructions" | "tools">[];
@@ -127,14 +129,17 @@ export function plainName(text: string): string {
 }
 /** A backend's or a model's id as a definition may name one; anything else is left for the bot to give. */
 const ID_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:\/@-]{0,127}$/;
+/** An agent definition's own scope (`own-bot`: inside its plugin's bot), where it has one. */
+const entryScopeOf = (v: unknown): unknown => (typeof v === "object" && v !== null ? (v as { scope?: unknown }).scope : undefined);
+
 /** An effort level: a word, as the backends name theirs (low, medium, high, xhigh, max). */
 const EFFORT = /^[a-z][a-z0-9_-]{0,31}$/;
 
 /** The agent definition `name` names (`<plugin>:<id>`, as Glossary lists it), from a plugin whose entries reach this
  *  session; undefined for any other name. */
-export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, name: string, serves: (pluginId: string) => boolean = () => true): AgentDefinition | undefined {
+export function agentDefinitionOf(reg: Pick<PluginRegistry, "entries" | "get">, name: string, serves: (pluginId: string, entryScope?: unknown) => boolean = () => true): AgentDefinition | undefined {
   for (const c of reg.entries("agents")) {
-    if (c.state !== "active" || !serves(c.pluginId)) continue;
+    if (c.state !== "active" || !serves(c.pluginId, entryScopeOf(c.value))) continue;
     const record = reg.get(c.pluginId);
     if (record === undefined) continue;
     if (typeof c.value === "string") {
@@ -186,10 +191,11 @@ export function glossaryIndex(deps: GlossaryDeps): GlossaryItem[] {
   const reg = deps.registry;
   if (reg === undefined) return items;
   for (const c of reg.entries("skills")) {
-    if (c.state !== "active" || !serves(c.pluginId)) continue;
+    const item = skillItem(c.value);
+    if (c.state !== "active" || item === undefined || !serves(c.pluginId, item.scope)) continue;
     const record = reg.get(c.pluginId);
-    if (record === undefined || typeof c.value !== "string") continue;
-    for (const rel of skillFiles(record.folder, c.value)) {
+    if (record === undefined) continue;
+    for (const rel of skillFiles(record.folder, item.path)) {
       const raw = readInside(record.folder, rel);
       if (raw === undefined) continue;
       const fm = parseFrontmatter(raw);
@@ -199,7 +205,7 @@ export function glossaryIndex(deps: GlossaryDeps): GlossaryItem[] {
     }
   }
   for (const c of reg.entries("agents")) {
-    if (c.state !== "active" || !serves(c.pluginId)) continue;
+    if (c.state !== "active" || !serves(c.pluginId, entryScopeOf(c.value))) continue;
     const record = reg.get(c.pluginId);
     if (record === undefined) continue;
     if (typeof c.value === "string") {

@@ -9,7 +9,7 @@ import {
   networkAllows, pluginTokenName,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
-  reachesPublicNetwork,
+  reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -176,10 +176,15 @@ describe("points and spots", () => {
     expect(SPOTS.find((s) => s.name === "panel.view")!.doc).toBe("A spot inside each panel view, keyed by the view's id.");
   });
 
-  test("spots inside a bot's tab are the tab's parts; the shell and surfaces are outside", () => {
-    const inTab = SPOTS.filter((s) => s.inBotTab).map((s) => s.name).sort();
-    expect(inTab).toEqual(["avatar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
-      "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "tool.result"]);
+  test("what Bots offers a bot's plugin is a closed list: inside its tab, its top bar, the Browser and agent panels; never the sidebar, Settings or the Edit page", () => {
+    expect([...BOTS_OFFER.keys()].sort()).toEqual(["avatar", "bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
+      "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "panel", "tool.result"]);
+    expect(BOTS_OFFER.get("panel")).toEqual(["browser", "agent"]);
+    expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, true, false]);
+    for (const s of SAME_ON_EVERY_TAB) expect(botsOffer(s)).toBe(false);
+    // A bot's layout places the spots inside its tab: not the window's bar or panels.
+    expect(BOT_TAB_INSIDE.has("bar") || BOT_TAB_INSIDE.has("panel")).toBe(false);
+    expect(BOT_TAB_INSIDE.has("conversation")).toBe(true);
   });
 
   test("well-known names are the spots and data points, never a core point", () => {

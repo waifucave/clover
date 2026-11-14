@@ -1752,15 +1752,23 @@
                     }
                   },
                   "children": {
-                    "maxItems": 1024,
+                    "maxItems": 1025,
                     "type": "array",
                     "items": {
                       "type": "object",
                       "properties": {
                         "id": {
-                          "type": "string",
-                          "maxLength": 81,
-                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 81,
+                              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                            },
+                            {
+                              "type": "string",
+                              "maxLength": 85
+                            }
+                          ]
                         },
                         "label": {
                           "anyOf": [
@@ -1814,12 +1822,20 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 1024,
+                "maxItems": 1025,
                 "type": "array",
                 "items": {
-                  "type": "string",
-                  "maxLength": 81,
-                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 85
+                    }
+                  ]
                 }
               },
               "device": {
