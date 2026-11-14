@@ -167,6 +167,14 @@
                     "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                   }
                 },
+                "labels": {
+                  "maxItems": 40,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 40
+                  }
+                },
                 "dev": {
                   "type": "boolean"
                 }
@@ -368,6 +376,14 @@
                   "type": "string",
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "labels": {
+                "maxItems": 40,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 40
                 }
               },
               "dev": {
