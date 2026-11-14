@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, type VRM } from "@pixiv/three-vrm";
 import type { Mesh } from "three";
-import { FACE_TARGETS, PLACEHOLDER_NAME, makePlaceholderVrm } from "../src/placeholder/model";
+import { FACE_TARGETS, OUTFITS, PLACEHOLDER_NAME, makePlaceholderVrm } from "../src/placeholder/model";
 import { GltfBuilder, glbJson, withJson, withoutAnimations } from "../src/vrm/glb";
 import { MAX_VRM_BYTES, VRM_BUDGETS, validateVrm } from "../src/vrm/validate";
-import { AvatarScene, clampStep, SPRING_MAX_STEP, type AvatarRenderer } from "../src/vrm/scene";
+import { AvatarScene, clampStep, outfitParts, OUTFIT_PARTS_MAX, SPRING_MAX_STEP, type AvatarRenderer } from "../src/vrm/scene";
+import { Object3D } from "three";
 import { idlePose } from "../src/motion/idle";
 import { SHUT } from "../src/lipsync/visemes";
 
@@ -505,6 +506,43 @@ describe("the avatar's scene", () => {
     expect(fake.calls.render).toBe(1);
     scene.dispose();
     expect(fake.calls.disposed).toBe(true);
+  });
+
+  test("her three outfits are marked parts, the lilac dress shown and the others hidden; switching one shows or hides only its nodes", async () => {
+    const scene = new AvatarScene(document.createElement("canvas"), { createRenderer: fakeRenderer().create });
+    await scene.load(buffer(bytes()));
+    expect(scene.outfitNames()).toEqual(OUTFITS.map((name, i) => ({ name, on: i === 0 })));
+    expect(scene.setOutfit("lilac-dress", false)).toBe(true);
+    expect(scene.setOutfit("navy-uniform", true)).toBe(true);
+    expect(scene.outfitNames()).toEqual([{ name: "lilac-dress", on: false }, { name: "navy-uniform", on: true }, { name: "yellow-raincoat", on: false }]);
+    expect(scene.setOutfit("cape", true)).toBe(false);
+    // Each outfit is a bodice, a skirt and two sleeves in the file, every node of it marked with its name.
+    const json = glbJson(bytes()) as { nodes: { name: string; extras?: { clover?: { outfit?: string; on?: boolean } } }[] };
+    for (const [i, outfit] of OUTFITS.entries()) {
+      const marked = json.nodes.filter((n) => n.extras?.clover?.outfit === outfit);
+      expect(marked.map((n) => n.name.replace(/Navy|Raincoat/, "")).sort()).toEqual(["Bodice", "Skirt", "leftSleeve", "rightSleeve"]);
+      expect(marked.every((n) => (n.extras!.clover!.on === false) === (i > 0))).toBe(true);
+    }
+    scene.dispose();
+  });
+
+  test("a part is a mark on a node's extras: one name may span nodes, \"on\": false starts it hidden, an unnamed or overlong mark is no part, and a model names at most so many", () => {
+    const root = new Object3D();
+    const add = (userData: Record<string, unknown>) => { const o = new Object3D(); o.userData = userData; root.add(o); return o; };
+    const hat = add({ clover: { outfit: "hat" } });
+    const hatBand = add({ clover: { outfit: "hat" } });
+    const coat = add({ clover: { outfit: "coat", on: false } });
+    add({ clover: { outfit: "" } });
+    add({ clover: { outfit: "x".repeat(65) } });
+    add({ clover: { outfit: 3 } });
+    add({ outfit: "not ours" });
+    const parts = outfitParts(root);
+    expect([...parts.keys()]).toEqual(["hat", "coat"]);
+    expect(parts.get("hat")).toEqual([hat, hatBand]);
+    expect([hat.visible, coat.visible]).toEqual([true, false]);
+    const many = new Object3D();
+    for (let i = 0; i < OUTFIT_PARTS_MAX + 5; i++) { const o = new Object3D(); o.userData = { clover: { outfit: `part${i}` } }; many.add(o); }
+    expect(outfitParts(many).size).toBe(OUTFIT_PARTS_MAX);
   });
 
   test("refuses bad bytes with a sentence", async () => {
