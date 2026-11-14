@@ -403,7 +403,7 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
   if (again[0] !== tag) fail(`after the Plugins page's change the page lists ${JSON.stringify(again)}, not the newest first`);
   done.push("the order changed again from its control on the Plugins page (Newest first), with no card, and its page followed");
 
-  // 8. The window's skin while Notes keeper's tab shows, and not on another tab.
+  // 8. The window's skin while Notes keeper's tab shows: its bar and accent, never the sidebar (Bots doesn't offer a bot the sidebar).
   await escape(cdp);
   await clickTree(cdp, "Notes keeper in the sidebar", SIDEBAR_ITEMS, "Notes keeper");
   const skin = await until("the window's skin for Notes keeper's tab", 20_000, async () => {
@@ -411,12 +411,12 @@ async function notesSteps(ctx: ExampleCtx, otherSession: string): Promise<string
       const v = await cdp.evaluate(d.session, "(() => { const w = document.querySelector('.cl-window'); return w ? JSON.stringify({ skin: w.getAttribute('data-skin') || '', bar: w.style.getPropertyValue('--cl-skin-bar-text').trim() }) : null; })()").catch(() => null);
       if (typeof v === "string") {
         const o = JSON.parse(v) as { skin: string; bar: string };
-        if (o.skin.includes("sidebar") && ["#2B2618", "#F3EDDD"].includes(o.bar.toUpperCase())) return o;
+        if (o.skin.split(" ").includes("bar") && !o.skin.includes("sidebar") && ["#2B2618", "#F3EDDD"].includes(o.bar.toUpperCase())) return o;
       }
     }
     return undefined;
   }, async () => String((await Promise.all((await treeDocs(cdp)).map((d) => cdp.evaluate(d.session, "(() => { const w = document.querySelector('.cl-window'); return w ? (w.getAttribute('data-skin') || 'none') + ' ' + w.style.getPropertyValue('--cl-skin-bar-text') : ''; })()").catch(() => "")))).join(" ")));
-  done.push(`Notes keeper's tab skinned the window (${skin.skin}; bar text ${skin.bar})`);
+  done.push(`Notes keeper's tab skinned the window's bar, not its sidebar (${skin.skin}; bar text ${skin.bar})`);
 
   // 9. Turned off on the Plugins page: its frames and its layer's connection go, and its bot. Removed on its sealed
   //    card: its folder and its synced store go.
