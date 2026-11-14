@@ -6,6 +6,7 @@
 //
 // A name the loaded model doesn't have, or a scene she doesn't have, is refused with the names she does have, so the
 // model can pick again.
+import { OUTFIT_VALUES } from "./outfits";
 import type { StageChange, StageShown } from "./stage";
 import { MOOD_SWATCHES, MOODS } from "./stage";
 import type { StageStore } from "./store";
@@ -45,8 +46,8 @@ export const STAGE_TOOLS: readonly ToolDef[] = [
     { type: "object", properties: { scene: str("The scene's id.", 32) }, required: ["scene"], additionalProperties: false }),
   tool("set_mood", "Set the mood", `Set the stage's mood, which its light and colour follow. ${OBSERVE_NOTE}`,
     { type: "object", properties: { mood: { type: "string", enum: [...MOODS] } }, required: ["mood"], additionalProperties: false }),
-  tool("toggle_outfit", "Change outfit", `Turn one of the loaded model's outfit parts or accessories on or off (stage_status lists them); without "on", it flips. ${OBSERVE_NOTE}`,
-    { type: "object", properties: { part: str("The part's name."), on: { type: "boolean" } }, required: ["part"], additionalProperties: false }),
+  tool("toggle_outfit", "Change outfit", `Change what Alpha wears. On her own model, "part" is one of her outfits (lilac-dress, navy-uniform, yellow-raincoat; stage_status says which she wears): turning one on puts it on and saves it as her Outfit setting, the one the user picks on her Edit page; turning it off goes back to her lilac dress. On another avatar the user picked for her, it turns one of that model's own parts on or off (stage_status lists them); without "on", it flips. ${OBSERVE_NOTE}`,
+    { type: "object", properties: { part: str("The outfit's or the part's name."), on: { type: "boolean" } }, required: ["part"], additionalProperties: false }),
   tool("pin_note", "Pin a note", `Pin a short note to her stage (a checklist item, a timer's label, a quote), at most 6 at a time. The note gets a short handle (stage_status lists it) to unpin it by; the person sees the note, not the handle. ${OBSERVE_NOTE}`,
     { type: "object", properties: { text: str("The note, up to 200 characters.", 200) }, required: ["text"], additionalProperties: false }),
   tool("unpin_note", "Unpin a note", `Take a pinned note off her stage, by its handle (stage_status lists them), or every note with "all". ${OBSERVE_NOTE}`,
@@ -95,11 +96,13 @@ export async function runStageTool(name: string, args: unknown, store: StageStor
       await store.refreshCatalogue().catch(() => undefined);
       const v = await store.read();
       const st = v.state, c = v.catalog;
+      // On her own model, what she wears is her outfit setting (the Edit page's picker writes it too).
+      const outfit = (await store.wearsHers(c)) ? { her_outfit: await store.outfit(), her_outfits: OUTFIT_VALUES } : { outfit: st.outfit };
       const nickname = await settings("nickname").catch(() => undefined);
       const reactions = await settings("reactions").catch(() => undefined);
       const scene = v.scenes.find((x) => x.id === st.scene)?.title ?? st.scene;
       return status(`${PINNED_NOTE}\n${JSON.stringify({
-        scene: st.scene, mood: st.mood, expression: st.expression ?? null, outfit: st.outfit, tally: st.tally ?? null,
+        scene: st.scene, mood: st.mood, expression: st.expression ?? null, ...outfit, tally: st.tally ?? null,
         names_this_model_has: c === undefined ? null : { expressions: c.expressions, motions: c.motions, outfit_parts: c.outfit },
         scenes_she_has: v.scenes.map((x) => x.id),
         settings: { nickname: typeof nickname === "string" && nickname !== "" ? nickname : null, reactions: reactions !== false },

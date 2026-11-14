@@ -37,7 +37,7 @@ export const UI_STEPS = [
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
   "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
-  "Alpha's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to Alpha's own on her tab and shows on the plain bot's",
+  "Alpha's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to Alpha's own on her tab and shows on the plain bot's; her stage tools are offered to her and not to the plain bot; her outfit is her setting (her Outfit tool, the setting and her tool agree with what her figure wears)",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
   "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
   "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
@@ -745,6 +745,26 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
               writeFileSync(join(renders, `alpha-tab-${size}-${side}-${scheme}.png`), Buffer.from(shot.data, "base64"));
             }
           }
+        }
+        // Her three outfits (her `outfit` setting, the Edit page's picker's), at the window the app opens with the sidebar open, in
+        // each scheme: `alpha-outfit-<outfit>-<light|dark>.png`.
+        await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, root!.session);
+        await fold(false);
+        try {
+          for (const scheme of ["light", "dark"] as const) {
+            ctx.setAppearance?.(scheme);
+            for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+            await layGround(cdp, scheme);
+            for (const outfit of ["lilac-dress", "navy-uniform", "yellow-raincoat"]) {
+              await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: outfit }, 20_000);
+              await until(`her ${outfit} on her stage`, 20_000, async () => ((await inTree<string>(cdp, "(() => { const f = document.querySelector('figure.clvr-avatar[data-outfit]'); return f ? f.dataset.outfit : null; })()"))?.value === outfit ? true : undefined)).catch(() => undefined);
+              await sleep(1500);
+              const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, root!.session) as { data: string };
+              writeFileSync(join(renders, `alpha-outfit-${outfit}-${scheme}.png`), Buffer.from(shot.data, "base64"));
+            }
+          }
+        } finally {
+          await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: null }, 20_000).catch(() => undefined);
         }
       } finally {
         await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, root!.session).catch(() => undefined);
@@ -2059,6 +2079,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         // 2c. Her stage tools (in her wide room, the sidebar folded): each is present; one that the figure's renderer can do opens its list (Expression, from the model's catalogue), the others say why not.
         const toolNames = (await inTree<string>(cdp, "(() => { const t = [...document.querySelectorAll('.rm__tool')]; return t.length ? JSON.stringify(t.map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on'))) : null; })()"))?.value ?? "[]";
         if (!/Expression/.test(toolNames)) fail(`her stage tools are not drawn (${toolNames})`);
+        // Her own model wears her outfits, so her Outfit tool is on (it puts on her next outfit).
+        if (!toolNames.includes('"Outfit:on"')) fail(`her Outfit tool isn't on with her own model loaded (${toolNames})`);
         stageTools = `her stage tools were drawn (${toolNames})`;
         if ((await inTree<boolean>(cdp, "!!document.querySelector('.rm__tool[aria-label=Expression]:not([aria-disabled])')")) !== undefined) {
           await press("her Expression tool", ".rm__tool", "Expression");
@@ -2098,8 +2120,45 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots");
       await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
+      // 8. Her stage tools are hers alone (`mcpServers.stage.scope: own-bot`): a turn of hers is offered them, the plain bot's isn't.
+      const bots = async () => (await rpc.request<{ bots: { id: string; name: string; mainSession?: string }[] }>("bot.list", {})).bots;
+      const offered = async (who: string) => {
+        const session = await until(`${who}'s conversation`, 30_000, async () => (await bots()).find((b) => b.name === who)?.mainSession);
+        const tag = `TOOLS-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+        await rpc.request("session.send", { id: session, message: { text: `which tools ${tag}`, clientMessageId: `tools-${tag}` } }, 30_000);
+        const req = await until(`${who}'s turn's request`, 60_000, async () => ctx.requests().find((r) => r.lastUserText.includes(tag)));
+        return { session, tools: (req as { tools?: string[] }).tools ?? [] };
+      };
+      const STAGE_TOOLS = ["set_scene", "set_mood", "toggle_outfit", "pin_note", "stage_status"];
+      const stageIn = (tools: readonly string[]) => STAGE_TOOLS.filter((t) => tools.some((x) => x === t || x.endsWith(`__${t}`)));
+      const hers = await offered("Alpha");
+      const plain = await offered(name);
+      if (stageIn(hers.tools).length !== STAGE_TOOLS.length) fail(`Alpha's turn wasn't offered her stage tools: ${stageIn(hers.tools).join(", ") || "none"} of ${STAGE_TOOLS.join(", ")}`);
+      if (plain.tools.length === 0) fail(`${name}'s turn was offered no tools at all, so it proves nothing`);
+      if (stageIn(plain.tools).length > 0) fail(`${name}'s turn was offered Alpha's stage tools: ${stageIn(plain.tools).join(", ")}`);
+      const toolsSaid = `her stage tools (${STAGE_TOOLS.join(", ")}) were offered to her turn and none to ${name}'s (offered ${plain.tools.length} others)`;
+      // 9. Her outfit is her setting: her Outfit button puts on her next outfit there, the setting changed by the user
+      // (`plugin.settings.set`, the Edit page's picker's call) shows on her stage, and her tool's change shows in the setting.
+      const worn = async () => (await inTree<string>(cdp, "(() => { const f = document.querySelector('figure.clvr-avatar[data-outfit]'); return f ? f.dataset.outfit : null; })()"))?.value;
+      const outfitSet = async () => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "alpha" })).settings.find((x) => x.key === "outfit")?.value;
+      const wears = (what: string, want: string) => until(what, 30_000, async () => ((await worn()) === want ? true : undefined), async () => `her figure wears ${await worn()}, the setting says ${JSON.stringify(await outfitSet())}`);
+      let outfitSaid = "";
+      try {
+        await wears("her lilac dress, the default", "lilac-dress");
+        await press("her Outfit tool", ".rm__tool", "Outfit");
+        await until("her Outfit tool's pick in her setting", 20_000, async () => ((await outfitSet()) === "navy-uniform" ? true : undefined), async () => `the setting says ${JSON.stringify(await outfitSet())}`);
+        await wears("her navy uniform on her stage", "navy-uniform");
+        await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: "yellow-raincoat" }, 20_000);
+        await wears("the setting's raincoat on her stage", "yellow-raincoat");
+        await rpc.request("session.send", { id: hers.session, message: { text: 'ACCEPTANCE-CALL toggle_outfit {"part":"lilac-dress","on":true}', clientMessageId: `outfit-${randomBytes(4).toString("hex")}` } }, 30_000);
+        await until("her tool's outfit in her setting", 60_000, async () => ((await outfitSet()) === "lilac-dress" ? true : undefined), async () => `the setting says ${JSON.stringify(await outfitSet())}`);
+        await wears("her tool's lilac dress on her stage", "lilac-dress");
+        outfitSaid = "her outfit is her setting: her Outfit tool put on the navy uniform (the setting said so and her figure wore it), the setting set to the yellow raincoat put it on her figure, and her toggle_outfit tool's lilac dress was in the setting and on her figure";
+      } finally {
+        await rpc.request("plugin.settings.set", { id: "alpha", key: "outfit", value: null }, 20_000).catch(() => undefined);
+      }
       const rows = (JSON.parse(herSide) as { rows: string[] }).rows.length;
-      return `${side}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
+      return `${side}; ${toolsSaid}; ${outfitSaid}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
     } finally {
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });

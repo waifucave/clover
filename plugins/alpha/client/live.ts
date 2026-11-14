@@ -6,14 +6,14 @@ import { seenFolder, type Seen } from "./seen";
 export { GLYPH, NOW, type Seen } from "./seen";
 
 export interface BotRef { id: string; name: string }
-export interface BotNow { name: string; portrait?: string; model: string; state: string; mainSession: string; credit?: string }
+export interface BotNow { name: string; portrait?: string; model: string; state: string; mainSession: string; credit?: string; /** The user picked another avatar for her (the user layer's `avatar`). */ otherAvatar?: true }
 
 export function useBot(ref: BotRef): BotNow | undefined {
   const api = usePluginApi();
   const [bot, setBot] = useState<BotNow | undefined>();
   useEffect(() => {
     let live = true;
-    const take = (b: any) => { if (!live) return; const next: BotNow = { name: b.name, portrait: b.portrait, model: b.model, state: b.state, mainSession: b.mainSession, ...(typeof b.avatar?.credit === "string" && b.avatar.credit !== "" ? { credit: b.avatar.credit } : {}) }; setBot((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(next) ? was : next)); };
+    const take = (b: any) => { if (!live) return; const next: BotNow = { name: b.name, portrait: b.portrait, model: b.model, state: b.state, mainSession: b.mainSession, ...(typeof b.avatar?.credit === "string" && b.avatar.credit !== "" ? { credit: b.avatar.credit } : {}), ...(Array.isArray(b.userLayer) && b.userLayer.includes("avatar") ? { otherAvatar: true as const } : {}) }; setBot((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(next) ? was : next)); };
     void api.bots?.get(ref.id).then(take, () => undefined);
     const stop = api.bots?.watch((b: any) => { if (b.id === ref.id) take(b); });
     return () => { live = false; stop?.(); };
