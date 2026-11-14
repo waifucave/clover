@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
+import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, FIELDS_IDS, writeBotParts } from "./manifest-fields-step";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
 export interface UiRow { name: string; status: UiStatus; detail: string }
@@ -42,6 +43,7 @@ export const UI_STEPS = [
   "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
   "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
   "a third-party plugin fills the window's spots in Alpha's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
+  "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
 ] as const;
 
 /** A coding session in a folder of the run's user home, started when the run has none (`agent.start` as
@@ -2561,6 +2563,125 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}; ${offSaid}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
+    }
+  });
+
+  // 25: the plug rule in the window (the owner, November 14; design/plug-rule-2026-11-14.md). A plugin with a bot (lane B's
+  // Juniper fixture: an island tab beside it, a Browser panel of its own, settings): on Juniper's tab its Browser panel replaces
+  // the stock one, on Alpha's tab the stock one shows; Juniper's Edit page has a section of the plugin's settings headed with her
+  // name (a switch pressed, read back from the daemon); the Plugins page's second switch (the parts beside the bot) is pressed and
+  // the plugin keeps running with the bot kept. Then the same plugin with a Browser panel that never draws: after two seconds the
+  // panel says so and shows Clover's own, and its button tries the bot's again.
+  await step(25, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const id = FIELDS_IDS.bot;
+    const parent = mkdtempSync(join(tmpdir(), "clover-plug-app-"));
+    const win = async (expr: string) => (await inTree<string>(cdp, `(() => { const w = document.querySelector('.cl-window'); return w ? String(${expr}) : null; })()`))?.value;
+    const press = async (what: string, selector: string, text?: string, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          await cdp.evaluate(d.session, `(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (e) e.scrollIntoView({ block: "center" }); return true; })()`).catch(() => undefined);
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(700);
+    };
+    const inTreeNow = async (expr: string) => (await inTree<boolean>(cdp, `!!(${expr})`)) !== undefined;
+    const install = async (variant: keyof typeof BOT_PARTS_CLIENT, root: string) => {
+      const folder = writeBotParts(root, "anthropic/claude-sonnet-5-5", { client: BOT_PARTS_CLIENT[variant], settings: BOT_PARTS_SETTINGS });
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
+    };
+    const toTab = async (name: string) => {
+      await escape();
+      await press(`${name} in the sidebar`, SIDEBAR_ITEMS, name);
+    };
+    /** The bot's Browser panel on its own tab (the stock bar's toggle), opened. */
+    const openBrowser = async () => {
+      if (!(await inTreeNow("document.querySelector('.cl-panel__view[data-view=browser]')"))) await press("the Browser toggle", ".cl-panel-toggle[aria-label=\"Show Browser\"]");
+      await until("the Browser panel open", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-panel__view[data-view=browser]')"), () => dumpFrames(cdp));
+    };
+    const layerHas = async (sel: string) => {
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
+        if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(sel)})`).catch(() => false)) === true) return true;
+      }
+      return false;
+    };
+    const renders = process.env.CLOVER_ACCEPT_RENDERS;
+    const said: string[] = [];
+    try {
+      await install("drawing", join(parent, "a"));
+      // 1. Juniper's tab: her Browser panel replaces the stock one.
+      await toTab(BOT_PARTS_BOT);
+      await openBrowser();
+      await until("Juniper's own Browser panel drawn on her tab", 30_000, async () => ((await layerHas("[data-juniper-browser]")) ? true : undefined), () => dumpFrames(cdp));
+      if (await inTreeNow("document.querySelector('[data-replaced-panel=browser][data-fell]')")) fail("Juniper's drawing Browser panel was swapped for the stock one");
+      said.push("on Juniper's tab her own Browser panel replaced the stock one");
+      // On Alpha's tab the stock one shows, with none of Juniper's inside her panel sheet.
+      await toTab("Alpha");
+      await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
+      if (!(await inTreeNow("document.querySelector('.cl-chrome-panels .cl-panel')"))) await press("her Browser control", ".ac__act", "Browser");
+      await until("Alpha's panel sheet open", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')"), () => dumpFrames(cdp));
+      if (await inTreeNow(`document.querySelector('.cl-chrome-panels [data-replaced-panel]') || document.querySelector('.cl-chrome-panels [data-clover-entry^="${id}#"]')`)) fail("Juniper's Browser panel is in Alpha's panel sheet (it replaces the panel on her own tab only)");
+      await press("her Browser control again", ".ac__act", "Browser");
+      said.push("on Alpha's tab the stock panel (none of hers)");
+      // 2. Her Edit page: the plugin's settings as a section headed with her name; the switch pressed, read back from the daemon.
+      await toTab(BOT_PARTS_BOT);
+      await press("Edit Juniper", `[aria-label="Edit ${BOT_PARTS_BOT}"]`);
+      await until("the settings section headed with her name", 20_000, () => inTree<boolean>(cdp, `!!document.querySelector('.cl-bot-editor__settings[data-bot-settings="${id}"]')`), () => dumpFrames(cdp));
+      const heading = await win(`document.querySelector('.cl-bot-editor__settings-title')?.textContent`);
+      if (heading !== BOT_PARTS_BOT) fail(`the section's heading is ${JSON.stringify(heading)}, not ${BOT_PARTS_BOT}`);
+      if (!(await inTreeNow(`document.querySelector('.cl-bot-editor__settings [role=switch][aria-label="${BOT_PARTS_SETTINGS.loud.title}"]')`))) fail("the section has no switch for the plugin's per-bot setting");
+      if (renders) await shootWindow(cdp, renders, "plug-app-edit-section", ctx.setAppearance);
+      await press("the Speaks up switch", `.cl-bot-editor__settings [role=switch][aria-label="${BOT_PARTS_SETTINGS.loud.title}"]`);
+      await until("the setting kept by the daemon", 20_000, async () => {
+        const r = await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id, bot: id }).catch(() => undefined);
+        return r?.settings.find((x) => x.key === "loud")?.value === true ? true : undefined;
+      });
+      if (renders) await unshootWindow(cdp, ctx.setAppearance);
+      said.push("her Edit page's section (her name) pressed a per-bot switch and the daemon has it");
+      // 3. The Plugins page: the switch for the parts beside her bot, pressed; the plugin keeps running and she is kept.
+      await escape();
+      await press("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
+      await until("the Plugins page", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')"), () => dumpFrames(cdp));
+      await press("the Installed tab", "[role=tab]", "Installed");
+      const toggle = `[role=switch][aria-label="Its parts beyond Acceptance Juniper's tab"]`;
+      await until("the app-parts switch on its row", 20_000, () => inTree<boolean>(cdp, `!!document.querySelector('${toggle}')`), () => dumpFrames(cdp));
+      if (renders) await shootWindow(cdp, renders, "plug-app-plugins-toggle", ctx.setAppearance);
+      if (renders) await unshootWindow(cdp, ctx.setAppearance);
+      await press("the app-parts switch", toggle);
+      await until("its app parts off in the daemon, the plugin still running", 30_000, async () => {
+        const r = await rpc.request<{ plugin: { state: string; parts?: { app?: { enabled?: boolean } } } }>("plugin.get", { id }).catch(() => undefined);
+        return r?.plugin.state === "running" && r.plugin.parts?.app?.enabled === false ? true : undefined;
+      }, async () => JSON.stringify(await rpc.request("plugin.get", { id }).catch(() => undefined)).slice(0, 300));
+      const kept = (await rpc.request<{ bots: { id: string }[] }>("bot.list", {})).bots.some((b) => b.id === id);
+      if (!kept) fail("the bot is gone after her app parts were switched off");
+      if ((await inTree<boolean>(cdp, `document.querySelector('${toggle}')?.getAttribute('aria-checked') === 'false'`)) === undefined) fail("the switch doesn't show the parts off");
+      await toTab(BOT_PARTS_BOT);
+      said.push("the Plugins page's switch turned her parts beside the bot off, the plugin running, Juniper kept and her tab still there");
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      // 4. A replacement that never draws: after two seconds the stock panel shows, the header says so, and the button tries again.
+      await install("never", join(parent, "b"));
+      await toTab(BOT_PARTS_BOT);
+      await openBrowser();
+      const fellTitle = `${BOT_PARTS_BOT}'s browser panel didn't draw; showing Clover's.`;
+      await until("the panel falling back to Clover's own", 30_000, () => inTree<boolean>(cdp, `document.querySelector('.cl-panel__view[data-view=browser]')?.getAttribute('aria-label') === ${JSON.stringify(fellTitle)}`), () => dumpFrames(cdp));
+      if (!(await inTreeNow("document.querySelector('[data-replaced-panel=browser] [data-clover-entry^=\"clover/\"]')"))) fail("after the fall back the stock Browser panel isn't in the panel");
+      await press("Try Juniper's again", ".cl-panel__text-button", `Try ${BOT_PARTS_BOT}'s again`);
+      await until("the fall back again (her panel still doesn't draw)", 30_000, () => inTree<boolean>(cdp, `document.querySelector('.cl-panel__view[data-view=browser]')?.getAttribute('aria-label') === ${JSON.stringify(fellTitle)}`), () => dumpFrames(cdp));
+      said.push("a Browser panel that never draws fell back to Clover's after 2 s with its header saying so, and Try again tried hers once more");
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
+      return said.join("; ");
+    } finally {
+      await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+      await escape().catch(() => undefined);
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
     }
   });
 }

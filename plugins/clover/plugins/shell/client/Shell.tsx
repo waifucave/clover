@@ -22,10 +22,13 @@ import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
 import { KeptTab } from "./KeptTab";
+import { ReplacedPanel } from "./ReplacedPanel";
 import type { ChromeApi } from "./chrome";
 
 /** The panel keys besides the session column, each a `panel` entry's key. */
 const PANEL_KEYS = ["terminal", "diff", "browser", "files", "agent"] as const;
+/** The panels a bot's plugin may replace on its own tab and that fall back to the stock one when the replacement does not draw. */
+const REPLACEABLE = ["browser", "agent"] as const;
 
 /** What `main` shows: B's `main` props (`route`, `params`). */
 export interface ShellRoute {
@@ -143,11 +146,21 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       : { app: id, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}) };
   // Which panels anything fills (the `panel` spot by key; a bot's column is `bot.side`): a toggle is offered only for one that
   // does, and an open panel whose filler goes away closes. A constant list of hooks, whatever the tab.
-  const fills = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, props).entries.length > 0;
-  const filledList = [
-    kind === "bot" ? fills("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : fills("panel", "session", panelProps("session")),
-    ...PANEL_KEYS.map((id) => fills("panel", id, panelProps(id))),
+  const entriesOf = (spot: string, key: string | undefined, props: Record<string, unknown>) => useSpotEntries(spot, key, props).entries;
+  const entryLists = [
+    kind === "bot" ? entriesOf("bot.side", undefined, botRef ? { bot: botRef, session: tabSession, sessionKind: "bot" } : {}) : entriesOf("panel", "session", panelProps("session")),
+    ...PANEL_KEYS.map((id) => entriesOf("panel", id, panelProps(id))),
   ];
+  const filledList = entryLists.map((l) => l.length > 0);
+  // A bot's own plugin may fill the Browser or its agent's panel on its tab (the winner is not a shipped part): such a panel is watched, and
+  // when it does not draw the stock one shows in its place until the person asks to try the bot's again.
+  const replacedOnTab = (id: string): boolean => {
+    const i = PANEL_KEYS.indexOf(id as (typeof PANEL_KEYS)[number]);
+    return botRef !== undefined && (REPLACEABLE as readonly string[]).includes(id) && i >= 0 && entryLists[i + 1]?.[0] !== undefined && !entryLists[i + 1]![0]!.pluginId.startsWith("clover/");
+  };
+  const [fell, setFell] = useState<Record<string, boolean>>({});
+  const [tries, setTries] = useState<Record<string, number>>({});
+  const fellKey = (id: string) => `${key}|${id}`;
   const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
   // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
   const settled = (shown?.route !== "agent" || session !== undefined) && (agent === undefined || agentSession !== undefined);
@@ -158,18 +171,36 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const views: PanelView[] = kind
     ? open
         .filter((id) => id !== "session")
-        .map((id) => ({
-          id,
-          title: id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id),
-          content: (header: HTMLElement | null, usedLast: boolean) => (
-            <Spot
-              name="panel"
-              spotKey={id}
-              props={{ ...panelProps(id), header, usedLast }}
-              fallback={<PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />}
-            />
-          ),
-        }))
+        .map((id) => {
+          const base = id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id);
+          const empty = <PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />;
+          if (replacedOnTab(id) && botRef) {
+            const hasFell = fell[fellKey(id)] === true;
+            return {
+              id,
+              title: hasFell ? S.fellBack(botRef.name, S.views[id] ?? id) : base,
+              ...(hasFell
+                ? {
+                    actions: (
+                      <button type="button" className="cl-panel__text-button" onClick={() => { setTries((t) => ({ ...t, [fellKey(id)]: (t[fellKey(id)] ?? 0) + 1 })); setFell((f) => ({ ...f, [fellKey(id)]: false })); }}>
+                        {S.tryAgain(botRef.name)}
+                      </button>
+                    ),
+                  }
+                : {}),
+              content: (header: HTMLElement | null, usedLast: boolean) => (
+                <ReplacedPanel key={`${fellKey(id)}|${tries[fellKey(id)] ?? 0}`} id={id} props={panelProps(id)} header={header} usedLast={usedLast} fell={hasFell} onFell={() => setFell((f) => (f[fellKey(id)] ? f : { ...f, [fellKey(id)]: true }))} empty={empty} />
+              ),
+            };
+          }
+          return {
+            id,
+            title: base,
+            content: (header: HTMLElement | null, usedLast: boolean) => (
+              <Spot name="panel" spotKey={id} props={{ ...panelProps(id), header, usedLast }} fallback={empty} />
+            ),
+          };
+        })
         .filter((v) => belongsIn(v, kind))
     : [];
 

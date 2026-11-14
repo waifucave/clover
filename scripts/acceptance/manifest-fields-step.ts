@@ -159,10 +159,11 @@ export const BOT_PARTS_BOT = "Juniper";
 /** A plugin with a bot: an island tab beside it (`"app": true`), a tool server inside it (`own-bot`, JuniperStage) and
  *  one beside it (JuniperNotes), and its tab's Browser panel replaced. `model` is the model Alpha runs, so its bot's
  *  turns reach the run's fake provider. */
-export function writeBotParts(root: string, model: string): string {
+export function writeBotParts(root: string, model: string, o: { client?: string; settings?: Record<string, unknown> } = {}): string {
   return writePlugin(join(root, FIELDS_IDS.bot), {
     manifest: 1, id: FIELDS_IDS.bot, name: "Acceptance Juniper", version: "0.0.1", engines: ENGINES,
     host: { entry: "host/index.js", runtime: "bun" }, client: { entry: "client/index.js" },
+    ...(o.settings !== undefined ? { settings: o.settings } : {}),
     contributes: {
       bot: { name: BOT_PARTS_BOT, instructions: "bot/instructions.md", model: { default: model } },
       mcpServers: {
@@ -176,9 +177,21 @@ export function writeBotParts(root: string, model: string): string {
     },
   }, hostSource({ stage: ["JuniperStage"], notes: ["JuniperNotes"] }), {
     "bot/instructions.md": "You are the acceptance run's bot.\n",
-    "client/index.js": "export const Day = () => null;\nexport const Browser = () => null;\n",
+    "client/index.js": o.client ?? "export const Day = () => null;\nexport const Browser = () => null;\n",
   });
 }
+
+/** What the window run needs of the plugin with a bot: a Browser panel that draws a marker (`drawing`), or one that never
+ *  mounts (a module that waits forever: the frame reports no size, so the shell shows the stock panel in its stead). */
+export const BOT_PARTS_CLIENT = {
+  drawing: "import { createElement } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\n",
+  never: "await new Promise(() => {});\nexport const Day = () => null;\nexport const Browser = () => null;\n",
+} as const;
+/** Settings the plugin carries for the bot's Edit page: one for the bot (the section's switch) and one for the account. */
+export const BOT_PARTS_SETTINGS = {
+  loud: { type: "boolean", title: "Speaks up", scope: "bot", default: false },
+  greeting: { type: "string", title: "Greeting", default: "hello" },
+} as const;
 
 /** Its OK card's lines for its parts (packages/plugin-sdk/src/manifest/validate.ts's `botPartLines`), and its checkbox
  *  for the parts beyond its bot's tab (packages/core/src/registry/core.ts). */

@@ -70,6 +70,7 @@ const COMPONENTS: Record<string, EntryComponent> = {
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
   Browser: stub("panel:browser"),
+  Dead: () => <iframe data-clover-entry="juniper#browser" />,
   Status: stub("status"),
 };
 
@@ -181,6 +182,24 @@ describe("the shell", () => {
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session", "browser"] }, [entry("clover/browser-view", "panel", "Browser", { key: "browser" })]);
     expect(toggles()).toEqual(["Session", "Terminal", "Browser"]);
     expect(stubText("panel:browser")).toContain('"app":"browser"');
+  });
+
+  test("a bot's own Browser panel that does not draw gives way to the stock one's place, says so, and tries again on the person's word", async () => {
+    // The replacement is a frame that never reports a size; the stand-in resolver has no stock-placement hint, so what shows is the title, the retry button and the marks.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
+      entry("clover/browser-view", "panel", "Browser", { key: "browser" }),
+      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
+    ]);
+    const region = () => document.querySelector('.cl-panel__view[data-view="browser"]')!;
+    expect(region().getAttribute("aria-label")).toBe("Browser");
+    expect(document.querySelector('[data-replaced-panel="browser"]')).not.toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 2300)));
+    expect(region().getAttribute("aria-label")).toBe("Alpha's browser panel didn't draw; showing Clover's.");
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Try Alpha's again" }));
+    await act(() => settle(3));
+    expect(region().getAttribute("aria-label")).toBe("Browser");
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(false);
   });
 
   test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {
