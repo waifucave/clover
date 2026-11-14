@@ -2627,6 +2627,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await pressIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       }
       await pressIn("her Code switch", ".as__opt, .cl-sidebar [role=radio]", "Code");
+      // The stock sidebar's Code side lists the coding sessions and doesn't change the tab: the session's row is pressed (her own sidebar's switch went to it).
+      if ((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) === undefined) await pressIn("the coding session's row", SIDEBAR_ITEMS, codeId).catch(() => undefined);
       await until("the coding session shown", 30_000, async () => (((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined) ? true : undefined), () => dumpFrames(cdp));
       // The plugin's layer is first served when the first preview asks for it, which loads the window's frame once more and closes the
       // open panel (the app logs "loads again to frame a layer installed after it was served"): the panel is opened again until it draws.
@@ -2697,6 +2699,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     };
     const toTab = async (name: string) => {
       await escape();
+      await press("the Bots side", ".cl-sidebar [role=radio]", "Bots").catch(() => undefined);
       await press(`${name} in the sidebar`, SIDEBAR_ITEMS, name);
     };
     /** The bot's Browser panel on its own tab (the stock bar's toggle), opened. */
