@@ -4,6 +4,12 @@
   "strings": {
     "clover.island.label": "Clover island.",
     "clover.island.nothingNeedsYou": "Nothing needs you",
+    "clover.island.lines": "Updates from plugins",
+    "clover.island.lineProgress": "{percent} percent",
+    "clover.island.linesMore": {
+      "one": "1 more",
+      "other": "{count} more"
+    },
     "clover.island.needsYouCount": {
       "one": "1 thing needs you.",
       "other": "{count} things need you."

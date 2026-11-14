@@ -702,6 +702,75 @@
   box-shadow: inset 0 0 0 0.5px var(--clover-island-card-rim, #3C3C3C);
 }
 
+/* The plugins' lines (`island.line`): the island's own rows. A sender sets words, an icon and a progress; everything
+   below, the size included, is the island's. */
+
+.clv-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.clv-line {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  min-height: 30px;
+}
+
+.clv-line-icon {
+  grid-row: 1 / span 2;
+  font-size: 14px;
+  line-height: 1;
+  padding-top: 2px;
+  color: var(--clover-island-muted, #8B8B8B);
+}
+
+.clv-line-from {
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--clover-island-muted, #8B8B8B);
+}
+
+.clv-line-text {
+  grid-column: 2;
+  font-size: var(--clover-font-size-control, 14px);
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--clover-island-text, #FFFFFF);
+}
+
+.clv-line-bar {
+  grid-column: 2;
+  position: relative;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--clover-island-card-rim, #3C3C3C);
+}
+
+.clv-line-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--clover-island-text, #FFFFFF);
+}
+
+.clv-lines-more {
+  padding-left: 24px;
+  font-size: 11px;
+  color: var(--clover-island-muted, #8B8B8B);
+}
+
 .clv-empty {
   flex: 1 1 auto;
   display: flex;

@@ -35,6 +35,7 @@ import { NEEDS_YOU, guestTabs, select, selectedTab, tabState, type GuestTab, typ
 import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
+import { useLines, type LineSource } from "./Lines";
 import { NeedsYou, OpenIsland } from "./OpenIsland";
 import { Strip } from "./Strip";
 import { useSealedKit } from "./sealed";
@@ -74,6 +75,10 @@ export interface IslandProps {
   tabs?: readonly IslandTabEntry[];
   /** The bots' names and ids: another plugin named as one gets no tab. */
   botNames?: readonly string[];
+  /** The plugins' lines (`island.line`): asked for only while the open island's Needs you tab is up. */
+  lines?: LineSource;
+  /** A bot's name for its id, for a line that names a bot. */
+  botName?: (id: string) => string | undefined;
   /** The tab the working wing opens on; the island's current one when absent. */
   workingTab?: string;
   /** A question answered here. Resolve false (or throw) when the answer did not go through. */
@@ -198,6 +203,9 @@ export function Island(props: IslandProps): ReactElement {
   }, [queue, timers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isOpen = alwaysOpen || morph.openedAt !== null;
+  // The plugins' lines are asked for only while they can be seen: the island open, on Needs you, and not on its way out.
+  const needsYouUp = isOpen && !morph.closing && (selectedTab(tabs)?.id ?? NEEDS_YOU.id) === NEEDS_YOU.id;
+  const lines = useLines(props.lines, needsYouUp);
   const now = timers.now();
   const current = queue.current ? byId.get(queue.current.id) : undefined;
   const showCurrent = current !== undefined && (!gated || !isSealed(current) || whole[current.id] === true);
@@ -376,6 +384,8 @@ export function Island(props: IslandProps): ReactElement {
           cards={cards}
           drafts={drafts}
           errors={errors}
+          lines={lines}
+          botName={props.botName}
           onChoose={(card, q, o) => questionHandlers(card).onChoose(q, o)}
           onType={(card, q, text) => questionHandlers(card).onType(q, text)}
           onBack={(card) => questionHandlers(card).onBack()}

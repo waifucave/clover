@@ -16,7 +16,9 @@ import { selectedTab, showsDots, type TabState } from "../model/tabs";
 import { springEasing, SURFACE_SPRING } from "../model/curves";
 import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
+import type { LinePoll } from "../model/lines";
 import { Glyph } from "./glyphs";
+import { LineRows } from "./Lines";
 import { useIslandStyles } from "./styles";
 
 const DOT_EASING = springEasing(0.3, 0.85);
@@ -243,6 +245,9 @@ export interface NeedsYouProps {
   cards: readonly IslandCard[];
   drafts?: Readonly<Record<string, QuestionDraft>>;
   errors?: Readonly<Record<string, string>>;
+  /** The plugins' lines (`island.line`), drawn above the cards in the island's own rows. */
+  lines?: LinePoll;
+  botName?: (id: string) => string | undefined;
   onChoose?: (card: IslandCard, question: number, option: number) => void;
   onType?: (card: IslandCard, question: number, text: string) => void;
   onBack?: (card: IslandCard) => void;
@@ -250,11 +255,13 @@ export interface NeedsYouProps {
   scrolls?: boolean;
 }
 
-export function NeedsYou({ cards, drafts = {}, errors = {}, onChoose, onType, onBack, onAdvance, scrolls = true }: NeedsYouProps): ReactElement {
-  if (cards.length === 0) return <EmptyTab line={t("clover.island.nothingNeedsYou")} />;
+export function NeedsYou({ cards, drafts = {}, errors = {}, lines, botName, onChoose, onType, onBack, onAdvance, scrolls = true }: NeedsYouProps): ReactElement {
+  const shown = lines !== undefined && lines.lines.length > 0;
+  if (cards.length === 0 && !shown) return <EmptyTab line={t("clover.island.nothingNeedsYou")} />;
   return (
     <TabScroll scrolls={scrolls}>
-      <div className="clv-needs">
+      {shown ? <LineRows poll={lines} botName={botName} /> : null}
+      {cards.length === 0 ? null : <div className="clv-needs">
         {[...cards].reverse().map((card) => (
           <div className="clv-needs-row" key={card.id}>
             <div className="clv-inner-card">
@@ -274,7 +281,7 @@ export function NeedsYou({ cards, drafts = {}, errors = {}, onChoose, onType, on
             </div>
           </div>
         ))}
-      </div>
+      </div>}
     </TabScroll>
   );
 }

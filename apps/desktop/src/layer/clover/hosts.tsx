@@ -8,7 +8,7 @@
 // words come in the user's language with English beneath.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, Spot, useApprovals, useAvatarControl, useAvatarSpeech, useMountContext, usePluginApi, useSurface, useSpotEntries, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
-import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type IslandTabEntry, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
+import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type IslandTabEntry, type LineSource, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
 import { coalesced } from "./coalesce";
 import { islandCards } from "./cards";
 import { usePillBots } from "./pill-bots";
@@ -94,11 +94,33 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
     ...(e.fields["attention"] === "never" || e.fields["attention"] === "badge" || e.fields["attention"] === "expand" ? { attention: e.fields["attention"] } : {}),
     render: () => <Spot name="island.tab" only={e.ref} />,
   })), [tabEntries]);
+  // The plugins' lines (`island.line`, the island's own point): its entries and a call of an entry's handler, off the plugin
+  // API the island's frame holds; the island asks only while its Needs you tab is open, and decides everything it draws.
+  const api = usePluginApi();
+  const lines = useMemo((): LineSource | undefined => {
+    const points = api.points;
+    if (points === undefined) return undefined;
+    return {
+      entries: async () => (await points.entries("island.line")).map((e) => ({ pluginId: e.pluginId, entryId: e.entryId })),
+      call: (entry) => points.call("island.line", entry, "handler", undefined, { timeoutMs: 2000 }),
+      watch: (listener) => points.watch("island.line", () => listener()),
+    };
+  }, [api]);
+  const [bots, setBots] = useState<readonly { id: string; name: string }[]>([]);
+  useEffect(() => {
+    const list = api.bots?.list;
+    if (list === undefined) return;
+    let live = true;
+    void list().then((all) => { if (live) setBots(all.map((b) => ({ id: b.id, name: b.name }))); }, () => undefined);
+    return () => { live = false; };
+  }, [api]);
   const host: IslandHost | undefined = environment === undefined ? undefined : {
     environment,
     window,
     cards: islandCards(approvals.cards),
     tabs,
+    ...(lines !== undefined ? { lines } : {}),
+    botName: (id) => bots.find((b) => b.id === id)?.name,
     t,
   };
   if (host === undefined) return null;

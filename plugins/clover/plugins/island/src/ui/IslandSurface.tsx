@@ -17,6 +17,7 @@ import type { Rect } from "../model/geometry";
 import { islandPlacement, overlayWindow, toFrameRect, type SurfaceEnvironment, type SurfaceWindowSpec } from "../model/placement";
 import { isSealed, type IslandCard, type QuestionCard } from "../model/cards";
 import { Island, type IslandTabEntry, type IslandTimers } from "./Island";
+import type { LineSource } from "./Lines";
 
 /** What the island needs from its window (lane E's surface host). */
 export interface SurfaceHostApi {
@@ -35,6 +36,9 @@ export interface IslandSurfaceProps {
   tabs?: readonly IslandTabEntry[];
   /** The bots' names and ids: another plugin named as one gets no tab. */
   botNames?: readonly string[];
+  /** The plugins' lines (`island.line`). */
+  lines?: LineSource;
+  botName?: (id: string) => string | undefined;
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   host?: SurfaceHostApi;
   reducedMotion?: boolean;
@@ -121,6 +125,8 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
       working={props.working}
       tabs={props.tabs}
       botNames={props.botNames}
+      lines={props.lines}
+      botName={props.botName}
       onAnswerQuestion={props.onAnswerQuestion}
       alwaysOpen={placement.mode === "window"}
       onRegions={onRegions}
