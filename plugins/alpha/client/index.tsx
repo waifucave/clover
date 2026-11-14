@@ -1,7 +1,7 @@
 // Alpha's own pieces of her tab, as a plugin's client components, each in a frame of her plugin: the living scene behind the page (`AlphaHeader`), her
 // controls in the top band (`AlphaControls`) and her room, everything she keeps in front of the stage (`AlphaRoom`: her name, what she is doing, the
-// pinned note, the day's tally, the stage tools, the dock that is the way to every other tab). They read only through the plugin API (`bots`,
-// `conversation`, `shell`, her stage's store) and draw in the tab's own tokens; nothing here is special-cased for Alpha by the app.
+// pinned note, the day's tally, the stage tools; the way to every other tab is the window's own sidebar, beside her tab). They read only through the
+// plugin API (`bots`, `conversation`, `shell`, her stage's store) and draw in the tab's own tokens; nothing here is special-cased for Alpha by the app.
 import { AlphaScene } from "./backdrop";
 import type { BotRef } from "./live";
 export { AlphaScene };

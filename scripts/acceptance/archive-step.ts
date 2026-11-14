@@ -2,7 +2,7 @@
 // home (written into the home's session store before the daemon starts, as that app kept it) is listed on the Archive
 // page by its title, opens read-only, and its transcript shows what was said, the user's message and the reply.
 import { SessionStore } from "../../packages/core/src/sessions/store";
-import { clickTree, fail, pluginsPage, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { clickTree, escape, fail, SIDEBAR_ITEMS, treeDocs, until, type ExampleCtx } from "./example-steps";
 
 export const ARCHIVE_STEP = "the archive: a code session the previous app left in the home is listed on the Archive page by its title, opens read-only, and its transcript shows the user's message and the reply";
 
@@ -29,9 +29,10 @@ export async function archiveStep(ctx: ExampleCtx): Promise<string> {
   const listed = await rpc.request<{ sessions: { id: string; title?: string; mode: string }[] }>("archive.list", {});
   const mine = listed.sessions.find((s) => s.title === ARCHIVE_TITLE);
   if (mine === undefined) fail(`archive.list doesn't list the old session (${listed.sessions.map((s) => s.title ?? s.id).join(", ") || "none"})`);
-  // From the Plugins page's stock sidebar, as the user reaches it (her tab's own sidebar has no Archive row).
-  await pluginsPage(cdp, "Installed");
-  await clickTree(cdp, "the stock sidebar's Archive row", ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]", "Archive");
+  // From the window's own sidebar, as the user reaches it on any tab (Alpha's too: the stock sidebar is beside every tab), out of any dialog first.
+  await escape(cdp);
+  for (const d of await treeDocs(cdp)) await cdp.evaluate(d.session, "document.querySelector('.cl-settings__close')?.click()").catch(() => undefined);
+  await clickTree(cdp, "the sidebar's Archive row", SIDEBAR_ITEMS, "Archive");
   await clickTree(cdp, `the old session in the Archive list (${ARCHIVE_TITLE})`, "button.cl-archive__session", ARCHIVE_TITLE, 30_000);
   const text = await until("its transcript in the reader", 30_000, async () => {
     let all = "";

@@ -126,21 +126,32 @@ describe("appearance and the fallback order", () => {
   });
 
   test("a window skin the app would drop a group of is a warning at validation, by appearance, with the app's reason", async () => {
-    const sidebar = { sidebar: "#FFFDF6", "sidebar.text": "#2B2618", "sidebar.muted": "#6B6046", "sidebar.hover": "#FDF7E8" };
-    const files = (selected: string) => new Map([
+    const files = (barPaint: string) => new Map([
       ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
-      ["t.json", JSON.stringify({ theme: 1, name: "Luna", appearance: "light", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { ...sidebar, "sidebar.selected": selected } } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", appearance: "light", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { bar: barPaint, "bar.text": "#221A33", "bar.rule": "#C9BDEB" } } })],
     ]);
-    const check = async (selected: string) => {
-      const f = files(selected);
+    const check = async (barPaint: string) => {
+      const f = files(barPaint);
       return (await validateTree({ readText: (p) => f.get(p), exists: (p) => f.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
     };
-    // Clover's attention mark on a selected row this dark is under 3:1 (a light-only theme: the dark appearance isn't
-    // checked, as the app doesn't skin it).
-    const weak = await check("#F6E8C3");
+    // Clover's attention mark on a bar this tinted is under 3:1 (a light-only theme: the dark appearance isn't checked, as
+    // the app doesn't skin it).
+    const weak = await check("#E4D2F7");
     expect(weak.map((i) => [i.severity, i.code, i.file, i.path])).toEqual([["warning", "shell_dropped", "t.json", "/shell"]]);
-    expect(weak[0]!.message).toBe("in light appearance the window doesn't use its sidebar group: Clover's attention mark on the selected row is 2.79:1; it needs 3:1");
-    expect(await check("#FCF2D7")).toEqual([]);
+    expect(weak[0]!.message).toMatch(/^in light appearance the window doesn't use its bar group: Clover's attention mark on the bar is \d\.\d\d:1; it needs 3:1$/);
+    expect(await check("#F6F2FF")).toEqual([]);
+  });
+
+  test("the sidebar's old shell names still load, are ignored, and each is a warning: Bots doesn't offer the sidebar", async () => {
+    const files = new Map([
+      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { bar: "#F6F2FF", "bar.text": "#221A33", "bar.rule": "#C9BDEB", "sidebar.mode": "none" }, dark: { tokens: { "sidebar.mode": "none", sidebar: "#16132B" } } } })],
+    ]);
+    const issues = (await validateTree({ readText: (p) => files.get(p), exists: (p) => files.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
+    const told = issues.filter((i) => i.code === "shell_not_offered");
+    expect(told.map((i) => [i.severity, i.file, i.path])).toEqual([["warning", "t.json", "/shell/sidebar"], ["warning", "t.json", "/shell/sidebar.mode"]]);
+    expect(told[1]!.message).toBe('Bots doesn\'t offer the sidebar: "sidebar.mode" is ignored, and the sidebar stays as it is on every tab.');
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
   test("a change to card styling waits for its OK: cards keep the values last OK'd, the rest applies (review S7)", () => {

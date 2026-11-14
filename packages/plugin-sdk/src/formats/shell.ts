@@ -1,21 +1,20 @@
-// A bot's shell style (a theme's optional `shell` block): the window's own chrome wears the bot's palette while that bot's
-// tab is the one showing, and the stock look returns on any other tab. Bounded to a handful of colours and paints: no layout,
-// no content, no CSS; the shell reads them as `--clover-shell-*` variables and falls back to its own colours for a group
-// whose pairs miss their contrast floors. Pure: the theme lint, the main process and the tests all call these.
+// A bot's shell style (a theme's optional `shell` block): what Bots offers a bot of the window's own chrome while that bot's
+// tab is the one showing (spec §5.5, "Whoever owns a plug sets the rules"): its top bar and the right panels, never the left
+// sidebar, which looks the same on every tab. Bounded to a handful of colours and paints: no layout, no content, no CSS; the
+// shell reads them as `--clover-shell-*` variables and falls back to its own colours for a group whose pairs miss their
+// contrast floors. Pure: the theme lint, the main process and the tests all call these.
 
 /** The names a `shell` block may set, by group. A group is applied whole or not at all. */
 export const SHELL_GROUPS = {
   /** The title bar: a paint (a colour or a gradient, translucent over the tab's backdrop if it likes), its text and its rule. */
   bar: ["bar", "bar.text", "bar.rule"],
-  /** The sidebar: a paint, its text, its quiet text, the selected row's fill and a hovered row's fill. */
-  sidebar: ["sidebar", "sidebar.text", "sidebar.muted", "sidebar.selected", "sidebar.hover"],
-  /** The accent the chrome's marks and focus take. Optional on its own. */
+  /** The accent the bar's and the right panels' marks and focus take (never the sidebar's). Optional on its own. */
   accent: ["accent"],
 } as const;
 export type ShellColourGroup = keyof typeof SHELL_GROUPS;
 export type ShellGroup = ShellColourGroup | "shape";
 
-/** The SHAPE of the chrome while a bot's tab shows: what the bar, the sidebar and the panels are like, as closed choices
+/** The SHAPE of the chrome while a bot's tab shows: what the bar and the panels are like, as closed choices
  *  and bounded whole numbers (CSS pixels). Data only: the shell draws every one of its own parts in the shape these say,
  *  wherever the bot's layout places them (`chrome.*` spots, `formats/layout.ts`). Each name stands alone (a theme sets the
  *  ones it wants); a value outside its choices or range is dropped and that part stays the shell's own. */
@@ -25,16 +24,6 @@ export const SHELL_SHAPE: Readonly<Record<string, readonly string[] | { min: num
   "bar.height": { min: 28, max: 96 },
   "bar.inset": { min: 0, max: 32 },
   "bar.radius": { min: 0, max: 40 },
-  /** `edge`: beside the page, edge to edge (as every tab has). `float`: inset over the page, with rounded corners, which then runs under it. `rail`: float, resting as a narrow rail of icons. `none`: no stock sidebar at all, so the bot's own parts (a dock, a strip) are the only navigation; it holds only while a part of the bot says it draws one (`shell.provide(["sidebar"])`), else the shell shows a floating sidebar so the user is never stranded. */
-  "sidebar.mode": ["edge", "float", "rail", "none"],
-  /** How it rests when the tab opens: the user's toggle (the sidebar part) changes it for as long as the tab is open. */
-  "sidebar.start": ["expanded", "collapsed"],
-  "sidebar.width": { min: 180, max: 360 },
-  "sidebar.inset": { min: 0, max: 32 },
-  "sidebar.radius": { min: 0, max: 40 },
-  "sidebar.density": ["compact", "regular", "roomy"],
-  /** `glass`: the window's material shows through (the default); `solid`: its paint fills it; `none`: nothing of its own: the page's scene shows through and the rows float on it. */
-  "sidebar.material": ["glass", "solid", "none"],
   /** Where a panel the user opens shows: `column` (the standard right column), `drawer` (over the page's right edge), `float` (a card over the page), `sheet` (a sheet up from the bottom). A layout that places `chrome.panels` puts the panels in that spot instead. */
   "panel.mode": ["column", "drawer", "float", "sheet"],
   "panel.width": { min: 280, max: 720 },
@@ -45,6 +34,18 @@ export const SHELL_SHAPE: Readonly<Record<string, readonly string[] | { min: num
 export const SHELL_SHAPE_NAMES: readonly string[] = Object.keys(SHELL_SHAPE);
 export const SHELL_TOKEN_NAMES = [...(Object.values(SHELL_GROUPS).flat() as readonly string[]), ...SHELL_SHAPE_NAMES] as readonly string[];
 
+/** The names Bots doesn't offer a bot (the sidebar's paint group and its shape, from before the owner's rule of November 14):
+ *  a theme that has them still loads, they are ignored (`resolveShell` never returns them), and the theme lint warns
+ *  (`shell_not_offered`, `SHELL_NOT_OFFERED_WORDS`). The sidebar stays as it is on every tab. */
+export const SHELL_NOT_OFFERED: readonly string[] = [
+  "sidebar", "sidebar.text", "sidebar.muted", "sidebar.selected", "sidebar.hover",
+  "sidebar.mode", "sidebar.start", "sidebar.width", "sidebar.inset", "sidebar.radius", "sidebar.density", "sidebar.material",
+];
+/** The theme lint's warning for a name of `SHELL_NOT_OFFERED`. */
+export const SHELL_NOT_OFFERED_WORDS = (name: string): string => `Bots doesn't offer the sidebar: "${name}" is ignored, and the sidebar stays as it is on every tab.`;
+/** Every name a `shell` block may hold and still load: the offered ones and the ignored ones. */
+export const SHELL_ACCEPTED_NAMES: readonly string[] = [...SHELL_TOKEN_NAMES, ...SHELL_NOT_OFFERED];
+
 /** Whether `value` is allowed for a shape name: one of its choices, or a whole number in its range. */
 export function isShapeValue(name: string, value: unknown): value is string {
   const rule = SHELL_SHAPE[name];
@@ -53,8 +54,8 @@ export function isShapeValue(name: string, value: unknown): value is string {
   const r = rule as { min: number; max: number };
   return /^\d{1,3}$/.test(value) && Number(value) >= r.min && Number(value) <= r.max;
 }
-/** The names whose value may be a gradient: the two paints. */
-export const SHELL_PAINTS: ReadonlySet<string> = new Set(["bar", "sidebar"]);
+/** The names whose value may be a gradient: the bar's paint. */
+export const SHELL_PAINTS: ReadonlySet<string> = new Set(["bar"]);
 
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:top|bottom|left|right))?|-?\d+(?:\.\d+)?deg)\s*,)?(?:\s*#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})(?:\s+\d+(?:\.\d+)?%)?\s*,?)+\)$/i;
@@ -113,16 +114,6 @@ export function shellProblems(group: ShellColourGroup, values: Readonly<Record<s
     const worst = paintColours(values["bar"]!, BAR_GROUNDS);
     need("bar.text", "bar", 4.5, worst);
     need("bar.rule", "bar", 1.15, worst);
-  } else if (group === "sidebar") {
-    need("sidebar.text", "sidebar", 4.5);
-    need("sidebar.muted", "sidebar", 4.5);
-    // The selected and hovered rows carry the text over their own fill, laid on the paint.
-    for (const row of ["sidebar.selected", "sidebar.hover"] as const) {
-      const fill = values[row];
-      if (fill === undefined || !HEX.test(fill)) continue;
-      const rows = paintColours(values["sidebar"]!, ground).map((p) => over(hexToRgba(fill), p));
-      need("sidebar.text", row, 4.5, rows);
-    }
   } else {
     need("accent", "accent", 0, [hexToRgba("#FFFFFF")]);
   }
@@ -133,14 +124,8 @@ export function shellProblems(group: ShellColourGroup, values: Readonly<Record<s
  *  the focus ring. Each must reach 3:1 on every ground the skin supplies where it is drawn, or that group is dropped. The
  *  values are the catalog's for the appearance. */
 const MARK_TOKENS = ["color.attention", "color.attention.text", "color.danger", "color.accent", "color.focus"] as const;
-function marksProblems(group: "bar" | "sidebar", values: Readonly<Record<string, string>>, appearance: "light" | "dark", ground: string): string[] {
-  const grounds: [string, Rgba[]][] = [];
-  if (group === "bar") grounds.push(["the bar", paintColours(values["bar"]!, BAR_GROUNDS)]);
-  else {
-    const paint = paintColours(values["sidebar"]!, ground);
-    grounds.push(["the sidebar", paint]);
-    for (const row of ["sidebar.selected", "sidebar.hover"]) grounds.push([`the ${row.slice(8)} row`, paint.map((p) => over(hexToRgba(values[row]!), p))]);
-  }
+function marksProblems(values: Readonly<Record<string, string>>, appearance: "light" | "dark"): string[] {
+  const grounds: [string, Rgba[]][] = [["the bar", paintColours(values["bar"]!, BAR_GROUNDS)]];
   for (const name of MARK_TOKENS) {
     const t = TOKENS.find((x) => x.name === name);
     const hex = appearance === "dark" ? t?.dark ?? t?.default : t?.default;
@@ -156,21 +141,13 @@ function marksProblems(group: "bar" | "sidebar", values: Readonly<Record<string,
   return [];
 }
 
-/** The accent must read at 3:1 on every ground it is drawn on: the bar (worst case), the sidebar paint, the selected and
- *  hovered rows laid on it, or the shell's own surface when the skin has no sidebar group. `values` holds the groups that
- *  already passed. */
+/** The accent must read at 3:1 on every ground it is drawn on: the bar (worst case) when the skin paints it, and the theme's
+ *  own surface, which the right panels show. `values` holds the groups that already passed. */
 function accentProblems(accent: string, values: Readonly<Record<string, string>>, ground: string): string[] {
   const a = hexToRgba(accent);
   const grounds: [string, Rgba[]][] = [];
   if (values["bar"] !== undefined) grounds.push(["the bar", paintColours(values["bar"], BAR_GROUNDS)]);
-  if (values["sidebar"] !== undefined) {
-    const paint = paintColours(values["sidebar"], ground);
-    grounds.push(["the sidebar", paint]);
-    for (const row of ["sidebar.selected", "sidebar.hover"]) {
-      const fill = values[row];
-      if (fill !== undefined) grounds.push([`the ${row.slice(8)} row`, paint.map((p) => over(hexToRgba(fill), p))]);
-    }
-  } else grounds.push(["the surface", [hexToRgba(ground)]]);
+  grounds.push(["the surface", [hexToRgba(ground)]]);
   for (const [where, colours] of grounds) {
     for (const c of colours) {
       const got = shellContrast(over(a, c), c);
@@ -182,7 +159,8 @@ function accentProblems(accent: string, values: Readonly<Record<string, string>>
 
 /** A theme's shell values for one appearance, checked: only the groups that are whole and legible survive (a group that
  *  misses a pair is dropped, so that part of the chrome stays the shell's own). `ground` is the colour a translucent paint
- *  lies over (the theme's own surface); the accent must read at 3:1 on it. */
+ *  lies over (the theme's own surface); the accent must read at 3:1 on it. The names Bots doesn't offer
+ *  (`SHELL_NOT_OFFERED`) are passed over without a word: the lint says so (`shell_not_offered`). */
 export function resolveShell(
   shell: { tokens: Readonly<Record<string, unknown>>; dark?: { tokens: Readonly<Record<string, unknown>> } } | undefined,
   appearance: "light" | "dark",
@@ -215,7 +193,7 @@ export function resolveShell(
     if (!any) continue;
     if (!whole) { dropped.push({ group, why: "a name is missing or its value is not allowed" }); continue; }
     const problems = group === "accent" ? accentProblems(got["accent"]!, values, ground) : shellProblems(group, got, ground);
-    if (problems.length === 0 && group !== "accent") problems.push(...marksProblems(group, got, appearance, ground));
+    if (problems.length === 0 && group === "bar") problems.push(...marksProblems(got, appearance));
     if (problems.length > 0) { dropped.push({ group, why: problems.join("; ") }); continue; }
     Object.assign(values, got);
   }

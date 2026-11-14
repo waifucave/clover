@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { SHELL_SHAPE as SDK_SHAPE } from "../../../../../packages/plugin-sdk/src/formats/shell";
+import { SHELL_GROUPS as SDK_GROUPS, SHELL_NOT_OFFERED as SDK_NOT_OFFERED, SHELL_SHAPE as SDK_SHAPE } from "../../../../../packages/plugin-sdk/src/formats/shell";
 import { checkTheme } from "../src/index";
-import { SHELL_SHAPE } from "../src/theme";
+import { SHELL_GROUPS, SHELL_NOT_OFFERED, SHELL_SHAPE } from "../src/theme";
 
 const base = { theme: 1, name: "t", tokens: { "color.surface": "#FCFAFF" } };
 const bar = { bar: "#F3EEFFCC", "bar.text": "#221A33", "bar.rule": "#C9BDEB" };
@@ -20,8 +20,13 @@ describe("the shell block in the lint", () => {
   });
   test("shape tokens stand alone, are closed choices or bounded numbers, and match the SDK's", () => {
     expect(SHELL_SHAPE).toEqual(SDK_SHAPE);
-    expect(checkTheme({ ...base, shell: { tokens: { "bar.mode": "none", "sidebar.mode": "float", "sidebar.width": "260", "panel.mode": "drawer" } } })).toEqual([]);
+    expect(SHELL_GROUPS).toEqual(SDK_GROUPS);
+    expect(SHELL_NOT_OFFERED).toEqual(SDK_NOT_OFFERED);
+    expect(checkTheme({ ...base, shell: { tokens: { "bar.mode": "none", "panel.mode": "drawer", "panel.width": "460" } } })).toEqual([]);
     expect(checkTheme({ ...base, shell: { tokens: { "bar.mode": "hidden" } } }).join()).toContain("bar.mode must be one of");
-    expect(checkTheme({ ...base, shell: { tokens: { "sidebar.width": "900" } } }).join()).toContain("whole number from 180 to 360");
+    expect(checkTheme({ ...base, shell: { tokens: { "panel.width": "900" } } }).join()).toContain("whole number from 280 to 720");
+  });
+  test("the sidebar's old names load and are ignored (Bots doesn't offer the sidebar), whatever their values", () => {
+    expect(checkTheme({ ...base, shell: { tokens: { ...bar, "sidebar.mode": "none", "sidebar.width": "900", sidebar: "url(x)" } } })).toEqual([]);
   });
 });

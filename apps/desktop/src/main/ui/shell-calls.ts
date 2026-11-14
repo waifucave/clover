@@ -102,7 +102,7 @@ export function hearsShell(plugin: { id: string; capabilities: ReadonlySet<strin
   return ownsShownBot(plugin.id, state) && apiCallAllowed("shell.state", "ui", [...plugin.capabilities]);
 }
 
-/** A report from the shell, kept only as the data it must be: a tab, a bot id, the sidebar's fold, the panels' names, the safe area, the app buttons. */
+/** A report from the shell, kept only as the data it must be: a tab, a bot id, the sidebar's fold and width, the panels' names, the safe area, the app buttons. */
 export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; account?: ShellAccount } | undefined {
   const r = obj(v);
   const s = obj(r.state);
@@ -125,7 +125,7 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; 
       tab: { kind, ...(typeof tab.id === "string" && ID.test(tab.id) ? { id: tab.id } : {}) },
       ...(typeof s.bot === "string" && ID.test(s.bot) ? { bot: s.bot } : {}),
       ...(s.dialog === "settings" ? { dialog: "settings" as const } : {}),
-      sidebar: { collapsed: sidebar.collapsed === true, side: sidebar.side === "code" ? "code" : "bots" },
+      sidebar: { collapsed: sidebar.collapsed === true, side: sidebar.side === "code" ? "code" : "bots", ...(typeof sidebar.width === "number" && Number.isFinite(sidebar.width) && sidebar.width >= 0 && sidebar.width <= 4000 ? { width: Math.round(sidebar.width) } : {}) },
       panels: { open: names(panels.open), available: names(panels.available) },
       safeArea: { left: num(safe.left), top: num(safe.top) },
     },

@@ -155,15 +155,17 @@ export interface PartTheme {
   choices: ThemeChoices;
   /** The tab's bot, if the part is in one. */
   bot?: string;
-  /** Style-only entries that dress the part, in the order they apply. */
-  styles: readonly { plugin: UiPlugin; file: string }[];
+  /** Style-only entries that dress the part, in the order they apply; `limited` when the entry is limited to the tab's bot
+   *  (its own plugin's, a `when.bot` naming it, or the user's ticks), else it is for all bots. */
+  styles: readonly { plugin: UiPlugin; file: string; limited?: boolean }[];
   appearance: Appearance;
   systemAccent?: string;
   frame: FrameMetrics;
 }
 
-/** The stack, lowest first (§5.5): base theme, global theme (the base until the user picks one), the bot's theme, the
- *  dressing plugins, the user's overrides. */
+/** The stack, lowest first (§5.5): base theme, global theme (the base until the user picks one), the dressing plugins for all
+ *  bots, the bot's theme, the dressing plugins limited to the bot, the user's overrides. More scoped wins: a bot's own look
+ *  beats a plugin that styles all bots' tabs. */
 export function tokenLayers(store: ThemeStore, input: PartTheme): TokenLayer[] {
   const layers: TokenLayer[] = [];
   for (const t of stackThemes(store, input)) layers.push(store.prepared(t.plugin, t.theme));
@@ -179,14 +181,20 @@ export function stackThemes(store: ThemeStore, input: PartTheme): { kind: "base"
   if (base !== undefined) out.push({ kind: "base", ...base });
   const global = themeByRef(store, input.plugins, input.choices.globalTheme);
   if (global !== undefined) out.push({ kind: "global", ...global });
+  const styles = (limited: boolean) => {
+    for (const s of input.styles) {
+      if ((s.limited === true) !== limited) continue;
+      const theme = store.read(s.plugin, s.file);
+      if (theme !== null) out.push({ kind: "style", plugin: s.plugin, theme });
+    }
+  };
+  // The style entries for all bots go under the bot's theme; the ones limited to the bot over it.
+  styles(false);
   if (input.bot !== undefined) {
     const b = botTheme(store, input.plugins, input.bot);
     if (b !== undefined) out.push({ kind: "bot", ...b });
   }
-  for (const s of input.styles) {
-    const theme = store.read(s.plugin, s.file);
-    if (theme !== null) out.push({ kind: "style", plugin: s.plugin, theme });
-  }
+  styles(true);
   return out;
 }
 

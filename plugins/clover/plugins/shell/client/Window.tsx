@@ -3,6 +3,9 @@
 // name and the panel toggles, over the bot's or session's view, with the session column beside it), the
 // right-hand panel when one is open, and a layer for dialogs. What fills the spots comes in as nodes.
 //
+// A bot's tab dresses only what Bots offers it (§5.5, "Whoever owns a plug sets the rules"): the bar and the right panels
+// (its skin and shape). The sidebar is the app's own and is drawn the same on every tab, whatever the bot's theme says.
+//
 // Sealed cards (§5.5) count a click only while nothing covers them:
 // - **Dialogs.** While any card this window will draw is waiting, no dialog opens, and one already open
 //   closes (the same rule as the composer's menus). That includes a card raised from the dialog itself:
@@ -21,7 +24,7 @@ import { IconChevronDown } from "./icons";
 import { S } from "./strings";
 
 /** The shell tokens of one bot, from the tokens the main process hands the shell (`shell.<bot>.<name>`): the groups it
- *  sets, whole, as a plain map (`bar`, `bar.text`, `sidebar`…); `undefined` when it sets none. */
+ *  sets, whole, as a plain map (`bar`, `bar.text`, `accent`…); `undefined` when it sets none. */
 export function skinOf(tokens: Readonly<Record<string, string | number>>, bot: string): Record<string, string> | undefined {
   const prefix = `shell.${bot.replace(/\//g, "--")}.`;
   const out: Record<string, string> = {};
@@ -32,28 +35,21 @@ export function skinOf(tokens: Readonly<Record<string, string | number>>, bot: s
 const SKIN_VARS: Record<string, string> = {
   "bar.text": "--cl-skin-bar-text",
   "bar.rule": "--cl-skin-bar-rule",
-  "sidebar.text": "--cl-skin-sidebar-text",
-  "sidebar.muted": "--cl-skin-sidebar-muted",
-  "sidebar.selected": "--cl-skin-sidebar-selected",
-  "sidebar.hover": "--cl-skin-sidebar-hover",
   accent: "--cl-skin-accent",
 };
 
-/** The groups a skin holds, as the attribute the stylesheet keys on (`bar sidebar accent`). */
+/** The groups a skin holds, as the attribute the stylesheet keys on (`bar accent`). */
 const groupsOf = (skin: Record<string, string> | undefined): string | undefined => {
   if (!skin) return undefined;
-  const g = ["bar", "sidebar", "accent"].filter((n) => skin[n] !== undefined);
+  const g = ["bar", "accent"].filter((n) => skin[n] !== undefined);
   return g.length > 0 ? g.join(" ") : undefined;
 };
 
-/** The shape the bot's theme `shell` tokens give the chrome (`SHELL_SHAPE`), as the window draws it: data attributes the stylesheet
- *  keys on and the lengths it uses. Every value was checked by the main process; one that is missing is the standard. */
+/** The shape the bot's theme `shell` tokens give the chrome (`SHELL_SHAPE`: the bar and the panels), as the window draws it:
+ *  data attributes the stylesheet keys on and the lengths it uses. Every value was checked by the main process; one that is
+ *  missing is the standard. */
 export interface ChromeShape {
   bar: "standard" | "none" | "float";
-  sidebar: "edge" | "float" | "rail" | "none";
-  start: "expanded" | "collapsed";
-  density: "compact" | "regular" | "roomy";
-  material: "glass" | "solid" | "none";
   panel: "column" | "drawer" | "float" | "sheet";
   vars: Record<string, string>;
 }
@@ -67,18 +63,10 @@ export function shapeOf(skin: Record<string, string> | undefined): ChromeShape {
   len("bar.height", "--cl-shape-bar-height");
   len("bar.inset", "--cl-shape-bar-inset");
   len("bar.radius", "--cl-shape-bar-radius");
-  len("sidebar.width", "--cl-shape-sidebar-width");
-  len("sidebar.inset", "--cl-shape-sidebar-inset");
-  len("sidebar.radius", "--cl-shape-sidebar-radius");
   len("panel.width", "--cl-shape-panel-width");
   len("panel.radius", "--cl-shape-panel-radius");
-  const sidebar = pick(skin?.["sidebar.mode"], ["edge", "float", "rail", "none"] as const, "edge");
   return {
     bar: pick(skin?.["bar.mode"], ["standard", "none", "float"] as const, "standard"),
-    sidebar,
-    start: pick(skin?.["sidebar.start"], ["expanded", "collapsed"] as const, sidebar === "rail" ? "collapsed" : "expanded"),
-    density: pick(skin?.["sidebar.density"], ["compact", "regular", "roomy"] as const, "regular"),
-    material: pick(skin?.["sidebar.material"], ["glass", "solid", "none"] as const, "glass"),
     panel: pick(skin?.["panel.mode"], ["column", "drawer", "float", "sheet"] as const, "column"),
     vars,
   };
@@ -107,7 +95,7 @@ function SkinPaint({ id, paint }: { id: string; paint: string | undefined }) {
 }
 
 export interface WindowProps {
-  /** The active bot's shell skin (`skinOf`): the title bar, the sidebar and the accent in the bot's palette. */
+  /** The active bot's shell skin (`skinOf`): the title bar and the accent (on the bar and the right panels) in the bot's palette. */
   skin?: Record<string, string>;
   /** The `sidebar` spot. */
   sidebar: ReactNode;
@@ -130,8 +118,15 @@ export interface WindowProps {
   chrome?: Omit<ChromeApi, "place" | "panels">;
   /** The bar's content, given the standard one as `stock` (the shell passes a bot-scoped `bar` spot whose fallback it is): a bot's own plugin may fill it. */
   barFill?: (stock: ReactNode) => ReactNode;
-  /** The handles the bot's own plugin says its controls offer (`shell.provide`): with no bar, the window adds a minimal one for each nothing offers. */
+  /** The handles the bot's own plugin says its controls offer (`shell.provide`): the sidebar's toggle and a drag region. With no bar, the window adds
+   *  a minimal one for each nothing offers. Neither ever drops the window's sidebar. */
   provides?: { sidebar: boolean; drag: boolean };
+  /** Told the sidebar's drawn width (its rule included, whole CSS pixels) when the window first lays it out and whenever it
+   *  changes (a fold, a sidebar plugin's own width): the shell says it in `shell.state`, where a tab learns where it starts. */
+  onSidebarWidth?: (px: number) => void;
+  /** How far the window's own controls reach (window coordinates, `shell.state`'s `safeArea`): a layout's CSS reads it as
+   *  `--cl-safe-left` / `--cl-safe-top`. The macOS traffic lights by default. */
+  safeArea?: { left: number; top: number };
   /** A dialog over the window: settings, the language chooser. */
   dialog?: ReactNode;
   /** Any card (an approval or a question) this window will draw is waiting: the shown session's, an agent's
@@ -210,13 +205,9 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
   );
 }
 
-const STANDARD_SHAPE: ChromeShape = { bar: "standard", sidebar: "edge", start: "expanded", density: "regular", material: "glass", panel: "column", vars: {} };
+const STANDARD_SHAPE: ChromeShape = { bar: "standard", panel: "column", vars: {} };
 
-/** How long a bot's tab whose theme says `sidebar.mode: none` goes without the stock sidebar before its own part says it
- *  draws the way to the other tabs (`shell.provide`), each time the tab shows. */
-export const SIDEBAR_GRACE_MS = 2_500;
-
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, skin, shape = STANDARD_SHAPE, chrome, barFill, provides }: WindowProps) {
+export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, skin, shape = STANDARD_SHAPE, chrome, barFill, provides, onSidebarWidth, safeArea }: WindowProps) {
   // The colours stay as the last skin left them while the paint fades out, so text never jumps ahead of its ground.
   const [shown, setShown] = useState(skin);
   useEffect(() => { if (skin) setShown(skin); }, [skin]);
@@ -255,39 +246,33 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   useEffect(() => setSettled(true), []);
   const panelsPlaced = placed.has("panels");
   const api = useMemo<ChromeApi | null>(() => (chrome ? { ...chrome, panels: panel, place } : null), [chrome, panel, place]);
-  // `sidebar.mode: none` holds only while a part of the bot's own says it draws the way to the other tabs (`shell.provide(["sidebar"])`): until it does
-  // (a moment after the tab opens) and whenever it stops, the shell shows a floating sidebar instead, so the user is never left without one.
-  // The moment is each time a bot's tab shows (the window's start, back from another page, another bot): its own parts may be
-  // loading again, or the core may not have told the window yet what they offer; drawing the stock sidebar then flashed it.
-  const graceTab = useRef({ bot: undefined as string | undefined, n: 0 });
-  if (graceTab.current.bot !== chrome?.bot?.id || graceTab.current.n === 0) graceTab.current = { bot: chrome?.bot?.id, n: graceTab.current.n + 1 };
-  const graceN = graceTab.current.n;
-  const [graceOver, setGraceOver] = useState(0);
-  useEffect(() => { const t = setTimeout(() => setGraceOver(graceN), SIDEBAR_GRACE_MS); return () => clearTimeout(t); }, [graceN]);
-  const grace = graceOver !== graceN;
-  const sidebarNone = shape.sidebar === "none" && (provides?.sidebar === true || grace);
-  if (shape.sidebar === "none" && !sidebarNone) shape = { ...shape, sidebar: "float" };
+  // With no bar, the sidebar's toggle and a drag region come from the bot's own controls when they say so (`shell.provide`),
+  // else from the shell's own small fallback. The sidebar itself is always the window's own, drawn as on every tab.
   const noBar = shape.bar === "none";
   const needSidebarButton = noBar && settled && !placed.has("sidebar") && provides?.sidebar !== true;
   const needDrag = noBar && settled && !placed.has("drag") && provides?.drag !== true;
 
-  // A floating sidebar lets the page run under it: the page's CSS reads how far in from the left the sidebar reaches
-  // (`--cl-sidebar-reserve`), measured, so a layout can keep its cards clear of it whatever its width.
-  const sideRef = useRef<HTMLDivElement>(null);
-  const [reserve, setReserve] = useState(0);
-  const floating = shape.sidebar === "float" || shape.sidebar === "rail";
-  useEffect(() => {
-    const el = sideRef.current;
-    if (!floating || !el || typeof ResizeObserver === "undefined") { setReserve(0); return; }
-    const inset = Number.parseInt(shape.vars["--cl-shape-sidebar-inset"] ?? "12", 10) || 12;
-    const measure = () => setReserve(Math.round(el.getBoundingClientRect().width) + inset * 2);
+  // The window controls' reach (the macOS buttons the sidebar already leaves 80 px for): nothing of a layout's may sit under them.
+  const chromeVars: Record<string, string> = { ...shape.vars, "--cl-safe-left": safeArea ? `${safeArea.left}px` : "var(--cl-window-controls, 80px)", "--cl-safe-top": `${safeArea?.top ?? 44}px` };
+
+  // The sidebar's drawn width, measured: said once laid out and again only when it changes (no width animates, so a fold is one report).
+  const sidebarBox = useRef<HTMLDivElement>(null);
+  const toldWidth = useRef<((px: number) => void) | undefined>(onSidebarWidth);
+  toldWidth.current = onSidebarWidth;
+  useLayoutEffect(() => {
+    const el = sidebarBox.current;
+    if (el === null) return;
+    let last = -1;
+    const measure = () => {
+      const px = Math.round(el.getBoundingClientRect().width);
+      if (px !== last) { last = px; toldWidth.current?.(px); }
+    };
     measure();
+    if (typeof ResizeObserver !== "function") return;
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [floating, shape.vars, chrome?.sidebarCollapsed]);
-  // The window controls' reach (the macOS buttons the sidebar already leaves 80 px for): nothing of a layout's may sit under them.
-  const chromeVars: Record<string, string> = { ...shape.vars, "--cl-sidebar-reserve": `${floating ? reserve : 0}px`, "--cl-safe-left": "var(--cl-window-controls, 80px)", "--cl-safe-top": "44px" };
+  }, []);
   if (shape.bar === "standard" && shape.vars["--cl-shape-bar-height"] !== undefined) chromeVars["--clover-plugin-clover-bar-height"] = shape.vars["--cl-shape-bar-height"];
 
   const stockBar = (
@@ -318,10 +303,9 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
   return (
     <ChromeContext.Provider value={api}>
     <div className="cl-window" data-panel={panel ? "open" : undefined} data-side={side ? "open" : undefined} data-translucent={translucent || undefined} data-skin={groupsOf(skin)}
-      data-bar-mode={shape.bar} data-sidebar-mode={shape.sidebar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-density={shape.density} data-material={shape.material} data-panel-mode={shape.panel} data-sidebar-over={floating || undefined} data-panel-over={shape.panel !== "column" || undefined}
+      data-bar-mode={shape.bar} data-collapsed={chrome?.sidebarCollapsed || undefined} data-panel-mode={shape.panel} data-panel-over={shape.panel !== "column" || undefined}
       style={{ ...vars, ...chromeVars } as CSSProperties}>
-      <div className="cl-window__sidebar" ref={sideRef}>
-        <SkinPaint id="sidebar" paint={skin?.["sidebar"]} />
+      <div className="cl-window__sidebar" ref={sidebarBox}>
         <div className="cl-window__sidebar-content">{sidebar}</div>
       </div>
       <section className="cl-window__main" aria-label={title}>

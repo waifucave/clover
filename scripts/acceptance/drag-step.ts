@@ -1,5 +1,6 @@
-// Alpha's own bar drags the window (checklist row 2.36, `shell.dragWindow`): with the stock sidebar and bar not drawn (her
-// tab draws her own controls, `.ac`, which keep a handle `.ac__drag` that calls `shell.dragWindow()` on a press), a real
+// Alpha's own bar drags the window (checklist row 2.36, `shell.dragWindow`): with the stock bar not drawn on her tab (the stock
+// sidebar is beside it, as on every tab; her tab draws her own controls, `.ac`, which keep a handle `.ac__drag` that calls
+// `shell.dragWindow()` on a press), a real
 // pointer press on that handle, a move and a release, as the frame sees them, must move the window by the cursor's offset.
 // The window is offscreen, so where it went is read from the app's own log, which says the window's own position before
 // and after (`window: moved by its title area, from (x, y) to (x, y)`, index.ts dragEnd). A refused drag logs "a drag was refused".

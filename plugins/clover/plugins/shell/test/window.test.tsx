@@ -36,6 +36,27 @@ describe("the window", () => {
     rerender(frame({ translucent: true }));
     expect(container.querySelector(".cl-window")?.hasAttribute("data-translucent")).toBe(true);
   });
+
+  test("the sidebar's drawn width is measured and said once laid out, then only when it changes; the safe area reaches the layout's CSS", () => {
+    const said: number[] = [];
+    const proto = HTMLElement.prototype as unknown as { getBoundingClientRect: () => DOMRect };
+    const was = proto.getBoundingClientRect;
+    let width = 247.6;
+    proto.getBoundingClientRect = function (this: HTMLElement) { return { width: this.classList.contains("cl-window__sidebar") ? width : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect; };
+    try {
+      const { container, rerender } = render(frame({ onSidebarWidth: (px) => said.push(px), safeArea: { left: 0, top: 0 } }));
+      expect(said).toEqual([248]);
+      rerender(frame({ onSidebarWidth: (px) => said.push(px), safeArea: { left: 0, top: 0 } }));
+      expect(said).toEqual([248]);
+      const style = (container.querySelector(".cl-window") as HTMLElement).style;
+      expect([style.getPropertyValue("--cl-safe-left"), style.getPropertyValue("--cl-safe-top")]).toEqual(["0px", "0px"]);
+      width = 81;
+      rerender(frame({ onSidebarWidth: (px) => said.push(px) }));
+      expect((container.querySelector(".cl-window") as HTMLElement).style.getPropertyValue("--cl-safe-top")).toBe("44px");
+    } finally {
+      proto.getBoundingClientRect = was;
+    }
+  });
 });
 
 /** A host that opens and closes its dialog the way the real one does. */
@@ -183,6 +204,14 @@ describe("a bot's shell skin", () => {
     expect(root.hasAttribute("data-skin")).toBe(false);
     // The paint leaves with a fade, and the sidebar keeps its content and its place.
     expect(container.querySelector(".cl-window__sidebar-content")?.textContent).toBe("sidebar");
+  });
+
+  test("a skin that still names the sidebar's old group dresses nothing of the sidebar: no mark, no colour, no paint", () => {
+    const { container } = render(frame({ skin: { sidebar: "#16132B", "sidebar.text": "#FFFFFF", "sidebar.muted": "#B3A9D2", "sidebar.selected": "#2A2243", "sidebar.hover": "#201A38", accent: "#6A45D4" } }));
+    const root = container.querySelector(".cl-window") as HTMLElement;
+    expect(root.getAttribute("data-skin")).toBe("accent");
+    expect(root.getAttribute("style") ?? "").not.toContain("sidebar");
+    expect(container.querySelector('.cl-skin-paint[data-for="sidebar"]')).toBeNull();
   });
 
   test("the sidebar's content, the bar's title and the toggles are the same with and without a skin", () => {

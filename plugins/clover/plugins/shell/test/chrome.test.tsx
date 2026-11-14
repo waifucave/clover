@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ChromeActions, ChromeDrag, ChromeEdit, ChromePanels, ChromeSession, ChromeSidebar, ChromeTitle } from "../client/chrome";
-import { BotTab, SIDEBAR_GRACE_MS, Window, shapeOf, type WindowProps } from "../client/Window";
+import { BotTab, Window, shapeOf, type WindowProps } from "../client/Window";
 import type { ChromeApi } from "../client/chrome";
 
 afterEach(cleanup);
@@ -40,9 +40,7 @@ describe("the standard bar", () => {
     expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeTruthy();
     const w = container.querySelector(".cl-window")!;
     expect(w.getAttribute("data-bar-mode")).toBe("standard");
-    expect(w.getAttribute("data-sidebar-mode")).toBe("edge");
     expect(w.getAttribute("data-panel-mode")).toBe("column");
-    expect(w.hasAttribute("data-sidebar-over")).toBe(false);
     expect(container.querySelector(".cl-chrome-fallback")).toBeNull();
   });
 
@@ -133,31 +131,36 @@ describe("panels", () => {
   });
 });
 
-describe("the sidebar's shape", () => {
-  test("a floating sidebar is over the page, with its lengths and the reach the layout reads", async () => {
-    const { container } = render(frame({ "sidebar.mode": "float", "sidebar.inset": "16", "sidebar.density": "roomy", "sidebar.material": "none" }, null));
+describe("the sidebar: never the bot's", () => {
+  test("a theme's old sidebar names change nothing: the sidebar is in the grid as on every tab, with no shape of its own", async () => {
+    const old = { "sidebar.mode": "none", "sidebar.inset": "16", "sidebar.density": "roomy", "sidebar.material": "none", "sidebar.width": "300", sidebar: "#16132B", "sidebar.text": "#FFFFFF" };
+    const plain = render(frame(undefined, null)).container.querySelector(".cl-window") as HTMLElement;
+    const attrs = (w: Element) => [...w.attributes].filter((a) => a.name !== "style").map((a) => `${a.name}=${a.value}`).sort();
+    const plainAttrs = attrs(plain);
+    const plainStyle = plain.getAttribute("style");
+    cleanup();
+    const { container } = render(frame(old, null));
     await act(async () => undefined);
     const w = container.querySelector(".cl-window") as HTMLElement;
-    expect(w.hasAttribute("data-sidebar-over")).toBe(true);
-    expect(w.getAttribute("data-density")).toBe("roomy");
-    expect(w.getAttribute("data-material")).toBe("none");
-    expect(w.style.getPropertyValue("--cl-shape-sidebar-inset")).toBe("16px");
-    // Measured: the sidebar's width (0 here, no layout engine) plus the inset on both sides.
-    expect(w.style.getPropertyValue("--cl-sidebar-reserve")).toBe("32px");
-    expect(w.style.getPropertyValue("--cl-safe-left")).toContain("80px");
+    expect(attrs(w)).toEqual(plainAttrs);
+    expect(w.getAttribute("style")).toBe(plainStyle);
+    expect(container.querySelector(".cl-window__sidebar")?.textContent).toBe("sidebar");
+    expect(container.querySelector(".cl-window__sidebar .cl-skin-paint")).toBeNull();
   });
 
-  test("a rail rests collapsed unless the bot says otherwise", () => {
-    expect(shapeOf({ "sidebar.mode": "rail" }).start).toBe("collapsed");
-    expect(shapeOf({ "sidebar.mode": "rail", "sidebar.start": "expanded" }).start).toBe("expanded");
-    expect(shapeOf({ "sidebar.mode": "float" }).start).toBe("expanded");
+  test("with no bar, the bot's own word that its controls draw the sidebar's toggle only drops the shell's fallback button", async () => {
+    const { container, rerender } = render(frame({ "bar.mode": "none" }, null));
+    await act(async () => undefined);
+    expect(container.querySelector(".cl-chrome-fallback")).not.toBeNull();
+    rerender(frame({ "bar.mode": "none" }, null, { provides: { sidebar: true, drag: true } }));
+    await act(async () => undefined);
+    expect(container.querySelector(".cl-chrome-fallback")).toBeNull();
+    expect(container.querySelector(".cl-window__sidebar")?.textContent).toBe("sidebar");
   });
 
   test("a value outside the choices is the standard", () => {
     const s = shapeOf({ "bar.mode": "hidden", "sidebar.width": "9999", "panel.mode": "popup" });
-    expect(s.bar).toBe("standard");
-    expect(s.panel).toBe("column");
-    expect(s.vars["--cl-shape-sidebar-width"]).toBeUndefined();
+    expect(s).toEqual({ bar: "standard", panel: "column", vars: {} });
   });
 });
 
@@ -167,27 +170,4 @@ describe("outside the shell", () => {
     expect(container.textContent).toBe("");
     expect(container.querySelector("button")).toBeNull();
   });
-});
-
-// The owner's report on try 14d: back on Alpha's tab from an app's page, the stock sidebar floated over her window for a
-// moment, until her own part said again that it draws the way to the other tabs.
-describe("a bot whose theme drops the sidebar", () => {
-  const mode = () => document.querySelector(".cl-window")?.getAttribute("data-sidebar-mode");
-  test("each time its tab shows, the stock sidebar waits for its own part's word (the grace), and only then floats in", async () => {
-    const skin = { "sidebar.mode": "none" };
-    const { rerender } = render(frame(skin, null));
-    expect(mode()).toBe("none");
-    await act(() => new Promise((r) => setTimeout(r, SIDEBAR_GRACE_MS + 100)));
-    // Nothing of its own said it draws the way: the stock sidebar floats in.
-    expect(mode()).toBe("float");
-    // Another bot's tab, then back: each showing has its grace again, from its first frame.
-    rerender(frame(skin, null, {}, chromeApi({ bot: { id: "luna", name: "Luna" } })));
-    expect(mode()).toBe("none");
-    rerender(frame(skin, null, {}, chromeApi()));
-    expect(mode()).toBe("none");
-    // Its own part's word holds it after the grace.
-    rerender(frame(skin, null, { provides: { sidebar: true, drag: true } }, chromeApi()));
-    await act(() => new Promise((r) => setTimeout(r, SIDEBAR_GRACE_MS + 100)));
-    expect(mode()).toBe("none");
-  }, 15_000);
 });

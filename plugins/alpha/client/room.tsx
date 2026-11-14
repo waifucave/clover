@@ -1,16 +1,17 @@
 // Alpha's room: everything she keeps in front of her stage, in one frame of her plugin (`bot.side`) that fills the scene's left part. Her name in a
 // big italic, how she is and the scene and mood chips; a pinned paper note; the day's tally in serif; the stage tools; a speech bubble for what she is
-// doing now; the grass (in front of the figure and behind everything else here); and the dock at the bottom,
-// the only way to the other tabs while her theme says `sidebar.mode: none` (it folds to a single clover button). What the buttons do is the plugin
-// API's: `shell.*` for the window, her stage's store for the rest. Nothing here is special-cased for Alpha by the app: any bot plugin can draw its own.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+// doing now; and the grass (in front of the figure and behind everything else here). The way to the other tabs is the window's own sidebar, beside her
+// tab as on every tab (Bots doesn't offer a bot the sidebar). What the buttons do is the plugin API's: `avatar.*` for her figure, her stage's store
+// for the rest. Nothing here is special-cased for Alpha by the app: any bot plugin can draw its own.
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
-import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellAccount, ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
+import type { AvatarBox, AvatarCatalogue, AvatarCue, ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
 import { Grass } from "./grass";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 import { localDay } from "./seen";
+import { controlsInset, roomSize, tabWidth, TOGGLE_GAP_PX, TOGGLE_PX } from "./room-size";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
 const UI = 'ui-rounded, "SF Pro Rounded", system-ui, "Hiragino Sans", sans-serif';
@@ -31,11 +32,12 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 :where(.rm) button { all: unset; box-sizing: border-box; cursor: pointer; }
 :where(.rm) button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
-/* The grass band along the bottom of the room (300px, 150px when narrow): she stands in it. */
+/* The grass band along the bottom of the room (300px; in the narrow band, across its lower part down under the pane's top edge, so the
+   band's foot, where the figure stops and the stage puts a credit plate, lies under the pane): she stands in it. */
 .rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }
 .rm .rm__grass svg { width: 100%; height: 100%; stroke: none; }
 .rm[data-size="wide"] .rm__grass { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); }
-.rm[data-size="narrow"] .rm__grass { top: 96px; bottom: auto; height: 144px; }
+.rm[data-size="narrow"] .rm__grass { top: 140px; bottom: auto; height: 120px; }
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
 
@@ -85,41 +87,14 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__say em { display: block; font-size: 13.5px; font-style: normal; color: #6f6a80; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm__say[data-attention] { box-shadow: 0 0 0 3px var(--gold), 0 16px 40px -14px rgba(0,0,0,.55); }
 
-/* The dock: the sidebar, set on the grass. */
-.as { position: absolute; left: clamp(20px, 4.8%, 100px); bottom: 26px; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 22px; background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(22px) saturate(1.3); box-shadow: 0 18px 40px -20px rgba(0,0,0,.6); max-width: calc(100% - 40px); }
-.as__switch { display: flex; flex-direction: column; gap: 2px; padding: 3px; border-radius: 12px; background: var(--field); }
-.as__opt { width: 58px; height: 24px; border-radius: 9px; font-size: 12px; color: var(--ink3); display: grid; place-items: center; }
-.as__opt[aria-checked="true"] { background: var(--seg-on); color: var(--seg-on-ink); }
-.as__div { width: 1px; height: 42px; background: var(--glass-line); margin: 0 4px; flex: none; }
-.as__scroll { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.as__row { position: relative; width: 70px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink2); padding: 4px 0; }
-.as__row:hover { color: var(--ink); }
-.as__glyph, .as__av { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; background: var(--field); color: var(--ink); overflow: hidden; font-weight: 700; font-size: 15px; }
-.as__glyph img, .as__av img { width: 100%; height: 100%; object-fit: cover; }
-.as__row[aria-current="page"] { color: var(--ink); }
-.as__row[aria-current="page"] .as__av, .as__row[aria-current="page"] .as__glyph { box-shadow: 0 0 0 2px var(--gold), 0 0 18px var(--gold-soft); }
-.as__name { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.as__dot { position: absolute; top: 2px; right: 10px; width: 10px; height: 10px; border-radius: 50%; background: var(--clover); border: 2px solid var(--glass); }
-.as__dot[data-state="idle"] { display: none; }
-.as__dot[data-state="thinking"] { animation: rm-pulse 1.1s ease-in-out infinite; }
-.as__account .as__av { border-radius: 50%; background: linear-gradient(160deg, #f3d08f, #c99a4c); color: #3a2a10; }
-.as__fold { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; color: var(--ink3); }
-.as__fold:hover { background: var(--field); color: var(--ink); }
-.as[data-rail] { padding: 8px 14px 8px 8px; gap: 10px; border-radius: 999px; }
-.as[data-rail] .as__clover { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: #18204a; }
-.as[data-rail] .as__faces { display: flex; }
-.as[data-rail] .as__faces .as__av { width: 28px; height: 28px; border-radius: 50%; margin-left: -8px; font-size: 12px; border: 2px solid var(--glass); }
-.as[data-rail] .as__faces .as__av:first-child { margin-left: 0; }
-
 .rm:not([data-size="wide"]) :is(.rm__left, .rm__chips, .rm__say, .rm__credit) { display: none; }
-.rm:not([data-size="wide"]) .rm__title { top: 4px; left: 138px; display: flex; align-items: baseline; gap: 12px; }
+/* The mid room's one line: her name and how she is, in the top band beside her sidebar toggle (her controls' own frame: --rm-title-left is where the
+   toggle ends, from the same window state), level with it, above the pane. */
+.rm:not([data-size="wide"]) .rm__title { top: 24px; left: var(--rm-title-left, 68px); display: flex; align-items: baseline; gap: 12px; }
 .rm:not([data-size="wide"]) .rm__name { font-size: 30px; }
 .rm:not([data-size="wide"]) .rm__status { margin-top: 0; font-size: 13px; }
-.rm:not([data-size="wide"]) .as { left: 12px; bottom: 12px; }
-/* A narrow window (900 px or less): the figure is a band across the top, the pane under it takes the width; her title and stats stay out, the dock rests as its clover button at the band's foot, clear of the composer. */
+/* A narrow tab (800 px or less): the figure is a band across the top, the pane under it takes the width; her title and stats stay out. */
 .rm[data-size="narrow"] .rm__title { display: none; }
-.rm[data-size="narrow"] .as { top: 176px; bottom: auto; left: 12px; right: 12px; }
-.rm[data-size="narrow"] .as[data-rail] { left: auto; right: 20px; }
 @media (prefers-reduced-motion: reduce) { .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; } }
 `;
 
@@ -131,11 +106,6 @@ const SMILE = <Icon><circle cx="12" cy="12" r="8.5" /><path d="M8.5 14c1 1.5 2.2
 const MOON = <Icon><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></Icon>;
 const SUN = <Icon><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4" /></Icon>;
 const HEART = <Icon><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></Icon>;
-const ARCHIVE = <Icon><rect x="3.5" y="5" width="17" height="4" rx="1.5" /><path d="M5 9v9a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V9M10 13h4" /></Icon>;
-const GRID = <Icon><rect x="4" y="4" width="6.5" height="6.5" rx="1.6" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6" /></Icon>;
-const PLUG = <Icon><path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0zM12 16.5V21" /></Icon>;
-const GEAR = <Icon><circle cx="12" cy="12" r="3" /><path d="M12 3.5l1.3 2.2 2.5-.6.9 2.4 2.4.9-.6 2.5L20.5 12l-2.1 1.2.6 2.5-2.4.9-.9 2.4-2.5-.6L12 20.5l-1.3-2.2-2.5.6-.9-2.4-2.4-.9.6-2.5L3.5 12l2.1-1.2-.6-2.5 2.4-.9.9-2.4 2.5.6z" /></Icon>;
-const CLOVER = <Icon><path d="M12 12c-2-3-6-3-6-6a3 3 0 0 1 6 0 3 3 0 0 1 6 0c0 3-4 3-6 6zM12 12c-3 2-3 6-6 6a3 3 0 0 1 0-6M12 12c3 2 3 6 6 6a3 3 0 0 0 0-6M12 12v9" /></Icon>;
 
 /** How often her room checks the window's width when no `resize` said it changed. */
 const WIDTH_LOOK_MS = 2000;
@@ -147,7 +117,7 @@ function useWindowWidth(): number {
     const settle = () => setW(read());
     let again: ReturnType<typeof setTimeout>[] = [];
     // Her frame lives in a process of its own: it can hear `resize` before the window's new width has reached it, and
-    // then it would keep the old one (a wide window drawn as a narrow room, her dock a rail). So it reads again a moment
+    // then it would keep the old one (a wide window drawn as a narrow room). So it reads again a moment
     // after each resize, and looks once in a while (an unchanged width draws nothing).
     const on = () => {
       settle();
@@ -167,11 +137,8 @@ function useWindowWidth(): number {
   }, []);
   return w;
 }
-const initial = (name: string) => (name.trim()[0] ?? "·").toUpperCase();
 const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinking it over", asleep: "Asleep on another computer", paused: "Paused" };
 const clock = (at: number): string => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
-interface BotRow { id: string; name: string; state: string; portrait?: string }
 
 export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const api = usePluginApi();
@@ -179,10 +146,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const bot = useBot(props.bot);
   const seen = useSeen(bot?.mainSession);
   const stage = useStageState();
-  const [bots, setBots] = useState<BotRow[]>([]);
   const [win, setWin] = useState<ShellState | undefined>();
-  const [apps, setApps] = useState<readonly ShellApp[]>([]);
-  const [account, setAccount] = useState<ShellAccount>({ name: "" });
   const styled = useRef(false);
   const dark = useDark();
   const avatar = api.avatar;
@@ -214,23 +178,8 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
     el.textContent = CSS;
     document.head.append(el);
   }, []);
+  // The window's state: the sidebar beside her tab (its measured width sizes her room) and how far the window's own buttons reach.
   useEffect(() => shell?.watch?.(setWin), [shell]);
-  // The dock is the way to the other tabs: the window may drop its own sidebar while this says so (and takes it back when this goes).
-  useEffect(() => {
-    void shell?.provide?.(["sidebar"]).catch(() => undefined);
-    return () => void shell?.provide?.([]).catch(() => undefined);
-  }, [shell]);
-  useEffect(() => {
-    void shell?.apps?.().then((a) => setApps((o) => (JSON.stringify(o) === JSON.stringify(a) ? o : a)), () => undefined);
-    void shell?.account?.().then((a) => setAccount((o) => (o.name === a.name && o.detail === a.detail ? o : a)), () => undefined);
-  }, [shell, win]);
-  useEffect(() => {
-    let live = true;
-    const row = (b: any): BotRow => ({ id: b.id, name: typeof b.name === "string" ? b.name : b.id, state: b.state ?? "idle", ...(b.portrait ? { portrait: b.portrait } : {}) });
-    void api.bots?.list().then((l) => live && setBots(l.map(row)), () => undefined);
-    const stop = api.bots?.watch((b: any) => setBots((list) => { const at = list.findIndex((x) => x.id === b.id); if (at < 0) return [...list, row(b)]; const next = row(b); return JSON.stringify(list[at]) === JSON.stringify(next) ? list : list.map((x, i) => (i === at ? next : x)); }));
-    return () => { live = false; stop?.(); };
-  }, [api]);
 
   const tool = seen.tool;
   const running = bot?.state === "thinking" || tool?.status === "running";
@@ -249,12 +198,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
 
   const state = bot?.state ?? "idle";
   const width = useWindowWidth();
-  const size = width <= 900 ? "narrow" : width <= 1100 ? "mid" : "wide";
-  const narrow = size === "narrow";
-  const [peek, setPeek] = useState(false);
-  const rail = win?.sidebar.collapsed === true || (narrow && !peek);
-  const run = (p: Promise<void> | undefined) => void p?.catch(() => undefined);
-  const onBot = win?.tab.kind === "bot" ? win.tab.id : undefined;
+  const size = roomSize(tabWidth(width, win));
   // "So far today": what her conversation shows for today (by each event's own time) and, where it counted today, the stage's own tally (a turn's end and a tool's end it saw);
   // the larger of the two, so a day's older tally never shows and a hook that was refused in a burst never undercounts.
   const kept = stage.tally?.day === localDay() ? stage.tally : undefined;
@@ -294,7 +238,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   })();
 
   return (
-    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} aria-label="Alpha's room">
+    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} style={{ "--rm-title-left": `${controlsInset(win) + TOGGLE_PX + TOGGLE_GAP_PX}px` } as CSSProperties} aria-label="Alpha's room">
       <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} className="rm__grass" /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>
@@ -328,50 +272,6 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
         <p>{now.title}</p>
         {now.sub ? <em>{now.sub}</em> : null}
       </aside>
-
-      <nav className="as" aria-label="Sidebar" data-rail={rail || undefined}>
-        {rail ? (
-          <>
-            <button type="button" className="as__clover" aria-label="Show the sidebar" title="Show the sidebar" onClick={() => (narrow && win?.sidebar.collapsed !== true ? setPeek(true) : run(shell?.toggleSidebar?.()))}>{CLOVER}</button>
-            <span className="as__faces">{bots.slice(0, 3).map((b) => <span key={b.id} className="as__av">{b.portrait ? <img src={b.portrait} alt="" /> : initial(b.name)}</span>)}</span>
-          </>
-        ) : (
-          <>
-            <div className="as__switch" role="radiogroup" aria-label="Bots or code">
-              <button type="button" role="radio" aria-checked="true" className="as__opt" title="Bots" aria-label="Bots">Bots</button>
-              <button type="button" role="radio" aria-checked="false" className="as__opt" title="Code" aria-label="Code" onClick={() => run(shell?.go?.({ side: "code" }))}>Code</button>
-            </div>
-            <div className="as__div" />
-            <div className="as__scroll">
-              {bots.map((b) => (
-                <button key={b.id} type="button" className="as__row" aria-current={onBot === b.id ? "page" : undefined} aria-label={b.name} title={b.name} onClick={() => run(shell?.go?.({ bot: b.id }))}>
-                  <span className="as__av">{b.portrait ? <img src={b.portrait} alt="" /> : initial(b.name)}</span>
-                  <span className="as__name">{b.name}</span>
-                  <i className="as__dot" data-state={b.state} />
-                </button>
-              ))}
-              {apps.map((a) => (
-                <button key={a.id} type="button" className="as__row" aria-current={win?.tab.kind === "app" && win.tab.id === a.id ? "page" : undefined} aria-label={a.title} title={a.title} onClick={() => run(shell?.go?.({ app: a.id }))}>
-                  <span className="as__glyph">{a.icon && /^(clover-plugin|https?|data):/.test(a.icon) ? <img src={a.icon} alt="" width={20} height={20} /> : a.id === "archive" ? ARCHIVE : GRID}</span>
-                  <span className="as__name">{a.title}</span>
-                </button>
-              ))}
-              <div className="as__div" />
-              <button type="button" className="as__row" aria-label="Plugins" title="Plugins" onClick={() => run(shell?.go?.({ page: "plugins" }))}><span className="as__glyph">{PLUG}</span><span className="as__name">Plugins</span></button>
-              <button type="button" className="as__row" aria-label="Settings" title="Settings" onClick={() => run(shell?.openSettings?.())}><span className="as__glyph">{GEAR}</span><span className="as__name">Settings</span></button>
-              {account.name !== "" ? (
-                <>
-                  <div className="as__div" />
-                  <button type="button" className="as__row as__account" aria-label={`Account ${account.name}`} title={`Account ${account.name}`} onClick={() => run(shell?.openSettings?.())}>
-                    <span className="as__av">{initial(account.name)}</span><span className="as__name">{account.name}</span>
-                  </button>
-                </>
-              ) : null}
-            </div>
-            <button type="button" className="as__fold" aria-label="Fold the sidebar" title="Fold the sidebar" onClick={() => (narrow ? setPeek(false) : run(shell?.toggleSidebar?.()))}>{CLOVER}</button>
-          </>
-        )}
-      </nav>
     </div>
   );
 }
