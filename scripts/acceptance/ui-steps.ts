@@ -2649,18 +2649,26 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // measurement of the same element in the real window (its box and the viewport), and main's answer to the hook's report is in the app log
       // (this plugin has no `browser` capability, so main refuses to place a view for it, and says so).
       await until("the probe's frame box and surface answers", 20_000, async () => ((await attrOf("viewframe")) !== "" && (await attrOf("surfaceenv")) !== "" ? true : undefined), async () => `page said ${JSON.stringify((await find('[data-acceptance-window="page"]'))?.attrs)}`);
-      const frameSaid = await attrOf("viewframe");
-      const frameM = /^(-?\d+),(-?\d+) (\d+)x(\d+) in (\d+)x(\d+)$/.exec(frameSaid);
-      if (frameM === null) fail(`useViewFrame's element wasn't measured: ${JSON.stringify(frameSaid)}`);
-      const [fx, fy, fw, fh] = frameM!.slice(1).map(Number) as [number, number, number, number];
-      let own: { x: number; y: number; w: number; h: number; vw: number; vh: number } | undefined;
-      for (const d of await layerDocs()) {
-        const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acceptance-window="box"]'); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), vw: innerWidth, vh: innerHeight }; })()`).catch(() => null);
-        if (v !== null && typeof v === "object") own = v as typeof own;
-      }
-      if (own === undefined) fail("the probe's box element isn't in any of the plugin's documents");
-      const mine = own!;
-      if (fw <= 0 || fh !== 24) fail(`useViewFrame's element was ${fw}x${fh}, not a drawn box 24 tall`);
+      // The frame is laid out after the probe mounts (and a row run after others finds it grown later), so the probe says its element's box again
+      // whenever it changes and the row waits for the drawn box (a width, 24 tall) that the harness's own measure of the element agrees with.
+      const ownBox = async () => {
+        for (const d of await layerDocs()) {
+          const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acceptance-window="box"]'); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), vw: innerWidth, vh: innerHeight }; })()`).catch(() => null);
+          if (v !== null && typeof v === "object") return v as { x: number; y: number; w: number; h: number; vw: number; vh: number };
+        }
+        return undefined;
+      };
+      const parsed = (said: string) => { const m = /^(-?\d+),(-?\d+) (\d+)x(\d+) in (\d+)x(\d+)$/.exec(said); return m === null ? undefined : m.slice(1).map(Number) as [number, number, number, number]; };
+      const settled = await until("useViewFrame's element measured as a drawn box the harness agrees with", 30_000, async () => {
+        const said = await attrOf("viewframe");
+        const f = parsed(said);
+        const o = await ownBox();
+        if (f === undefined || o === undefined) return undefined;
+        return f[2] > 0 && f[3] === 24 && Math.abs(f[2] - o.w) <= 3 && Math.abs(f[3] - o.h) <= 1 && Math.abs(f[0] - o.x) <= 3 && Math.abs(f[1] - o.y) <= 3 ? { said, f, o } : undefined;
+      }, async () => `the probe said ${JSON.stringify(await attrOf("viewframe"))}, the harness measured ${JSON.stringify(await ownBox())}`);
+      const frameSaid = settled.said;
+      const [fx, fy, fw, fh] = settled.f;
+      const mine = settled.o;
       if (Math.abs(fw - mine.w) > 3 || Math.abs(fh - mine.h) > 1 || Math.abs(fx - mine.x) > 3 || Math.abs(fy - mine.y) > 3) fail(`the frame's box ${frameSaid} differs from the harness's measure of the same element ${JSON.stringify(mine)}`);
       if (fx + fw > mine.vw + 1 || fy + fh > mine.vh + 1) fail(`the frame's box ${frameSaid} lies outside the frame's viewport ${mine.vw}x${mine.vh}`);
       const refused = ctx.appLog().split("\n").filter((l) => l.includes("may not place the acceptance-window view"));
