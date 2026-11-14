@@ -1285,7 +1285,7 @@
       }
     },
     "session.diff": {
-      "doc": "A coding session's or an agent's changes in its folder, read only: the working tree against HEAD (untracked files as added), per file with its hunks, bounded per file and in total. A folder that isn't a git repository, or isn't on this computer, answers no files and a notice.",
+      "doc": "A coding session's or an agent's changes in its folder, read only: the working tree against HEAD (untracked files as added), per file with its hunks, bounded per file and in total. A folder that isn't a git repository, or isn't on this computer, answers no files and a notice. A plugin's own connection (a layer) also needs the capability files, since the diff carries file contents.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [

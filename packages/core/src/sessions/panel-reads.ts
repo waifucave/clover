@@ -4,12 +4,14 @@
 // - `session.outputs`: the files the session delivered to its outputs folder (`<home>/outputs/<session>`), names only.
 // - `session.context`: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's window.
 // - `session.connectors`: how many plugin MCP servers it gets, and how many of their plugins wait for a sign-in.
-// The roles and the capability are the other session reads' (`conversation.read`); the server applies them first.
+// The roles and the capability are the other session reads' (`conversation.read`); the server applies them first. A
+// plugin's own connection (a `layer`) also needs `files` for `session.diff`, since the diff carries the folder's file
+// contents: the bundled diff panel's OK lists both, a third-party layer with `conversation.read` alone is refused.
 import { readdirSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
-import { SESSIONS_METHODS, type SessionDiff, type SessionView } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, SESSIONS_METHODS, type SessionDiff, type SessionView } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
-import { handler, type MethodHandler } from "../rpc/handler";
+import { handler, MethodError, type MethodHandler } from "../rpc/handler";
 import { folderDiff } from "./diff";
 import { outdirPath } from "./outdir";
 import type { SessionRecord } from "../contracts/session-host";
@@ -33,7 +35,13 @@ export interface SessionPanelDeps {
   contextWindowOf?(model: string): number | undefined;
   /** The plugin MCP servers a session gets, with whether each one's plugin waits for a sign-in. */
   connectorsOf?(view: SessionView): Promise<{ total: number; needSignIn: number }>;
+  /** What a plugin's OK grants now (the registry's `grantsInForce`), for `session.diff`'s second capability. Absent: a
+   *  plugin caller holds nothing, so `session.diff` refuses every plugin. */
+  grantsOf?(pluginId: string): readonly string[];
 }
+
+/** The second capability `session.diff` needs from a plugin caller: it reads the folder's file contents. */
+export const DIFF_PLUGIN_CAPABILITY = "files";
 
 const IMAGE = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".heic", ".avif", ".bmp"]);
 const PAGE = new Set([".html", ".htm", ".md", ".markdown", ".pdf"]);
@@ -50,7 +58,10 @@ export function sessionPanelMethods(deps: SessionPanelDeps): Record<string, Meth
     return v;
   };
   return {
-    [M.sessionDiff.name]: handler(M.sessionDiff, async ({ id }): Promise<SessionDiff> => {
+    [M.sessionDiff.name]: handler(M.sessionDiff, async ({ id }, ctx): Promise<SessionDiff> => {
+      if (ctx.caller.kind === "plugin" && !(deps.grantsOf?.(ctx.caller.pluginId) ?? []).includes(DIFF_PLUGIN_CAPABILITY)) {
+        throw new MethodError(CLOVER_ERR.CAPABILITY_REFUSED, `${M.sessionDiff.name} needs the capability ${DIFF_PLUGIN_CAPABILITY} as well, which ${ctx.caller.pluginId}'s OK doesn't list`);
+      }
       const v = viewOf(id);
       const none = (notice: string): SessionDiff => ({ base: "", target: "working tree", targets: [], files: [], notice });
       if (v.root === undefined) return none("This session has no folder, so it has no changes to show.");

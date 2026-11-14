@@ -12,7 +12,8 @@
     ]
   },
   "capabilities": [
-    "conversation.read"
+    "conversation.read",
+    "files"
   ],
   "contributes": {
     "ui": [

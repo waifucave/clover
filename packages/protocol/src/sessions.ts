@@ -349,7 +349,7 @@ export const SESSIONS_METHODS = {
     name: "session.diff", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
     params: z.object({ id: SessionId, target: utf16(256).optional() }),
     result: SessionDiff,
-    doc: "A coding session's or an agent's changes in its folder, read only: the working tree against HEAD (untracked files as added), per file with its hunks, bounded per file and in total. A folder that isn't a git repository, or isn't on this computer, answers no files and a notice.",
+    doc: "A coding session's or an agent's changes in its folder, read only: the working tree against HEAD (untracked files as added), per file with its hunks, bounded per file and in total. A folder that isn't a git repository, or isn't on this computer, answers no files and a notice. A plugin's own connection (a layer) also needs the capability files, since the diff carries file contents.",
   }),
   sessionOutputs: defineMethod({
     name: "session.outputs", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",

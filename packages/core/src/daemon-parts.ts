@@ -53,7 +53,7 @@ import { createBotSide } from "./bots/wiring";
 import { LeaseMainComputer, soleComputer, type MainComputer } from "./bots/main-computer";
 import type { DriverFactory } from "./bots/service";
 import type { Clock } from "./contracts/clock";
-import type { PluginRegistry } from "./contracts/plugin-registry";
+import { grantsInForce, type PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
@@ -537,6 +537,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         },
         ...(b.contextWindowOf === undefined ? {} : { contextWindowOf: b.contextWindowOf }),
         ...(b.connectorsOf === undefined ? {} : { connectorsOf: b.connectorsOf }),
+        grantsOf: (pluginId) => grantsInForce(b.registry.get(pluginId)),
       })));
       // Lane D's usage rows (`usage.rows`, `usage.summary`): its ledger, counting the bot side's sessions as they run.
       const ledger = new UsageLedger({ path: cloverUsageDbPath(input.cloverHome), computer: runner.self });

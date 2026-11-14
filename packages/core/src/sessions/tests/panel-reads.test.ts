@@ -147,6 +147,24 @@ describe("the session panels' reads", () => {
     expect(await methods({ records: [turn(0)], window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toBeNull();
   });
 
+  test("session.diff from a plugin's own connection needs files too: a third-party layer with conversation.read alone is refused, the bundled diff panel is served", async () => {
+    const dir = repo();
+    const grants: Record<string, string[]> = { "acme/diffy": ["conversation.read"], "clover/panel-diff": ["conversation.read", "files"] };
+    const m = sessionPanelMethods({
+      home: temp("home"),
+      view: (id) => (id === "s_code" ? view() : undefined),
+      history: () => [],
+      length: () => 0,
+      localFolder: () => ({ path: dir }),
+      grantsOf: (id) => grants[id] ?? [],
+    }) as Record<string, (params: unknown, ctx: unknown) => Promise<unknown>>;
+    const as = (pluginId: string) => ({ caller: { kind: "plugin", pluginId } });
+    await expect(m["session.diff"]!({ id: "s_code" }, as("acme/diffy"))).rejects.toMatchObject({ code: -32011, message: expect.stringContaining("needs the capability files as well") });
+    expect(((await m["session.diff"]!({ id: "s_code" }, as("clover/panel-diff"))) as { files: unknown[] }).files.length).toBe(4);
+    // The user's own clients are as they were.
+    expect(((await m["session.diff"]!({ id: "s_code" }, USER)) as { files: unknown[] }).files.length).toBe(4);
+  });
+
   test("session.connectors: the counts the daemon gives", async () => {
     expect(await methods()["session.connectors"]!({ id: "s_code" }, USER)).toEqual({ total: 3, needSignIn: 1 });
   });
