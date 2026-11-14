@@ -79,21 +79,6 @@ function NothingHere({ title }: { title: string }) {
   );
 }
 
-/** Whether the window is narrower than 900 CSS pixels (only watched while `on`). */
-function useNarrow(on: boolean): boolean {
-  const q = "(max-width: 899px)";
-  const [narrow, setNarrow] = useState(() => on && typeof matchMedia === "function" && matchMedia(q).matches);
-  useEffect(() => {
-    if (!on || typeof matchMedia !== "function") { setNarrow(false); return; }
-    const m = matchMedia(q);
-    const f = () => setNarrow(m.matches);
-    f();
-    m.addEventListener("change", f);
-    return () => m.removeEventListener("change", f);
-  }, [on]);
-  return narrow;
-}
-
 /** The newest coding session (by when it started): where the Code side goes. */
 export function newestCoding(sessions: readonly SessionView[]): SessionView | undefined {
   return sessions.filter((x) => x.kind === "coding").reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
