@@ -89,7 +89,10 @@ describe("where a pending card is drawn", () => {
 
 /** Fake windows and a fake clock: focus moves between Clover's own windows and out to another app. */
 function windows() {
-  const win = (focused: boolean) => ({ focused, destroyed: false, isDestroyed() { return this.destroyed; }, isFocused() { return this.focused; }, isVisible: () => true, isMinimized: () => false }) satisfies WatchedWindow & Record<string, unknown>;
+  const win = (focused: boolean) => {
+    const w = { focused, destroyed: false, isDestroyed: (): boolean => w.destroyed, isFocused: (): boolean => w.focused, isVisible: () => true, isMinimized: () => false };
+    return w satisfies WatchedWindow;
+  };
   const main = win(true);
   const card = win(false);
   let cardOpen = false;

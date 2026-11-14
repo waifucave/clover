@@ -45,8 +45,6 @@ export interface ApiCallInfo {
 export type ApiCaller = "ui" | HostProcess;
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
-/** A call the catalog lists that no side serves yet (`ApiCallInfo.notYet`). */
-const notYet = (info: ApiCallInfo, why: string): ApiCallInfo => ({ ...info, notYet: why });
 /** The Clover Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
  *  the bundled panel (its component, for the person). The core serves no other plugin's. */
 const BROWSER: ApiCallInfo = { capability: "browser", where: "both" };
