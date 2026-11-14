@@ -130,6 +130,11 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
     enabled: p.enabled,
     dev: p.dev,
     children: p.children.map((c) => named.get(c) ?? c),
+    ...(p.labels !== undefined && p.labels.length > 0 ? { labels: p.labels } : {}),
+    ...(() => {
+      const parts = plugins.filter((c) => c.parent === p.id).map((c) => ({ name: named.get(c.id) ?? c.id, labels: c.labels ?? [] }));
+      return parts.length > 0 ? { parts } : {};
+    })(),
     ...(isNotYet(p) ? { notYet: true as const } : {}),
     ...((() => {
       const parts = plugins.filter((c) => c.parent === p.id && isNotYet(c)).map((c) => named.get(c.id) ?? c.id);
@@ -191,7 +196,7 @@ export function commandKeys(d: PluginDetail, listed: readonly { name: string; pl
 /** One plugin opened, from `plugin.get`, its settings, its sign-ins and its log. */
 export function toDetail(
   d: PluginDetail,
-  more: { childTools?: string[]; settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[]; commands?: { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] },
+  more: { childTools?: string[]; parts?: { name: string; labels: string[] }[]; settings?: SettingRow[]; auth?: { index: number; method: string; state: string; account?: string }[]; log?: string[]; muted?: boolean; grants?: GrantRow[]; commands?: { name: string; pluginId: string; keyState?: { state: string; what?: string; with?: string[] } }[] },
   lang = "en",
   icons: Readonly<Record<string, string>> = {},
 ): PluginDetailView {
@@ -220,6 +225,7 @@ export function toDetail(
     provenance: PROVENANCE[d.provenance.by] ?? "",
     oks,
     // Its own tools and its child plugins' (a child's server is a tool the bots get like any other).
+    ...(more.parts !== undefined && more.parts.length > 0 ? { parts: more.parts } : {}),
     tools: [...servers.flatMap(([, s]) => Object.keys(s.tools ?? {})), ...(more.childTools ?? [])],
     servers: servers.filter(([, s]) => Object.keys(s.tools ?? {}).length === 0).map(([name]) => name),
     settings: (more.settings ?? []).map((s) => toDetailSetting(s, lang)),
@@ -317,7 +323,8 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
         // Its children's tools too: each child is a plugin of its own, with its own servers.
         const kids = await Promise.all(d.plugin.children.map((c) => quiet(core.call("plugin.get", { id: c }))));
         const childTools = kids.flatMap((k) => Object.values((k?.plugin.manifest as { contributes?: { mcpServers?: Record<string, { tools?: Record<string, unknown> }> } } | undefined)?.contributes?.mcpServers ?? {}).flatMap((s) => Object.keys(s.tools ?? {})));
-        return { d, childTools };
+        const parts = d.plugin.children.flatMap((c, i) => (kids[i] === undefined ? [] : [{ name: plain(kids[i]!.plugin.name as never, "en") || c, labels: kids[i]!.plugin.labels ?? [] }]));
+        return { d, childTools, parts };
       }),
       quiet(core.call("plugin.settings.get", { id: open })),
       quiet(core.call("plugin.auth.list", { id: open })),
@@ -326,7 +333,7 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("plugin.grant.list", { pluginId: open })),
       quiet(core.call("command.list", {})),
     ]).then(
-      ([{ d, childTools }, settings, auth, logs, mutes, grants, cmds]) => live && setDetail(toDetail(d.plugin, { childTools, ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)),
+      ([{ d, childTools, parts }, settings, auth, logs, mutes, grants, cmds]) => live && setDetail(toDetail(d.plugin, { childTools, parts, ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)),
       () => live && setOpen(null),
     );
     return () => {

@@ -55,6 +55,16 @@ function StateBadge({ state }: { state: InstalledPlugin["state"] }) {
   );
 }
 
+/** What a plugin brings, as small labels (derived from its contributions by the plugin SDK's `contributionLabels`). */
+function Labels({ labels }: { labels: readonly string[] | undefined }) {
+  if (labels === undefined || labels.length === 0) return null;
+  return (
+    <span className="cl-plugin-index__labels" role="group" aria-label={S.brings}>
+      {labels.map((l) => <span key={l} className="cl-plugin-index__label">{l}</span>)}
+    </span>
+  );
+}
+
 function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
   return (
     <li className="cl-plugin-index__result" data-state={p.state}>
@@ -67,6 +77,7 @@ function Row({ p, onOpen }: { p: InstalledPlugin; onOpen: () => void }) {
         <span className="cl-plugin-index__meta">
           {[p.id, p.version, p.source, p.children.length > 0 ? S.children(p.children.length) : undefined].filter(Boolean).join(" · ")}
         </span>
+        <Labels labels={p.labels} />
         {p.description && <span className="cl-plugin-index__line" title={p.description}>{p.description}</span>}
         {p.notYet && <span className="cl-plugin-index__description" data-not-yet="">{S.notYet}</span>}
         {!p.notYet && p.notYetParts !== undefined && p.notYetParts.length > 0 && <span className="cl-plugin-index__line" data-not-yet-parts="">{S.notYetPartsLine(p.notYetParts.length)}</span>}
@@ -224,6 +235,7 @@ export function Detail(props: DetailProps) {
         </div>
       </header>
       <p className="cl-plugin-index__meta">{[p.id, p.version, p.source, p.pinned ? S.pinned : undefined].filter(Boolean).join(" · ")}</p>
+      <Labels labels={p.labels} />
       <p className="cl-plugin-index__intro">{p.provenance}</p>
       {p.description && <p className="cl-plugin-index__intro">{p.description}</p>}
       {p.notYet ? (
@@ -244,6 +256,14 @@ export function Detail(props: DetailProps) {
         <p className="cl-plugin-index__status" data-tone={props.status.tone} role="status">
           {props.status.text}
         </p>
+      )}
+
+      {p.parts !== undefined && p.parts.some((c) => c.labels.length > 0) && (
+        <Section title={S.parts}>
+          <ul className="cl-plugin-index__facts" data-parts="">
+            {p.parts.map((c) => <li key={c.name}>{c.name}<Labels labels={c.labels} /></li>)}
+          </ul>
+        </Section>
       )}
 
       <Section title={S.what}>

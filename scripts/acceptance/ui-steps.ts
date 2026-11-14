@@ -259,19 +259,20 @@ export async function layGround(cdp: Cdp, scheme: "dark" | "light"): Promise<voi
 }
 
 /** One picture of the app's window per scheme, at 1280x800, offscreen, into `dir`: `plugins-<name>-<scheme>.png`. */
-export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string[]> {
+export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void, width = 1280): Promise<string[]> {
   const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
   if (appRoot === undefined) return [];
   const out: string[] = [];
-  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
   for (const scheme of ["dark", "light"] as const) {
     setAppearance?.(scheme);
     for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
     await layGround(cdp, scheme);
     await new Promise((r) => setTimeout(r, 1_500));
     const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
-    writeFileSync(join(dir, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
-    out.push(`plugins-${name}-${scheme}.png`);
+    const file = `plugins-${name}${width === 1280 ? "" : `-w${width}`}-${scheme}.png`;
+    writeFileSync(join(dir, file), Buffer.from(shot.data, "base64"));
+    out.push(file);
   }
   return out;
 }
@@ -1058,10 +1059,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     let iconSeen = "";
     let grantedPath = "";
     let grantSkipped = "";
+    let labelsSaid = "";
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
+      // Wide, then narrow: the page's own width is the window's.
       rendered.push(...(await shootWindow(cdp, renders, name, ctx.setAppearance)));
+      if (name === "installed" || name === "detail") rendered.push(...(await shootWindow(cdp, renders, name, ctx.setAppearance, 560)));
     };
     try {
       if (renders) {
@@ -1093,8 +1097,24 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const grantToken = `grant:${crypto.randomUUID()}`;
       const granted = await rpc.request("plugin.grant.add", { pluginId: pick!.id, token: grantToken, path: grantedPath, kind: "file", access: "read" }).then(() => true, (err: unknown) => { grantSkipped = String((err as Error).message ?? err); return false; });
       if (!granted && grantSkipped === "") grantSkipped = "refused";
+      // What each plugin brings, as small labels under its name: the row shows what the core derived from its contributions
+      // (`plugin.get`'s `labels`: a bot's own plugin brings Bot, a plugin with a tool brings Tools), and the detail shows
+      // the same; none of them names a kind of plugin.
+      const rowLabels = async (name: string) => (await inTree<string>(cdp, `(() => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${name}`)}); const u = b && b.closest('li') ? b.closest('li').querySelector('.cl-plugin-index__labels') : null; return u ? JSON.stringify([...u.querySelectorAll('.cl-plugin-index__label')].map((e) => e.textContent)) : null; })()`))?.value;
+      const wantLabels = async (id: string) => ((await rpc.request<{ plugin: { labels?: string[] } }>("plugin.get", { id })).plugin.labels ?? []);
+      const pickWant = await wantLabels(pick!.id);
+      if (!pickWant.includes("Tools")) fail(`${pick!.id} has a tool but the core's labels for it are ${JSON.stringify(pickWant)}`);
+      const pickRow = await until(`${pick!.name}'s labels in its row`, 15_000, async () => rowLabels(pick!.name));
+      if (pickRow !== JSON.stringify(pickWant)) fail(`${pick!.name}'s row shows ${pickRow}, the core derived ${JSON.stringify(pickWant)}`);
+      const alphaWant = await wantLabels("alpha");
+      const alphaRow = await rowLabels("Alpha");
+      if (!alphaWant.includes("Bot") || alphaRow !== JSON.stringify(alphaWant)) fail(`Alpha's labels: the core derived ${JSON.stringify(alphaWant)} (a bot's own plugin brings Bot), her row shows ${alphaRow}`);
+      if ([...pickWant, ...alphaWant].some((l) => /plugin|type|kind/i.test(l))) fail(`a label names a kind of plugin: ${[...pickWant, ...alphaWant].join(", ")}`);
+      labelsSaid = `its row shows what it brings (${pickWant.join(", ")}) and Alpha's shows ${alphaWant.join(", ")}, both as the core derived them`;
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
       await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
+      const detailLabels = await until("its detail's labels", 15_000, async () => (await inTree<string>(cdp, "(() => { const u = document.querySelector('.cl-plugin-index__detail > .cl-plugin-index__labels'); return u ? JSON.stringify([...u.querySelectorAll('.cl-plugin-index__label')].map((e) => e.textContent)) : null; })()"))?.value);
+      if (detailLabels !== JSON.stringify(pickWant)) fail(`its detail shows ${detailLabels}, its row showed ${JSON.stringify(pickWant)}`);
       if (renders) {
         await shoot("detail");
         // Its key: the app's own dialog (a core page over the window), never a field on the page.
@@ -1260,7 +1280,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (dataDir !== undefined) await until("its data folder gone with it", 15_000, async () => (existsSync(dataDir) ? undefined : true), async () => `${dataDir} still holds ${JSON.stringify(readdirSync(dataDir))}`);
     const dataSaid = dataDir !== undefined ? "Remove and delete its data… pressed on its card, the plugin and its data folder gone" : "Remove and delete its data… pressed on its card, the plugin gone";
     const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders and adult not driven (no picker control)";
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; ${labelsSaid}, the detail the same; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX

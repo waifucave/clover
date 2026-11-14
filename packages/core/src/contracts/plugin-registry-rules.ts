@@ -5,6 +5,7 @@
 import { BUNDLED_ROOT_PLUGIN, NOT_AVAILABLE_YET, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
 import { CORE_SPOTS, UNIQUE_ENTRY_FIELD, type Contribution, type PluginRecord, type RegisteredPoint, type RegistryChange } from "./plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";
+import { contributionLabels } from "../../../plugin-sdk/src/manifest/labels";
 
 /** A plugin as the rules see it, in the synced list's order (a child after its parent). */
 export interface RegistryPlugin {
@@ -266,6 +267,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       scope: m.scope ?? "both",
       adult: top.manifest.adult === true,
       children: ids.filter((c) => parentOf(c) === id),
+      // What it brings, for the Plugins page's small labels: a top plugin's include its children's.
+      labels: contributionLabels([held.invalid === undefined ? held.manifest : undefined, ...ids.filter((c) => parentOf(c) === id).map((c) => (plugins.get(c)?.invalid === undefined ? plugins.get(c)?.manifest : undefined))]),
       dev: held.dev ?? false,
       folder: held.folder ?? `/plugins/${id.replace("/", "/plugins/")}`,
       manifest: held.invalid === undefined ? structuredClone(m) : undefined,

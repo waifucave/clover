@@ -67,6 +67,10 @@ export interface InstalledPlugin {
   dev: boolean;
   /** Its child plugins' names. */
   children: string[];
+  /** The small labels for what it brings (Bot, Tools, Island tab…), from its contributions; its children's included. */
+  labels?: string[];
+  /** Each child with its own labels, for the detail. */
+  parts?: { name: string; labels: string[] }[];
   /** Clover's own plugin this build can't run yet (the registry's `off` with `NOT_AVAILABLE_YET`): one plain line, a
    *  switch that can't be used, nothing to set, sign in to or read. */
   notYet?: true;
