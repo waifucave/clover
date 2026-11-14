@@ -80,7 +80,8 @@ beforeAll(() => {
   fakeBin = join(mkdtempSync(join(tmpdir(), "ce1-bins-")), `clover-core${exe}`);
   const compiled = spawnSync("bun", ["build", "--no-macros", "--compile", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeBin], { encoding: "utf8" });
   expect(compiled.status, compiled.stderr).toBe(0);
-});
+  // The build and the compile take longer than a hook's default 5 s on a slow runner; the hook's end then kills the build.
+}, 180_000);
 
 const CARD_ID = "card_0a1b2c3d";
 const CARD = {
@@ -178,7 +179,9 @@ function answerCallsOf(home: string): { event: string; method: string; params: {
 // own visibility reading stays at 44% (19 of 33 px shown) or never reports, cause not found (runs 43605095930, 43612980829,
 // 43615107894), so the press is refused (`not-visible`). A real press landing is proven on this Mac by the local run of this
 // file (at device scale 1 and 2, with and without the GPU) and by the packaged acceptance's card steps (4 and 7). With these
-// three skipped, the "does not land" tests on CI prove nothing, since no press lands there at all.
+// three skipped, the "does not land" tests on CI prove nothing, since no press lands there at all, and they fail there now
+// and then for the same reason (macOS, run 43627069632: the computer-use one saw no press reach the sealed page). So every
+// test that presses a sealed button in the main window skips on CI; the fallback window's test stays.
 // CLOVER_SEALED_UI_ON_CI=1 runs them on CI anyway.
 const onCi = test.skipIf(ci && process.env.CLOVER_SEALED_UI_ON_CI !== "1");
 
@@ -203,7 +206,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     }
   }, 120_000);
 
-  test("a covered press does not land", async () => {
+  onCi("a covered press does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", cover: true } });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
@@ -212,7 +215,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
-  test("a semi-transparent (opacity) cover does not land", async () => {
+  onCi("a semi-transparent (opacity) cover does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", opacity: 0 } });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
@@ -223,7 +226,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
-  test("a press while computer use is acting does not land (B3)", async () => {
+  onCi("a press while computer use is acting does not land (B3)", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" }, acting: true });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");

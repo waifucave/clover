@@ -167,7 +167,9 @@ beforeAll(() => {
   writeFileSync(registries.spin, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-spin"), 1004)] }));
   registries.dns = join(work, "dns.json");
   writeFileSync(registries.dns, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-dns"), 1002), folderView(join(FIXTURES, "fixture-dns-control"), 1003)] }));
-});
+  // The build and the compile take longer than a hook's default 5 s on a slow runner; the hook's end then kills the build
+  // ("killed 1 dangling process") and no test of this file runs.
+}, 180_000);
 
 afterAll(() => {
   // CLOVER_UI_KEEP_HOMES=1 keeps each run's home (its log, net log and calls) for a look after a failure.
