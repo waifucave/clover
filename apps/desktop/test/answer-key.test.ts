@@ -462,7 +462,8 @@ describe("a test run's kept key (CLOVER_TEST_ANSWER_KEY's file vault)", () => {
     const first = new AnswerKey(fileVault(file));
     const pub = first.publicKey();
     expect(new AnswerKey(fileVault(file)).publicKey()).toBe(pub);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // POSIX mode bits mean nothing on Windows (the file's access there is its folder's ACL).
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     // A staged replacement promotes into the same file.
     const v = fileVault(file);
     v.saveStaged({ secret: new Uint8Array([1, 2, 3]), at: 5, card: "card_x" });

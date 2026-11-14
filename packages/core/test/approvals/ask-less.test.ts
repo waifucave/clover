@@ -184,7 +184,8 @@ describe("ordinary files: the user's own folders, never logins, settings, apps o
     expect(judged(join(home, "Downloads", "notes.md"))).toBe(true);
     expect(judged(join(home, "Downloads", "keys", "authorized_keys"))).toBe(false);
     expect(judged(join(home, "Downloads", "keys", "new", "deep.txt"))).toBe(false);
-    expect(judged(join(home, "Downloads", "lib", "Keychains", "x"))).toBe(false);
+    // ~/Library/Keychains is a secret place on macOS only.
+    if (os === "macos") expect(judged(join(home, "Downloads", "lib", "Keychains", "x"))).toBe(false);
     expect(judged("~/Downloads/x.md".replace("~", home))).toBe(true);
     expect(judged(join(home, "Downloads", "..", ".ssh", "x"))).toBe(false);
     // A hard link no real path shows: a file in Downloads that is also `~/.ssh/authorized_keys` is never ordinary.

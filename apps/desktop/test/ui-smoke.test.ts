@@ -186,7 +186,10 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     // The first click opens a file; the second saves one: each answer is in the file the smoke's picker reads, by kind.
     const saved = join(h, "export.bin");
     writeFileSync(pickFile, `open=${video}\nsave=${saved}\n`);
-    const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_INPUT: "click", CLOVER_SMOKE_PICK_FILES: pickFile, CLOVER_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", CLOVER_SMOKE_SETTLE_MS: "1500" });
+    // A CI Linux runner has no GPU: Chromium gives a page WebGL there only through its software renderer (as the galleries' browser is
+    // launched), so this run asks for it; macOS and Windows have a GL context of their own.
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_INPUT: "click", CLOVER_SMOKE_PICK_FILES: pickFile, CLOVER_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", CLOVER_SMOKE_SETTLE_MS: "1500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
     const frame = surfaces.find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
     expect(frame, r.output).toBeDefined();
@@ -219,7 +222,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     homes.push(h);
     const video = join(h, "dropped.webm");
     copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
-    const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
     const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
     expect(frame!.text, stoppedWhy(r) || r.output).toContain("drop: dropped.webm read token");
     expect(frame!.text).not.toContain(h);
@@ -228,7 +232,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
   }, 120_000);
 
   test("only a plugin that asks for it gets a cross-origin isolated layer (SharedArrayBuffer); the media URL, sealed cards and the shell are as before", () => {
-    const r = smoke(electron(), [root], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "webgl:", CLOVER_SMOKE_SETTLE_MS: "2500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
     const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
     expect(text("media", "clover-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");

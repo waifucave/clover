@@ -67,7 +67,7 @@ describe("the SDK's examples install as they ship", () => {
   test("example-notes: installed, OK'd and running with its child bot; its card names its cardless tools and no network; its two lists hold", async () => {
     const home = temp("clover-d-examples-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-notes") } }, APP)) as { id: string; state: string; treeHash: string; card?: string };
@@ -124,7 +124,7 @@ describe("the SDK's examples install as they ship", () => {
   test("example-pngtuber: a third-party character renderer installs from its folder; its manifest holds the format it declares and its TSX builds to the layer's imports only", async () => {
     const home = temp("clover-d-pngtuber-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-pngtuber") } }, APP)) as { id: string; treeHash: string };
@@ -143,7 +143,7 @@ describe("the SDK's examples install as they ship", () => {
   test("example-weather: installed and OK'd; its card names its host and notifications, and says its readOnly and contained tools still ask; the lists don't hold", async () => {
     const home = temp("clover-d-examples-w-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
-    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
     const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home });
     try {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-weather") } }, APP)) as { id: string; treeHash: string; card?: string };

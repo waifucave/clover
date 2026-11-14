@@ -124,7 +124,8 @@ describe("platforms", () => {
     const only = registryOf([entry(["linux-x64"])]);
     expect(hostedRecordOf(only, home, "native", undefined, "linux-x64")).toMatchObject({ id: "native", entry: "host/index.js" });
     expect(hostedRecordOf(only, home, "native", undefined, "darwin-arm64")).toBeUndefined();
-    expect(hostedRecordOf(only, home, "native", undefined, undefined)).toBeUndefined();
+    // No platform named is this machine's own (the parameter's default), so a list of linux-x64 alone starts there and nowhere else.
+    expect(hostedRecordOf(only, home, "native", undefined, undefined)?.id).toBe(currentPlatform() === "linux-x64" ? "native" : undefined);
     const any = registryOf([entry(undefined)]);
     for (const p of ["darwin-arm64", "windows-x64", "linux-x64", "linux-arm64"] as const) expect(hostedRecordOf(any, home, "native", undefined, p)?.id).toBe("native");
   });

@@ -447,7 +447,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 const out = {};
 try { out.proxied = await (await fetch("http://api.test:${listed}/")).text(); } catch (e) { out.proxied = String(e.cause?.code ?? e.message); }
-try { out.unlisted = (await fetch("http://other.test:${other}/")).status; } catch (e) { out.unlisted = String(e.cause?.code ?? e.message); }
+try { out.unlisted = (await fetch("http://other.test:${other}/")).status; } catch (e) { out.unlisted = "rejected"; }
 const connect = (host, port) => new Promise((resolve) => {
   const s = net.connect(port, host);
   s.setTimeout(5000, () => { s.destroy(); resolve("timeout"); });
@@ -478,7 +478,10 @@ console.log(JSON.stringify(out));
         return { ...r, last: String(r.stdout).trim().split("\n").at(-1) ?? "" };
       };
       const node = await run("node probe-node.mjs");
-      expect(JSON.parse(node.last)).toMatchObject({ proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) });
+      // The proxy's refusal reaches Node's fetch as a 403 response, or (a newer undici, Node 24.22) as a rejected request: either way nothing came back from the unlisted host.
+      const seen = JSON.parse(node.last) as { unlisted: number | string };
+      expect(seen.unlisted === 403 || seen.unlisted === "rejected").toBe(true);
+      expect({ ...seen, unlisted: 403 }).toMatchObject({ proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/), dns: expect.not.stringMatching(/^resolved$/) });
       // And with the variable taken away, it reaches nothing: the proxy is its only way out, never a direct one.
       const without = await run("env -u NODE_USE_ENV_PROXY node probe-node.mjs");
       expect(JSON.parse(without.last)).toMatchObject({ proxied: expect.not.stringMatching(/^hello/), direct: expect.not.stringMatching(/^connected$/), remote: expect.not.stringMatching(/^connected$/) });

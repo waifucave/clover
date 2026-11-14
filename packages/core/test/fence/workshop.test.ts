@@ -157,7 +157,7 @@ function onDisk() {
   for (const d of ["plugins/luna-cutter/src", "plugins/fish-audio", "scratch/luna", "bots/luna/memory", "Desktop", "Library/Mail/V10"]) mkdirSync(join(d.startsWith("Desktop") || d.startsWith("Library") ? home : clover, d), { recursive: true });
   writeFileSync(join(clover, "plugins/luna-cutter/manifest.json"), "{}");
   writeFileSync(join(clover, "plugins/fish-audio/manifest.json"), "{}");
-  const f = new CloverFence({ home, cloverHome: clover });
+  const f = new CloverFence({ home, cloverHome: clover, temp: join(home, "fence-temp") });
   f.followWorkshop(records([{ id: "luna-cutter", bot: "luna" }, { id: "fish-audio" }]));
   return { home, clover, f, cutter: join(clover, "plugins", "luna-cutter"), lock: (rel: string) => { chmodSync(join(home, rel), 0o000); t.locked.push(join(home, rel)); } };
 }

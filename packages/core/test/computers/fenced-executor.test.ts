@@ -23,7 +23,7 @@ import { darwinDescribe } from "../helpers/darwin-only";
 import { catalogPointDecl } from "../../../plugin-sdk/src/catalogs/index";
 import { Drivers } from "../../src/bots/tests/fixtures";
 
-const temp = (prefix: string) => realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+const temp = (prefix: string) => realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 const LUNA: Caller = { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" };
 const PEER: Caller = { kind: "peer", device: "d_laptop", computer: "Laptop" } as Caller;
 
@@ -128,7 +128,7 @@ describe("fencedExecutor over a spawner", () => {
     mkdirSync(join(home, ".clover"), { recursive: true });
     mkdirSync(join(root, "tmp"), { recursive: true });
     const fence = new CloverFence({ os: hostOs(), home, cloverHome: join(home, ".clover"), temp: join(root, "tmp") });
-    expect(fence.temp).toBe(realpathSync(join(root, "tmp")));
+    expect(fence.temp).toBe(realpathSync.native(join(root, "tmp")));
     expect(fence.policy().allowWrite).toContain(fence.temp);
   });
 
@@ -209,7 +209,7 @@ describe("through the daemon's parts (startDaemonParts), as the daemon wires it"
     const r = await node.tools.run("Bash", { command: "echo ok" }, { session: "s_luna", sessionKind: "bot", bot: "luna", callId: "c1", cwd: `home/${name}` });
     expect(r.isError).toBe(false);
     expect(s.runs).toHaveLength(1);
-    expect(s.runs[0]).toMatchObject({ command: "echo ok", cwd: realpathSync(userHome), who: { caller: { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" } } });
+    expect(s.runs[0]).toMatchObject({ command: "echo ok", cwd: realpathSync.native(userHome), who: { caller: { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" } } });
     expect(s.runs[0]!.env.HOME).toBe(userHome);
     // In production too: a coding session's TMPDIR is the fence's temp folder; the bot's is its own scratch folder.
     expect(s.runs[0]!.env.TMPDIR).toEndWith("/scratch/luna");

@@ -33,7 +33,7 @@ function world(level: Level) {
     botId: "luna", sessionId: "s1", computer: "Studio", level, paths: { scratch, root: join(clover, "bots", "luna") },
     caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
   } as unknown as BotSessionContext;
-  const fence = new CloverFence({ home: user, cloverHome: clover });
+  const fence = new CloverFence({ home: user, cloverHome: clover, temp: join(user, "tmp") });
   const pathFolders = [join(user, ".local", "bin")];
   const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: clover, userHome: user, level, ownFolders: [scratch], pathFolders });
   const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: user, os, cloverHome: clover, pathFolders });
@@ -110,7 +110,7 @@ describe("a bot's file tools never write a run-later place: refused before any c
     } as unknown as BotSessionContext;
     // As the daemon draws it: the fence made from the homes as given (it keeps their real paths), the session's scratch
     // as given, and the run-later check given the Clover home as given (CLOVER_HOME), the user home real.
-    const fence = new CloverFence({ home: plain, cloverHome: join(plain, ".clover") });
+    const fence = new CloverFence({ home: plain, cloverHome: join(plain, ".clover"), temp: join(plain, "tmp") });
     const sandboxOf = () => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: fence.cloverHome, userHome: fence.home, level: "ask-risky", ownFolders: [ctx.paths.scratch, ctx.paths.root], pathFolders: [] });
     const classOf = (paths: readonly string[]) => pathsClassOnDisk(paths, { home: fence.home, os, cloverHome: fence.cloverHome, pathFolders: [] });
     const homes = { os, userHome: fence.home, cloverHome: join(plain, ".clover") };

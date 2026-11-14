@@ -130,7 +130,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     const cache = join(home, "sdk", "projects", "k", "s1.auto-state.json");
     mkdirSync(join(home, "sdk", "projects", "k"), { recursive: true });
     writeFileSync(cache, "CACHED-DECISIONS");
-    const fence = new CloverFence({ home: dirname(home), cloverHome: home });
+    const fence = new CloverFence({ home: dirname(home), cloverHome: home, temp: join(dirname(home), "fence-temp") });
     const driver = new BotSessionDriver(ctx, { home, spawn, canUseTool: allow, sandbox: () => ({}), stopGraceMs: 5_000, log: () => {}, fileFence: botFileFence(fence, home) });
     try {
       const calls = [
@@ -266,7 +266,7 @@ describeWithEmbeddedRuntime("the bot driver's file tools on agent SDK 0.0.77", (
     expect(existsSync(mail)).toBe(true);
     writeFileSync(join(userHome, ".ssh/id_ed25519"), "KEY-SECRET");
     const desk = join(userHome, "Desktop", "hello_world.md");
-    const fence = new CloverFence({ home: userHome, cloverHome });
+    const fence = new CloverFence({ home: userHome, cloverHome, temp: join(userHome, "fence-temp") });
     const sandbox = (c: BotSessionContext) => botSandboxSettings(fence.forCaller(c.caller).policy(), {
       cloverHome, userHome, level: undefined, ownFolders: [c.paths.scratch, c.paths.root], pathFolders: [],
     });
