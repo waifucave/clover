@@ -15,7 +15,8 @@ import { CAPABILITIES, capabilityOkText, isCapability, parseCapability, parseSet
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
-import { SPOT_NAMES, foldTitle, isReservedPluginName, spotInfo } from "../catalogs/spots";
+import { SAME_ON_EVERY_TAB, SPOT_NAMES, botsOffer, foldTitle, isReservedPluginName, spotInfo } from "../catalogs/spots";
+import { holdsBot, marksAppParts, pluginParts, skillItem } from "./parts";
 import { treePathProblem } from "../formats/tree-hash";
 import { parseJsonc } from "../jsonc";
 import { isRange, satisfies } from "../semver";
@@ -191,7 +192,7 @@ function collectPaths(m: Record<string, unknown>): { path: Seg[]; value: string;
   }
   const list = (key: string) => (Array.isArray(c[key]) ? (c[key] as unknown[]) : []);
   list("models").forEach((e, i) => isObject(e) && add(["contributes", "models", i, "catalog"], e.catalog, "entry"));
-  list("skills").forEach((e, i) => add(["contributes", "skills", i], e, "entry", true));
+  list("skills").forEach((e, i) => add(typeof e === "string" ? ["contributes", "skills", i] : ["contributes", "skills", i, "path"], skillItem(e)?.path, "entry", true));
   list("agents").forEach((e, i) => (typeof e === "string" ? add(["contributes", "agents", i], e, "entry") : isObject(e) && add(["contributes", "agents", i, "instructions"], e.instructions, "entry")));
   list("themes").forEach((e, i) => isObject(e) && add(["contributes", "themes", i, "file"], e.file, "entry"));
   list("locales").forEach((e, i) => isObject(e) && add(["contributes", "locales", i, "file"], e.file, "entry"));
@@ -496,6 +497,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   const hasHost = isObject(top.host);
   const hasClient = isObject(top.client);
   const isBot = isObject(rawContributes) && rawContributes.bot !== undefined;
+  const botName = isBot && isObject(rawContributes.bot)
+    ? (typeof rawContributes.bot.name === "string" ? rawContributes.bot.name : isObject(rawContributes.bot.name) && typeof rawContributes.bot.name.en === "string" ? rawContributes.bot.name.en : undefined)
+    : undefined;
   const kept: Record<string, unknown> = {};
   const declared: DeclaredPoint[] = [];
   const seenDecl = new Map<string, string>();
@@ -513,7 +517,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     for (const [key, value] of Object.entries(rawContributes)) {
       const at: Seg[] = ["contributes", key];
       if ((CORE_CONTRIBUTION_KEYS as string[]).includes(key)) {
-        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, namespace, bundled: opts.bundled === true, seenDecl, declared, refusedPathUnder });
+        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, botName, topId, id, namespace, bundled: opts.bundled === true, seenDecl, declared, refusedPathUnder });
         if (result !== undefined) kept[key] = result;
       } else if (DOTTED_POINT_NAME_RE.test(key)) {
         const result = checkPluginPointValue(f, key, value, at, { hasHost });
@@ -682,7 +686,10 @@ function checkServerKey(f: Findings, name: string, at: Seg[], ctx: CoreCtx): boo
 interface CoreCtx {
   hasHost: boolean;
   hasClient: boolean;
+  /** It holds a bot (`contributes.bot`): what it adds is inside the bot unless it says `"app": true` (§5.5). */
   isBot: boolean;
+  /** The bot's name, for the refusals' words. */
+  botName?: string | undefined;
   topId: string | undefined;
   id: string | undefined;
   /** The plugin's namespace (its top-level plugin's, for a child). */
@@ -958,16 +965,6 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
 
 function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCtx): boolean {
   const kinds = ["component", "web", "style", "hide", "layout"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
-  // A message's menu item runs a command, and only one of the plugin's own: another plugin's would run it without
-  // `call:<that plugin>` (the controller's ruling on lane F's F-M3). The app draws the item, so it needs no component.
-  if (e.spot === "menu.message" && e.command !== undefined) {
-    const ns = typeof e.command === "string" ? e.command.slice(0, Math.max(0, e.command.indexOf("."))) : undefined;
-    if (ns === undefined || ns === "" || ns !== ctx.namespace) {
-      f.error("entry", "menu_command_namespace", [...at, "command"], `a message menu item runs one of the plugin's own commands (\`${ctx.namespace ?? "<namespace>"}.<name>\`)`);
-      return false;
-    }
-  }
-  const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
   // A message action is data: the conversation draws the button, and a press runs a handler of the plugin's host half.
   const actionOnly = e.spot === "conversation.message.action" && kinds.length === 0;
   if (actionOnly && !ctx.hasHost) {
@@ -980,7 +977,7 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   // A pill target is data too: the Dispatch pill draws its row from `title`, and the user's words go to `handler`.
   const targetOnly = e.spot === "pill.target" && typeof e.handler === "string" && kinds.length === 0;
-  if (kinds.length !== 1 && !commandOnly && !actionOnly && !targetOnly) {
+  if (kinds.length !== 1 && !actionOnly && !targetOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
@@ -1038,15 +1035,34 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     }
     if (e.key !== undefined && spot.shape !== "keyed") f.warn("ui_key", [...at, "key"], `"${spotName}" is not keyed; \`key\` is ignored`);
   }
-  if (ctx.isBot) {
-    if (spot && !spot.inBotTab) {
-      f.error("entry", "bot_spot_outside_tab", [...at, "spot"], `a bot's plugin adds UI only inside its own tab, and "${spotName}" is outside it; put it in a child plugin`);
+  // Whoever owns a plug sets the rules for what plugs into it (§5.5, the owner's rule of November 14).
+  const when = isObject(e.when) ? e.when.bot : undefined;
+  const bots = when === undefined ? [] : Array.isArray(when) ? when : [when];
+  // The sidebar, Settings and the bots' Edit page look the same on every tab: nothing tied to a bot's tab dresses them,
+  // whichever plugin's it is.
+  if (SAME_ON_EVERY_TAB.has(spotName) && bots.length > 0) {
+    f.error("entry", "bot_tied_not_offered", [...at, "when", "bot"], `"${spotName}" looks the same on every tab: nothing tied to a bot's tab dresses it.`);
+    return false;
+  }
+  if (ctx.isBot && e.app !== true) {
+    const bot = ctx.botName ?? ctx.id ?? "its bot";
+    // Inside the bot: only what Bots offers, on its own tab.
+    if (spotName === "bot.editor.section") {
+      f.error("entry", "bot_editor_stock", [...at, "spot"], `${bot}'s Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.`);
       return false;
     }
-    const when = isObject(e.when) ? e.when.bot : undefined;
-    const bots = when === undefined ? [] : Array.isArray(when) ? when : [when];
+    if (spotName === "panel" && !botsOffer(spotName, typeof e.key === "string" ? e.key : undefined)) {
+      const which = typeof e.key === "string" ? `"${e.key}" isn't one of them` : "an entry with no key would fill every panel";
+      f.error("entry", "bot_panel_not_offered", [...at, typeof e.key === "string" ? "key" : "spot"], `Bots offers the Browser and agent panels on ${bot}'s tab; ${which}.`);
+      return false;
+    }
+    // A spot outside the catalog is one a plugin declares (a bot's own component's, inside its tab): judged where it is.
+    if (spot !== undefined && !botsOffer(spotName, typeof e.key === "string" ? e.key : undefined)) {
+      f.error("entry", "bot_spot_not_offered", [...at, "spot"], `Bots doesn't offer "${spotName}" to ${bot}: a bot's plugin dresses only its own tab (inside it, its top bar, its Browser and agent panels). To show it everywhere, add "app": true; it then gets a switch of its own.`);
+      return false;
+    }
     if (bots.some((b) => b !== ctx.id)) {
-      f.error("entry", "bot_when_other_bot", [...at, "when", "bot"], "in a bot's plugin, `when.bot` is the bot itself; dressing other bots' tabs takes another plugin");
+      f.error("entry", "bot_when_other_bot", [...at, "when", "bot"], `"${spotName}" inside ${bot}'s tab is ${bot}'s; dressing other bots' tabs is an app part: add "app": true.`);
       return false;
     }
   }
@@ -1174,6 +1190,10 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
 /** The OK card's line for a plugin that contributes a notifier: what the core tells it (§10). */
 export const NOTIFIER_OK_LINE = "It is told when your bots need you or have answered, so it can notify you; it does not get the words.";
 
+/** The OK card's line for a plugin that can be picked as the Dispatch pill's target (`pill.target`): what the user
+ *  sends from the pill to it, it receives. */
+export const PILL_TARGET_OK_LINE = "It can be picked as a target in the Dispatch pill: what you then type there goes to it, as your own words, and not to a bot.";
+
 export const HOST_START_OK_LINES = {
   each: "It runs in the background from the moment Clover starts, on every computer it's installed on.",
   main: "It runs in the background from the moment Clover starts, on your main computer.",
@@ -1187,9 +1207,12 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   const types: string[] = [];
   const where = new Set<keyof typeof HOST_START_OK_LINES>();
   let notifies = false;
+  let pillTarget = false;
   for (const r of reports) {
     const m = r.manifest as { host?: { start?: unknown }; contributes?: { triggers?: unknown; notifiers?: unknown } } | undefined;
     if (Array.isArray(m?.contributes?.notifiers) && m.contributes.notifiers.length > 0) notifies = true;
+    const ui = (r.manifest as { contributes?: { ui?: unknown } } | undefined)?.contributes?.ui;
+    if (Array.isArray(ui) && ui.some((e) => (e as { spot?: unknown } | null)?.spot === "pill.target")) pillTarget = true;
     const triggers = Array.isArray(m?.contributes?.triggers) ? m.contributes.triggers : [];
     for (const t of triggers) if (typeof (t as { type?: unknown }).type === "string") types.push((t as { type: string }).type);
     if (triggers.length > 0) where.add("each");
@@ -1199,6 +1222,7 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   const lines: string[] = [];
   if (types.length > 0) lines.push(`It adds routine triggers (${[...new Set(types)].sort().join(", ")}): a routine that uses one runs whenever the plugin says so.`);
   if (notifies) lines.push(NOTIFIER_OK_LINE);
+  if (pillTarget) lines.push(PILL_TARGET_OK_LINE);
   for (const w of ["each", "main", "chosen"] as const) if (where.has(w)) lines.push(HOST_START_OK_LINES[w]);
   return lines;
 }
@@ -1210,8 +1234,57 @@ export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it as
 /** A voice provider's line (`voices`): its entry is an endpoint other plugins may call. */
 export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to speak or transcribe, using your account with it.";
 
+/** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
+ *  island, so the user has seen that before it can. */
+export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, when Clover isn't in front.";
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
+/** How the OK card names a part beside a bot (`pluginParts`): a `ui` entry by its spot, the rest by their point. */
+const BESIDE_LABELS: Readonly<Record<string, string>> = {
+  "island.tab": "an island tab", "sidebar.app": "a sidebar button", "settings.section": "a Settings section", main: "an app page",
+  status: "the status bar", "app.surface": "a window of its own", "pill.target": "a Dispatch pill target", sidebar: "the sidebar",
+  "sidebar.bot": "the bots' sidebar rows", "bot.editor.section": "a section on bots' Edit pages", panel: "a panel", "panel.view": "a panel",
+  "bot.tab": "other bots' tabs", locales: "translations", mcpServers: "tools", skills: "skills", hooks: "hooks",
+  agents: "agent definitions", commands: "commands", "island.line": "a line on the island",
+};
+/** The right panels Bots offers a bot to replace on its tab, as the OK card names them. */
+const PANEL_LABELS: Readonly<Record<string, string>> = { browser: "Browser", agent: "agent" };
+
+/** A bot's name as the OK card says it: its `en` text. */
+export function botNameOf(manifest: Manifest | undefined): string | undefined {
+  const name = (manifest?.contributes?.bot as { name?: unknown } | undefined)?.name;
+  return typeof name === "string" ? name : isObject(name) && typeof name.en === "string" ? name.en : undefined;
+}
+
+/** The OK card's lines for a plugin with a bot (§5.5, the owner's rule of November 14): what of it shows or serves beyond
+ *  the bot's tab, with a switch of its own (said once the plugin marks a part `"app": true`), and each right panel it
+ *  replaces on its tab. Only the fields that say so add a line, so a plugin in the shape of before keeps the lines its
+ *  OK showed. */
+export function botPartLines(manifest: Manifest | undefined): string[] {
+  if (!holdsBot(manifest)) return [];
+  const lines: string[] = [];
+  if (marksAppParts(manifest)) {
+    const kinds = [...new Set(pluginParts(manifest).beside.map((p) => {
+      const label = BESIDE_LABELS[p.kind];
+      if (label !== undefined) return label;
+      // A spot of bots' tabs, dressed in every bot's tab (or the ones `when.bot` names).
+      return SPOT_NAMES.has(p.kind) ? `${p.kind} in bots' tabs` : p.kind;
+    }))];
+    lines.push(`Everywhere, with a switch of its own: ${kinds.join(", ")}.`);
+  }
+  const bot = botNameOf(manifest) ?? "its bot";
+  const replaced = new Set<string>();
+  for (const e of manifest?.contributes?.ui ?? []) {
+    const u = e as { spot?: string; key?: string; app?: boolean; component?: unknown; web?: unknown };
+    if (u.app === true || u.spot !== "panel" || u.key === undefined || PANEL_LABELS[u.key] === undefined) continue;
+    if (u.component === undefined && u.web === undefined) continue;
+    replaced.add(u.key);
+  }
+  for (const key of replaced) lines.push(`It replaces the ${PANEL_LABELS[key]} panel on ${bot}'s tab.`);
+  return lines;
+}
+
 export function describeOk(
   report: ManifestReport,
   opts: {
@@ -1243,6 +1316,8 @@ export function describeOk(
   if (opts.networkOpen === true) lines.push("It can reach any host on the network, including services on this computer and your local network: it's a server you added, which names no hosts, so Clover doesn't hold its programs to a list. They are still fenced from your files.");
   if (report.class === "code" && opts.os && opts.os !== "macos") lines.push("Its code could read Clover's logins and approve its own cards.");
   if (report.contributions.length > 0) lines.push(`It adds: ${report.contributions.map((c) => c.point).join(", ")}.`);
+  lines.push(...botPartLines(report.manifest));
+  if (report.contributions.some((c) => c.point === "island.line")) lines.push(ISLAND_LINE_OK_LINE);
   if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0) {
     lines.push(VOICE_MODE_OK_LINE);
     if (!report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);

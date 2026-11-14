@@ -473,6 +473,38 @@
       }
     },
     {
+      "name": "island.line",
+      "shape": "list",
+      "declaredBy": "clover/island",
+      "kind": "code",
+      "doc": "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when Clover isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+            "format": "handler",
+            "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
+          }
+        },
+        "required": [
+          "id",
+          "handler"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "avatar.formats",
       "shape": "list",
       "declaredBy": "clover/character",
@@ -729,7 +761,7 @@
       "name": "app.root",
       "shape": "single",
       "declaredBy": "app",
-      "inBotTab": false,
+      "botsOffer": false,
       "doc": "The main window's root: the shell, which declares every other spot.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -746,7 +778,7 @@
       "name": "app.surface",
       "shape": "list",
       "declaredBy": "app",
-      "inBotTab": false,
+      "botsOffer": false,
       "context": [
         "surface",
         "os"
@@ -803,7 +835,7 @@
       "name": "bot.tab",
       "shape": "keyed",
       "declaredBy": "app",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -860,7 +892,7 @@
       "name": "sidebar",
       "shape": "single",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": false,
       "context": [
         "bot"
       ],
@@ -880,7 +912,7 @@
       "name": "bar",
       "shape": "single",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -900,7 +932,7 @@
       "name": "sidebar.bot",
       "shape": "keyed",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": false,
       "context": [
         "bot"
       ],
@@ -985,7 +1017,7 @@
       "name": "sidebar.app",
       "shape": "list",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": false,
       "doc": "App buttons in the sidebar; `opens` names the `main` and `panel` key it shows.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1041,7 +1073,7 @@
       "name": "main",
       "shape": "keyed",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": false,
       "keys": [
         "bot",
         "agent",
@@ -1082,7 +1114,10 @@
       "name": "panel",
       "shape": "keyed",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": [
+        "browser",
+        "agent"
+      ],
       "context": [
         "session"
       ],
@@ -1144,7 +1179,7 @@
       "name": "panel.view",
       "shape": "keyed",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": false,
       "doc": "A spot inside each panel view, keyed by the view's id.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1203,7 +1238,7 @@
       "name": "settings.section",
       "shape": "list",
       "declaredBy": "settings",
-      "inBotTab": false,
+      "botsOffer": false,
       "doc": "A section of the settings screen, which the settings part (`main` key `settings`) declares.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1252,7 +1287,7 @@
       "name": "bot.editor.section",
       "shape": "list",
       "declaredBy": "bot-editor",
-      "inBotTab": false,
+      "botsOffer": false,
       "context": [
         "bot"
       ],
@@ -1338,7 +1373,7 @@
       "name": "status",
       "shape": "list",
       "declaredBy": "shell",
-      "inBotTab": false,
+      "botsOffer": false,
       "doc": "The shell's status bar; the inherited `tile` becomes an entry here (§12).",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1384,7 +1419,7 @@
       "name": "bot.header",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1441,7 +1476,7 @@
       "name": "bot.header.action",
       "shape": "list",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1530,7 +1565,7 @@
       "name": "bot.stage",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1587,7 +1622,7 @@
       "name": "bot.side",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1644,7 +1679,7 @@
       "name": "bot.controls",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1701,7 +1736,7 @@
       "name": "chrome.title",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1758,7 +1793,7 @@
       "name": "chrome.action",
       "shape": "keyed",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "keys": [
         "edit",
         "session",
@@ -1820,7 +1855,7 @@
       "name": "chrome.actions",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1877,7 +1912,7 @@
       "name": "chrome.sidebar",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1934,7 +1969,7 @@
       "name": "chrome.drag",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -1991,7 +2026,7 @@
       "name": "chrome.panels",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -2048,7 +2083,7 @@
       "name": "conversation",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "needs": [
         "conversation.read"
       ],
@@ -2112,7 +2147,7 @@
       "name": "composer",
       "shape": "single",
       "declaredBy": "bot-tab",
-      "inBotTab": true,
+      "botsOffer": true,
       "needs": [
         "conversation.post"
       ],
@@ -2176,7 +2211,7 @@
       "name": "avatar",
       "shape": "keyed",
       "declaredBy": "bot-stage",
-      "inBotTab": true,
+      "botsOffer": true,
       "keys": [
         "vrm",
         "live2d"
@@ -2254,7 +2289,7 @@
       "name": "composer.action",
       "shape": "keyed",
       "declaredBy": "composer",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -2344,7 +2379,7 @@
       "name": "conversation.message",
       "shape": "keyed",
       "declaredBy": "conversation",
-      "inBotTab": true,
+      "botsOffer": true,
       "keys": [
         "user",
         "bot",
@@ -2451,7 +2486,7 @@
       "name": "conversation.message.extra",
       "shape": "list",
       "declaredBy": "conversation",
-      "inBotTab": true,
+      "botsOffer": true,
       "needs": [
         "conversation.read"
       ],
@@ -2544,7 +2579,7 @@
       "name": "conversation.message.action",
       "shape": "list",
       "declaredBy": "conversation",
-      "inBotTab": true,
+      "botsOffer": true,
       "context": [
         "bot"
       ],
@@ -2613,7 +2648,7 @@
       "name": "tool.result",
       "shape": "keyed",
       "declaredBy": "conversation",
-      "inBotTab": true,
+      "botsOffer": true,
       "needs": [
         "conversation.read"
       ],
@@ -2707,134 +2742,10 @@
       }
     },
     {
-      "name": "menu.message",
-      "shape": "list",
-      "declaredBy": "conversation",
-      "inBotTab": true,
-      "gates": {
-        "message.text": "conversation.read"
-      },
-      "context": [
-        "bot"
-      ],
-      "doc": "Items in a message's menu. Picking one runs its `command` (`command.run`) with these props as its args; the message's text is there only for a plugin with `conversation.read`.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "en": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "en"
-                ],
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          },
-          "icon": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          },
-          "command": {
-            "type": "string",
-            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*\\.[a-z][a-zA-Z0-9_-]{0,63}$"
-          }
-        },
-        "required": [
-          "title",
-          "command"
-        ]
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          },
-          "session": {
-            "type": "string"
-          },
-          "message": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "text": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "user",
-              "bot"
-            ]
-          }
-        },
-        "required": [
-          "bot",
-          "session",
-          "message",
-          "role"
-        ]
-      }
-    },
-    {
       "name": "file.preview",
       "shape": "keyed",
       "declaredBy": "file-view",
-      "inBotTab": true,
+      "botsOffer": true,
       "doc": "A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2862,7 +2773,7 @@
       "name": "island.tab",
       "shape": "list",
       "declaredBy": "island",
-      "inBotTab": false,
+      "botsOffer": false,
       "context": [
         "surface"
       ],
@@ -2951,7 +2862,7 @@
       "name": "pill.target",
       "shape": "list",
       "declaredBy": "pill",
-      "inBotTab": false,
+      "botsOffer": false,
       "context": [
         "surface"
       ],
@@ -4084,6 +3995,10 @@
       "where": "both"
     },
     "conversation.history": {
+      "capability": "conversation.read",
+      "where": "both"
+    },
+    "conversation.watch": {
       "capability": "conversation.read",
       "where": "both"
     },

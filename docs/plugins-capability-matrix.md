@@ -53,6 +53,7 @@ A head under review is named where it changes a row.
 | `bot.avatar` and the `avatar` renderers (VRM, Live2D) | works | A placeholder VRM model today. Live2D from whatever model the user loads is lane E's next step; no model file of the owner's goes in the repo. |
 | `client` components, bot-tab spots (`bot.tab`, `bot.header`, `bot.stage`, `bot.side`, `conversation.message`, `tool.result` …) | works | Her stage component, which draws the stage document, and her transcript's styling: lane E's work in progress, not on `int/next` yet. |
 | `island.tab`, `app.surface`, `sidebar.bot`, `status`, `settings.section`, `panel` | works | Lane E's choice. A third-party island tab carries its plugin's name and can't raise the island. |
+| `island.line` | works | A plugin's handler (`points.call`, no capability) gives one line of plain text, an icon from the island's named set and a progress; the island draws it in its own style on the open Needs you tab (below the cards) and the first one on the closed strip, only when Clover isn't in front, with the plugin's name beside it, and decides count, order and how long it lasts. |
 | `pill.target` | works | None: the pill already messages bots. |
 
 ## Third-party plugins: the SDK's examples
@@ -114,8 +115,11 @@ What the pair found, and where it stands:
 2. **A stdio server that names a setting or a secret didn't restart when it changed** (for example, the key entered after
    install). Fixed: only the servers naming the changed key are listed again, at most once every half second. Until the
    user sets it, the daemon's log says the server waits for that key, not that it failed.
-3. **A bot plugin can't add UI outside its own tab.** By design (`bot_spot_outside_tab`): the example puts its bot in a
-   child plugin and keeps the page in the parent.
+3. **A bot plugin's UI outside its own tab.** Since §5.5 (whoever owns a plug sets its rules): an entry marked
+   `"app": true` shows beyond the bot's tab, with a switch of its own and a line on the OK card; unmarked, it fills only
+   what Bots offers on its tab (`bot_spot_not_offered`), and the left sidebar, Settings and the bot's Edit page take
+   nothing tied to a bot (`bot_tied_not_offered`). The example still keeps its bot in a child plugin and the page in the
+   parent.
 4. **A third-party bot's model.** With no `model`, the bot runs on the user's default model. With one the user holds a
    key for, the bot's first turn asks once on a sealed card before spending that provider (`bot-provider`). A yes holds
    for that bot and provider. This is by design: a plugin's choice of provider is never the user's. The example names

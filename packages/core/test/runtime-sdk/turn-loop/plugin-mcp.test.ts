@@ -129,6 +129,28 @@ test("onlyBackends: a plugin that names backends is served to an agent on one of
   }
 });
 
+test("a server inside a bot (its own `scope: \"own-bot\"`, §5.5) is that bot's alone, its side threads' and its agents'; one beside it serves every bot", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "clover-ownbot-pmcp-"));
+  temps.push(folder);
+  const registry = fakeRegistry([
+    entry("mika", "stage", { type: "host", scope: "own-bot", tools: { "*": "preload" } }),
+    entry("mika", "notes", { type: "host", tools: { "*": "preload" } }),
+  ], { mika: folder }, { mika: { contributes: { bot: { name: "Mika" } } } });
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", computers: () => ["Studio"] });
+  try {
+    await mcp.refresh();
+    const names = (kind: "agent" | "bot" | "side-thread" | "coding", bot?: string) => mcp.servers(kind, undefined, bot).map((s) => s.server).sort();
+    expect(names("bot", "mika")).toEqual(["mika-notes", "mika-stage"]);
+    expect(names("side-thread", "mika")).toEqual(["mika-notes", "mika-stage"]);
+    expect(names("agent", "mika")).toEqual(["mika-notes", "mika-stage"]);
+    expect(names("bot", "alpha")).toEqual(["mika-notes"]);
+    expect(names("agent", "alpha")).toEqual(["mika-notes"]);
+    expect(names("coding")).toEqual(["mika-notes"]);
+  } finally {
+    mcp.close();
+  }
+});
+
 test("a per-computer server is placed on exactly the computers lane J's node says run it, and its process starts only where it's ticked", async () => {
   const registry = fakeRegistry([
     entry("acme", "blender", { type: "host", perComputer: true, tools: { "*": "preload" } }),

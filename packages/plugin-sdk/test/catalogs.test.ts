@@ -9,7 +9,7 @@ import {
   networkAllows, pluginTokenName,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
-  reachesPublicNetwork,
+  reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -167,28 +167,24 @@ describe("points and spots", () => {
     const names = SPOTS.map((s) => s.name);
     for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section", "bot.editor.section",
       "bot.header", "bot.stage", "bot.side", "conversation", "composer", "avatar", "composer.action", "conversation.message", "tool.result",
-      "conversation.message.extra", "bot.header.action", "status", "menu.message", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
+      "conversation.message.extra", "bot.header.action", "status", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
     expect(msg.keys).toEqual(MESSAGE_KINDS);
     expect(msg.keep).toEqual(["approval"]);
     expect(msg.needs).toEqual(["conversation.read"]);
     expect(new Set(names).size).toBe(names.length);
-    // A message's menu needs nothing to add an item; its `command` runs with the props, the text only for
-    // `conversation.read` (lane F's F-M3).
-    const menu = SPOTS.find((s) => s.name === "menu.message")!;
-    expect(menu.needs).toBeUndefined();
-    expect(menu.gates).toEqual({ "message.text": "conversation.read" });
-    expect(menu.fields.safeParse({ title: "Quote it", command: "reader.quote" }).success).toBe(true);
-    expect(menu.fields.safeParse({ title: "Quote it", command: "quote" }).success).toBe(false);
-    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1" }, role: "bot" }).success).toBe(true);
-    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1", text: "hi" }, role: "user" }).success).toBe(true);
     expect(SPOTS.find((s) => s.name === "panel.view")!.doc).toBe("A spot inside each panel view, keyed by the view's id.");
   });
 
-  test("spots inside a bot's tab are the tab's parts; the shell and surfaces are outside", () => {
-    const inTab = SPOTS.filter((s) => s.inBotTab).map((s) => s.name).sort();
-    expect(inTab).toEqual(["avatar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
-      "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "menu.message", "tool.result"]);
+  test("what Bots offers a bot's plugin is a closed list: inside its tab, its top bar, the Browser and agent panels; never the sidebar, Settings or the Edit page", () => {
+    expect([...BOTS_OFFER.keys()].sort()).toEqual(["avatar", "bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
+      "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "panel", "tool.result"]);
+    expect(BOTS_OFFER.get("panel")).toEqual(["browser", "agent"]);
+    expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, true, false]);
+    for (const s of SAME_ON_EVERY_TAB) expect(botsOffer(s)).toBe(false);
+    // A bot's layout places the spots inside its tab: not the window's bar or panels.
+    expect(BOT_TAB_INSIDE.has("bar") || BOT_TAB_INSIDE.has("panel")).toBe(false);
+    expect(BOT_TAB_INSIDE.has("conversation")).toBe(true);
   });
 
   test("well-known names are the spots and data points, never a core point", () => {

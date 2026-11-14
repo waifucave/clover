@@ -65,6 +65,8 @@ export interface UiEntry {
   declares: Readonly<Record<string, PointDeclaration>>;
   /** The spot's own fields (title, icon, opens…). */
   fields: Readonly<Record<string, unknown>>;
+  /** In a plugin with a bot, a part beside the bot (§5.5): it follows the app's rules, not limited to the bot's tab. */
+  app?: true;
 }
 
 export interface UiPlugin {
@@ -190,7 +192,7 @@ function readDeclares(raw: unknown): Record<string, PointDeclaration> {
   return out;
 }
 
-const ENTRY_KEYS = new Set(["spot", "id", "key", "order", "when", "component", "web", "style", "hide", "target", "layout", "window", "declares"]);
+const ENTRY_KEYS = new Set(["spot", "id", "key", "order", "when", "component", "web", "style", "hide", "target", "layout", "window", "declares", "app"]);
 /** The spots whose entries are data their part draws (no component, never a mount). */
 export const DATA_SPOTS: ReadonlySet<string> = new Set(["conversation.message.action"]);
 
@@ -246,6 +248,7 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
     ...(kind === "hide" && typeof raw.target === "string" ? { target: raw.target } : {}),
     ...(raw.web !== null && typeof raw.web === "object" ? { web: raw.web as Record<string, unknown> } : {}),
     ...(raw.window !== null && typeof raw.window === "object" ? { window: raw.window as UiEntry["window"] & object } : {}),
+    ...(raw.app === true ? { app: true as const } : {}),
     declares: readDeclares(raw.declares),
     fields,
   };

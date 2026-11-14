@@ -60,6 +60,27 @@ describe("the strict fake's mid-conversation system message rules", () => {
   });
 });
 
+describe("what the fake records as offered", () => {
+  test("over the wire: a tool_removal takes a tool off the offer (the cached `tools` keep it), a later tool_addition brings it back", async () => {
+    const fake = startFakeAnthropic({ key: "dummy-key", writePath: "/nonexistent/lane-b", writeContent: "x" });
+    try {
+      const ref = (type: string, name: string) => ({ type, tool: { type: "tool_reference", name } });
+      const send = (system: unknown[]) => fetch(`${fake.url}/v1/messages`, {
+        method: "POST", headers: { "x-api-key": "dummy-key", "content-type": "application/json", "anthropic-beta": BETA },
+        body: JSON.stringify({ model: "claude-sonnet-5-5", max_tokens: 10, tools: [{ name: "mcp__a__Stage", input_schema: { type: "object" } }, { name: "mcp__a__Notes", input_schema: { type: "object" }, defer_loading: true }], messages: [
+          effort, u("ACCEPTANCE-REPLY: first"), a(), u("ACCEPTANCE-REPLY: again"), ...system,
+        ] }),
+      });
+      await (await send([{ role: "system", content: [ref("tool_removal", "mcp__a__Notes")] }])).text();
+      expect(fake.requests.at(-1)!.tools).toEqual(["mcp__a__Stage"]);
+      await (await send([{ role: "system", content: [ref("tool_removal", "mcp__a__Notes")] }, a(), u("ACCEPTANCE-REPLY: back"), { role: "system", content: [ref("tool_addition", "mcp__a__Notes")] }])).text();
+      expect(fake.requests.at(-1)!.tools).toEqual(["mcp__a__Stage", "mcp__a__Notes"]);
+    } finally {
+      fake.close();
+    }
+  });
+});
+
 describe("what the fake acts on: the newest directive in the user text", () => {
   test("an unanswered message before the newest one doesn't steer it", () => {
     expect(newestDirective("ACCEPTANCE-SLOW-AB12CD keep going\n\nACCEPTANCE-TAG-0F1E2D3C say hello after the upgrade")).toBe("ACCEPTANCE-TAG-0F1E2D3C say hello after the upgrade");

@@ -53,6 +53,8 @@ describe("every OK-card line an update adds or alters asks again", () => {
       // plugin may have; a helper is refused, so it never reaches the card.
       ["add-ons of its own", withContrib({}, { addons: { description: "Effects" } })],
       ["adult content", withContrib({}, { adult: true })],
+      // backgroundOkLines: a pill target (the Dispatch pill's list; its host handler gets the user's words).
+      ["a pill target", { ...withContrib({ ui: [{ spot: "pill.target", id: "t", title: "Luna target", handler: "target" }] }), host: { entry: "host/index.js" } }, { "host/index.js": "export const target = { send() {} };\n" }],
       // hookOkLines.
       ["what its hooks see", withContrib({ hooks: [{ id: "h", on: ["message.in"], command: "bin/hook" }] }), { "bin/hook": "#!/bin/sh\n" }],
       // The agent backend line (the controller's ruling) and agentEnvLines.

@@ -38,6 +38,7 @@ export const LISTENER_ARGS = {
   "storage.synced.watch": { at: 0 },
   "settings.watch": { at: 1 },
   "conversation.follow": { at: 1 },
+  "conversation.watch": { at: 0 },
   "bots.watch": { at: 0 },
   "computers.watch": { at: 0 },
   "devices.watch": { at: 0 },

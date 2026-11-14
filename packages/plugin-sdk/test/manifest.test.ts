@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, NOTIFIER_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -257,15 +257,47 @@ describe("contributes", () => {
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "S", window: { type: "overlay" } }] } }), "ui_window_not_surface")).toBe(true);
   });
 
-  test("a bot's plugin fills only spots in its own tab, and `when.bot` is the bot itself (§5.5)", () => {
+  test("a bot's plugin fills only what Bots offers on its own tab, unless a part says `\"app\": true` (§5.5, the owner's rule of November 14)", () => {
     const bot = { name: "Luna", instructions: "bot/instructions.md" };
-    const base = { ...min(), engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
-    const inTab = validateManifest({ ...base, contributes: { bot, ui: [{ spot: "composer", component: "C" }, { spot: "conversation.message", key: "bot", component: "Bubble" }] } });
-    expect(inTab.issues).toEqual([]);
-    const outside = validateManifest({ ...base, contributes: { bot, ui: [{ spot: "island.tab", component: "T", title: "Tarot" }] } });
-    expect(has(outside, "bot_spot_outside_tab", "entry")).toBe(true);
-    const other = validateManifest({ ...base, contributes: { bot, ui: [{ spot: "composer", component: "C", when: { bot: "alpha" } }] } });
-    expect(has(other, "bot_when_other_bot", "entry")).toBe(true);
+    const base = { ...min(), id: "luna", engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
+    const ui = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, contributes: { bot, ui: entries } });
+    const said = (r: ReturnType<typeof validateManifest>, code: string) => r.issues.find((i) => i.code === code)?.message;
+    // Inside its tab, its top bar, its Browser and agent panels.
+    expect(ui({ spot: "composer", component: "C" }, { spot: "conversation.message", key: "bot", component: "Bubble" }, { spot: "bar", component: "Bar" },
+      { spot: "panel", key: "browser", component: "Browser" }, { spot: "panel", key: "agent", id: "agent", style: "a.json" }).issues).toEqual([]);
+    // Anything else: refused with what to do instead.
+    expect(said(ui({ spot: "island.tab", component: "T", title: "Tarot" }), "bot_spot_not_offered")).toBe(
+      "Bots doesn't offer \"island.tab\" to Luna: a bot's plugin dresses only its own tab (inside it, its top bar, its Browser and agent panels). To show it everywhere, add \"app\": true; it then gets a switch of its own.");
+    expect(has(ui({ spot: "status", component: "S" }), "bot_spot_not_offered")).toBe(true);
+    expect(said(ui({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab; \"terminal\" isn't one of them.");
+    expect(said(ui({ spot: "panel", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab; an entry with no key would fill every panel.");
+    expect(said(ui({ spot: "bot.editor.section", component: "E" }), "bot_editor_stock")).toBe("Luna's Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.");
+    expect(said(ui({ spot: "composer", component: "C", when: { bot: "alpha" } }), "bot_when_other_bot")).toBe("\"composer\" inside Luna's tab is Luna's; dressing other bots' tabs is an app part: add \"app\": true.");
+    // Beside the bot (`app`): the app's rules, as any plugin's: other bots' tabs and the island included.
+    expect(ui({ spot: "island.tab", component: "T", title: "Tarot", app: true }, { spot: "composer", component: "C", when: { bot: "alpha" }, app: true }).issues).toEqual([]);
+    // The sidebar, Settings and the Edit page look the same on every tab: nothing tied to a bot's tab dresses them,
+    // whichever plugin's it is; a part beside the bot for every tab may.
+    expect(said(ui({ spot: "sidebar", component: "S", when: { bot: "luna" }, app: true }), "bot_tied_not_offered")).toBe("\"sidebar\" looks the same on every tab: nothing tied to a bot's tab dresses it.");
+    expect(ui({ spot: "sidebar.app", component: "A", title: "Tarot", icon: "i.svg", opens: "tarot", app: true }).issues).toEqual([]);
+    for (const spot of ["sidebar", "sidebar.bot", "sidebar.app", "settings.section", "bot.editor.section"]) {
+      const any = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" }, contributes: { ui: [{ spot, component: "X", title: "X", icon: "i.svg", opens: "x", key: "x", when: { bot: "luna" } }] } });
+      expect([spot, has(any, "bot_tied_not_offered")]).toEqual([spot, true]);
+    }
+  });
+
+  test("per-entry `own-bot`: a server, a skill, an agent definition and a command may each be inside the bot", () => {
+    const r = validateManifest({
+      ...min(), id: "luna", engines: { clover: "^1.0.0" }, host: { entry: "h.ts" },
+      contributes: {
+        bot: { name: "Luna", instructions: "i.md" },
+        mcpServers: { stage: { type: "host", scope: "own-bot" }, tools: { type: "host" } },
+        skills: [{ path: "skills/mine/SKILL.md", scope: "own-bot" }, "skills/shared/*/SKILL.md"],
+        agents: [{ id: "helper", name: "Helper", backend: "clover-code", scope: "own-bot" }],
+        commands: [{ name: "scene", description: "Scene", handler: "scene", scope: "own-bot" }],
+      },
+    });
+    expect(r.issues).toEqual([]);
+    expect(has(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { skills: [{ path: "s/SKILL.md", scope: "mine" }] } }), "schema")).toBe(true);
   });
 
   test("a bot's theme names one of its plugin's themes; a typo only warns", () => {
@@ -403,17 +435,6 @@ describe("declared points (§5.4)", () => {
     const data = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list" } } },
       contributes: { triggers: [{ type: "t", title: "T", handler: "t", declares: { "luna.cards": { shape: "list" } } }] } });
     expect(has(data, "point_duplicate")).toBe(true);
-  });
-
-  test("a message menu item runs one of the plugin's own commands, never another plugin's (F-M3)", () => {
-    const item = (command: unknown, extra: Record<string, unknown> = {}) => validateManifest({ ...min(), contributes: { ui: [{ spot: "menu.message", id: "quote", title: "Quote it", command, ...extra }] } });
-    expect(codes(item("luna.quote"))).toEqual([]);
-    for (const command of ["tarot.quote", "quote", ".quote", 3]) {
-      expect([command, codes(item(command)).some((c) => c.includes("menu_command_namespace") || c.includes(":schema:"))]).toEqual([command, true]);
-      expect(item(command).manifest?.contributes?.ui ?? []).toEqual([]);
-    }
-    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "moon.quote" }] } }))).toEqual([]);
-    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "luna.quote" }] } }))).toContain("error:entry:menu_command_namespace:/contributes/ui/0/command");
   });
 
   test("core points can't be declared; well-known names take the catalog's declaration", () => {
@@ -641,6 +662,19 @@ describe("a host of its own that runs programs (`host.programs`, the owner's vid
   });
 });
 
+describe("the OK says a plugin puts a line on the island", () => {
+  test("a plugin that fills island.line says so, once, after what it adds; a plugin that doesn't says nothing of it", () => {
+    const withLine = validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts" }, contributes: { "island.line": [{ id: "job", handler: "islandLine" }] } });
+    expect(withLine.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const lines = describeOk(withLine);
+    expect(lines.filter((l) => l === ISLAND_LINE_OK_LINE)).toHaveLength(1);
+    expect(lines).toContain("It adds: island.line.");
+    expect(lines.indexOf(ISLAND_LINE_OK_LINE)).toBe(lines.indexOf("It adds: island.line.") + 1);
+    const without = validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts" }, contributes: {} });
+    expect(describeOk(without)).not.toContain(ISLAND_LINE_OK_LINE);
+  });
+});
+
 describe("the OK says what a plugin runs without being asked", () => {
   const m = (host: Record<string, unknown>, contributes: Record<string, unknown> = {}) =>
     validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", ...host }, contributes });
@@ -649,6 +683,13 @@ describe("the OK says what a plugin runs without being asked", () => {
     expect(backgroundOkLines([m({ start: "main" })])).toEqual(["It runs in the background from the moment Clover starts, on your main computer."]);
     expect(backgroundOkLines([m({ start: "chosen" })])).toEqual(["It runs in the background from the moment Clover starts, on the computer you add it on."]);
     expect(backgroundOkLines([m({})])).toEqual([]);
+  });
+  test("a pill target says it can be picked in the Dispatch pill and receives what is typed there; it comes from the tree, children's too", () => {
+    const t = m({}, { ui: [{ spot: "pill.target", id: "t", title: "Lights", handler: "target" }] });
+    expect(backgroundOkLines([t])).toEqual([PILL_TARGET_OK_LINE]);
+    expect(backgroundOkLines([m({}), t])).toEqual([PILL_TARGET_OK_LINE]);
+    expect(backgroundOkLines([m({}, { ui: [{ spot: "status", id: "s", component: "S" }] })])).toEqual([]);
+    expect(PILL_TARGET_OK_LINE).toContain("Dispatch pill");
   });
   test("a notifier says what it is told, and that it gets no words", () => {
     const n = m({}, { notifiers: [{ id: "banner", handler: "banner" }] });

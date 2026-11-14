@@ -8,7 +8,7 @@
 // * waits alone (`card-styling`) when it changes only how the tree styles approval cards (§5.5);
 // * applies at once (`applies`) otherwise: themes, layouts, CSS, Markdown, assets.
 import { posix } from "node:path";
-import { MANIFEST_FILE, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, pluginParts, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import { canonicalJson } from "@waifucave/clover-protocol";
 
 /** What a change since the OK does (the fake's `FakePluginInput.change`). */
@@ -43,6 +43,10 @@ export interface PluginFingerprint {
    *  instructions file's hash), as canonical JSON: words an agent follows with the bot's reach, so adding or changing
    *  one asks again, on an edit and on an update. Absent in older snapshots: read as none. */
   agentDefinitions?: string;
+  /** For a plugin with a bot (§5.5, the owner's rule of November 14): its parts inside the bot and beside it, by keys
+   *  that stay when its lists are reordered (`pluginParts`). A part that moves from inside to beside reaches more (every
+   *  bot, every tab), so it asks again. Absent in snapshots kept before it: not compared. */
+  parts?: { inside: string[]; beside: string[] };
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -282,7 +286,27 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     dynamicHosts: report.dynamicHosts,
     label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
     agentBackends: canonicalJson((m?.contributes?.agentBackends ?? []).map((b) => ({ id: b.id, protocol: b.protocol, command: b.command ?? null, args: b.args ?? [], handler: b.handler ?? null })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
+    parts: partsKeysOf(m),
   };
+}
+
+/** A plugin's parts inside its bot and beside it, by key (`pluginParts`), sorted. */
+function partsKeysOf(m: Manifest | undefined): { inside: string[]; beside: string[] } {
+  const { inside, beside } = pluginParts(m);
+  return { inside: sorted(inside.map((p) => p.key)), beside: sorted(beside.map((p) => p.key)) };
+}
+
+/** Whether a part beside the bot now wasn't beside it at the OK: `moved`, one that was inside the bot (an `own-bot` scope
+ *  dropped, an `"app": true` added), what it reaches grown from one bot's tab and sessions to every tab and every bot;
+ *  `added`, a new one (a second island tab, a new server with no `own-bot`), even when the OK card's words for the parts
+ *  beside it read the same. A snapshot kept before `parts` isn't compared. */
+function besideGrew(before: PluginFingerprint, after: PluginFingerprint): "moved" | "added" | undefined {
+  if (before.parts === undefined || after.parts === undefined) return undefined;
+  const inside = new Set(before.parts.inside);
+  const beside = new Set(before.parts.beside);
+  const grown = after.parts.beside.filter((k) => !beside.has(k));
+  if (grown.length === 0) return undefined;
+  return grown.some((k) => inside.has(k)) ? "moved" : "added";
 }
 
 /** The files that style approval cards (theme and `style` files), with the tree's flag. */
@@ -387,6 +411,7 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || after.defaults !== before.defaults
     || reachesMore(before, after)
     || definitionsChanged(before, after)
+    || besideGrew(before, after) !== undefined
     || (after.dynamicHosts && !before.dynamicHosts);
 }
 
@@ -460,6 +485,9 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
     if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
     if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
+    const grew = besideGrew(before, after);
+    if (grew === "moved") return `${who} moves a part from inside its bot to beside it, for every bot and every tab`;
+    if (grew === "added") return `${who} adds a part beside its bot, for every bot and every tab`;
   }
   // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
   if (now.okLines !== undefined) {

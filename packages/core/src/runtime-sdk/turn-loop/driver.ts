@@ -831,7 +831,7 @@ export class BotSessionDriver implements SessionDriver {
       // A plugin's skills and agent definitions reach the session its `scope` serves (`servesScope`: an `agents` plugin's
       // no bot's, an `own-bot` one's only its own bot's) and, for an agent's or a coding session, only from plugins whose
       // `onlyBackends` name Clover's own backend, which runs it (only-backends.ts).
-      ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }) }),
+      ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string, entryScope?: unknown) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }, entryScope) }),
       // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
       servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
       bot: bot.id,

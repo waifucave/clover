@@ -82,7 +82,6 @@ How to read it:
 | `conversation.message.extra` | list | conversation | `conversation.read` | Add-ons under each message, with a UI of their own. A plugin outside Clover's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`. |
 | `conversation.message.action` | list | conversation | — | A small button the conversation draws itself in a message's row of actions (beside copy and speak), no frame and no component: `title` is its tooltip, `icon` a picture in the plugin's folder, `on` which messages carry i… |
 | `tool.result` | keyed | conversation | `conversation.read` | A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call. |
-| `menu.message` | list | conversation | — | Items in a message's menu. Picking one runs its `command` (`command.run`) with these props as its args; the message's text is there only for a plugin with `conversation.read`. |
 | `file.preview` | keyed | file-view | — | A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab. |
 | `island.tab` | list | island | — | A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `clover` tree's tabs raise the strip's attention. |
 | `pill.target` | list | pill | — | Something the Dispatch pill can message besides the bots: `handler` (a `PillTargetHandler`) gets the user's words. The pill names it with its plugin's name, and leaves out one titled as a bot. |
@@ -90,6 +89,7 @@ How to read it:
 ## Data points other plugins declared (a top-level `contributes` key each)
 
 - `webhook.ingress` (list, code, declared by clover/trigger-webhook): Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7).
+- `island.line` (list, code, declared by clover/island): A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island c…
 - `avatar.formats` (list, data, declared by clover/character): A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is ha…
 - `avatar.packs` (list, data, declared by clover/character): Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).
 
@@ -133,7 +133,7 @@ How to read it:
 - **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (clover), `desktop.show` (clover), `host.call` (ui), `host.on` (ui), `keys.delete` (clover), `keys.open` (clover), `keys.publicKey` (clover), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `points.call` (both), `points.entries` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `speech.modes` (both), `speech.piece` (host), `speech.play` (host), `speech.stop` (host), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `t` (ui), `ui.send` (host)
 - **call:***: `commands.run` (both)
 - **network:***: `net.fetch` (both)
-- **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both)
+- **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both), `conversation.watch` (both)
 - **conversation.post**: `conversation.answer` (ui), `conversation.note` (both), `conversation.send` (both)
 - **bots.read**: `bots.get` (both), `bots.list` (both), `bots.watch` (both)
 - **computers.read**: `computers.get` (both), `computers.list` (both), `computers.watch` (both)

@@ -264,13 +264,16 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const messages = body.messages ?? [];
       // Tools added mid-conversation (a plugin installed after the first turn) come as `tool_addition` blocks in a
       // `role: "system"` message, by definition or by reference to a deferred `tools` entry, not in `tools` (the cached
-      // prefix stays as it was): Anthropic's mid-conversation system messages. They're offered from then on.
+      // prefix stays as it was): Anthropic's mid-conversation system messages. They're offered from then on. Tools taken
+      // away (a plugin removed, or its parts switched off) come the same way, as `tool_removal` blocks naming each by
+      // reference: no longer offered from there, until a later `tool_addition` brings one back.
       for (const m of messages) {
         if (m.role !== "system" || !Array.isArray(m.content)) continue;
         for (const b of m.content as { type?: string; tool?: { definition?: { name?: unknown }; name?: unknown } }[]) {
-          if (b.type !== "tool_addition") continue;
           const name = b.tool?.definition?.name ?? b.tool?.name;
-          if (typeof name === "string" && !record.tools.includes(name)) record.tools.push(name);
+          if (typeof name !== "string") continue;
+          if (b.type === "tool_addition" && !record.tools.includes(name)) record.tools.push(name);
+          else if (b.type === "tool_removal") record.tools = record.tools.filter((t) => t !== name);
         }
       }
       const last = messages[messages.length - 1];

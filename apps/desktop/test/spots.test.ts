@@ -67,6 +67,24 @@ describe("single spots and keyed defaults", () => {
     expect(shownRefs(resolveCell({ plugins: [luna, tabs], ctx }, "bot.tab", "alpha"))).toEqual(["x-tabs#bot.tab"]);
   });
 
+  test("a bot plugin's part beside its bot (`app`, §5.5) follows the app's rules: not held to its own tab", () => {
+    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "every", component: "Everyone", app: true }], { isBot: true });
+    const e = luna.entries.find((x) => x.id === "every")!;
+    expect([e.app, e.fields]).toEqual([true, {}]);
+    // Its own tab look stays its own; the part beside it dresses every bot's composer, as any plugin's entry would.
+    expect(shownRefs(resolveCell({ plugins: [composer, luna], ctx }, "bot.tab", "alpha"))).toEqual([]);
+    expect(shownRefs(resolveCell({ plugins: [composer, luna], ctx: inTab("alpha") }, "composer"))).toEqual(["luna#every"]);
+  });
+
+  test("a part that looks the same on every tab (§5.5) takes no per-bot scope: no `when.bot`, no user's ticks; a bot's own entry there shows nowhere", () => {
+    const tied = plugin("x-tied", [{ spot: "settings.section", id: "s", title: "Tied", component: "S", when: { bot: "luna" } }]);
+    const ticked = plugin("x-ticked", [{ spot: "settings.section", id: "t", title: "Ticked", component: "T" }], { bots: ["luna"] });
+    const lunaApp = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "settings.section", id: "app", title: "Luna app", component: "A", app: true }, { spot: "settings.section", id: "own", title: "Luna own", component: "O" }], { isBot: true });
+    for (const c of [ctx, inTab("alpha"), inTab("luna")]) {
+      expect(shownRefs(resolveCell({ plugins: [tied, ticked, lunaApp], ctx: c }, "settings.section")).sort()).toEqual(["luna#app", "x-ticked#t", "x-tied#s"]);
+    }
+  });
+
   test("`when.session`: a code-only panel shows only in a code session", () => {
     expect(shownRefs(resolveCell({ plugins: DEFAULT, ctx: { os: "macos", session: "coding" } }, "panel", "diff"))).toEqual(["clover/panel-diff#panel"]);
     const bot = resolveCell({ plugins: DEFAULT, ctx: inTab("alpha", { session: "bot" }) }, "panel", "diff");

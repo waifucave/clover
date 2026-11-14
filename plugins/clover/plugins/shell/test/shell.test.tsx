@@ -10,7 +10,7 @@ import { runtimeWith } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
 import { DEFAULT_TAB_LAYOUT, layoutSpots } from "@waifucave/clover-plugin-sdk";
 import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
-import { Shell, type ShellStart } from "../client/Shell";
+import { newestCoding, Shell, type ShellStart } from "../client/Shell";
 import { KeptTab, notDrawn } from "../client/KeptTab";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
 
@@ -89,12 +89,12 @@ const ENTRIES: UiEntry[] = [
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>) {
+async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void) {
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
-    conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)! },
+    conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)!, watch: (l) => { onWatch?.(l); return () => undefined; } },
   });
   const runtime = runtimeWith({
     spot: (name) => SPOT_DECLS[name],
@@ -117,6 +117,23 @@ async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<strin
 
 const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
 const stubText = (label: string) => document.querySelector(`[data-stub="${label}"]`)?.textContent ?? null;
+
+describe("the shell's session list", () => {
+  test("a coding session started outside the window is known without a tab change: its tab gets the coding panels", async () => {
+    let emit: ((v: SessionView) => void) | undefined;
+    await mount({ route: { route: "agent", params: { session: "code-new" } } }, [], undefined, (l) => (emit = l));
+    expect(toggles()).not.toContain("Terminal");
+    await act(async () => emit!(s("code-new", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", startedAt: 5 })));
+    await act(() => settle(6));
+    expect(toggles()).toContain("Terminal");
+  });
+
+  test("the Code side goes to the newest coding session", () => {
+    const list = [s("code-a", { kind: "coding", startedAt: 1 }), s("code-c", { kind: "coding", startedAt: 9 }), s("code-b", { kind: "coding", startedAt: 4 }), s("agent-x", { kind: "agent", startedAt: 20 })];
+    expect(newestCoding(list)?.id).toBe("code-c");
+    expect(newestCoding([s("agent-x", { kind: "agent" })])).toBeUndefined();
+  });
+});
 
 describe("the shell", () => {
   test("opens on the first bot's tab: its conversation over its composer, the bot's toggles", async () => {

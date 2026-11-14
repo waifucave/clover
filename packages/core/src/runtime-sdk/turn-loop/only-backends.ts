@@ -65,10 +65,11 @@ export function scopeOf(registry: Pick<PluginRegistry, "get">, pluginId: string,
   return valid(entryScope) ?? manifestScope(pluginId) ?? manifestScope(topPluginIdOf(pluginId)) ?? "both";
 }
 
-/** Whether a plugin's skills, agent definitions and plugin listing reach a session: its scope (`scopeOf`) serves the
- *  session (`servesScope`) and its `onlyBackends` the session's backend (`servesBackend`). The bots' Glossary and an
- *  agent's bridge and placed parts both ask this. */
-export function partsServe(registry: Pick<PluginRegistry, "get">, pluginId: string, s: ScopeSession & { backend?: string }): boolean {
-  return servesScope(scopeOf(registry, pluginId), { kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }) }, pluginId)
+/** Whether a plugin's skills, agent definitions and plugin listing reach a session: its scope (`scopeOf`: the entry's
+ *  own, a skill's `{ path, scope }` or an agent definition's `scope`, else the plugin's) serves the session
+ *  (`servesScope`) and its `onlyBackends` the session's backend (`servesBackend`). The bots' Glossary and an agent's
+ *  bridge and placed parts both ask this. */
+export function partsServe(registry: Pick<PluginRegistry, "get">, pluginId: string, s: ScopeSession & { backend?: string }, entryScope?: unknown): boolean {
+  return servesScope(scopeOf(registry, pluginId, entryScope), { kind: s.kind, ...(s.bot === undefined ? {} : { bot: s.bot }) }, pluginId)
     && servesBackend(registry, pluginId, s.kind, s.backend);
 }

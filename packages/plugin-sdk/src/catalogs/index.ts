@@ -55,7 +55,7 @@ export function catalogJson() {
     corePoints: CORE_POINTS,
     dataPoints: DATA_POINTS.map((p) => ({ name: p.name, shape: p.shape, declaredBy: p.declaredBy, kind: p.kind, doc: p.doc, fields: schema(p.entry) })),
     spots: SPOTS.map((s) => ({
-      name: s.name, shape: s.shape, declaredBy: s.declaredBy, inBotTab: s.inBotTab,
+      name: s.name, shape: s.shape, declaredBy: s.declaredBy, botsOffer: s.botsOffer,
       ...(s.keys ? { keys: s.keys } : {}), ...(s.keep ? { keep: s.keep } : {}), ...(s.needs ? { needs: s.needs } : {}), ...(s.gates ? { gates: s.gates } : {}),
       ...(s.context ? { context: s.context } : {}), doc: s.doc, fields: schema(s.fields), props: schema(s.props),
     })),

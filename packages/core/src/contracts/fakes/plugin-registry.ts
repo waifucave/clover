@@ -4,7 +4,7 @@
 // plugin host reports after crashes. The catalog's declarations come in as `catalog` (the plugin SDK's
 // `catalogPointDecl`), since the contracts don't import the SDK at run time.
 import { createHash } from "node:crypto";
-import { BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { APP_PARTS_SUFFIX, BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
   type ApproveResult, type Contribution, type InstallFrom, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
@@ -57,6 +57,8 @@ interface Held {
   okHash?: string;
   cardHeld: boolean;
   stopped?: string;
+  /** Its parts beside its bot are switched on (§5.5). */
+  appParts: boolean;
 }
 
 const manifestHash = (m: Manifest) => `sha256:${createHash("sha256").update(JSON.stringify(m)).digest("hex")}`;
@@ -102,9 +104,18 @@ export class FakePluginRegistry implements PluginRegistry {
     return this.#snap.points.map((p) => structuredClone(p));
   }
 
-  async setEnabled(id: string, enabled: boolean): Promise<SwitchResult> {
+  async setEnabled(id: string, enabled: boolean, opts: { part?: "app" } = {}): Promise<SwitchResult> {
     const held = this.#mustGet(id);
     const state = this.#snap.records.get(id)?.state;
+    if (opts.part === "app") {
+      // Only its parts beside its bot (§5.5): the bot and the plugin's own switch stay.
+      if (this.#snap.records.get(id)?.parts === undefined) throw new ContractError("refused", `${id} has no parts beside a bot to switch`);
+      if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+      if (enabled && state === "found") return { applied: false, card: this.#raiseOk(parentOf(id) ?? id) };
+      held.appParts = enabled;
+      this.#update();
+      return { applied: true };
+    }
     if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
     if (state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
     // A found plugin's switch is its sealed OK card (S2): nothing loads until the user's yes on it.
@@ -148,6 +159,11 @@ export class FakePluginRegistry implements PluginRegistry {
     for (const [child, on] of Object.entries(selection)) {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
+      // The checkbox for a plugin's parts beside its bot (`<id>#app`, §5.5): its own or a child's.
+      if (child.endsWith(APP_PARTS_SUFFIX)) {
+        const owner = this.#plugins.get(child.slice(0, -APP_PARTS_SUFFIX.length));
+        if (owner && (child.slice(0, -APP_PARTS_SUFFIX.length) === id || parentOf(child.slice(0, -APP_PARTS_SUFFIX.length)) === id)) owner.appParts = on;
+      }
     }
     this.#update();
     return "approved";
@@ -223,6 +239,7 @@ export class FakePluginRegistry implements PluginRegistry {
       refused: prev !== undefined && prev.refused && prev.hash === hash,
       ...(okHash === undefined ? {} : { okHash }),
       cardHeld,
+      appParts: this.#plugins.get(input.id)?.appParts ?? true,
     });
   }
 
@@ -244,6 +261,7 @@ export class FakePluginRegistry implements PluginRegistry {
     for (const [id, h] of this.#plugins) {
       const i = h.input;
       const p: RegistryPlugin = { id, manifest: i.manifest, approved: h.approved, refused: h.refused, enabled: h.enabled, hash: h.hash, cardHeld: h.cardHeld };
+      if (!h.appParts) p.appParts = false;
       if (i.source !== undefined) p.source = i.source;
       if (h.okHash !== undefined) p.okHash = h.okHash;
       if (i.invalid !== undefined) p.invalid = i.invalid;

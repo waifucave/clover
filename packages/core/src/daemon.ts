@@ -76,6 +76,7 @@ import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
 import type { FileDeviceRegistry } from "./devices/registry";
 import { agentDefinitionOf, GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
+import { partsServe } from "./runtime-sdk/turn-loop/only-backends";
 import { AgentStarts, agentStartPolicy } from "./agents/start-policy";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost, type MainHere } from "./plugin-host/daemon-host";
@@ -4415,7 +4416,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           commandsSandboxed: true,
           agentStart: agentStartPolicy({
             contained: async (backend) => (await agents()?.manager.isContainedBackend(backend)) === true,
-            backends: agentBackendIds, definition: (_ctx, name) => definitionOf(name), starts: agentStarts,
+            // A definition inside another bot (`own-bot`, its own or its plugin's) isn't this bot's to start (§5.5).
+            backends: agentBackendIds, definition: (ctx, name) => agentDefinitionOf(registry, name, (pluginId, entryScope) => partsServe(registry, pluginId, { kind: ctx.kind, ...(ctx.botId === undefined ? {} : { bot: ctx.botId }) }, entryScope)), starts: agentStarts,
             running: (bot) => agents()?.manager.running(bot) ?? 0,
           }),
           bundledTool,

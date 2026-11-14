@@ -103,7 +103,7 @@ export function islandShooter(cdp: Cdp, dir: string, setAppearance?: (scheme: "d
   };
 }
 
-export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string }): Promise<string> {
+export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string; say?: (line: { text?: string; progress?: number }) => Promise<unknown> }): Promise<string> {
   const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
   // A card on top rests small; the strip at the top opens the island (its tab dots live there).
   await shoot?.("1-closed-strip");
@@ -206,7 +206,89 @@ export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promis
     });
     await shoot?.("5-open-third-party");
   }
-  return `${text}\n[devices] ${rows.slice(0, 300)}`;
+  // The plugin's own line (its `island.line` entry, called by the island while its Needs you tab is up): the island draws its words
+  // in its own rows with the plugin's name (a bot's name only for that bot's own plugin), an update shows, and removing it clears it.
+  let lineNote = "";
+  if (thirdParty?.say !== undefined) {
+    const say = thirdParty.say;
+    /** The plugin's line as drawn (the island's `.clv-line` rows of the acceptance plugin), or undefined. */
+    const drawn = async (): Promise<{ from: string; text: string; icon: boolean; bar: string | null; style: string | null } | undefined> => {
+      for (const d of await here()) {
+        const v = await cdp.evaluate(d.session, `(() => { const r = document.querySelector('.clv-line[data-plugin="acceptance-tab"]'); if (!r) return null; const b = r.querySelector('[role=progressbar]'); return JSON.stringify({ from: r.querySelector('.clv-line-from')?.textContent ?? '', text: r.querySelector('.clv-line-text')?.textContent ?? '', icon: r.querySelector('svg[data-glyph]') !== null, bar: b ? b.getAttribute('aria-valuenow') : null, style: r.getAttribute('style') }); })()`).catch(() => null);
+        if (typeof v === "string") return JSON.parse(v);
+      }
+      return undefined;
+    };
+    await say({ text: "Rendering 1 of 3", progress: 0.33 });
+    await choose("Needs you");
+    const first = await until("the third-party plugin's line on Needs you", 40_000, async () => {
+      const l = await drawn();
+      return l !== undefined && l.text === "Rendering 1 of 3" ? l : undefined;
+    }, async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    // The line names bot "alpha", but the sender is the acceptance plugin, not that bot's own: its name stays off the line.
+    if (first.from !== "acceptance-tab") throw new Error(`the line says it is from "${first.from}", not the plugin alone`);
+    if (first.bar !== "33" || !first.icon) throw new Error(`the line's icon/progress read ${JSON.stringify(first)}`);
+    if (first.style !== null) throw new Error(`the sender's row carries a style of its own (${first.style})`);
+    await say({ text: "Rendering 2 of 3", progress: 0.66 });
+    const second = await until("the update shown", 40_000, async () => {
+      const l = await drawn();
+      return l !== undefined && l.text === "Rendering 2 of 3" ? l : undefined;
+    }, async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    if (second.bar !== "66") throw new Error(`the updated line's progress reads ${second.bar}`);
+    await say({});
+    await until("the line removed", 40_000, async () => ((await drawn()) === undefined ? true : undefined), async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    lineNote = `\n[line] ${first.from} | ${first.text} (${first.bar}%) -> ${second.text} (${second.bar}%) -> removed`;
+  }
+  return `${text}\n[devices] ${rows.slice(0, 300)}${lineNote}`;
+}
+
+/** The island's first line on the CLOSED strip (the owner's ruling: only when Clover isn't in front). The plugin's line is set,
+ *  the open island is put away (the pointer leaves it), and the small pill under the strip must show the plugin's words; with
+ *  the window in front it must go, with it back it must return. `front` is the test seam's say-so. Reads the island's own
+ *  document(s) only, never the pointer's place for a card. */
+export async function islandStripLine(cdp: Cdp, deps: { say: (line: { text?: string; progress?: number }) => Promise<unknown>; front: (front: boolean) => void }): Promise<string> {
+  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
+  const pill = async (): Promise<{ from: string; text: string; bar: string | null } | undefined> => {
+    for (const d of await here()) {
+      const v = await cdp.evaluate(d.session, `(() => { const r = document.querySelector('.clv-stripline[data-plugin="acceptance-tab"]'); if (!r) return null; const b = r.querySelector('[role=progressbar]'); return JSON.stringify({ from: r.querySelector('.clv-line-from')?.textContent ?? '', text: r.querySelector('.clv-line-text')?.textContent ?? '', bar: b ? b.getAttribute('aria-valuenow') : null }); })()`).catch(() => null);
+      if (typeof v === "string") return JSON.parse(v);
+    }
+    return undefined;
+  };
+  const dump = async () => `the strip's line reads ${JSON.stringify(await pill())}`;
+  deps.front(false);
+  await deps.say({ text: "Closed strip line", progress: 0.5 });
+  // Put the open island away: the pointer leaves it, and it closes a moment later.
+  await until("the open island put away", 40_000, async () => {
+    let open = false;
+    for (const d of await here()) {
+      if ((await cdp.evaluate(d.session, "document.querySelector('.clv-open') !== null").catch(() => false)) === true) {
+        open = true;
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2000 }, d.session).catch(() => undefined);
+      }
+    }
+    return open ? undefined : true;
+  });
+  const shown = await until("the plugin's line on the closed strip", 40_000, async () => {
+    const l = await pill();
+    return l !== undefined && l.text === "Closed strip line" ? l : undefined;
+  }, dump);
+  if (shown.from !== "acceptance-tab" || shown.bar !== "50") throw new Error(`the strip's line reads ${JSON.stringify(shown)}`);
+  deps.front(true);
+  await until("the strip's line gone with the window in front", 20_000, async () => ((await pill()) === undefined ? true : undefined), dump);
+  await sleep(1_500);
+  if ((await pill()) !== undefined) throw new Error("the strip's line came back while the window was still in front");
+  deps.front(false);
+  await until("the strip's line back with the window not in front", 40_000, async () => ((await pill()) !== undefined ? true : undefined), dump);
+  return `${shown.from} | ${shown.text} (${shown.bar}%): on the closed strip, gone with the window in front, back with it not`;
+}
+
+/** Whether the closed strip draws a plugin line now (any `.clv-stripline` in the island's documents). */
+export async function islandStripLineShown(cdp: Cdp): Promise<boolean> {
+  for (const d of await cdp.documents()) {
+    if ((await cdp.evaluate(d.session, "document.querySelector('.clv-stripline') !== null").catch(() => false)) === true) return true;
+  }
+  return false;
 }
 
 /** A pending card on the island's top, with the pointer put on it (the card grows a little under the pointer) and watched for

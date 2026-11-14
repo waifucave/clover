@@ -315,3 +315,24 @@ test("the screenshot tool's sizes and targets are the core's", () => {
   const loop = text("plugin-loop").replace(/\s+/g, " ");
   expect(loop).toContain("take the screenshot tool of it (`app:<your plugin id or page key>`) both `\"wide\"` and `\"narrow\"`");
 });
+
+// Sending an island line (plugin-ui, "Putting a line on the island"): the point is the catalog's, and the limits the skill
+// states are the island's own (its model), so the text can't drift from what the island enforces.
+test("plugin-ui's island line section matches the island's rules", async () => {
+  const { LINE_BACKOFF_MS, LINE_CALL_MS, LINE_FAILS_BEFORE_BACKOFF, LINE_ICONS, LINE_POLL_MS, LINE_TEXT_MAX, LINES_PER_PLUGIN, LINES_SHOWN } =
+    await import("../../island/src/model/lines");
+  const section = text("plugin-ui").replace(/\s+/g, " ");
+  expect(section).toContain("## Putting a line on the island");
+  expect(section).toContain('"island.line": [{ "id": "render", "handler": "islandLine" }]');
+  for (const icon of LINE_ICONS) expect(section).toContain(`\`${icon}\``);
+  expect(section).toContain(`at most ${LINE_TEXT_MAX} characters`);
+  expect(section).toContain("at most four, two from one plugin");
+  expect([LINES_SHOWN, LINES_PER_PLUGIN]).toEqual([4, 2]);
+  expect(section).toContain(`every ${LINE_POLL_MS / 1000 === 2 ? "two" : "?"} seconds`);
+  expect(section).toContain(`more than ${LINE_CALL_MS / 1000} seconds`);
+  expect(section).toContain(`fails ${LINE_FAILS_BEFORE_BACKOFF === 3 ? "three times" : "?"} running is left alone for ${LINE_BACKOFF_MS / 1000} seconds`);
+  // The point is in the generated catalog block, and the island declares it with the catalog's name.
+  expect(text("plugin-catalog")).toContain("island.line");
+  const island = JSON.parse(readFileSync(join(ROOT, "plugins/clover/plugins/island/clover.json"), "utf8"));
+  expect(Object.keys(island.contributes.ui[0].declares)).toContain("island.line");
+});

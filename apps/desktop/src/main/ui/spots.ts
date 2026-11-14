@@ -18,7 +18,7 @@
 // "The smaller part": the part a plugin dresses is the smallest spot holding all its entries in that tab, a child
 // counting as its own plugin (a send-button plugin dresses the button, a bot's tab look the whole tab, a shell the
 // app). The spots form a tree: the catalog's declarations, and each plugin's `declares` under the spot its entry fills.
-import { SPOTS, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
+import { SAME_ON_EVERY_TAB, SPOTS, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type PointDeclaration, type UiEntry, type UiPlugin } from "./model";
 
 export type Os = "macos" | "windows" | "linux";
@@ -171,9 +171,13 @@ export function privateTo(spot: string, plugins: readonly UiPlugin[]): string | 
 const list = (v: string | readonly string[] | undefined): readonly string[] | undefined => (v === undefined ? undefined : typeof v === "string" ? [v] : v);
 
 /** The bots an entry is limited to, or `all` (rules 2 and 5, and `when.bot`): a bot's own entries are limited to that bot; the
- *  user's ticks (the plugin's `bots`) replace `when.bot`. */
+ *  user's ticks (the plugin's `bots`) replace `when.bot`. A part that looks the same on every tab (§5.5: the sidebar,
+ *  Settings, the bots' Edit page) takes no per-bot scope: it applies on every tab, or, a bot's own entry there (which
+ *  validation refuses), on none. So an entry there never counts as limited to a bot for rule 2. */
 export function botScope(plugin: UiPlugin, e: UiEntry): "all" | readonly string[] {
-  if (plugin.isBot) return [plugin.id];
+  if (SAME_ON_EVERY_TAB.has(e.spot)) return plugin.isBot && e.app !== true ? [] : "all";
+  // A part beside the bot (`app`, §5.5) follows the app's rules: limited only as any plugin's entry is.
+  if (plugin.isBot && e.app !== true) return [plugin.id];
   if (plugin.bots !== "all") return plugin.bots;
   return list(e.when?.bot) ?? "all";
 }
@@ -199,7 +203,7 @@ export function applies(plugin: UiPlugin, e: UiEntry, ctx: CellContext): boolean
 /** The key an entry fills: its own, or in a bot's own plugin, a keyless `bot.tab` entry takes the bot's id. */
 export function effectiveKey(plugin: UiPlugin, e: UiEntry): string | undefined {
   if (e.key !== undefined) return e.key;
-  if (plugin.isBot && e.spot === "bot.tab") return plugin.id;
+  if (plugin.isBot && e.spot === "bot.tab" && e.app !== true) return plugin.id;
   return undefined;
 }
 

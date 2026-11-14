@@ -119,9 +119,12 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     api.bots?.list().then((b) => live && setBots(b), () => undefined);
     api.conversation?.list?.().then((s) => live && setSessions(s), () => undefined);
     const stop = api.bots?.watch((b) => setBots((list) => (list.some((x) => x.id === b.id) ? list.map((x) => (x.id === b.id ? b : x)) : [...list, b])));
+    // A session started outside the window (the CLI, another window, a bot's agent) or changed anywhere shows without a remount.
+    const stopSessions = api.conversation?.watch?.((v) => setSessions((list) => (list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v])));
     return () => {
       live = false;
       stop?.();
+      stopSessions?.();
     };
   }, [api, core]);
 

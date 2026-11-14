@@ -167,8 +167,46 @@
                     "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                   }
                 },
+                "labels": {
+                  "maxItems": 40,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 40
+                  }
+                },
                 "dev": {
                   "type": "boolean"
+                },
+                "parts": {
+                  "type": "object",
+                  "properties": {
+                    "app": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "has": {
+                          "maxItems": 64,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 256
+                          }
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "has"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "app"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -370,8 +408,46 @@
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                 }
               },
+              "labels": {
+                "maxItems": 40,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
               "dev": {
                 "type": "boolean"
+              },
+              "parts": {
+                "type": "object",
+                "properties": {
+                  "app": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "has": {
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 256
+                        }
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "has"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "app"
+                ],
+                "additionalProperties": false
               },
               "manifest": {
                 "type": "object",
@@ -640,7 +716,7 @@
       }
     },
     "plugin.setEnabled": {
-      "doc": "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
+      "doc": "Switches a plugin or child on or off, or with `part: \"app\"` only its parts beside its bot; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -677,6 +753,10 @@
                 }
               }
             ]
+          },
+          "part": {
+            "type": "string",
+            "const": "app"
           }
         },
         "required": [

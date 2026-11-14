@@ -128,6 +128,10 @@ export const ModelSchema = z.strictObject({
   ...declares,
 });
 
+/** A part's scope (§5.1): `bots`, `agents`, `both`, or `own-bot`: inside the bot its plugin holds, for that bot alone (its
+ *  conversation, side threads and the agents it starts; the owner's rule of November 14, §5.5). */
+export const PartScope = z.union([Scope, z.literal("own-bot")]);
+
 export const McpServerSchema = z.strictObject({
   /** `host` is the plugin's own code, served as an MCP server. */
   type: z.enum(["host", "stdio", "http"]),
@@ -153,7 +157,8 @@ export const McpServerSchema = z.strictObject({
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */
   perComputer: z.boolean().optional(),
-  scope: Scope.optional(),
+  /** `own-bot`: the bot this plugin holds only (inside the bot); else beside it, every bot and coding agent the scope says. */
+  scope: PartScope.optional(),
   when: z.strictObject({ os: z.array(Os).min(1).max(3).optional() }).optional(),
   ...declares,
 });
@@ -168,6 +173,8 @@ export const AgentDefSchema = z.strictObject({
   computer: utf16(63, 1).optional(),
   root: utf16(4096, 1).optional(),
   plugins: z.strictObject({ only: z.array(utf16(81, 1)).max(256).optional(), except: z.array(utf16(81, 1)).max(256).optional() }).optional(),
+  /** `own-bot`: an agent definition inside the bot, for that bot alone; else the plugin's scope. */
+  scope: PartScope.optional(),
   ...declares,
 });
 
@@ -210,7 +217,7 @@ export const HookSchema = z.strictObject({
   timeoutMs: z.number().int().min(1).max(600_000).optional(),
   /** `own-bot`: only the sessions of the bots this plugin's tree contributes (their conversations, side threads and
    *  the agents they start), enforced by the host before a hook is called; the OK card says so. */
-  scope: z.union([Scope, z.literal("own-bot")]).optional(),
+  scope: PartScope.optional(),
   ...declares,
 });
 
@@ -221,6 +228,8 @@ export const CommandSchema = z.strictObject({
   handler: HandlerName,
   key: utf16(64).regex(KEY_CHORD_RE).optional(),
   runsOn: RunsOn.optional(),
+  /** `own-bot`: a command inside the bot: the user runs it, and of the bots only the one its plugin holds. */
+  scope: PartScope.optional(),
   ...declares,
 });
 
@@ -285,7 +294,11 @@ export const ServiceSchema = z.strictObject({
 // -------------------------------------------------------------------------------------------------
 
 export const ThemeEntrySchema = z.strictObject({ id: EntryId, file: Path, ...declares });
-export const LocaleEntrySchema = z.strictObject({ lang: LangTag, file: Path, ...declares });
+/** `app`: in a plugin with a bot, a table that translates other plugins' keys too, a part beside the bot (§5.5). */
+export const LocaleEntrySchema = z.strictObject({ lang: LangTag, file: Path, app: z.boolean().optional(), ...declares });
+
+/** A `skills` item: a glob, or one with its own scope (`own-bot`: inside the bot, for that bot alone). */
+export const SkillEntrySchema = z.union([PathGlob, z.strictObject({ path: PathGlob, scope: PartScope.optional() })]);
 
 /** A `ui` entry. It has exactly one of `component`, `web`, `style` or `hide` (§5.9); other fields are the spot's own
  *  (title, icon, opens…), which the spot catalog checks. */
@@ -322,6 +335,10 @@ export const UiSchema = z.object({
     transparent: z.boolean().optional(),
     placement: z.partialRecord(Os, utf16(256, 1)).optional(),
   }).optional(),
+  /** In a plugin with a bot: a part beside the bot, which follows the app's rules (any spot an ordinary plugin fills,
+   *  `when.bot` any bots) and has its own switch, rather than one of the bot's tab (§5.5, the owner's rule of November
+   *  14). Without it, a bot's plugin fills only what Bots offers, on its own tab. */
+  app: z.boolean().optional(),
   ...declares,
 }).catchall(z.unknown());
 
@@ -334,7 +351,7 @@ export const CORE_CONTRIBUTION_SCHEMAS = {
   bot: BotSchema,
   models: z.array(ModelSchema).max(64),
   mcpServers: z.record(utf16(64, 1).regex(/^[A-Za-z0-9_-]+$/), McpServerSchema),
-  skills: z.array(PathGlob).max(1000),
+  skills: z.array(SkillEntrySchema).max(1000),
   agents: z.array(z.union([Path, AgentDefSchema])).max(256),
   agentBackends: z.array(AgentBackendSchema).max(32),
   hooks: z.array(HookSchema).max(256),

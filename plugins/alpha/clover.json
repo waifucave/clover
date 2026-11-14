@@ -245,6 +245,9 @@
         "timeoutMs": 2000
       }
     ],
+    "island.line": [
+      { "id": "activity", "handler": "islandLine" }
+    ],
     "skills": [
       "skills/*/SKILL.md"
     ],

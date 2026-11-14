@@ -35,6 +35,8 @@ export const S = {
     found: "Waiting for your OK", refused: "You said no", invalid: "Can't load", off: "Off", waiting: "Waiting for a part it needs",
     running: "On", stopped: "Stopped",
   },
+  parts: "Its parts",
+  brings: "What it brings",
   children: (n: number) => (n === 1 ? "1 part" : `${n} parts`),
   notYet: "Not available in this build yet",
   notYetParts: "Parts not available in this build yet",
