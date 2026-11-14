@@ -68,13 +68,15 @@ export function agentCallerOf(s: AgentSessionFacts): Extract<Caller, { kind: "se
 }
 
 /** The session the bots' approval check judges an agent's plugin-tool call in: the agent's own session (so its card
- *  names it), its bot (whose level and saved rules answer, never more than the bot's), the delegation's level (a
+ *  names it, with the agent and who started it: `agentAsking`), its bot (whose level and saved rules answer, never more than the bot's), the delegation's level (a
  *  routine's) or its computer's, its working folder for the call's paths, its backend for the tool's routing. A bot's
  *  agent's card offers no "always" (`offersAlways`), as its own permission cards don't. */
 export function agentCheckContext(s: AgentSessionFacts, level: BridgeCallContext["level"]): BotSessionContext {
   return {
     botId: s.bot, sessionId: s.id, kind: s.kind, computer: s.computer, ...(level === undefined ? {} : { level }),
     paths: { scratch: s.root, root: s.root }, caller: agentCallerOf(s), backend: s.backend, offersAlways: s.bot === undefined,
+    // Which agent asks and who started it, on the card (the bots' approval check): a bot's agent asks as itself.
+    agentAsking: { backend: s.backend, ...(s.bot === undefined ? {} : { bot: s.bot }), folder: s.root },
   } as unknown as BotSessionContext;
 }
 

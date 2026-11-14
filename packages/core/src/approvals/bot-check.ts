@@ -515,6 +515,18 @@ export function botApprovalCheck(
     // A bot's agent's call to a plugin tool (agents/plugin-reach.ts): its bot's saved rules answer it as they would the
     // bot's own, but its card offers no "always", which would be saved under the bot's id and answer the bot's own calls.
     if ((ctx as { offersAlways?: boolean }).offersAlways === false) req.options = [{ id: "approve", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }];
+    // A call from an agent's session (agents/plugin-reach.ts): the card says which agent asks and who started it, as the
+    // agent's own permission card does, so a bot's agent asks as itself, never as its bot.
+    const asking = (ctx as { agentAsking?: { backend: string; bot?: string; folder: string } }).agentAsking;
+    if (asking !== undefined) {
+      const said = (s: string) => plainOf(s.toWellFormed()).slice(0, 4000);
+      if (asking.bot !== undefined) req.fields.reason = { type: "text", text: said(`${asking.bot}'s agent (${asking.backend}) is asking, not ${asking.bot} itself.`) };
+      req.fields.source = { type: "rows", rows: [
+        { label: "Agent", value: said(asking.backend) },
+        { label: "Started by", value: asking.bot === undefined ? "You" : said(asking.bot) },
+        { label: "Folder", value: said(asking.folder) },
+      ] };
+    }
     // The user's secret places (`SECRET_READ_PLACES`: keys, cloud and tool credentials, the Keychain, browser profiles,
     // password managers, sign-ins, shell history), by the place each path really reaches: a read or a search of one is
     // refused with no card at every level, as `BOT_READ_DENIED` is (the runtime's sandbox denies them to Read, Grep, Glob
