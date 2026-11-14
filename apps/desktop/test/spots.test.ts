@@ -158,6 +158,18 @@ describe("which entry shows: the seven rules", () => {
     expect(shownRefs(resolveCell({ plugins: [everyone, forLuna], ctx: inTab("luna") }, "composer"))).toEqual(["luna-only-composer#composer"]);
   });
 
+  test("2 never runs on a part that looks the same on every tab: a `when.bot` or ticked entry for the sidebar isn't limited, so it doesn't beat an all-bots one on that bot's tab", () => {
+    // Both are newer than the plain one (which would win rule 7 otherwise): if rule 2 counted them as limited they would win on luna's tab.
+    const plain = plugin("side-every", [{ spot: "sidebar", component: "Every" }], { enabledAt: 900 });
+    const tied = plugin("side-tied", [{ spot: "sidebar", component: "Tied", when: { bot: "luna" } }], { enabledAt: 100 });
+    const ticked = plugin("side-ticked", [{ spot: "sidebar", component: "Ticked" }], { bots: ["luna"], enabledAt: 101 });
+    for (const c of [inTab("luna"), inTab("alpha"), ctx]) {
+      const r = resolveCell({ plugins: [plain, tied, ticked], ctx: c }, "sidebar");
+      expect(shownRefs(r)).toEqual(["side-every#sidebar"]);
+      expect(r.decidedBy).toBe(7);
+    }
+  });
+
   test("2: more scoped wins for style entries too: the bot's own style applies last (it wins), an all-bots one under it", () => {
     const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "pane", style: "pane.json" }], { isBot: true });
     const everyone = plugin("every-style", [{ spot: "composer", id: "paint", style: "paint.json" }], { enabledAt: 1e12 });

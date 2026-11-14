@@ -1,12 +1,15 @@
-// Alpha's own controls, drawn by her plugin in her own frame where her layout puts them (`bot.controls`): no title bar; her name, how she is, the sidebar's
-// button, a handle that drags the window, and her buttons sit in one line of her scene. What they do is the plugin API's `shell.*` (the window's own state
-// and acts, each act the user's own press): nothing here is special-cased for Alpha by the app, and another bot's plugin can draw its own the same way.
+// Alpha's own controls, drawn by her plugin in her own frame where her layout puts them (`bot.controls`): no title bar; the sidebar's button, a handle
+// that drags the window, and her buttons sit in one line of her scene. They start at her tab's left edge plus her margin, and further in only where the
+// window's own buttons reach into her tab (`shell.state`'s `safeArea` less the sidebar beside it; none while the sidebar lies under them). What they do
+// is the plugin API's `shell.*` (the window's own state and acts, each act the user's own press): nothing here is special-cased for Alpha by the app, and
+// another bot's plugin can draw its own the same way.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { useStageState } from "./stage-store";
 import { DARK_SCENES } from "./backdrop";
 import { useDark } from "./live";
+import { controlsInset, EDGE_PX, WIDE_MIN_PX } from "./room-size";
 
 interface BotRef { id: string; name: string }
 const FONT = 'var(--alpha-display, ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", system-ui, sans-serif)';
@@ -15,7 +18,7 @@ const WORDS: Record<string, string> = { idle: "Here with you", thinking: "Thinki
 const CSS = `
 html, body { background: transparent !important; margin: 0; overflow: hidden; font-family: var(--clover-font-family, system-ui, sans-serif); color: var(--clover-color-text, #221A33); -webkit-font-smoothing: antialiased; }
 .ac { --glass: rgba(255,253,247,.72); --edge: rgba(27,34,71,.12); --ink: #1B2247; --soft: #465078; --accent: #8C6A28; --wash: rgba(27,34,71,.07);
-  box-sizing: border-box; height: 64px; display: flex; align-items: center; gap: 10px; padding: 14px 64px 0 96px; user-select: none; }
+  box-sizing: border-box; height: 64px; display: flex; align-items: center; gap: 10px; padding: 14px 64px 0 ${EDGE_PX}px; user-select: none; }
 .ac[data-dark] { --glass: rgba(16,22,52,.66); --edge: rgba(255,255,255,.12); --ink: #EEF0FB; --soft: #B9BFDC; --accent: #D9B46A; --wash: rgba(255,255,255,.09); }
 .ac__btn { all: unset; box-sizing: border-box; width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center; cursor: pointer; flex: none; color: var(--ink);
   background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 10px 24px -16px rgba(60,36,130,.5); transition: transform .18s ease, background-color .18s ease; }
@@ -46,7 +49,7 @@ html, body { background: transparent !important; margin: 0; overflow: hidden; fo
 .ac__act:hover, .ac__act[aria-pressed="true"] { background: var(--wash); color: var(--ink); }
 .ac__act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ac__act svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-@media (max-width: 1100px) { .ac__lbl { display: none; } .ac__act { padding: 0 9px; } }
+@media (max-width: ${WIDE_MIN_PX - 1}px) { .ac__lbl { display: none; } .ac__act { padding: 0 9px; } }
 @media (prefers-reduced-motion: reduce) { .ac__face, .ac__dot, .ac__btn { animation: none !important; transition: none !important; } }
 `;
 
@@ -94,7 +97,7 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
   const run = (p: Promise<void> | undefined) => void p?.catch(() => undefined);
   const drag = (e: { button: number; target: EventTarget }) => { if (e.button === 0 && (e.target as HTMLElement).closest("button") === null) run(shell?.dragWindow?.()); };
   return (
-    <div className="ac" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || dark || undefined} onMouseDown={drag}>
+    <div className="ac" data-state={state} data-dark={DARK_SCENES.has(stage.scene) || dark || undefined} style={{ paddingLeft: controlsInset(win) }} onMouseDown={drag}>
       <button type="button" className="ac__btn" aria-label={win?.sidebar.collapsed ? "Show the sidebar" : "Hide the sidebar"} aria-pressed={win ? !win.sidebar.collapsed : undefined} onClick={() => run(win ? shell?.setSidebar?.(!win.sidebar.collapsed) : shell?.toggleSidebar?.())}>{SIDEBAR}</button>
       <div className="ac__drag" aria-hidden="true" />
       <div className="ac__group" role="toolbar" aria-label="Alpha">

@@ -645,11 +645,15 @@ export interface ShellState {
   readonly bot?: string;
   /** A window over the tab: `settings` while Settings shows over it (the tab under it stays `tab`). */
   readonly dialog?: "settings";
-  /** The sidebar: rested as a rail of icons, and which side it shows (the bots' or the code's). */
-  readonly sidebar: { readonly collapsed: boolean; readonly side: "bots" | "code" };
+  /** The sidebar: rested as a rail of icons, which side it shows (the bots' or the code's), and how wide it is drawn at the
+   *  window's left, its rule included (CSS pixels, as measured; absent until the window has measured it). A tab starts at
+   *  its right edge. */
+  readonly sidebar: { readonly collapsed: boolean; readonly side: "bots" | "code"; readonly width?: number };
   /** The panels of the tab: the views open now, and the ones it offers. */
   readonly panels: { readonly open: readonly string[]; readonly available: readonly string[] };
-  /** How far the window's own native controls (the traffic lights) reach from the top left, in CSS pixels: nothing drawn may sit under them. */
+  /** How far the window's own native controls (the traffic lights) reach from the window's top left, in CSS pixels: nothing
+   *  drawn may sit under them (0 where the system draws them at the other end). A tab beside the sidebar is under them only
+   *  for `left` less `sidebar.width`: none when the sidebar, open or a rail, already lies under them. */
   readonly safeArea: { readonly left: number; readonly top: number };
 }
 

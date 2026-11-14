@@ -173,7 +173,7 @@ const list = (v: string | readonly string[] | undefined): readonly string[] | un
 /** The bots an entry is limited to, or `all` (rules 2 and 5, and `when.bot`): a bot's own entries are limited to that bot; the
  *  user's ticks (the plugin's `bots`) replace `when.bot`. A part that looks the same on every tab (§5.5: the sidebar,
  *  Settings, the bots' Edit page) takes no per-bot scope: it applies on every tab, or, a bot's own entry there (which
- *  validation refuses), on none. */
+ *  validation refuses), on none. So an entry there never counts as limited to a bot for rule 2. */
 export function botScope(plugin: UiPlugin, e: UiEntry): "all" | readonly string[] {
   if (SAME_ON_EVERY_TAB.has(e.spot)) return plugin.isBot && e.app !== true ? [] : "all";
   // A part beside the bot (`app`, §5.5) follows the app's rules: limited only as any plugin's entry is.
