@@ -2091,16 +2091,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
       // 7. A coding session started now, outside the window, with no tab change after it: the Code switch of the sidebar beside her
       // tab lists it (the sidebar follows `conversation.watch`), and its row goes to it (the session's id in the sidebar's current row).
-      const codeId = await ensureCodingSession(ctx);
-      let side = "this run could not start a coding session, so the Code switch had nowhere to go (not pressed)";
-      if (codeId !== undefined) {
-        side = await toCodingSession(cdp, codeId, press);
-        await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots");
-        await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
-        await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
-      }
+      const codeId = await ensureCodingSession(ctx) ?? fail("this run could not start a coding session");
+      const side = await toCodingSession(cdp, codeId, press);
+      await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots");
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
       const rows = (JSON.parse(herSide) as { rows: string[] }).rows.length;
-      return `on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back; ${side}`;
+      return `${side}; on Alpha's tab no stock bar (bar-mode none), her own controls, ${sizeSaid}, and the window's own sidebar beside it exactly as beside ${name}'s (box, ground, rule, material, its accent and text tokens and ${rows} rows the same; her skin "${skin}" reaches the bar and panels only); her toggle folded the stock sidebar to its ${railWidth} px rail and opened it again; ${boxSaid}; ${panels}; ${stageTools}; more scoped wins: her composer kept her own color.surface (${herTokens.surface}) and composer.background (${herTokens.composer}) against an all-bots style, which ${name}'s composer took (${plainTokens.surface}, ${plainTokens.composer}); ${name}'s tab kept the stock bar, and Alpha's brought her chrome back`;
     } finally {
       for (const pid of installed.reverse()) await rpc.request("plugin.remove", { id: pid }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
