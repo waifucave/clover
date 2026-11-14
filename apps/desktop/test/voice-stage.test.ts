@@ -132,23 +132,83 @@ describe("the voice player", () => {
     expect((ctx.sources[1] as FakeSource).startedAt!).toBeGreaterThan((ctx.sources[0] as FakeSource).startedAt!);
   });
 
-  test("a new utterance of the same bot replaces the playing one; a straggler of the replaced one is dropped; another bot is unaffected", () => {
+  test("a new utterance of the same bot replaces the playing one at once; a straggler of the replaced one is dropped; another bot keeps waiting its turn", () => {
     const { ctx, stage } = make();
     stage.piece(piece(0));
     stage.piece(piece(0, { bot: "mira", utterance: "m1" }));
     const first = ctx.sources[0] as FakeSource;
     stage.piece(piece(0, { utterance: "u2" }));
     expect(first.stopped).toBe(true);
+    expect(ctx.sources).toHaveLength(2);
     expect((ctx.sources[1] as FakeSource).stopped).toBe(false);
     const before = ctx.sources.length;
     stage.piece(piece(1, { utterance: "u1" }));
     expect(ctx.sources).toHaveLength(before);
     expect(stage.speaking("luna")).toBe(true);
-    expect(stage.speaking("mira")).toBe(true);
-    // The player itself plays two bots at once; the voice mode's queue is what keeps it from happening.
-    expect(stage.counters().overlap).toBe(2);
+    // Mira came while Luna sounded: she waits behind Luna's newer utterance, never over it.
+    expect(stage.speaking("mira")).toBe(false);
+    expect(stage.counters().overlap).toBe(1);
     // Luna's u1 was sounding when u2 came: one utterance cut.
     expect(stage.counters().cut).toBe(1);
+  });
+
+  test("one bot at a time on the device: a second bot's pieces while the first still sounds wait until the first has ended, so two bots are never marked speaking and their sounds never play together", () => {
+    const { ctx, stage } = make();
+    const ended: string[] = [];
+    stage.onEnded((bot, u) => ended.push(`${bot}:${u}`));
+    let most = 0;
+    const look = () => { most = Math.max(most, stage.counters().speaking.length); };
+    stage.watch("luna", look);
+    stage.watch("mira", look);
+    // Luna's reply, all of it sent: three pieces and her last, sounding (the clock hasn't reached their ends; it may not
+    // run at all yet, as a context that hasn't started).
+    for (const p of [piece(0), piece(1), piece(2), last(3)]) stage.piece(p);
+    const luna = [...ctx.sources] as FakeSource[];
+    const lunaEnds = luna.at(-1)!.startedAt! + 0.1;
+    const mira = () => (ctx.sources as FakeSource[]).filter((s) => !luna.includes(s));
+    // Mira's first pieces come while Luna's sound is still playing (her queue let go of Luna early).
+    stage.piece(piece(0, { bot: "mira", utterance: "m1" }));
+    stage.piece(piece(1, { bot: "mira", utterance: "m1" }));
+    look();
+    expect(stage.counters().speaking).toEqual(["luna"]);
+    for (const s of mira()) expect(s.startedAt!).toBeGreaterThanOrEqual(lunaEnds);
+    // Luna plays out: Mira's sound starts after hers, never under it.
+    ctx.currentTime = lunaEnds;
+    for (const s of luna) s.end();
+    expect(ended).toEqual(["luna:u1"]);
+    expect(stage.counters().speaking).toEqual(["mira"]);
+    expect(mira()).toHaveLength(2);
+    for (const s of mira()) expect(s.startedAt!).toBeGreaterThanOrEqual(lunaEnds);
+    stage.piece(last(2, { bot: "mira", utterance: "m1" }));
+    ctx.currentTime += 1;
+    for (const s of mira()) s.end();
+    expect(ended).toEqual(["luna:u1", "mira:m1"]);
+    expect(stage.counters()).toMatchObject({ speaking: [], overlap: 1, cut: 0 });
+    expect(most).toBe(1);
+  });
+
+  test("a bot waiting its turn on the device: the sounding bot's stop starts it; its newer utterance takes the waiting one's place; push-to-talk stops both and neither starts", () => {
+    const { ctx, stage } = make();
+    const ended: string[] = [];
+    stage.onEnded((bot, u) => ended.push(`${bot}:${u}`));
+    stage.piece(piece(0));
+    stage.piece(piece(0, { bot: "mira", utterance: "m1" }));
+    stage.piece(piece(0, { bot: "mira", utterance: "m2" }));
+    expect(ended).toEqual(["mira:m1"]);
+    expect(ctx.sources).toHaveLength(1);
+    expect(stage.counters().cut).toBe(0);
+    // The user's stop on Luna: Mira's newer utterance sounds now.
+    stage.stop("luna");
+    expect(stage.counters().speaking).toEqual(["mira"]);
+    expect(ctx.sources).toHaveLength(2);
+    // Luna again, waiting behind Mira; then push-to-talk: everything stops, nothing that waited starts.
+    stage.piece(piece(0, { utterance: "u2" }));
+    expect(ctx.sources).toHaveLength(2);
+    stage.stopAll();
+    expect(stage.counters().speaking).toEqual([]);
+    expect(ctx.sources).toHaveLength(2);
+    expect(ended.slice(1).sort()).toEqual(["luna:u1", "luna:u2", "mira:m2"]);
+    expect(stage.counters().overlap).toBe(1);
   });
 
   test("stop silences the bot at once and its late pieces are dropped", () => {
