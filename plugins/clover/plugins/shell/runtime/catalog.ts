@@ -44,6 +44,5 @@ export const SPOT_DECLS: Readonly<Record<string, SpotDecl & { declaredBy: string
   "conversation.message": { shape: "keyed", declaredBy: "conversation", keep: ["approval"] },
   "conversation.message.extra": { shape: "list", declaredBy: "conversation" },
   "tool.result": { shape: "keyed", declaredBy: "conversation" },
-  "menu.message": { shape: "list", declaredBy: "conversation" },
   "file.preview": { shape: "keyed", declaredBy: "file-view" },
 };

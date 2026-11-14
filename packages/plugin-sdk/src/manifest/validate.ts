@@ -958,16 +958,6 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
 
 function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCtx): boolean {
   const kinds = ["component", "web", "style", "hide", "layout"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
-  // A message's menu item runs a command, and only one of the plugin's own: another plugin's would run it without
-  // `call:<that plugin>` (the controller's ruling on lane F's F-M3). The app draws the item, so it needs no component.
-  if (e.spot === "menu.message" && e.command !== undefined) {
-    const ns = typeof e.command === "string" ? e.command.slice(0, Math.max(0, e.command.indexOf("."))) : undefined;
-    if (ns === undefined || ns === "" || ns !== ctx.namespace) {
-      f.error("entry", "menu_command_namespace", [...at, "command"], `a message menu item runs one of the plugin's own commands (\`${ctx.namespace ?? "<namespace>"}.<name>\`)`);
-      return false;
-    }
-  }
-  const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
   // A message action is data: the conversation draws the button, and a press runs a handler of the plugin's host half.
   const actionOnly = e.spot === "conversation.message.action" && kinds.length === 0;
   if (actionOnly && !ctx.hasHost) {
@@ -980,7 +970,7 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   // A pill target is data too: the Dispatch pill draws its row from `title`, and the user's words go to `handler`.
   const targetOnly = e.spot === "pill.target" && typeof e.handler === "string" && kinds.length === 0;
-  if (kinds.length !== 1 && !commandOnly && !actionOnly && !targetOnly) {
+  if (kinds.length !== 1 && !actionOnly && !targetOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
