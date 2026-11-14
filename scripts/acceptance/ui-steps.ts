@@ -1958,8 +1958,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     mkdirSync(join(folder, "bot"), { recursive: true });
     writeFileSync(join(folder, "bot", "instructions.md"), "You are a plain test bot.\n");
     writeFileSync(join(folder, "clover.json"), JSON.stringify({
+      // No model of its own: it runs on the user's default, so its first turn asks no provider card (its turn is sampled below).
       manifest: 1, id, name, description: "The acceptance run's plain bot: no layout of its own, so the stock window.", version: "0.0.1", engines: { clover: "^1.0.0" },
-      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" } } },
+      contributes: { bot: { name, instructions: "bot/instructions.md" } },
     }));
     const everyFolder = join(parent, everyId);
     mkdirSync(everyFolder, { recursive: true });
