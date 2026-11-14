@@ -79,9 +79,12 @@ function NothingHere({ title }: { title: string }) {
   );
 }
 
-/** The newest coding session (by when it started): where the Code side goes. */
+/** Where the Code side goes: the newest coding session (by when it started) that is live; with none live, the newest
+ *  that has stopped (it stays in the lists, marked). An archived one never. */
 export function newestCoding(sessions: readonly SessionView[]): SessionView | undefined {
-  return sessions.filter((x) => x.kind === "coding").reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+  const newest = (list: readonly SessionView[]) => list.reduce<SessionView | undefined>((a, x) => (a === undefined || x.startedAt > a.startedAt ? x : a), undefined);
+  const mine = sessions.filter((x) => x.kind === "coding" && x.archived !== true);
+  return newest(mine.filter((x) => x.status !== "stopped")) ?? newest(mine);
 }
 
 export function Shell({ props }: EntryProps<ShellProps>) {
