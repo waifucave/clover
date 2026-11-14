@@ -3,7 +3,7 @@
 // UI SDK only; no react in the folder (each layer's import map serves them).
 import { useEffect, useRef, useState } from "react";
 import {
-  useApprovals, useComposerHost, useDrag, useKept, useMenu, useOpen, useQuestions, useSurface, useUserSend, useViewFrame,
+  useApprovals, useComposerHost, useDrag, useKept, useMenu, useOpen, useQuestions, useSurface, useSurfaceEnvironment, useUserSend, useViewFrame,
 } from "@waifucave/clover-plugin-sdk/ui";
 
 type Item = { id?: string; kind?: string; text?: string; at?: number; name?: string; calls?: unknown[]; result?: unknown };
@@ -63,6 +63,7 @@ function HooksProbe() {
   const userSend = useUserSend();
   const composerHost = useComposerHost();
   const surface = useSurface();
+  const surfaceEnv = useSurfaceEnvironment();
   const viewFrame = useViewFrame("acceptance-window");
   const [remount, setRemount] = useState(0);
   const box = useRef<HTMLDivElement | null>(null);
@@ -71,16 +72,24 @@ function HooksProbe() {
     set("questions", String(Array.isArray(questions.questions) ? questions.questions.length : "no list"));
     set("usersend", userSend === undefined ? "undefined" : "function");
     set("composerhost", composerHost === undefined ? "undefined" : "defined");
-    set("surface", typeof surface);
+    // useSurface: a request from a tab's frame (no surface window of its own) is a call that answers nothing and moves nothing.
+    set("surface", `${typeof surface}; asked: ${String(surface({ visible: true }))}`);
     viewFrame(box.current);
-    set("viewframe", "called");
+    // useViewFrame: the element the hook was given, as this frame measured it right after (the window's real layout), and the viewport it is in.
+    const b = box.current?.getBoundingClientRect();
+    set("viewframe", b === undefined ? "no element" : `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}x${Math.round(b.height)} in ${innerWidth}x${innerHeight}`);
     return () => viewFrame(null);
   }, []);
+  // useSurfaceEnvironment: undefined in a tab's frame (it is no surface window's root); said after the core has had time to answer.
+  useEffect(() => {
+    const t = setTimeout(() => set("surfaceenv", surfaceEnv === undefined ? "none" : JSON.stringify(surfaceEnv).slice(0, 120)), 1500);
+    return () => clearTimeout(t);
+  }, [surfaceEnv]);
   const press = (k: string, run: () => Promise<string>) => () => { run().then((v) => set(k, v), (e: unknown) => set(k, `refused: ${String(e).slice(0, 160)}`)); };
   return (
     <div data-acceptance-window="page" {...Object.fromEntries(Object.entries(out).map(([k, v]) => [`data-${k}`, v]))}>
       <p>Acceptance window</p>
-      <div ref={box} />
+      <div ref={box} data-acceptance-window="box" style={{ width: "100%", height: 24 }} />
       <button type="button" data-acceptance-window="menu" onClick={press("menu", async () => String(await menu([{ id: "one", label: "One" }, { id: "two", label: "Two" }], { x: 20, y: 20 })))}>menu</button>
       <button type="button" data-acceptance-window="open" onClick={press("open", async () => { await open({ kind: "settings" }); return "opened"; })}>open</button>
       <button type="button" data-acceptance-window="drag" onClick={press("drag", async () => {
