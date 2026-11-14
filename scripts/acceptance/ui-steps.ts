@@ -1958,7 +1958,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     mkdirSync(join(folder, "bot"), { recursive: true });
     writeFileSync(join(folder, "bot", "instructions.md"), "You are a plain test bot.\n");
     writeFileSync(join(folder, "clover.json"), JSON.stringify({
-      // No model of its own: it runs on the user's default, so its first turn asks no provider card (its turn is sampled below).
+      // No model of its own (a plugin's choice would ask the provider card first); step 8 gives it Alpha's as the user's pick.
       manifest: 1, id, name, description: "The acceptance run's plain bot: no layout of its own, so the stock window.", version: "0.0.1", engines: { clover: "^1.0.0" },
       contributes: { bot: { name, instructions: "bot/instructions.md" } },
     }));
@@ -2122,17 +2122,25 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
       // 8. Her stage tools are hers alone (`mcpServers.stage.scope: own-bot`): a turn of hers is offered them, the plain bot's isn't.
-      const bots = async () => (await rpc.request<{ bots: { id: string; name: string; mainSession?: string }[] }>("bot.list", {})).bots;
+      const bots = async () => (await rpc.request<{ bots: { id: string; name: string; model?: string; mainSession?: string }[] }>("bot.list", {})).bots;
       const offered = async (who: string) => {
         const session = await until(`${who}'s conversation`, 30_000, async () => (await bots()).find((b) => b.name === who)?.mainSession);
         const tag = `TOOLS-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
         await rpc.request("session.send", { id: session, message: { text: `which tools ${tag}`, clientMessageId: `tools-${tag}` } }, 30_000);
-        const req = await until(`${who}'s turn's request`, 60_000, async () => ctx.requests().find((r) => r.lastUserText.includes(tag)));
+        const req = await until(`${who}'s turn's request`, 60_000, async () => ctx.requests().find((r) => r.lastUserText.includes(tag)), async () => {
+          const log = (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: session, limit: 40 }).catch(() => ({ events: [] }))).events;
+          const cards = (await rpc.request<{ cards: { kind?: string; change?: string; session?: string }[] }>("card.list").catch(() => ({ cards: [] }))).cards;
+          const bot = (await bots()).find((b) => b.name === who);
+          return `${who} (${JSON.stringify(bot)}) log: ${log.slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}${typeof e.text === "string" ? `(${e.text.slice(0, 60)})` : ""}${typeof e.message === "string" ? `(${e.message.slice(0, 120)})` : ""}`).join(" ")}; cards: ${JSON.stringify(cards.map((c) => `${c.kind}${c.change ? `/${c.change}` : ""}@${c.session === session ? "this" : c.session}`))}; the fake's last: ${JSON.stringify(ctx.requests().slice(-2).map((r) => `${r.model}: ${r.lastUserText.slice(0, 40)}`))}`;
+        });
         return { session, tools: (req as { tools?: string[] }).tools ?? [] };
       };
       const STAGE_TOOLS = ["set_scene", "set_mood", "toggle_outfit", "pin_note", "stage_status"];
       const stageIn = (tools: readonly string[]) => STAGE_TOOLS.filter((t) => tools.some((x) => x === t || x.endsWith(`__${t}`)));
       const hers = await offered("Alpha");
+      // The plain bot on Alpha's model, picked the user's way (its user layer): the user's default here is a provider with no key.
+      const alphaModel = (await bots()).find((b) => b.id === "alpha")?.model ?? fail("bot.list gives Alpha no model");
+      await rpc.request("bot.setUserLayer", { id, patch: { model: alphaModel } }, 20_000);
       const plain = await offered(name);
       if (stageIn(hers.tools).length !== STAGE_TOOLS.length) fail(`Alpha's turn wasn't offered her stage tools: ${stageIn(hers.tools).join(", ") || "none"} of ${STAGE_TOOLS.join(", ")}`);
       if (plain.tools.length === 0) fail(`${name}'s turn was offered no tools at all, so it proves nothing`);
