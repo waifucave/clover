@@ -57,7 +57,7 @@ describe("RequestAccess", () => {
     const broker = brokerAt("ask-risky");
     broker.setBotNames((id) => (id === "luna" ? { en: "Luna Moth" } : undefined));
     const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
-    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
     const card = answerNext(broker, "deny");
     await tool.run({ folder: "~/Documents", why: "to save the report" });
     expect((await card).fields.what).toEqual({ type: "code", code: `Luna Moth wants write access to ${join(w.user, "Documents")} for shell commands` });
@@ -68,7 +68,7 @@ describe("RequestAccess", () => {
     let reviewed = 0;
     const broker = brokerAt("ask-risky", async () => { reviewed++; return "safe"; });
     const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
-    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
     expect(tool.name).toBe(REQUEST_ACCESS_TOOL);
     const card = answerNext(broker, "approve");
     const r = await tool.run({ folder: "~/Documents", why: "to save the report the build makes" });
@@ -92,7 +92,7 @@ describe("RequestAccess", () => {
     const w = world();
     const broker = brokerAt("ask-risky");
     const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
-    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
     for (const folder of [join(w.user, ".aws"), w.clover, join(w.user, "bin"), "/etc", w.user, join(w.user, "Projects", "app", ".git")]) {
       const r = await tool.run({ folder, why: "x" });
       expect([folder, r.isError, r.text]).toEqual([folder, true, expect.stringContaining("never get write access")]);
@@ -105,13 +105,13 @@ describe("RequestAccess", () => {
     const w = world();
     const broker = brokerAt("ask-risky");
     const grants = new SandboxGrants({ home: w.clover, isOrdinary: (f) => w.classOf([f]) === "ordinary" });
-    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
     const no = answerNext(broker, "deny");
     const declined = await tool.run({ folder: join(w.user, "Projects", "app"), why: "build" });
     await no;
     expect(declined).toMatchObject({ isError: true, text: expect.stringContaining("the user declined it") });
     expect(declined.endTurn).toBeUndefined();
-    const ro = requestAccessTool({ broker: brokerAt("read-only"), grants, pathClass: w.classOf, home: w.user, levelOf: () => "read-only" }, w.ctx, () => "user");
+    const ro = requestAccessTool({ broker: brokerAt("read-only"), grants, pathClass: w.classOf, home: w.user, levelOf: () => "read-only", os: "macos" }, w.ctx, () => "user");
     expect(await ro.run({ folder: join(w.user, "Projects", "app"), why: "build" })).toMatchObject({ isError: true, text: expect.stringContaining("level doesn't allow it") });
     const yes = answerNext(broker, "always");
     expect((await tool.run({ folder: join(w.user, "Projects", "app"), why: "build" })).isError).toBe(false);
@@ -139,7 +139,7 @@ describe("RequestAccess", () => {
     let reviewed = 0;
     const broker = brokerAt("automatic", async () => { reviewed++; return "safe"; });
     const grants = new SandboxGrants({ isOrdinary: () => true });
-    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "automatic" }, w.ctx, () => "user");
+    const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "automatic", os: "macos" }, w.ctx, () => "user");
     expect(await tool.run({ network: ["*.example.com"], why: "x" })).toMatchObject({ isError: true, text: expect.stringContaining("never a pattern") });
     const r = await tool.run({ network: ["registry.npmjs.org"], why: "npm install" });
     expect(r).toEqual({ isError: true, text: NETWORK_UNSUPPORTED });
@@ -160,7 +160,7 @@ describe("RequestAccess", () => {
     try {
       const broker = brokerAt("ask-risky");
       const grants = new SandboxGrants({ isOrdinary: (f) => w.classOf([f]) === "ordinary" });
-      const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky" }, w.ctx, () => "user");
+      const tool = requestAccessTool({ broker, grants, pathClass: w.classOf, home: w.user, levelOf: () => "ask-risky", os: "macos" }, w.ctx, () => "user");
       for (const folder of [core, join(w.clover, "run"), sock, join(w.user, "Documents", "notes.txt"), "/var/run/docker.sock", "/var/run"]) {
         const r = await tool.run({ folder, why: "x" });
         expect([folder, r.isError]).toEqual([folder, true]);

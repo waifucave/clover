@@ -822,3 +822,47 @@ button.cl-window__title:hover {
   min-width: 0;
   height: 100% !important;
 }
+
+/* The buttons of panels plugins add, after the stock ones; the overflow menu past three. */
+.cl-panel-toggle__image {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.cl-panel-toggles__menu-wrap {
+  position: relative;
+}
+
+.cl-panel-toggles__menu {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-surface);
+}
+
+.cl-panel-toggles__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--clover-radius-medium);
+  background: transparent;
+  color: var(--clover-color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cl-panel-toggles__item:hover,
+.cl-panel-toggles__item[aria-checked="true"] {
+  background: var(--clover-color-hover);
+}

@@ -96,10 +96,15 @@ darwinTest("picks never count as crashes or notices; a crash-stopped plugin star
   };
   const crashToStop = async (id: string) => {
     void ph.host.ensureStarted(id).catch(() => {});
-    await until(`${id} stopped by the crash rules`, 20_000, () => {
-      clock.advance(60_000);
-      return ph.host.status(id).state === "stopped" ? true : undefined;
-    });
+    try {
+      await until(`${id} stopped by the crash rules`, 20_000, () => {
+        clock.advance(60_000);
+        return ph.host.status(id).state === "stopped" ? true : undefined;
+      });
+    } catch (e) {
+      // Where the crash loop stood, so a slow or odd runner's failure says why.
+      throw new Error(`${(e as Error).message}; status ${JSON.stringify(ph.host.status(id))}; states ${JSON.stringify(states[id] ?? [])}`, { cause: e });
+    }
     await flush();
   };
   const edit = async (id: string, files: Record<string, string>) => {

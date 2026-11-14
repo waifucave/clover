@@ -31,13 +31,13 @@ A plugin that brings a bot (a `bot` entry) holds two kinds of things:
 `bot.header.action`, `bot.stage`, `bot.side`, `bot.controls`, `conversation`, `conversation.message`,
 `conversation.message.extra`, `conversation.message.action`, `tool.result`, `composer`, `composer.action`, `avatar`,
 `file.preview`); the top bar, which it may restyle or replace (`bar`, `chrome.title`, `chrome.action`,
-`chrome.actions`, `chrome.sidebar`, `chrome.drag`); and the right panels (`panel` keyed `browser` or `agent`,
+`chrome.actions`, `chrome.sidebar`, `chrome.drag`); and the right panels (`panel` keyed `browser` or `agent`, or a panel of its own under any other key, which needs a `title`,
 `chrome.panels`). Its own settings (the manifest's `settings`) are drawn by the app, not by the bot.
 
 **What Bots never offers**, to a bot or to any entry tied to a bot's tab with `when.bot`: the left sidebar (`sidebar`,
 `sidebar.bot`, `sidebar.app`), Settings (`settings.section`) and the bots' Edit page (`bot.editor.section`). They look
 the same on every tab. The check refuses each case by name: `bot_spot_not_offered` (an unmarked entry on a spot Bots
-doesn't offer), `bot_panel_not_offered` (a panel other than `browser` or `agent`), `bot_when_other_bot` (an inside
+doesn't offer), `bot_panel_not_offered` (a stock panel other than `browser` or `agent`: terminal, diff, files and session), `bot_when_other_bot` (an inside
 entry whose `when.bot` names another bot), `bot_tied_not_offered` (any plugin's entry on one of those five with
 `when.bot`) and `bot_editor_stock` (a bot's own `bot.editor.section`). Each message says the fix: mark the entry
 `"app": true` to show it everywhere, with a switch of its own. A bot's theme gets the same treatment: its `shell` block

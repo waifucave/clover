@@ -75,7 +75,7 @@ darwinTest("a bot moves its plugin in with its shell: found, its card names it, 
   folders.start();
   closers.push(() => folders.stop());
   // The fence follows the records and the bots' pending drops; the embedded host opens the bots' plugins.
-  const fence = new CloverFence({ home: userHome, cloverHome });
+  const fence = new CloverFence({ home: userHome, cloverHome, temp: join(userHome, "fence-temp") });
   closers.push(fence.followWorkshop(core, { pending: (bot) => folders.pendingDrops(bot) }));
   const workshopFolders = () => [...core.list().filter((r) => r.provenance.by === "bot").map((r) => r.folder), ...folders.pendingDrops().map((n) => join(pluginsDir, n))];
   const host: EmbeddedSessionHost = createEmbeddedSessionHost({ home: cloverHome, workshopFolders });

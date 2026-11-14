@@ -90,6 +90,17 @@ describe("shell.* from a plugin's frame", () => {
     expect(hearsShell({ id: "luna", capabilities: new Set(["shell.read"]) }, state())).toBe(false);
   });
 
+  test("a plugin's own panel is named by its plugin: the view a frame names is namespaced by the caller", () => {
+    const r = call("openPanel", { view: "sheets" }, { id: "alpha" }).run();
+    expect(r).toEqual({ kind: "act", act: { kind: "panel", view: "alpha#sheets", to: "open" } });
+    expect(call("openPanel", { view: "browser" }, { id: "alpha" }).run()).toEqual({ kind: "act", act: { kind: "panel", view: "browser", to: "open" } });
+    expect(cleanReport({ state: { ...state(), panels: { open: ["office#sheets", "a#../x"], available: ["office#sheets"] } } })?.state.panels).toEqual({ open: ["office#sheets"], available: ["office#sheets"] });
+    // The panel names ride with the report, only for added panels' ids; a bot's own controls toggle a panel by the id the state gave.
+    expect(cleanReport({ state: { ...state(), panels: { open: [], available: ["office#sheets"], titles: { "office#sheets": "Sheets", browser: "x", "bad#../": "y", "office#n": 3 } } } })?.state.panels.titles).toEqual({ "office#sheets": "Sheets" });
+    expect(call("togglePanel", { view: "office#sheets" }, { id: "alpha" }).run()).toEqual({ kind: "act", act: { kind: "panel", view: "office#sheets" } });
+    expect(() => call("togglePanel", { view: "office#../x" }, { id: "alpha" }).run()).toThrow();
+  });
+
   test("a report from the shell is kept as data: names, numbers, nothing else", () => {
     const r = cleanReport({ state: { ...state(), extra: "no", panels: { open: ["session", "../x", 3], available: ["browser"] }, safeArea: { left: 80, top: -5 } }, apps: [{ id: "archive", title: "Archive", icon: "x" }, { id: "bad id!", title: "no" }, "junk"] });
     expect(r?.state.panels).toEqual({ open: ["session"], available: ["browser"] });

@@ -113,7 +113,7 @@ const manifest: Manifest = {
     commands: [{ name: "draw", description: "Draw cards", handler: "draw", args: { type: "object" } }],
     hooks: [{ id: "ask-first", on: ["tool.before"], tools: ["Bash"], handler: "beforeTool" }],
     mcpServers: { tarot: { type: "host", tools: { Read: "preload" } } },
-    ui: [{ spot: "panel", key: "luna", component: "TarotPanel" }],
+    ui: [{ spot: "panel", key: "luna", component: "TarotPanel", title: "Tarot" }],
     "luna.cards": [{ id: "fool" }],
   },
 };

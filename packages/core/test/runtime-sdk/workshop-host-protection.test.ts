@@ -79,7 +79,7 @@ function world() {
   ];
   const fns = new Set<() => void>();
   const registry = { list: () => records, watch: (fn: () => void) => { fns.add(fn); return () => fns.delete(fn); } };
-  const fence = new CloverFence({ home: user, cloverHome: clover });
+  const fence = new CloverFence({ home: user, cloverHome: clover, temp: join(user, "tmp") });
   fence.followWorkshop(registry);
   const workshopFolders = () => records.filter((r) => r.provenance.by === "bot").map((r) => r.folder);
   const takeBack = (id: string) => { records = records.filter((r) => r.id !== id); for (const fn of fns) fn(); };

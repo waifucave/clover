@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { BotTab, Window, skinOf, type WindowProps } from "../client/Window";
 
@@ -169,14 +169,28 @@ describe("the dialog layer's keyboard (review minor)", () => {
 });
 
 describe("the dialog layer's keyboard, the focus outside it", () => {
-  test("Escape closes the dialog when the focus has left it (what held it went away)", () => {
-    render(<Host cardPending={false} />);
+  test("Escape closes the dialog when the focus has left it (what held it went away)", async () => {
+    const onClose = mock(() => undefined);
+    render(<Host cardPending={false} onClose={onClose} />);
     act(() => screen.getByRole("button", { name: "Open settings" }).click());
     expect(screen.queryByRole("dialog")).not.toBeNull();
     (document.activeElement as HTMLElement | null)?.blur();
+    // What the document's listeners saw, kept so that a failure says where the key went.
+    const seen: string[] = [];
+    const watch = (e: Event) => { seen.push(`${e.type}@${e.eventPhase}:${(e as KeyboardEvent).key}:prevented=${String(e.defaultPrevented)}`); };
+    document.addEventListener("keydown", watch, true);
+    document.addEventListener("keydown", watch);
     fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
+    // On a slow runner the close lands a tick after the key (this test took 7 to 11 s there, passing on a fast one).
+    try {
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 15_000 });
+    } catch (e) {
+      throw new Error(`the dialog stayed open; keydowns seen: ${JSON.stringify(seen)}; active: ${document.activeElement?.nodeName}; roots: ${document.body.children.length}; host onClose calls: ${onClose.mock.calls.length}; dialog still there: ${screen.queryByRole("dialog") !== null}`, { cause: e });
+    } finally {
+      document.removeEventListener("keydown", watch, true);
+      document.removeEventListener("keydown", watch);
+    }
+  }, 30_000);
 
   test("another key on the document leaves it open", () => {
     render(<Host cardPending={false} />);

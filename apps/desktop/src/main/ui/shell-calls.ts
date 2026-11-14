@@ -7,7 +7,7 @@
 //   * an act counts only inside the user's own key press or click in the calling frame, one call per gesture (the Plugins page's rule); `dragWindow`
 //     is the user's press on a region the main process itself saw, so it takes no gesture here (the drag's own rules in window-drag.ts apply);
 //   * an act is data the shell applies to its own state: a place to show, a panel view, the sidebar's fold; never a conversation, a card or a file.
-import { apiCallAllowed, type ShellAccount, type ShellApp, type ShellState } from "@waifucave/clover-plugin-sdk";
+import { apiCallAllowed, STOCK_PANEL_KEYS, type ShellAccount, type ShellApp, type ShellState } from "@waifucave/clover-plugin-sdk";
 import { SHELL_ACTS, SHELL_READS, type ShellAct, type ShellMethod } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 export type ShellCall =
@@ -29,6 +29,8 @@ export interface ShellCallInput {
 }
 
 const VIEW = /^[a-z][a-z0-9-]{0,31}$/;
+/** A panel's id as the shell says it in its state: a stock panel's name, or a plugin's added panel, `<plugin id>#<key>`. */
+const PANEL_ID = /^[a-z][a-z0-9-]{0,80}(\/[a-z][a-z0-9-]{0,80})?(#[a-z][a-z0-9-]{0,31})?$/;
 const ID = /^[A-Za-z0-9._:/-]{1,128}$/;
 const topOf = (id: string): string => id.split("/")[0] ?? id;
 
@@ -80,15 +82,19 @@ export function routeShell(i: ShellCallInput): ShellCall {
   }
   if (!i.takeGesture()) throw new Error("a shell call counts only inside the user's own key press or click");
   const a = obj(i.args);
+  // A stock panel's name, or the key of a panel this plugin adds: that one is the plugin's own, so main names it by the plugin
+  // (`<plugin id>#<key>`); a frame can open its own plugin's panels and no other's.
   const view = (): string => {
     if (typeof a.view !== "string" || !VIEW.test(a.view)) throw new Error("a panel view's name");
-    return a.view;
+    return STOCK_PANEL_KEYS.includes(a.view) ? a.view : `${i.plugin.id}#${a.view}`;
   };
+  // A bot's own controls list the panels the window offers (state.panels.available), so a full id, as the state says it, is taken as it is.
+  const full = (): string => (typeof a.view === "string" && a.view.includes("#") && PANEL_ID.test(a.view) ? a.view : view());
   switch (m) {
     case "openBotEditor": return { kind: "act", act: { kind: "editor", ...(typeof a.bot === "string" && ID.test(a.bot) ? { bot: a.bot } : {}) } };
-    case "openPanel": return { kind: "act", act: { kind: "panel", view: view(), to: "open" } };
-    case "closePanel": return { kind: "act", act: { kind: "panel", view: view(), to: "closed" } };
-    case "togglePanel": return { kind: "act", act: { kind: "panel", view: view() } };
+    case "openPanel": return { kind: "act", act: { kind: "panel", view: full(), to: "open" } };
+    case "closePanel": return { kind: "act", act: { kind: "panel", view: full(), to: "closed" } };
+    case "togglePanel": return { kind: "act", act: { kind: "panel", view: full() } };
     case "setSidebar": return { kind: "act", act: { kind: "sidebar", collapsed: a.collapsed === true } };
     case "toggleSidebar": return { kind: "act", act: { kind: "sidebar" } };
     case "go": return { kind: "act", act: { kind: "go", target: target(a.target) } };
@@ -114,8 +120,9 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; 
   const panels = obj(s.panels);
   const safe = obj(s.safeArea);
   const acc = obj(r.account);
-  const names = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === "string" && VIEW.test(n)).slice(0, 16) : []);
+  const names = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === "string" && PANEL_ID.test(n)).slice(0, 16) : []);
   const num = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 400 ? x : 0);
+  const titles: Record<string, string> = Object.fromEntries(Object.entries(obj(panels.titles)).flatMap(([k, t]): [string, string][] => (PANEL_ID.test(k) && k.includes("#") && typeof t === "string" && t.length > 0 && t.length <= 64 ? [[k, t]] : [])).slice(0, 16));
   const apps = (Array.isArray(r.apps) ? r.apps : []).slice(0, 32).flatMap((x): ShellApp[] => {
     const o = obj(x);
     return typeof o.id === "string" && ID.test(o.id) && typeof o.title === "string" && o.title.length <= 64 ? [{ id: o.id, title: o.title, ...(typeof o.icon === "string" && o.icon.length <= 512 ? { icon: o.icon } : {}) }] : [];
@@ -126,7 +133,7 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; 
       ...(typeof s.bot === "string" && ID.test(s.bot) ? { bot: s.bot } : {}),
       ...(s.dialog === "settings" ? { dialog: "settings" as const } : {}),
       sidebar: { collapsed: sidebar.collapsed === true, side: sidebar.side === "code" ? "code" : "bots", ...(typeof sidebar.width === "number" && Number.isFinite(sidebar.width) && sidebar.width >= 0 && sidebar.width <= 4000 ? { width: Math.round(sidebar.width) } : {}) },
-      panels: { open: names(panels.open), available: names(panels.available) },
+      panels: { open: names(panels.open), available: names(panels.available), ...(Object.keys(titles).length > 0 ? { titles } : {}) },
       safeArea: { left: num(safe.left), top: num(safe.top) },
     },
     apps,

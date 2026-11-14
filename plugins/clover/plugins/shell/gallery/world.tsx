@@ -136,6 +136,9 @@ export const BUNDLED: { pluginId: string; capabilities: string[]; entries: UiEnt
 // In flight
 // -------------------------------------------------------------------------------------------------
 
+/** How long no call may have been in flight before the world is idle: a call's answer sets state, and the part's next call comes
+ *  from its effect after that render, which on a loaded runner (happy-dom, many stories) takes well over a few ms. */
+const IDLE_GRACE_MS = 300;
 let pending = 0;
 const idleWaiters = new Set<() => void>();
 
@@ -143,7 +146,7 @@ function track<T>(p: Promise<T>): Promise<T> {
   pending++;
   const done = () => {
     pending--;
-    if (pending === 0) setTimeout(() => pending === 0 && idleWaiters.forEach((w) => w()), 30);
+    if (pending === 0) setTimeout(() => pending === 0 && idleWaiters.forEach((w) => w()), IDLE_GRACE_MS);
   };
   p.then(done, done);
   return p;
@@ -158,7 +161,7 @@ export function whenIdle(): Promise<void> {
       resolve();
     };
     idleWaiters.add(check);
-    setTimeout(check, 60);
+    setTimeout(check, IDLE_GRACE_MS);
   });
 }
 

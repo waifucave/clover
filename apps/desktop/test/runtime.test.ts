@@ -757,6 +757,17 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.header.action")).toEqual([]);
   });
 
+  test("a panel a plugin adds: listed for the shell by plugin#key, mounted by its ref in its own key's cell", () => {
+    const office = readUiPlugins([{ pluginId: "office", name: "Office", treeHash: `sha256:${"5".repeat(64)}`, layer: "office", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "panel", id: "sheets", key: "sheets", component: "Sheets", title: "Sheets" }], themes: [], locales: [], bots: "all" }] as never, { office: { enabledAt: 3, source: "installed" } });
+    const s = setup(office);
+    const shell = mountShell(s);
+    const own = s.rt.entries(shell.shellFrame, shell.info.mount, "panel", "*", "alpha", "bot");
+    expect(own.map((e) => [e.ref, e.pluginId, e.key, e.fields.title])).toEqual([["office#sheets", "office", "sheets", "Sheets"]]);
+    const view = s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "sheets", { entry: "office#sheets", session: "bot", bot: "alpha" });
+    expect(view.undeclared).toBeUndefined();
+    expect(view.items.map((i) => i.ref)).toEqual(["office#sheets"]);
+  });
+
   test("a bot's own bot.side entry fills the shell's column for that bot's tab only (a third-party bot, no layout of its own)", () => {
     const buddy = readUiPlugins([{ pluginId: "buddy", name: "Buddy", treeHash: `sha256:${"6".repeat(64)}`, layer: "buddy", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.side", id: "side", component: "BuddySide" }], themes: [], locales: [], bots: "all", bot: { name: "Buddy" } }] as never, { buddy: { enabledAt: 3, source: "installed" } })[0]!;
     const s = setup([buddy, tabbed("vn", "Visual novel", 2)]);

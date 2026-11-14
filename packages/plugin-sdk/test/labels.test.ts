@@ -10,6 +10,10 @@ describe("the labels a plugin shows for what it brings", () => {
       .toEqual(["Island tab", "App page", "Settings section", "Avatar renderer"]);
     expect(contributionLabels([m({ models: [{ id: "m" }], voices: [{ id: "v" }], agents: ["agents/a.md"], triggers: [{ type: "x" }], hooks: [{ id: "h" }] })])).toEqual(["Agent", "Model", "Voice", "Hooks", "Trigger"]);
   });
+  test("a panel with a key that isn't a stock panel's is a Panel; replacing a stock one is not", () => {
+    expect(contributionLabels([m({ ui: [{ spot: "panel", key: "sheets", component: "S", title: "Sheets" }] })])).toEqual(["Panel"]);
+    expect(contributionLabels([m({ ui: [{ spot: "panel", key: "browser", component: "B" }, { spot: "panel", key: "agent", component: "A" }] })])).toEqual([]);
+  });
   test("a tree: the parent's labels include its children's, a child's are its own, repeats once", () => {
     const parent = m({ bot: { name: "Luna" } });
     const child = m({ mcpServers: { s: { type: "host" } }, ui: [{ spot: "island.tab", id: "a", component: "A" }] });

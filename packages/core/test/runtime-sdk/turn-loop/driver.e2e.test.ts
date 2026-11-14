@@ -1013,7 +1013,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     writeFileSync(join(ctx.paths.scratch, "notes.txt"), "SECRET-free notes");
     symlinkSync(join(home, "run", "app.token"), join(ctx.paths.scratch, "tok"));
     symlinkSync(join(home, "run"), join(ctx.paths.scratch, "rundir"));
-    const fence = new CloverFence({ home: dirname(home), cloverHome: home });
+    const fence = new CloverFence({ home: dirname(home), cloverHome: home, temp: join(dirname(home), "fence-temp") });
     // Any read denial in the sandbox (as lane C's will have) makes the runtime's search walk its folder by hand, and that
     // walk takes a link to a file as the file: without the hook's filter, Glob lists `tok` and Grep shows the token.
     const sandbox = () => ({ filesystem: { denyRead: [join(home, "elsewhere")] } });
@@ -1075,7 +1075,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     mkdirSync(join(userHome, "Projects"), { recursive: true });
     writeFileSync(join(userHome, "Projects", "notes.md"), `${SECRET.slice(0, 6)} ordinary`);
     symlinkSync(join(userHome, ".aws", "credentials"), join(ctx.paths.scratch, "creds"));
-    const fence = new CloverFence({ home: userHome, cloverHome: home });
+    const fence = new CloverFence({ home: userHome, cloverHome: home, temp: join(userHome, "fence-temp") });
     const raw: { tool: string; response: unknown }[] = [];
     const driver = new BotSessionDriver(ctx, deps(home, spawn, {
       fileFence: botFileFence(fence, home, "macos", userHome),

@@ -18,9 +18,12 @@ const UI_SPOT_LABELS: Readonly<Record<string, string>> = {
   "tool.result": "Tool result look",
 };
 
+/** The stock right panels (the same list as `STOCK_PANEL_KEYS` in the spot catalog; kept here so the labels import nothing). */
+const STOCK_PANELS: readonly string[] = ["session", "terminal", "diff", "browser", "files", "agent"];
+
 /** The order the labels appear in, so a row reads the same everywhere. */
 export const CONTRIBUTION_LABEL_ORDER = [
-  "Bot", "Tools", "Skills", "Agent", "Agent backend", "Model", "Voice", "Theme", "Island tab", "App page", "Pill target", "Settings section",
+  "Bot", "Tools", "Skills", "Agent", "Agent backend", "Model", "Voice", "Theme", "Panel", "Island tab", "App page", "Pill target", "Settings section",
   "Editor section", "Status line", "Avatar renderer", "File preview", "Message look", "Message action", "Tool result look", "Commands", "Hooks",
   "Trigger", "Notifier", "Relay", "Companion", "Computer", "Translation",
 ] as const;
@@ -53,6 +56,9 @@ export function contributionLabels(manifests: readonly unknown[]): string[] {
     if (Array.isArray(c.ui)) {
       for (const e of c.ui) {
         const spot = (e as { spot?: unknown } | null)?.spot;
+        // A `panel` entry with a key that isn't a stock panel's adds a panel of its own.
+        const key = (e as { key?: unknown } | null)?.key;
+        if (spot === "panel" && typeof key === "string" && !STOCK_PANELS.includes(key)) found.add("Panel");
         const label = typeof spot === "string" ? UI_SPOT_LABELS[spot] : undefined;
         if (label !== undefined) found.add(label);
       }

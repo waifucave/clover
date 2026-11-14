@@ -85,3 +85,21 @@ export function NotesBadge() {
   const n = listed?.notes.length ?? 0;
   return <span data-notes="badge" data-count={n}>{n > 0 ? n : ""}</span>;
 }
+
+/** A panel of the plugin's own on the right (`panel` spot, a key no stock panel has): the latest few notes, with a button
+ *  of its own beside the stock panels' buttons, named by the entry's `title`. */
+export function NotesPanel() {
+  const t = useT();
+  const { listed } = useNotes();
+  const recent = (listed?.notes ?? []).slice(-5).reverse();
+  return (
+    <aside className="np" data-notes="panel">
+      <style>{CSS}</style>
+      <h1>{t("example-notes.page.title")}</h1>
+      {listed !== undefined && recent.length === 0 ? <p className="np__empty">{t("example-notes.page.empty")}</p> : null}
+      <ul>
+        {recent.map((n) => <li key={`${n.at}-${n.text}`}>{n.text}</li>)}
+      </ul>
+    </aside>
+  );
+}

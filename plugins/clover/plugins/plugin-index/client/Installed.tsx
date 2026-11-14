@@ -69,7 +69,7 @@ function Labels({ labels }: { labels: readonly string[] | undefined }) {
 export const PART_WORDS: Readonly<Record<string, string>> = {
   "island.tab": "Island tab", "island.line": "Island tab", "sidebar.app": "App page", main: "App page", "settings.section": "Settings section",
   status: "Status line", "pill.target": "Pill target", "bot.editor.section": "Editor section", mcpServers: "Tools", skills: "Skills",
-  agents: "Agent", hooks: "Hooks", commands: "Commands", locales: "Translation", "app.surface": "App page",
+  agents: "Agent", hooks: "Hooks", commands: "Commands", locales: "Translation", "app.surface": "App page", panel: "Panel",
 };
 export function partWords(has: readonly string[]): string[] {
   return [...new Set(has.flatMap((k) => (PART_WORDS[k] !== undefined ? [PART_WORDS[k]!] : [])))];

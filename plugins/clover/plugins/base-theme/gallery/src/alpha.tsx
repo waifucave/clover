@@ -12,7 +12,7 @@ import { cssVar } from "../../src/catalog";
 import { readTheme } from "../../src/theme";
 import type { ThemeLayer } from "./themes";
 
-export const ALPHA_LAYER: ThemeLayer = { id: "alpha", theme: readTheme(alphaTheme, { strict: true }), css: alphaCss, base: "plugins/alpha/tab/" };
+export const ALPHA_LAYER: ThemeLayer = { id: "alpha", theme: readTheme(alphaTheme, { strict: true, plugin: "alpha" }), css: alphaCss, base: "plugins/alpha/tab/" };
 
 const v = cssVar;
 
@@ -29,6 +29,15 @@ function LayoutView({ node, spots, width }: { node: LayoutNode; spots: Record<st
   let content: ReactNode = null;
   if (Array.isArray(node.row)) content = inRowOrColumn(node.row as LayoutNode[], "row");
   else if (Array.isArray(node.column)) content = inRowOrColumn(node.column as LayoutNode[], "column");
+  else if (Array.isArray(node.stack)) {
+    // Layers back to front in one grid cell, as the runtime draws a stack (packages/plugin-sdk/src/ui/layout.tsx).
+    style.display = "grid";
+    content = (node.stack as LayoutNode[]).map((child, i) => (
+      <div key={i} style={{ gridArea: "1 / 1", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        <LayoutView node={child} spots={spots} width={width} />
+      </div>
+    ));
+  }
   else if (typeof node.spot === "string") {
     style.flexDirection = "column";
     content = spots[node.spot] ?? null;
