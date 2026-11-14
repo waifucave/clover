@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { arrange, cleanLine, LineBoard, lineSource, LINE_BACKOFF_MS, LINE_CALL_MS, LINE_ENTRIES_MAX, LINE_ICONS, LINE_TEXT_MAX, LINES_PER_PLUGIN, LINES_SHOWN, type LineEntry } from "../src/model/lines";
+import { arrange, cleanLine, LineBoard, lineSource, LINE_BACKOFF_MS, LINE_CALL_MS, LINE_ENTRIES_MAX, LINE_ICONS, LINE_QUIET_RECHECK_MS, LINE_TEXT_MAX, LINES_PER_PLUGIN, LINES_SHOWN, type LineEntry } from "../src/model/lines";
 
 const e = (pluginId: string, entryId = "main"): LineEntry => ({ pluginId, entryId });
 
@@ -26,9 +26,16 @@ describe("what a sender's words become (cleanLine)", () => {
     expect(cleanLine(e("p"), { text: "a", progress: 0.25 })?.progress).toBe(0.25);
     expect(cleanLine(e("p"), { text: "a", progress: Number.NaN })?.progress).toBeUndefined();
     expect(cleanLine(e("p"), { text: "a", progress: "0.5" })?.progress).toBeUndefined();
-    expect(cleanLine(e("p"), { text: "a", bot: "alpha" })?.bot).toBe("alpha");
-    expect(cleanLine(e("p"), { text: "a", bot: "Alpha <script>" })?.bot).toBeUndefined();
+    // The bot's name stands only when the sender is that bot's own plugin (its id is the bot's id).
+    expect(cleanLine(e("alpha"), { text: "a", bot: "alpha" })?.bot).toBe("alpha");
+    expect(cleanLine(e("p"), { text: "a", bot: "alpha" })?.bot).toBeUndefined();
+    expect(cleanLine(e("alpha"), { text: "a", bot: "Alpha <script>" })?.bot).toBeUndefined();
     expect(cleanLine(e("p"), { text: "a", bot: "x".repeat(65) })?.bot).toBeUndefined();
+  });
+  test("marks that draw nothing but pad or hide words become spaces: ALM, Mongolian separator, CGJ, Hangul fillers, braille blank, soft hyphen", () => {
+    for (const code of ["061c", "180e", "034f", "115f", "3164", "2800", "00ad"]) {
+      expect(cleanLine(e("p"), { text: `a${String.fromCharCode(parseInt(code, 16))}b` })?.text).toBe("a b");
+    }
   });
   test("a sender sets nothing else: style, size, position and extra fields are dropped", () => {
     const line = cleanLine(e("p"), { text: "a", style: "position:fixed", className: "clv-card-shell", width: 9000, html: "<i>", onClick: "x" })!;
@@ -98,6 +105,40 @@ describe("the board of lines (poll)", () => {
     await b.poll();
     expect(calls).toHaveLength(LINE_ENTRIES_MAX);
   });
+  test("one plugin's entries are capped before the whole: a plugin with 40 entries cannot crowd another out of the 24", async () => {
+    const entries = [...Array.from({ length: 40 }, (_, i) => e("greedy", `n${i}`)), e("modest", "one")];
+    const { b, calls } = board({ entries, answers: {} });
+    await b.poll();
+    expect(calls.filter((c) => c.startsWith("greedy/"))).toHaveLength(LINES_PER_PLUGIN);
+    expect(calls).toContain("modest/one");
+  });
+  test("a sender that answers nothing three asks in a row is left alone until woken (or the slow recheck); a line ends that", async () => {
+    let now = 0;
+    const answers: Record<string, unknown> = { "quiet/main": undefined, "busy/main": { text: "on" } };
+    const { b, calls } = board({ entries: [e("quiet"), e("busy")], answers, now: () => now });
+    for (let i = 0; i < 3; i++) await b.poll();
+    const before = calls.length;
+    await b.poll();
+    expect(calls.slice(before)).toEqual(["busy/main"]);
+    b.wake();
+    for (let i = 0; i < 3; i++) await b.poll(); // asked afresh: three more empty answers before it is quiet again
+    expect(calls.filter((c) => c === "quiet/main")).toHaveLength(6);
+    await b.poll();
+    expect(calls.filter((c) => c === "quiet/main")).toHaveLength(6);
+    now += LINE_QUIET_RECHECK_MS + 1;
+    await b.poll(); // the slow recheck: once, and quiet again straight after
+    expect(calls.filter((c) => c === "quiet/main")).toHaveLength(7);
+    await b.poll();
+    expect(calls.filter((c) => c === "quiet/main")).toHaveLength(7);
+    // It has a line now: asked every time.
+    answers["quiet/main"] = { text: "hello" };
+    b.wake();
+    expect((await b.poll()).lines.map((l) => l.text)).toEqual(["hello", "on"]);
+    const last = calls.length;
+    await b.poll();
+    expect(calls.slice(last).sort()).toEqual(["busy/main", "quiet/main"]);
+    expect(b.entryCount).toBe(2);
+  });
   test("one sender cannot touch another's line: each line is what its own entry's handler returned, under its own key", async () => {
     const { b } = board({ entries: [e("evil"), e("good")], answers: { "evil/main": { text: "I am good", pluginId: "good", key: "good\u0000main" }, "good/main": { text: "real" } } });
     const poll = await b.poll();
@@ -110,9 +151,12 @@ describe("the board of lines (poll)", () => {
 
 describe("whose a line is, in the island's words", () => {
   test("the plugin, and the bot when the line names one (its name when known)", () => {
-    const line = cleanLine(e("acme-render"), { text: "x", bot: "alpha" })!;
-    expect(lineSource(line)).toBe("acme-render · alpha");
-    expect(lineSource(line, (id) => (id === "alpha" ? "Alpha" : undefined))).toBe("acme-render · Alpha");
+    const own = cleanLine(e("alpha"), { text: "x", bot: "alpha" })!;
+    expect(lineSource(own, (id) => (id === "alpha" ? "Alpha" : undefined))).toBe("alpha · Alpha");
+    expect(lineSource(own)).toBe("alpha"); // no name known: the plugin alone
+    // Another plugin naming a bot gets no name beside its line.
+    const other = cleanLine(e("acme-render"), { text: "x", bot: "alpha" })!;
+    expect(lineSource(other, () => "Alpha")).toBe("acme-render");
     expect(lineSource(cleanLine(e("acme-render"), { text: "x" })!)).toBe("acme-render");
   });
   test("arrange keeps the registry's order of plugins", () => {

@@ -245,7 +245,7 @@ export interface NeedsYouProps {
   cards: readonly IslandCard[];
   drafts?: Readonly<Record<string, QuestionDraft>>;
   errors?: Readonly<Record<string, string>>;
-  /** The plugins' lines (`island.line`), drawn above the cards in the island's own rows. */
+  /** The plugins' lines (`island.line`), drawn below the cards in the island's own rows (a card never moves for a line). */
   lines?: LinePoll;
   botName?: (id: string) => string | undefined;
   onChoose?: (card: IslandCard, question: number, option: number) => void;
@@ -260,7 +260,6 @@ export function NeedsYou({ cards, drafts = {}, errors = {}, lines, botName, onCh
   if (cards.length === 0 && !shown) return <EmptyTab line={t("clover.island.nothingNeedsYou")} />;
   return (
     <TabScroll scrolls={scrolls}>
-      {shown ? <LineRows poll={lines} botName={botName} /> : null}
       {cards.length === 0 ? null : <div className="clv-needs">
         {[...cards].reverse().map((card) => (
           <div className="clv-needs-row" key={card.id}>
@@ -282,6 +281,7 @@ export function NeedsYou({ cards, drafts = {}, errors = {}, lines, botName, onCh
           </div>
         ))}
       </div>}
+      {shown ? <LineRows poll={lines} botName={botName} /> : null}
     </TabScroll>
   );
 }
