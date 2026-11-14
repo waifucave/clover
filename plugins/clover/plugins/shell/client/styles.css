@@ -84,10 +84,20 @@
   -webkit-app-region: no-drag;
 }
 
-/* The sidebar as a rail, where the window's own buttons live at its corner: the rail's corner pill opens over the bar's
-   start, so the bar's content starts clear of it. */
-.cl-window:has(.cl-sidebar[data-collapsed] .cl-sidebar__corner[data-native]) .cl-window__bar {
-  padding-left: 34px;
+/* The sidebar as a rail: its corner pill (the window's own buttons, then Clover's mark) opens over the bar's start, and the
+   bar's content slides clear of it while it is open. */
+.cl-window__bar {
+  transition: padding-left var(--clover-motion-fast) var(--clover-motion-easing);
+}
+
+.cl-window:has(.cl-sidebar__corner[data-open]) .cl-window__bar {
+  padding-left: 70px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-window__bar {
+    transition: none;
+  }
 }
 
 .cl-window__title {

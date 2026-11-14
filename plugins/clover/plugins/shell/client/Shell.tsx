@@ -37,6 +37,10 @@ export interface ShellRoute {
 }
 
 /** Where the shell starts, for the gallery and the tests: not part of `app.root`'s props in the app. */
+/** How far the rail's corner pill reaches when open, in window px (the sidebar's styles: 8 + the window's buttons from 16 px in,
+ *  68 px of room, the 20 px mark and its padding = 112), with a little air. */
+export const RAIL_PILL_REACH = 120;
+
 export interface ShellStart {
   route?: ShellRoute;
   /** The tab under Settings, when `route` is Settings. */
@@ -287,12 +291,15 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const [sidebarWidth, setSidebarWidth] = useState<number | undefined>();
   // The window's own controls' reach, from the frame's variables (macOS: the traffic lights, 80 px; Windows and Linux draw theirs at the other end: 0).
   const px = (v: unknown, or: number) => { const n = Number.parseFloat(String(v ?? "")); return Number.isFinite(n) && n >= 0 ? Math.round(n) : or; };
-  const safeArea = { left: px(tokens["frame.window.controls"], 80), top: px(tokens["frame.inset.top"], 44) };
+  // With the sidebar a rail, those controls are hidden and come back in the rail's corner pill, which opens over the tab's
+  // start: the safe area reaches as far as the pill does, so a bot's own controls never sit under it.
+  const controlsReach = px(tokens["frame.window.controls"], 80);
+  const safeArea = { left: sidebarCollapsed && controlsReach > 0 ? Math.max(controlsReach, RAIL_PILL_REACH) : controlsReach, top: px(tokens["frame.inset.top"], 44) };
   const setCollapsed = (v: boolean) => setCollapsedBy((c) => ({ ...c, "*": v }));
   // The window's own buttons over the sidebar's corner (macOS's traffic lights): the rail's corner says when they hide (the rail
   // showing, its pill closed), and the report carries it to the app.
   const [controlsHidden, setControlsHidden] = useState(false);
-  const corner = useMemo(() => ({ native: safeArea.left > 0, onHiddenChange: setControlsHidden, ...(props.start?.corner === "open" ? { initialOpen: true } : {}) }), [safeArea.left, props.start?.corner]);
+  const corner = useMemo(() => ({ native: controlsReach > 0, onHiddenChange: setControlsHidden, ...(props.start?.corner === "open" ? { initialOpen: true } : {}) }), [controlsReach, props.start?.corner]);
   useEffect(() => { if (!sidebarCollapsed) setControlsHidden(false); }, [sidebarCollapsed]);
   const chrome: Omit<ChromeApi, "place" | "panels"> | undefined = botRef && kind
     ? {

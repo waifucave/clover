@@ -19,9 +19,10 @@
   line-height: var(--clover-font-line-tight);
 }
 
-/* The rail stays wide enough for the window's own controls over its top. */
+/* The rail: its 40 px rows with 8 px each side. The window's own controls are hidden while it shows (the corner's pill
+   brings them back, over the bar), so it needn't be as wide as they are. */
 .cl-sidebar[data-collapsed] {
-  width: max(64px, var(--cl-window-controls, 80px));
+  width: 56px;
   align-items: center;
 }
 
@@ -70,9 +71,9 @@
   color: var(--clover-plugin-clover-mark);
 }
 
-/* The rail's corner: Clover's mark where the window's own buttons were. Where they live there (`data-native`), hovering
-   the mark opens a pill over the bar: the buttons' room at its start (the window draws them, 12 px dots 20 px apart from
-   16 px in), the mark at its end. The pill hangs past the rail's edge, over the bar. */
+/* The rail's corner: Clover's mark at the top of the rail, on the icons' own axis. Where the window's own buttons live
+   there (`data-native`), hovering the mark opens a pill over the bar: the buttons' room at its start (the window draws
+   them from 16 px in), the mark at its end. The pill hangs past the rail's edge, over the bar. */
 .cl-sidebar[data-collapsed] .cl-sidebar__top {
   position: relative;
 }
@@ -86,7 +87,8 @@
   display: inline-flex;
   align-items: center;
   height: 30px;
-  padding: 0 7px;
+  /* 8 (the rail's own padding) + 1 + 9 puts the 20 px mark's middle on the rail's (28 px). */
+  padding: 0 7px 0 9px;
   transform: translateY(-50%);
   border: 1px solid transparent;
   border-radius: var(--clover-radius-round);
@@ -95,13 +97,8 @@
   transition:
     background-color var(--clover-motion-fast) var(--clover-motion-easing),
     border-color var(--clover-motion-fast) var(--clover-motion-easing),
-    box-shadow var(--clover-motion-fast) var(--clover-motion-easing);
-}
-
-/* Without the window's buttons at this end, the mark sits in the middle of the rail's top. */
-.cl-sidebar__corner:not([data-native]) {
-  left: 50%;
-  transform: translate(-50%, -50%);
+    box-shadow var(--clover-motion-fast) var(--clover-motion-easing),
+    padding var(--clover-motion-fast) var(--clover-motion-easing);
 }
 
 .cl-sidebar__corner-buttons {
@@ -117,6 +114,8 @@
 }
 
 .cl-sidebar__corner[data-open] {
+  /* The buttons' room starts where the window draws them: 16 px in. */
+  padding-left: 7px;
   border-color: var(--clover-color-hairline-raised);
   background: var(--clover-color-float);
   box-shadow: var(--clover-shadow-raised);
@@ -647,7 +646,10 @@
   color: var(--clover-color-text-muted);
 }
 
+/* On the rail, a bot's count hangs off its portrait's corner and takes no room of its own (its 18 px and the row's 8 px gap
+   given back by the two margins), so the portrait stays on the icons' axis. */
 .cl-sidebar__count--corner {
+  margin-right: -16px;
   margin-left: -10px;
   align-self: flex-start;
 }

@@ -325,7 +325,7 @@ function Corner({ native = false, onHiddenChange, initialOpen = false }: NonNull
     <div ref={ref} className="cl-sidebar__corner" data-native={native || undefined} data-open={open || undefined} title={S.app} onMouseEnter={native ? () => setOpen(true) : undefined}>
       {native && <span className="cl-sidebar__corner-buttons" aria-hidden="true" />}
       <span className="cl-sidebar__corner-mark">
-        <CloverMark size={16} />
+        <CloverMark size={20} />
       </span>
     </div>
   );
