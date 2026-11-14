@@ -65,15 +65,26 @@ function Labels({ labels }: { labels: readonly string[] | undefined }) {
   );
 }
 
+/** What a part beside a bot is, in the words of the row's chips (the labels `contributionLabels` gives: packages/plugin-sdk/src/manifest/labels.ts). */
+export const PART_WORDS: Readonly<Record<string, string>> = {
+  "island.tab": "Island tab", "island.line": "Island tab", "sidebar.app": "App page", main: "App page", "settings.section": "Settings section",
+  status: "Status line", "pill.target": "Pill target", "bot.editor.section": "Editor section", mcpServers: "Tools", skills: "Skills",
+  agents: "Agent", hooks: "Hooks", commands: "Commands", locales: "Translation", "app.surface": "App page",
+};
+export function partWords(has: readonly string[]): string[] {
+  return [...new Set(has.flatMap((k) => (PART_WORDS[k] !== undefined ? [PART_WORDS[k]!] : [])))];
+}
+
 /** The second switch of a plugin with a bot and parts beside it: only those parts, the bot kept. */
 function AppPartsSwitch({ p, onChange }: { p: InstalledPlugin; onChange: ((on: boolean) => void) | undefined }) {
   if (p.appParts === undefined) return null;
-  const label = S.appParts(p.name);
+  const label = S.appParts(p.appParts.bot ?? p.name);
+  const words = partWords(p.appParts.has);
   return (
     <span className="cl-plugin-index__app-parts">
-      <span className="cl-plugin-index__line">{label}{p.appParts.has.length > 0 ? ` (${p.appParts.has.join(", ")})` : ""}</span>
-      <button type="button" role="switch" aria-checked={p.appParts.enabled} aria-label={label} className="cl-plugin-index__button" disabled={onChange === undefined || !p.enabled} onClick={() => onChange?.(!p.appParts!.enabled)}>
-        {p.appParts.enabled ? S.appPartsOn : S.appPartsOff}
+      <span className="cl-plugin-index__line">{label}{words.length > 0 ? S.appPartsHas(words.join(", ")) : ""}</span>
+      <button type="button" role="switch" aria-checked={p.appParts.enabled} aria-label={label} className="cl-plugin-index__switch" disabled={onChange === undefined || !p.enabled} onClick={() => onChange?.(!p.appParts!.enabled)}>
+        <span className="cl-plugin-index__knob" />
       </button>
     </span>
   );

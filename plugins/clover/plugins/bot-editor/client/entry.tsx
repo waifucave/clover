@@ -111,14 +111,16 @@ export async function hiddenPartsOf(core: CoreClient | undefined, bot: string): 
   return { parts: out, lists };
 }
 
-/** The bot's plugin's settings as `plugin.settings.get` gives them, for the stock section: every kind but a secret. */
-export function stockSettingsOf(rows: readonly { key: string; type: string; title: unknown; description?: unknown; scope?: string; options?: (string | { value: string; title: unknown })[]; min?: number; max?: number; value?: unknown }[]): StockSetting[] {
+/** The bot's plugin's settings as `plugin.settings.get` gives them, for the stock section: every kind; a key only as a row that opens the app's own key dialog. */
+export function stockSettingsOf(rows: readonly { key: string; type: string; title: unknown; description?: unknown; scope?: string; set?: boolean; options?: (string | { value: string; title: unknown })[]; min?: number; max?: number; value?: unknown }[]): StockSetting[] {
   return rows.flatMap((r): StockSetting[] => {
     const title = plain(r.title as never) || r.key;
     const description = plain(r.description as never);
     const base = { key: r.key, title, ...(description ? { description } : {}), perBot: r.scope === "bot", ...(r.value !== undefined ? { value: r.value } : {}) };
     if (r.type === "string" || r.type === "color") return [{ ...base, type: r.type }];
     if (r.type === "boolean") return [{ ...base, type: "boolean" }];
+    // A key is never drawn as a field: its row shows whether one is saved and opens the app's own key dialog.
+    if (r.type === "secret") return [{ ...base, type: "secret", set: r.set === true }];
     if (r.type === "number") return [{ ...base, type: "number", ...(r.min !== undefined ? { min: r.min } : {}), ...(r.max !== undefined ? { max: r.max } : {}) }];
     if (r.type === "enum") return [{ ...base, type: "enum", options: (r.options ?? []).map((o) => (typeof o === "string" ? { value: o, title: o } : { value: o.value, title: plain(o.title as never) || o.value })) }];
     return [];
@@ -205,11 +207,16 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
             bot={{ id: bot.id, name: plain(bot.name) }}
             settings={stock}
             {...(stockNote ? { note: stockNote } : {})}
+            onKey={(key) => {
+              if (!core) return;
+              setStockNote(undefined);
+              // The dialog is the app's own; the page reads the settings again for whether a key is saved.
+              void core.call("ui.secret", { id: bot.id, key } as never).then(() => setStockRev((n) => n + 1), () => setStockRev((n) => n + 1));
+            }}
             onSet={(key, value) => {
               if (!core) return;
               setStockNote(undefined);
-              const perBot = stock.find((s) => s.key === key)?.perBot === true;
-              void core.call("plugin.settings.set", { id: bot.id, key, value, ...(perBot ? { bot: bot.id } : {}), noSecret: true }).then(
+              void core.call("plugin.settings.set", { id: bot.id, key, value, bot: bot.id, noSecret: true }).then(
                 (r) => {
                   if ((r as { applied?: boolean }).applied === false) setStockNote(S.waiting);
                   setStockRev((n) => n + 1);

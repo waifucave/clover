@@ -70,7 +70,7 @@ export interface InstalledPlugin {
   /** The small labels for what it brings (Bot, Tools, Island tab…), from its contributions; its children's included. */
   labels?: string[];
   /** A plugin with a bot and parts beside it: their own switch (`plugin.setEnabled` with `part: "app"`), and what they are. */
-  appParts?: { enabled: boolean; has: string[] };
+  appParts?: { enabled: boolean; has: string[]; bot?: string };
   /** Each child with its own labels, for the detail. */
   parts?: { name: string; labels: string[] }[];
   /** Clover's own plugin this build can't run yet (the registry's `off` with `NOT_AVAILABLE_YET`): one plain line, a

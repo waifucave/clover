@@ -94,8 +94,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
   // Settings › Voice (Clover Voice's part) reads and writes its own settings too (which voice is active here), the
   // write by the user's choice in its list.
-  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART, BOT_EDITOR_PART] },
-  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART, BOT_EDITOR_PART] },
+  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
+  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card). The avatar's two
   // fields (`avatar`, `avatarCredit`) are the character plugin's section's alone, and the editor writes none of them
   // (`userLayerWhy`).
@@ -152,7 +152,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // avatar section of the character plugin (`bot.importAvatar`). The token it issues is redeemable by that one use only (`PICK_USES`).
   "ui.pick": { disposition: "gesture", part: [PLUGINS_PART, CHARACTER_PART] },
   // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
-  "ui.secret": PAGE,
+  "ui.secret": { disposition: "gesture", part: [PLUGINS_PART, BOT_EDITOR_PART] },
   "plugin.install": PAGE,
   "plugin.remove": PAGE,
   "plugin.update": PAGE,
@@ -483,8 +483,8 @@ async function settingField(r: TreeRoute, id: string, key: string): Promise<Page
 /** Why a value from the Plugins page doesn't fit its field's kind, or undefined: a string for text, a number in its
  *  bounds, true or false for a switch, one of an enum's choices, `#rrggbb` for a color; null puts the default back.
  *  The core checks again (`checkSettingValue`); main refuses first so a wrong value never reaches a card. */
-export function pageSettingWhy(key: string, field: PageSettingField, value: unknown): string | undefined {
-  if (field.scope === "bot") return `${key} has one value per bot: it is set in that bot's settings`;
+export function pageSettingWhy(key: string, field: PageSettingField, value: unknown, forBot = false): string | undefined {
+  if (field.scope === "bot" && !forBot) return `${key} has one value per bot: it is set in that bot's settings`;
   if (value === null) return undefined;
   switch (field.type) {
     case "string":
@@ -535,7 +535,15 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   // A part's plugin settings are its own: several bundled plugins keep where a request (and so a key) goes in theirs
   // (a cloud project, a region, an account, an origin), and the id here comes from the page. The Plugins page may name
   // any plugin's (the core cards a change that moves a plugin's host).
-  if ((r.method === "plugin.settings.get" || r.method === "plugin.settings.set") && !(verdict.call.anyId ?? []).includes(part)) {
+  const settingsCall = r.method === "plugin.settings.get" || r.method === "plugin.settings.set";
+  if (settingsCall && part === BOT_EDITOR_PART) {
+    if (r.method === "plugin.settings.set" && !r.takeGesture(r.tree.windowId)) {
+      r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
+      throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
+    }
+    return editorSetting(r, part);
+  }
+  if (settingsCall && !(verdict.call.anyId ?? []).includes(part)) {
     const id = (r.params as { id?: unknown } | null | undefined)?.id;
     if (id !== part) {
       r.log(`tree: ${part}: ${r.method} refused (not its own settings)`);
@@ -651,12 +659,53 @@ function needsGesture(call: TreeCall, part: string): boolean {
   return call.gesture === true || (Array.isArray(call.gesture) && call.gesture.includes(part));
 }
 
+/** A bot's settings from its Edit page: the plugin is the bot's own (a bot's id is its plugin's id, from main's own bot listing),
+ *  never the page's word; a call naming any other plugin is refused. A write is shaped as the Plugins page's is (kind, bounds,
+ *  choices, a key refused, `noSecret`), with a per-bot setting allowed for that bot; the core cards what moves a host the same. */
+async function editorSetting(r: TreeRoute, part: string): Promise<unknown> {
+  const raw = (r.params !== null && typeof r.params === "object" && !Array.isArray(r.params) ? r.params : {}) as Record<string, unknown>;
+  const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
+  const bot = typeof raw.bot === "string" ? (listed?.bots ?? []).find((b) => b.id === raw.bot)?.id : undefined;
+  if (typeof bot !== "string" || raw.id !== bot) {
+    r.log(`tree: ${part}: ${r.method} refused (not the edited bot's own plugin)`);
+    throw r.refuse("the Edit page reads and writes its own bot's settings only");
+  }
+  if (r.method === "plugin.settings.get") return r.request("plugin.settings.get", { id: bot, bot });
+  const shaped = pageParams(r.method, { ...raw, id: bot, bot }, part, r.tokens ?? new PickTokens());
+  if ("why" in shaped) {
+    r.log(`tree: ${part}: ${r.method} refused (${shaped.why})`);
+    throw r.refuse(shaped.why);
+  }
+  const s = shaped.params as { key: string; value: unknown };
+  const field = await settingField(r, bot, s.key);
+  if (field?.type === "secret") {
+    r.log(`tree: ${part}: plugin.settings.set refused (a key, from a page)`);
+    throw r.refuse(`${s.key} is a key: it is entered, replaced or removed only in Clover's own key dialog`);
+  }
+  const why = field === undefined ? `${s.key} isn't one of that plugin's settings` : pageSettingWhy(s.key, field, s.value, true);
+  if (why !== undefined) {
+    r.log(`tree: ${part}: plugin.settings.set refused (${why})`);
+    throw r.refuse(why);
+  }
+  // The bot is named to the core only for a setting kept per bot.
+  const { bot: _named, ...rest } = shaped.params as { bot?: unknown };
+  return r.request("plugin.settings.set", field?.scope === "bot" ? { ...rest, bot } : rest);
+}
+
 /** `ui.secret`: the app's own key dialog for one plugin's secret setting (`{id, key}`) or `api-key` sign-in
  *  (`{id, index}`); the page gets only that it opened (it reads the settings or sign-ins again for whether a key is set). */
 async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
   if (r.openKey === undefined) throw r.refuse("this app has no key dialog for a part");
   const p = (r.params ?? {}) as { id?: unknown; key?: unknown; index?: unknown };
   if (typeof p.id !== "string" || !PLUGIN_ID_RE.test(p.id)) throw r.refuse("which plugin's key?");
+  // The bot's Edit page asks for its own bot's keys only (a bot's id is its plugin's, from main's own bot listing), and a setting's key only.
+  if (part === BOT_EDITOR_PART) {
+    const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
+    if (!(listed?.bots ?? []).some((b) => b.id === p.id) || typeof p.key !== "string") {
+      r.log(`tree: ${part}: ui.secret refused (not the edited bot's own key)`);
+      throw r.refuse("the Edit page asks for its own bot's keys only");
+    }
+  }
   let target: KeyTarget;
   if (typeof p.key === "string" && SETTING_KEY_RE.test(p.key) && p.index === undefined) {
     if ((await settingField(r, p.id, p.key))?.type !== "secret") {

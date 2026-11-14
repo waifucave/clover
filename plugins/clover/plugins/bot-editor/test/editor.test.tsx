@@ -199,7 +199,7 @@ describe("the sections other plugins add (`bot.editor.section`)", () => {
     expect(rows[rows.indexOf("a plugin's section") + 1]).toBe("Voice");
   });
 
-  test("the bot's settings are a stock section headed with its name: each kind a control, saved with the bot named; a secret is left out", async () => {
+  test("the bot's settings are a stock section headed with its name: each kind a control, saved with the bot named; a key is a row that opens the app's own key dialog", async () => {
     const { core } = await mount(ALPHA_VIEW, undefined, {
       "plugin.settings.get": () => ({
         settings: [
@@ -211,10 +211,16 @@ describe("the sections other plugins add (`bot.editor.section`)", () => {
         ],
       }) as never,
       "plugin.settings.set": () => ({ applied: true }) as never,
+      "ui.secret": () => ({ opened: true }) as never,
     });
     const section = screen.getByRole("region", { name: "Alpha" });
     expect(within(section).getAllByRole("combobox").length + within(section).getAllByRole("switch").length + within(section).getAllByRole("textbox").length + within(section).getAllByRole("spinbutton").length).toBe(4);
-    expect(within(section).queryByText("API key")).toBeNull();
+    // The key is never a field: its row says it isn't set and opens the key dialog for this bot's own plugin.
+    expect(within(section).getByText("API key")).toBeTruthy();
+    expect(within(section).getByText("Not set")).toBeTruthy();
+    fireEvent.click(within(section).getByRole("button", { name: "Enter key…" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "ui.secret").map((c) => c.params)).toEqual([{ id: "alpha", key: "key" }]);
     fireEvent.change(within(section).getByRole("combobox", { name: "Scene" }), { target: { value: "room" } });
     fireEvent.click(within(section).getByRole("switch", { name: "Effects" }));
     await act(() => settle());

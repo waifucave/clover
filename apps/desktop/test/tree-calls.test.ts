@@ -365,6 +365,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "voice.listen": { parts: [SHELL_PART], gesture: [] },
   // The shell's player saying an utterance ended: a report with no gesture (it lets the voice mode go on, never starts a sound).
   "voice.played": { parts: [SHELL_PART], gesture: [] },
+  "ui.secret": { parts: [PLUGINS_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, BOT_EDITOR_PART] },
   "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], gesture: [], ownId: ["clover/settings", "clover/voice"] },
   "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], gesture: [PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], ownId: ["clover/settings", "clover/voice"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor", "clover/character"], gesture: ["clover/bot-editor", "clover/character"] },
@@ -392,7 +393,7 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "computer.list": { parts: [PLUGINS_PART, "clover/settings", "clover/shell", "clover/sidebar", "clover/composer", "clover/panel"], gesture: [] },
   "command.list": { parts: [PLUGINS_PART], gesture: [] },
   "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["ui.secret", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+  ...Object.fromEntries(["plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
 };
 /** One active message action, as the part's own spot resolves it. */
 const PIN_ENTRY = [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "pinReply" } }];
@@ -477,7 +478,7 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
       return { patch: { appearance: "dark" } };
     case "plugin.settings.get":
     case "plugin.settings.set":
-      return { id: part, key: "k", value: "v" };
+      return part === BOT_EDITOR_PART ? { id: "alpha", bot: "alpha", key: "k", value: "v" } : { id: part, key: "k", value: "v" };
     case "voice.speak":
       return { session: "b_alpha", seq: 3 };
     case "voice.listen":
@@ -509,7 +510,7 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "bot.importAvatar":
       return { id: "alpha", path: tokens.issue(part, "/picked/avatar", "bot.importAvatar") };
     case "ui.secret":
-      return { id: "tarot", key: "token" };
+      return { id: part === BOT_EDITOR_PART ? "alpha" : "tarot", key: "token" };
     case "session.resend":
       return { session: "b_alpha" };
     case "conversation.messageAction":
@@ -1110,5 +1111,95 @@ describe("a setting from the bot's Edit page", () => {
     expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" })).toEqual({ params: { id: "juniper", key: "loud", value: true, bot: "juniper", noSecret: true } });
     expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "alpha" })).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
     expect(set(PLUGINS_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" })).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
+  });
+});
+
+describe("a setting from the bot's Edit page goes through the door", () => {
+  // A plugin with a plain text setting, a per-bot number in 1..5, a choice, a switch and a key; its bot is "alpha".
+  const field = { k: { type: "string" }, n: { type: "number", min: 1, max: 5, scope: "bot" }, c: { type: "enum", options: ["a", "b"] }, token: { type: "secret" } };
+  const edit = (method: string, params: unknown, gesture = true) => {
+    const sent: { method: string; params: unknown }[] = [];
+    const { r } = route({
+      tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method, params, gesture,
+      request: async (m, p) => {
+        if (m === "bot.list") return { bots: [{ id: "alpha" }, { id: "luna" }] };
+        if (m === "plugin.get") return { plugin: { id: "alpha", manifest: { settings: field } } };
+        sent.push({ method: m, params: p });
+        return "app";
+      },
+    });
+    return { r, sent };
+  };
+
+  test("its own bot's plain setting goes through on a press, and not without one", async () => {
+    const ok = edit("plugin.settings.set", { id: "alpha", bot: "alpha", key: "k", value: "x" });
+    expect(await routeCall(ok.r)).toBe("app");
+    expect(ok.sent).toEqual([{ method: "plugin.settings.set", params: { id: "alpha", key: "k", value: "x", noSecret: true } }]);
+    const per = edit("plugin.settings.set", { id: "alpha", bot: "alpha", key: "n", value: 3 });
+    await routeCall(per.r);
+    expect(per.sent).toEqual([{ method: "plugin.settings.set", params: { id: "alpha", key: "n", value: 3, noSecret: true, bot: "alpha" } }]);
+    const none = edit("plugin.settings.set", { id: "alpha", bot: "alpha", key: "k", value: "x" }, false);
+    await expect(routeCall(none.r)).rejects.toThrow("only right after the user's own");
+    expect(none.sent).toEqual([]);
+  });
+
+  test("another plugin's id, an unknown bot, or an id that isn't the edited bot's is refused, read or write", async () => {
+    for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
+      for (const params of [
+        { id: "clover/provider-gcp", bot: "alpha", key: "k", value: "x" },
+        { id: "luna", bot: "alpha", key: "k", value: "x" },
+        { id: "alpha", bot: "nobody", key: "k", value: "x" },
+        { id: "alpha", key: "k", value: "x" },
+        { id: BOT_EDITOR_PART, key: "k", value: "x" },
+      ]) {
+        const t = edit(method, params);
+        await expect(routeCall(t.r)).rejects.toThrow("its own bot's settings only");
+        expect(t.sent).toEqual([]);
+      }
+    }
+  });
+
+  test("a key, a value outside its kind's bounds or choices, and an unknown setting are refused", async () => {
+    for (const [key, value, why] of [
+      ["token", "sk-1", "Clover's own key dialog"],
+      ["n", 9, "at most 5"],
+      ["n", "3", "takes a number"],
+      ["c", "z", ""],
+      ["nope", "x", "isn't one of that plugin's settings"],
+    ] as const) {
+      const t = edit("plugin.settings.set", { id: "alpha", bot: "alpha", key, value });
+      await expect(routeCall(t.r)).rejects.toThrow(why);
+      expect(t.sent).toEqual([]);
+    }
+  });
+
+  test("a read goes with the bot named, and the editor can no longer name any plugin through anyId", async () => {
+    const t = edit("plugin.settings.get", { id: "alpha", bot: "alpha" });
+    await routeCall(t.r);
+    expect(t.sent).toEqual([{ method: "plugin.settings.get", params: { id: "alpha", bot: "alpha" } }]);
+    expect(treeVerdict(BOT_EDITOR_PART, "plugin.settings.get")).toMatchObject({ ok: true, call: { anyId: [PLUGINS_PART] } });
+  });
+});
+
+describe("a key from the bot's Edit page", () => {
+  const key = (params: unknown, gesture = true) => {
+    let opened = 0;
+    const { r } = route({
+      tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method: "ui.secret", params, gesture, openKey: async () => { opened++; return true; },
+      request: async (m) => (m === "bot.list" ? { bots: [{ id: "tarot" }] } : appConnection(m)),
+    });
+    return { r, opened: () => opened };
+  };
+  test("opens the app's own key dialog for its own bot's key, on a press", async () => {
+    const t = key({ id: "tarot", key: "token" });
+    expect(await routeCall(t.r)).toEqual({ opened: true });
+    expect(t.opened()).toBe(1);
+  });
+  test("refuses another plugin's key, a sign-in, a plain setting and a call with no press", async () => {
+    for (const [params, gesture] of [[{ id: "other", key: "token" }, true], [{ id: "tarot", index: 0 }, true], [{ id: "tarot", key: "k" }, true], [{ id: "tarot", key: "token" }, false]] as const) {
+      const t = key(params, gesture);
+      await expect(routeCall(t.r)).rejects.toThrow();
+      expect(t.opened()).toBe(0);
+    }
   });
 });

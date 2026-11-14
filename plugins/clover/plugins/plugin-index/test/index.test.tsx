@@ -152,8 +152,12 @@ describe("the Plugins page: what is installed", () => {
   test("a plugin with a bot and parts beside it has a second switch, which sets only those parts and keeps the plugin on", async () => {
     const { core } = await mount({});
     const row = screen.getByRole("button", { name: "Open Tarot panel" }).closest("li")!;
-    const sw = within(row).getByRole("switch", { name: "Its parts beyond Tarot panel's tab" });
+    const sw = within(row).getByRole("switch", { name: "Its parts beyond Tarot's tab" });
     expect(sw.getAttribute("aria-checked")).toBe("true");
+    // In a person's words, the row's chip words, never a point's name; a switch, not a button saying On.
+    expect(row.textContent).toContain("Its parts beyond Tarot's tab: Island tab, Tools");
+    expect(row.textContent).not.toMatch(/island\.tab|mcpServers/);
+    expect(sw.textContent).toBe("");
     expect(within(screen.getByRole("button", { name: "Open Clover" }).closest("li")!).queryByRole("switch")).toBeNull();
     fireEvent.click(sw);
     await act(() => settle());
@@ -612,4 +616,10 @@ describe("the Plugins page: updates and indexes", () => {
   });
 });
 
-
+describe("the words for the parts beside a bot", () => {
+  test("every word is one the row's chips use (contributionLabels)", async () => {
+    const { CONTRIBUTION_LABEL_ORDER } = await import("../../../../../packages/plugin-sdk/src/manifest/labels");
+    const { PART_WORDS } = await import("../client/Installed");
+    for (const w of Object.values(PART_WORDS)) expect(CONTRIBUTION_LABEL_ORDER as readonly string[]).toContain(w);
+  });
+});

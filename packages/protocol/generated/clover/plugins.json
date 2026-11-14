@@ -194,6 +194,10 @@
                             "type": "string",
                             "maxLength": 256
                           }
+                        },
+                        "bot": {
+                          "type": "string",
+                          "maxLength": 200
                         }
                       },
                       "required": [
@@ -435,6 +439,10 @@
                           "type": "string",
                           "maxLength": 256
                         }
+                      },
+                      "bot": {
+                        "type": "string",
+                        "maxLength": 200
                       }
                     },
                     "required": [

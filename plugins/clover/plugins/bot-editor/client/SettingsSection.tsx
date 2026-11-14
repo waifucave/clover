@@ -1,15 +1,23 @@
 // A bot's settings on its Edit page: a stock section headed with the bot's name, drawn from the plugin's `settings` with the
 // same controls the Plugins page's detail draws (a switch, a choice, text, a colour, a number), each saved on the user's click
-// (a switch or a choice) or on Save or Enter (text and a number) through `plugin.settings.set`. A secret is never drawn here:
-// a key is entered in the app's own key dialog.
+// (a switch or a choice) or on Save or Enter (text and a number) through `plugin.settings.set`. A secret is a row that says whether a key is
+// saved and opens the app's own key dialog (as the Plugins page does); a key is never typed in this page.
 import { useEffect, useId, useState } from "react";
 import { S } from "./strings";
 import type { StockSetting } from "./types";
 
-function Control({ s, onSet }: { s: StockSetting; onSet: (key: string, value: unknown) => void }) {
+function Control({ s, onSet, onKey }: { s: StockSetting; onSet: (key: string, value: unknown) => void; onKey: (key: string) => void }) {
   const held = s.type === "number" ? (typeof s.value === "number" ? String(s.value) : "") : typeof s.value === "string" ? s.value : "";
   const [draft, setDraft] = useState(held);
   useEffect(() => setDraft(held), [held]);
+  if (s.type === "secret") {
+    return (
+      <span className="cl-bot-editor__inline">
+        <span className="cl-bot-editor__detail">{s.set ? S.keySet : S.keyUnset}</span>
+        <button type="button" className="cl-bot-editor__button" onClick={() => onKey(s.key)}>{s.set ? S.keyReplace : S.keyEnter}</button>
+      </span>
+    );
+  }
   if (s.type === "boolean") {
     return (
       <button type="button" role="switch" aria-checked={s.value === true} aria-label={s.title} className="cl-bot-editor__switch" onClick={() => onSet(s.key, s.value !== true)} />
@@ -42,7 +50,7 @@ function Control({ s, onSet }: { s: StockSetting; onSet: (key: string, value: un
   );
 }
 
-export function SettingsSection({ bot, settings, note, onSet }: { bot: { id: string; name: string }; settings: readonly StockSetting[]; note?: string; onSet: (key: string, value: unknown) => void }) {
+export function SettingsSection({ bot, settings, note, onSet, onKey }: { bot: { id: string; name: string }; settings: readonly StockSetting[]; note?: string; onSet: (key: string, value: unknown) => void; onKey: (key: string) => void }) {
   const head = useId();
   if (settings.length === 0) return null;
   return (
@@ -55,7 +63,7 @@ export function SettingsSection({ bot, settings, note, onSet }: { bot: { id: str
             {s.description && <span className="cl-bot-editor__detail">{s.description}</span>}
           </div>
           <div className="cl-bot-editor__control">
-            <Control s={s} onSet={onSet} />
+            <Control s={s} onSet={onSet} onKey={onKey} />
           </div>
         </div>
       ))}

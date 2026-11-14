@@ -131,7 +131,7 @@ export function toInstalled(plugins: readonly PluginSummary[], lang = "en", icon
     dev: p.dev,
     children: p.children.map((c) => named.get(c) ?? c),
     ...(p.labels !== undefined && p.labels.length > 0 ? { labels: p.labels } : {}),
-    ...(p.parts?.app !== undefined ? { appParts: { enabled: p.parts.app.enabled, has: p.parts.app.has } } : {}),
+    ...(p.parts?.app !== undefined ? { appParts: { enabled: p.parts.app.enabled, has: p.parts.app.has, ...(p.parts.app.bot !== undefined ? { bot: plain(p.parts.app.bot as never) || p.parts.app.bot } : {}) } } : {}),
     ...(() => {
       const parts = plugins.filter((c) => c.parent === p.id).map((c) => ({ name: named.get(c.id) ?? c.id, labels: c.labels ?? [] }));
       return parts.length > 0 ? { parts } : {};

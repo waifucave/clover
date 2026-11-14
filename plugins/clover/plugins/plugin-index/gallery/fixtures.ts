@@ -34,7 +34,7 @@ export const INSTALLED: PluginSummary[] = [
   summary("clover", "Clover", { labels: ["Tools", "Skills", "Island tab", "Settings section", "Theme", "Avatar renderer"], source: "bundled", version: "0.4.0", children: ["clover/shell", "clover/settings"] }),
   summary("clover/shell", "Shell", { parent: "clover", source: "bundled" }),
   summary("clover/settings", "Settings", { parent: "clover", source: "bundled" }),
-  summary("tarot-panel", "Tarot panel", { labels: ["Tools", "Island tab", "App page"], parts: { app: { enabled: true, has: ["island.tab"] } }, version: "1.2.0", description: "Draws a card each morning and keeps a reading journal beside the conversation." }),
+  summary("tarot-panel", "Tarot panel", { labels: ["Tools", "Island tab", "App page"], parts: { app: { enabled: true, has: ["island.tab", "mcpServers"], bot: "Tarot" } }, version: "1.2.0", description: "Draws a card each morning and keeps a reading journal beside the conversation." }),
   summary("weather-routine", "Weather routine", { version: "0.3.1", state: "found", enabled: false, reason: "waiting for your OK" }),
   summary("mcp-linear", "linear", { source: "wrapped", version: "0.0.0" }),
   summary("story-mode", "Story mode", { source: "index", state: "invalid", enabled: false, reason: "needs a newer Clover (plugin API ^2.0.0)" }),

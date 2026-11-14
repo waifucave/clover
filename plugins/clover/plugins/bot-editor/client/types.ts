@@ -84,5 +84,6 @@ export type StockSetting = {
   | { type: "string" | "color" }
   | { type: "number"; min?: number; max?: number }
   | { type: "boolean" }
+  | { type: "secret"; set: boolean }
   | { type: "enum"; options: { value: string; title: string }[] }
 );

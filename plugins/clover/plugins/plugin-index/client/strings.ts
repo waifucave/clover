@@ -39,9 +39,8 @@ export const S = {
   brings: "What it brings",
   /** The second switch under a plugin that has a bot and parts beside it. */
   appParts: (bot: string) => `Its parts beyond ${bot}'s tab`,
-  appPartsHas: (names: string) => `Everywhere: ${names}`,
-  appPartsOn: "On",
-  appPartsOff: "Off",
+  /** What the parts beside the bot are, in the row's chip words (`contributionLabels`, packages/plugin-sdk/src/manifest/labels.ts), never a point's name. */
+  appPartsHas: (names: string) => `: ${names}`,
   children: (n: number) => (n === 1 ? "1 part" : `${n} parts`),
   notYet: "Not available in this build yet",
   notYetParts: "Parts not available in this build yet",
