@@ -31,7 +31,7 @@ export interface CellContext {
   /** The kind of session the part shows (`coding`, `bot`, …), for `when.session`. */
   session?: string;
   safeMode?: boolean;
-  /** The bot layout's `prefer` lists, by spot (rule 3), from the tab's bot's layout (layout.ts). */
+  /** The bot layout's `prefer` lists, by spot (rule 4), from the tab's bot's layout (layout.ts). */
   prefer?: Readonly<Record<string, readonly string[]>>;
   /** A plugin's setting, for `when.setting`; unknown settings don't hold an entry back. */
   setting?: (pluginId: string, key: string) => unknown;
@@ -170,7 +170,7 @@ export function privateTo(spot: string, plugins: readonly UiPlugin[]): string | 
 
 const list = (v: string | readonly string[] | undefined): readonly string[] | undefined => (v === undefined ? undefined : typeof v === "string" ? [v] : v);
 
-/** The bots an entry is limited to, or `all` (rule 4 and `when.bot`): a bot's own entries are limited to that bot; the
+/** The bots an entry is limited to, or `all` (rules 2 and 5, and `when.bot`): a bot's own entries are limited to that bot; the
  *  user's ticks (the plugin's `bots`) replace `when.bot`. A part that looks the same on every tab (§5.5: the sidebar,
  *  Settings, the bots' Edit page) takes no per-bot scope: it applies on every tab, or, a bot's own entry there (which
  *  validation refuses), on none. */
@@ -241,7 +241,7 @@ export interface CellResult {
   styles: Candidate[];
   /** A hide entry or the user's pick of nothing won, so nothing shows (never for a kept key). */
   hidden: boolean;
-  /** The winner was decided by "the most recently enabled": Settings shows a conflict badge with a picker. */
+  /** The winner was decided by "the most recently enabled" (rule 7): Settings shows a conflict badge with a picker. */
   conflict: boolean;
   /** Entries hidden by the user in a list spot. */
   hiddenByUser: Candidate[];
@@ -250,7 +250,7 @@ export interface CellResult {
   skipped: Skipped[];
   /** The entries that lost a single or keyed cell, best first: what a winner may place inside itself with `<Spot entry>` (a bot's own panel around Clover's stock one). */
   runnersUp: Candidate[];
-  /** Which rule decided the winner over the runner-up, 1–6; 0 when there was no contest or a key decided; 7 for a full
+  /** Which rule decided the winner over the runner-up, 1–7; 0 when there was no contest or a key decided; 8 for a full
    *  tie, settled by plugin id. */
   decidedBy: number;
 }
@@ -287,8 +287,10 @@ function specificity(scope: "all" | readonly string[]): number {
   return scope.length === 1 ? 2 : 1;
 }
 
-/** Ranks a cell's contenders by rules 2–6 (rule 1, the user's pick, is applied before), best first, and says which
- *  rule separated the top two. */
+/** Ranks a cell's contenders by rules 2–7 (rule 1, the user's pick, is applied before), best first, and says which
+ *  rule separated the top two. Rule 2 is "more scoped wins" (the owner, November 14): in a bot's tab, an entry limited to
+ *  that bot (its own plugin's, a `when.bot` naming it, or the user's ticks) beats an entry for all bots, before the
+ *  smaller part (rule 3) decides among the limited ones. */
 export function rank(cands: readonly Candidate[], cellNode: string, input: ResolveInput, tree: SpotTree): { ranked: Candidate[]; decidedBy: number } {
   const prefer = input.ctx.prefer?.[cellNode] ?? input.ctx.prefer?.[cellNode.replace(/\[.*$/, "")] ?? [];
   const facts = new Map<Candidate, number[]>();
@@ -302,17 +304,19 @@ export function rank(cands: readonly Candidate[], cellNode: string, input: Resol
     facts.set(c, [
       // Keys first: an exact key over a pattern over none ("after exact ones").
       c.tier,
-      // 2. The smaller part: the deeper node. A bot's own layout naming its own entry for a cell in its own tab is the
+      // 2. More scoped wins: limited to this bot over every bot (outside a bot's tab a limited entry doesn't apply at all).
+      botScope(c.plugin, c.entry) === "all" ? 0 : 1,
+      // 3. The smaller part: the deeper node. A bot's own layout naming its own entry for a cell in its own tab is the
       // look the bot declares for that tab: it counts as the smallest part there (only for that bot, in its tab, in the
       // cells its layout names).
       preferAt >= 0 && c.plugin.isBot && input.ctx.bot === c.plugin.id ? Number.MAX_SAFE_INTEGER : part === undefined ? -1 : tree.depth(part),
-      // 3. The bot layout's preference: listed beats unlisted, earlier beats later.
+      // 4. The bot layout's preference: listed beats unlisted, earlier beats later.
       preferAt < 0 ? -1 : prefer.length - preferAt,
-      // 4. The most specific `when.bot`.
+      // 5. The most specific `when.bot`: one bot over some bots.
       specificity(botScope(c.plugin, c.entry)),
-      // 5. A plugin the user installed over a bundled one.
+      // 6. A plugin the user installed over a bundled one.
       c.plugin.source === "bundled" ? 0 : 1,
-      // 6. The most recently enabled.
+      // 7. The most recently enabled.
       c.plugin.enabledAt,
     ]);
   }
@@ -327,9 +331,9 @@ export function rank(cands: readonly Candidate[], cellNode: string, input: Resol
     const fa = facts.get(ranked[0]!)!;
     const fb = facts.get(ranked[1]!)!;
     const i = fa.findIndex((v, n) => v !== fb[n]);
-    // The tier is not one of the six rules (a key covers its cell before any rule runs: 0); a full tie falls to the
-    // plugin id, which is no rule either (7) and raises the conflict badge like rule 6.
-    decidedBy = i < 0 ? 7 : i === 0 ? 0 : i + 1;
+    // The tier is not one of the seven rules (a key covers its cell before any rule runs: 0); a full tie falls to the
+    // plugin id, which is no rule either (8) and raises the conflict badge like rule 7.
+    decidedBy = i < 0 ? 8 : i === 0 ? 0 : i + 1;
   }
   return { ranked, decidedBy };
 }
@@ -446,7 +450,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
 
   const { ranked, decidedBy } = rank(contenders, node, inner, tree);
   result.decidedBy = decidedBy;
-  result.conflict = decidedBy >= 6;
+  result.conflict = decidedBy >= 7;
   const winner = ranked[0];
   if (winner === undefined) return result;
   if (winner.entry.kind === "hide") result.hidden = true;

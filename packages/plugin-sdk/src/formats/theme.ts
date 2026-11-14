@@ -32,7 +32,7 @@ import {
   resolveAutoInk, type TokenValue,
 } from "../catalogs/tokens";
 import { Path, Text } from "../manifest/fields";
-import { SHELL_TOKEN_NAMES } from "./shell";
+import { SHELL_ACCEPTED_NAMES } from "./shell";
 
 /** A token's value: a string, or a plain number for `number` and `fontWeight` tokens. The catalog
  *  (`catalogs/tokens.ts`) checks each value against its token's type. */
@@ -40,8 +40,9 @@ export const ThemeTokenValueSchema = z.union([utf16(300), z.number().finite()]);
 /** Token name → value: the catalog's tokens, and the plugin's own (`<top-level plugin id>.<name>`). */
 export const ThemeTokensSchema = z.record(utf16(128, 1).regex(/^[a-z0-9][a-z0-9.-]*$/), ThemeTokenValueSchema);
 
-/** `shell.tokens`: the names `SHELL_GROUPS` lists, values as strings (each checked by `isShellValue` where it is used). */
-const ShellTokensSchema = z.record(z.string().refine((n) => SHELL_TOKEN_NAMES.includes(n), "not a shell token"), utf16(300));
+/** `shell.tokens`: the names `SHELL_GROUPS` and `SHELL_SHAPE` list, values as strings (each checked by `isShellValue` where it
+ *  is used), and the sidebar's old names (`SHELL_NOT_OFFERED`), which still load and are ignored. */
+const ShellTokensSchema = z.record(z.string().refine((n) => SHELL_ACCEPTED_NAMES.includes(n), "not a shell token"), utf16(300));
 
 export const ThemeSchema = z.strictObject({
   $schema: utf16(2048).optional(),
@@ -51,8 +52,9 @@ export const ThemeSchema = z.strictObject({
   tokens: ThemeTokensSchema,
   /** The dark appearance's token values, for a theme that is `both`: only those that differ from `tokens`. */
   dark: z.strictObject({ tokens: ThemeTokensSchema }).optional(),
-  /** The window's own chrome in this bot's palette while its tab shows (`formats/shell.ts`): the title bar, the sidebar and
-   *  the accent, as colours and paints only. Read from a bot's theme; a theme that dresses a part ignores it. */
+  /** The window's own chrome in this bot's palette while its tab shows (`formats/shell.ts`): the title bar and the accent
+   *  (drawn on the bar and the right panels), as colours and paints, and the bar's and panels' shape. Never the sidebar,
+   *  which Bots doesn't offer. Read from a bot's theme; a theme that dresses a part ignores it. */
   shell: z.strictObject({
     tokens: ShellTokensSchema,
     dark: z.strictObject({ tokens: ShellTokensSchema }).optional(),

@@ -1,4 +1,4 @@
-// The spot resolver (spec §5.5 "UI spots" and "Which entry shows"): keyed defaults, the six rules, the smaller part,
+// The spot resolver (spec §5.5 "UI spots" and "Which entry shows"): keyed defaults, the seven rules, the smaller part,
 // style and hide entries, `needs` and `keep`, list spots and safe mode.
 import { describe, expect, test } from "bun:test";
 import { readUiEntry, type UiPlugin } from "../src/main/ui/model";
@@ -116,13 +116,13 @@ describe("single spots and keyed defaults", () => {
   });
 });
 
-describe("which entry shows: the six rules", () => {
+describe("which entry shows: the seven rules", () => {
   const vn = plugin("vn-composer", [{ spot: "composer", component: "VnComposer" }]);
 
-  test("5: a plugin the user installed beats a bundled one dressing the same part", () => {
+  test("6: a plugin the user installed beats a bundled one dressing the same part", () => {
     const r = resolveCell({ plugins: [...DEFAULT, vn], ctx: inTab("alpha") }, "composer");
     expect(shownRefs(r)).toEqual(["vn-composer#composer"]);
-    expect(r.decidedBy).toBe(5);
+    expect(r.decidedBy).toBe(6);
     expect(r.conflict).toBe(false);
   });
 
@@ -143,21 +143,44 @@ describe("which entry shows: the six rules", () => {
     expect(shownRefs(resolveCell({ plugins: DEFAULT, choices: stale, ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
   });
 
-  test("2: the smaller part — a composer plugin turned on for a bot takes the composer from the bot's tab look", () => {
-    // The bot's plugin fills its tab and its own composer: it dresses the whole tab. The composer plugin dresses only
-    // the composer, so it wins there even though the bot's own entries count as limited to that bot (rule 4).
+  test("2: more scoped wins — a plugin for all bots' composers doesn't take the composer from a bot's own tab look", () => {
+    // The bot's plugin fills its tab and its own composer: it dresses the whole tab, a bigger part than the composer
+    // plugin's. But its entries are limited to that bot and the composer plugin's are for every bot, so the bot's own wins
+    // on its tab (rule 2, before the smaller part), and the composer plugin still dresses every other bot's.
+    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", component: "LunaComposer" }], { isBot: true });
+    const everyone = plugin("every-composer", [{ spot: "composer", component: "Every" }]);
+    const r = resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("luna") }, "composer");
+    expect(shownRefs(r)).toEqual(["luna#composer"]);
+    expect(r.decidedBy).toBe(2);
+    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("alpha") }, "composer"))).toEqual(["every-composer#composer"]);
+    // A `when.bot` naming the bot is limited too: it beats the all-bots one before the smaller part (both dress the composer here).
+    const forLuna = plugin("luna-only-composer", [{ spot: "composer", component: "ForLuna", when: { bot: "luna" } }], { enabledAt: 1 });
+    expect(shownRefs(resolveCell({ plugins: [everyone, forLuna], ctx: inTab("luna") }, "composer"))).toEqual(["luna-only-composer#composer"]);
+  });
+
+  test("2: more scoped wins for style entries too: the bot's own style applies last (it wins), an all-bots one under it", () => {
+    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "pane", style: "pane.json" }], { isBot: true });
+    const everyone = plugin("every-style", [{ spot: "composer", id: "paint", style: "paint.json" }], { enabledAt: 1e12 });
+    const r = resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("luna") }, "composer");
+    expect(r.styles.map((c) => entryRef(c.entry))).toEqual(["every-style#paint", "luna#pane"]);
+    expect(resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("alpha") }, "composer").styles.map((c) => entryRef(c.entry))).toEqual(["every-style#paint"]);
+  });
+
+  test("3: the smaller part — a composer plugin turned on for a bot takes the composer from the bot's tab look", () => {
+    // The bot's plugin fills its tab and its own composer: it dresses the whole tab. The composer plugin, ticked for the
+    // bot, is as limited as the bot's own entries (rule 2 ties) and dresses only the composer, so it wins there.
     const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", component: "LunaComposer" }], { isBot: true });
     const quiet = plugin("quiet-composer", [{ spot: "composer", component: "Quiet" }], { bots: ["luna"] });
     const r = resolveCell({ plugins: [shell, luna, quiet], ctx: inTab("luna") }, "composer");
     expect(shownRefs(r)).toEqual(["quiet-composer#composer"]);
-    expect(r.decidedBy).toBe(2);
+    expect(r.decidedBy).toBe(3);
     // With the bundled composer in the running too, the composer plugin still wins (it is limited to the bot).
     expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, quiet], ctx: inTab("luna") }, "composer"))).toEqual(["quiet-composer#composer"]);
     // In another bot's tab, neither the bot's composer nor the ticked plugin applies.
     expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, quiet], ctx: inTab("alpha") }, "composer"))).toEqual(["clover/composer#composer"]);
   });
 
-  test("2: a send-button plugin takes that button from a plugin that dresses every button", () => {
+  test("3: a send-button plugin takes that button from a plugin that dresses every button", () => {
     const buttons = plugin("all-buttons", [{ spot: "composer.action", component: "B" }]);
     const send = plugin("send-button", [{ spot: "composer.action", key: "send", component: "Send" }]);
     const plugins = [...DEFAULT, buttons, send];
@@ -165,7 +188,7 @@ describe("which entry shows: the six rules", () => {
     expect(shownRefs(resolveCell({ plugins, ctx: inTab("alpha") }, "composer.action", "attach"))).toEqual(["all-buttons#composer.action"]);
   });
 
-  test("2: the part is measured per plugin, a child counting as its own plugin", () => {
+  test("3: the part is measured per plugin, a child counting as its own plugin", () => {
     const tree = new SpotTree(DEFAULT);
     expect(partOf(shell, "app.root", { ctx }, tree)).toBe("app.root");
     expect(partOf(composer, "composer", { ctx: inTab("alpha") }, tree)).toBe("composer");
@@ -177,7 +200,7 @@ describe("which entry shows: the six rules", () => {
     expect(partOf(rowAndComposer, "composer", { ctx: inTab("alpha") }, new SpotTree([...DEFAULT, rowAndComposer]))).toBe("composer");
   });
 
-  test("2: a plugin's own spots sit under the entry that declares them", () => {
+  test("3: a plugin's own spots sit under the entry that declares them", () => {
     const deck = plugin("deck", [{ spot: "bot.side", component: "Deck", declares: { "deck.card": { shape: "keyed", props: {} } } }, { spot: "deck.card", key: "tarot", component: "Tarot" }]);
     const tarot = plugin("tarot", [{ spot: "deck.card", key: "tarot", component: "Better" }]);
     const plugins = [...DEFAULT, deck, tarot];
@@ -185,37 +208,39 @@ describe("which entry shows: the six rules", () => {
     expect(tree.chain("deck.card[tarot]")).toEqual(["deck.card[tarot]", "deck.card", "bot.side", "bot.tab", "main[bot]", "main", "app.root"]);
     const r = resolveCell({ plugins, ctx: inTab("alpha") }, "deck.card", "tarot");
     expect(shownRefs(r)).toEqual(["tarot#deck.card"]);
-    expect(r.decidedBy).toBe(2);
+    expect(r.decidedBy).toBe(3);
   });
 
-  test("3: the bot layout's `prefer`", () => {
+  test("4: the bot layout's `prefer`", () => {
     const a = plugin("a-composer", [{ spot: "composer", component: "A" }], { enabledAt: 1e9 });
     const b = plugin("b-composer", [{ spot: "composer", component: "B" }], { enabledAt: 1 });
     const r = resolveCell({ plugins: [a, b], ctx: inTab("alpha", { prefer: { composer: ["b-composer"] } }) }, "composer");
     expect(shownRefs(r)).toEqual(["b-composer#composer"]);
-    expect(r.decidedBy).toBe(3);
+    expect(r.decidedBy).toBe(4);
   });
 
-  test("4: the most specific `when.bot`: one bot, then some bots, then all", () => {
+  test("2 and 5: limited beats all; among limited ones, the most specific `when.bot`: one bot, then some bots", () => {
     const all = plugin("c-all", [{ spot: "composer", component: "A" }], { enabledAt: 3e9 });
     const some = plugin("c-some", [{ spot: "composer", component: "S", when: { bot: ["alpha", "luna"] } }], { enabledAt: 2e9 });
     const one = plugin("c-one", [{ spot: "composer", component: "O", when: { bot: "alpha" } }], { enabledAt: 1 });
     const r = resolveCell({ plugins: [all, some, one], ctx: inTab("alpha") }, "composer");
     expect(shownRefs(r)).toEqual(["c-one#composer"]);
-    expect(r.decidedBy).toBe(4);
-    expect(shownRefs(resolveCell({ plugins: [all, some, one], ctx: inTab("luna") }, "composer"))).toEqual(["c-some#composer"]);
+    expect(r.decidedBy).toBe(5);
+    const luna = resolveCell({ plugins: [all, some, one], ctx: inTab("luna") }, "composer");
+    expect(shownRefs(luna)).toEqual(["c-some#composer"]);
+    expect(luna.decidedBy).toBe(2);
     // The user's ticks replace `when.bot`.
     const ticked = plugin("c-ticked", [{ spot: "composer", component: "T", when: { bot: "alpha" } }], { bots: ["luna"] });
     expect(shownRefs(resolveCell({ plugins: [ticked], ctx: inTab("alpha") }, "composer"))).toEqual([]);
     expect(shownRefs(resolveCell({ plugins: [ticked], ctx: inTab("luna") }, "composer"))).toEqual(["c-ticked#composer"]);
   });
 
-  test("6: the most recently enabled decides last, with a conflict badge", () => {
+  test("7: the most recently enabled decides last, with a conflict badge", () => {
     const older = plugin("c-older", [{ spot: "composer", component: "O" }], { enabledAt: 100 });
     const newer = plugin("c-newer", [{ spot: "composer", component: "N" }], { enabledAt: 200 });
     const r = resolveCell({ plugins: [older, newer], ctx: inTab("alpha") }, "composer");
     expect(shownRefs(r)).toEqual(["c-newer#composer"]);
-    expect(r.decidedBy).toBe(6);
+    expect(r.decidedBy).toBe(7);
     expect(r.conflict).toBe(true);
   });
 });

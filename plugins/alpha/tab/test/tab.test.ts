@@ -225,7 +225,7 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
     // Nothing else in her scene is positioned, so nothing else paints in front of the pane's row.
     const positioned = [...css.matchAll(/([^{}]+)\{[^}]*position:\s*(relative|absolute|fixed|sticky)/g)].map((m) => m[1]!.trim());
     expect(positioned.sort()).toEqual([".alpha-panerow", ".alpha-roomrow", ".alpha-scene", ".alpha-topline"]);
-    // Her room's layer is positioned and drawn after the stage's and before the pane's: the figure (whose own boxes are positioned) lies beneath the dock, title and tools, the pane lies above the room.
+    // Her room's layer is positioned and drawn after the stage's and before the pane's: the figure (whose own boxes are positioned) lies beneath the title and tools, the pane lies above the room.
     expect(css).toContain(".alpha-roomrow { position: relative; }");
     const names = layers.map((l) => l.class);
     expect(names.indexOf("alpha-body")).toBeLessThan(names.indexOf("alpha-roomrow"));
@@ -248,9 +248,11 @@ describe("her pane's sealed approval cards: no other layer lies over them", () =
 describe("the narrow band's stage", () => {
   // The body row sits in a column-flex layer: `align-self` is its width. Anything but stretch shrinks the row to its content, and a
   // figure with no intrinsic width (a Live2D canvas is absolutely placed) then left the stage cell 0 wide at 760 px.
-  test("the band is the window's full width, so the stage cell never depends on the figure's own width", () => {
+  test("the band is the tab's full width, so the stage cell never depends on the figure's own width", () => {
     const css = readFileSync(join(ALPHA, "tab/layout.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const narrow = /@media \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)![1]!;
+    // Her tab's width, not the window's (the window's own sidebar sits beside it): a container query on the scene.
+    expect(css).toMatch(/\.alpha-scene \{[^}]*container: alpha-scene \/ inline-size;/);
+    const narrow = /@container alpha-scene \(max-width: 900px\) \{([\s\S]*?)\n\}/.exec(css)![1]!;
     expect(narrow).toMatch(/\.alpha-body \{[^}]*align-self: stretch;[^}]*height: 240px !important;/);
     expect(narrow).not.toMatch(/\.alpha-body \{[^}]*align-self: (flex-start|center|flex-end)/);
     // The stage asks for the narrow crop there.

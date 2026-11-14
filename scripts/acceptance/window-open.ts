@@ -58,7 +58,8 @@ export async function settingsDiagnosis(ctx: ExampleCtx, label: string): Promise
 
 /** A trusted click on the first element of the tree's documents that matches `selector` (and, when `text` is given, has a line
  *  or an accessible name exactly that) AND is on the screen: a size, and its centre inside the document's own viewport. A bot's
- *  own layout holds a button off its frame's edge, and the stock sidebar's hidden copy has no size: a click there lands nowhere. */
+ *  own layout holds a button off its frame's edge: a click there lands nowhere. (The stock sidebar is drawn beside every tab,
+ *  Alpha's too, so its entries always have a size.) */
 export async function clickShown(ctx: ExampleCtx, what: string, selector: string, text?: string, ms = 20_000): Promise<void> {
   const { cdp } = ctx;
   const at = await until(what, ms, async () => {

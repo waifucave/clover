@@ -699,8 +699,9 @@ export interface ShellApi {
   go(target: ShellTarget): Promise<void>;
   /** The settings screen, at a section if it has one. */
   openSettings(section?: string): Promise<void>;
-  /** Says which of the window's two essential handles this plugin's own controls offer while its frame is shown: a way to show the sidebar (`sidebar`)
-   *  and a region that drags the window (`drag`). With no bar, the shell adds its own minimal handle for each one nothing offers, so the user is never stranded. */
+  /** Says which of the window's two essential handles this plugin's own controls offer while its frame is shown: the sidebar's toggle (`sidebar`: its
+   *  top bar draws the button that folds and opens the window's sidebar) and a region that drags the window (`drag`). With no bar, the shell adds its own
+   *  minimal handle for each one nothing offers, so the user is never stranded. It never drops the window's sidebar, which looks the same on every tab. */
   provide(parts: readonly ("sidebar" | "drag")[]): Promise<void>;
   /** From a press on a region this plugin marks: the window follows the pointer until it lets go (a bar of its own that drags the window). */
   dragWindow(): Promise<void>;

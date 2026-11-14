@@ -1,6 +1,7 @@
-/* Alpha, "Her room", layout side. The scene fills the whole window (her living backdrop behind everything); she is the hero at the left, large, standing
-   in the foreground; her room (everything in front of her: title, note, tally, tools, the dock) is one frame of her plugin over the left part; the
-   conversation is one pane at the right; her controls sit in the top band; the panels open as a card while she steps aside.
+/* Alpha, "Her room", layout side. The scene fills her whole tab (her living backdrop behind everything; the window's own sidebar is beside it, as on every
+   tab); she is the hero at the left, large, standing in the foreground; her room (everything in front of her: title, note, tally, tools) is one frame of her
+   plugin over the left part; the conversation is one pane at the right; her controls sit in the top band; the panels open as a card while she steps aside.
+   Her sizes read the scene's own width (a container query), so the sidebar beside it, open or folded, is already counted.
    Layers, back to front: backdrop (bot.header), [stage | pane], room (bot.side), controls, panels. A layer takes no pointer except the parts that need one. */
 
 .alpha-scene {
@@ -12,6 +13,7 @@
   min-height: 0;
   position: relative;
   isolation: isolate;
+  container: alpha-scene / inline-size;
 }
 .alpha-scene > div { pointer-events: none; min-height: 0; }
 .alpha-panerow { min-height: 0; }
@@ -43,7 +45,7 @@
 /* The room frame covers the left part (where the stage is); its transparent parts sit over the figure. */
 .alpha-roomrow { min-height: 0; }
 /* Her room's layer is positioned so that it paints in front of the figure: a renderer's own box (the avatar, the stage's relative wrapper and its canvas) is positioned,
-   and a positioned box paints in front of a layer that is not, so without this a figure (a Live2D one's whole canvas, a 3D one) lay over the dock, the title and the tools,
+   and a positioned box paints in front of a layer that is not, so without this a figure (a Live2D one's whole canvas, a 3D one) lay over the title and the tools,
    whatever its size. It stays in tree order after the stage and before the pane's row, so the pane (and the top strip and an open panel) still paint in front of it. */
 .alpha-roomrow { position: relative; }
 .alpha-room { min-width: 0; min-height: 0; height: 100%; align-self: stretch; }
@@ -69,15 +71,15 @@
 
 /* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
-@media (max-width: 1100px) {
+@container alpha-scene (max-width: 1100px) {
   .alpha-sheet { border-radius: 22px; }
   .alpha-pane { flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
   .alpha-pane-lead, .alpha-stage-gap, .alpha-pane-gap, .alpha-chip-gap { display: none; }
   .alpha-panels { width: auto; align-self: stretch; margin: 70px 16px 16px; }
 }
-/* A narrow window: the figure and the scene are a band across the top, the pane takes the full width under it (opaque: nothing of her room shows through it). */
-@media (max-width: 900px) {
-  /* The band takes the window's whole width: the row's own cross-axis (width) is stretched, so the stage's cell is as wide as the band and not as wide as the figure it holds (a figure with no intrinsic width, a Live2D canvas, left a stage 0 wide). */
+/* A narrow tab: the figure and the scene are a band across the top, the pane takes the full width under it (opaque: nothing of her room shows through it). */
+@container alpha-scene (max-width: 900px) {
+  /* The band takes the tab's whole width: the row's own cross-axis (width) is stretched, so the stage's cell is as wide as the band and not as wide as the figure it holds (a figure with no intrinsic width, a Live2D canvas, left a stage 0 wide). */
   .alpha-body { align-self: stretch; height: 240px !important; flex: 0 0 240px !important; max-height: 240px; }
   .alpha-figure { --clover-avatar-crop: 0.3; --clover-avatar-headroom: 0.04; padding: 0 !important; }
   .alpha-pane { flex: 1 1 100% !important; width: 100% !important; max-width: none !important; min-width: 0 !important; padding: 240px 14px 14px; }

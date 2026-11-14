@@ -2,7 +2,7 @@
 // layer it dresses (a data-only bot has no layer of its own). The core checks the file against lane B's format, turns
 // sizes into CSS lengths, prefixes classes with the plugin's id, points images at the core's asset URLs, picks text in
 // the user's language and reads markdown files; the layout's CSS goes through the cleaner with its classes prefixed,
-// scoped to the tab, as a sheet. Its `{ spot }` nodes' `prefer` lists are the resolver's rule 3 in that tab. A layout
+// scoped to the tab, as a sheet. Its `{ spot }` nodes' `prefer` lists are the resolver's rule 4 in that tab. A layout
 // has no events, scripts or outside URLs. Pure apart from reading the plugins' files.
 //
 // A tab is made in turns (`TabSpec`): the stock tab, or the bot's own layout (whole, or a patch on the stock tab); then
@@ -282,7 +282,7 @@ export class LayoutStore {
     return template.split(ROOT).join(scope.root).split(LIMIT).join(scope.limit ?? "");
   }
 
-  /** The layout's `prefer` lists, by the spot (or keyed cell) each `{ spot }` node places: the resolver's rule 3. */
+  /** The layout's `prefer` lists, by the spot (or keyed cell) each `{ spot }` node places: the resolver's rule 4. */
   prefer(tab: TabSpec): Record<string, readonly string[]> {
     const layout = this.make(tab).layout;
     const out: Record<string, readonly string[]> = {};
