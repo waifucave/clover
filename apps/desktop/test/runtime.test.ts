@@ -202,7 +202,8 @@ describe("a bot's shell skin reaches the window while its tab shows", () => {
     const shell = mountShell(s);
     const tokens = shell.info.tokens as Record<string, string>;
     expect(tokens["shell.luna.bar.text"]).toBe("#2A2140");
-    expect(tokens["shell.luna.sidebar"]).toContain("linear-gradient");
+    // Bots doesn't offer the sidebar: a theme's old sidebar group loads and reaches no one.
+    expect(Object.keys(tokens).filter((k) => k.startsWith("shell.") && k.includes(".sidebar"))).toEqual([]);
     expect(tokens["shell.vega.bar"]).toBe("#FBEFE8");
     expect(tokens["shell.vega.accent"]).toBe("#B34A1B");
     expect(tokens["shell.luna.bar"]).not.toBe(tokens["shell.vega.bar"]);

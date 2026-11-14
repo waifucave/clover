@@ -16,11 +16,11 @@ const LEAVES: string[] = [".cl-window-icon", ".cl-window__bar", ".cl-skin-paint_
  *  - the dialog layer, which the frame never shows while any card it will draw waits. */
 const POSITIONED: string[] = [
   ".cl-window__bar", ".cl-window__dialog", ".cl-skin-paint", ".cl-skin-paint__layer",
-  // A bot's shape (SHELL_SHAPE): the shell's own sidebar and panel lifted over the page (shell over frames, never a frame over the shell),
+  // A bot's shape (SHELL_SHAPE): the shell's own panel lifted over the page (shell over frames, never a frame over the shell),
   // and the no-bar fallback (a place to drag, the sidebar's button), all inside the window.
-  ".cl-window[data-sidebar-over] .cl-window__sidebar", ".cl-window[data-panel-over] .cl-window__panel", ".cl-chrome-drag--fallback", ".cl-chrome-fallback",
+  ".cl-window[data-panel-over] .cl-window__panel", ".cl-chrome-drag--fallback", ".cl-chrome-fallback",
 ];
-// (`.cl-skin-paint` and its layers are empty paint under the bar and the sidebar, which hold no card: the bot's shell skin.)
+// (`.cl-skin-paint` and its layers are empty paint under the bar, which holds no card: the bot's shell skin.)
 
 describe("the shell stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
@@ -103,23 +103,27 @@ describe("the frame's material and its bar", () => {
 });
 
 describe("the skin's accent leaves Clover's own marks alone", () => {
-  test("the running dot keeps the stock accent, read above the skin's scope; accent-text is never overridden", () => {
-    const decls = (sel: string) => parseCss(css).filter((r) => r.prelude.trim() === sel).flatMap((r) => r.declarations.map((d) => `${d.property}: ${d.value}`));
-    expect(decls(".cl-window")).toContain("--cl-stock-accent: var(--clover-color-accent)");
-    expect(decls('.cl-window[data-skin~="accent"] .cl-sidebar__dot[data-status="running"]')).toContain("background: var(--cl-stock-accent)");
+  test("accent-text is never overridden", () => {
     expect(css).not.toMatch(/--clover-color-accent-text:\s*var\(--cl-skin/);
   });
 });
 
-describe("a bot's shell skin never reaches the dialog layer, the pages or the sealed frames", () => {
-  test("every rule keyed on [data-skin] dresses only the bar or the sidebar (and their paint)", () => {
+describe("a bot's shell skin dresses only what Bots offers: the bar and the right panels", () => {
+  test("every rule keyed on [data-skin] dresses only the bar or the right panels (and the bar's paint); never the sidebar, the dialog layer or the pages", () => {
     const rules = parseCss(css).filter((r) => r.prelude.includes("[data-skin"));
     expect(rules.length).toBeGreaterThan(0);
     for (const r of rules) {
       for (const sel of r.prelude.split(",").map((x) => x.trim())) {
-        expect(/\.cl-window__(bar|sidebar|sidebar-content|title|note)\b|\.cl-panel-toggle|\.cl-sidebar__(dot|count|row|title)\b/.test(sel), sel).toBe(true);
-        expect(sel.includes(".cl-window__dialog") || sel.includes(".cl-window__main") || sel.includes(".cl-window__panel"), sel).toBe(false);
+        expect(/\.cl-window__(bar|title|note|panel)\b|\.cl-chrome-panels\b|\.cl-panel-toggle/.test(sel), sel).toBe(true);
+        expect(/sidebar|\.cl-window__dialog|\.cl-window__main/.test(sel), sel).toBe(false);
       }
     }
+  });
+
+  test("the accent is set on the bar and the right panels", () => {
+    const accent = parseCss(css).filter((r) => r.declarations.some((d) => d.property === "--clover-color-accent" && d.value === "var(--cl-skin-accent)"));
+    expect(accent.flatMap((r) => r.prelude.split(",").map((x) => x.trim())).sort()).toEqual([
+      '.cl-window[data-skin~="accent"] .cl-chrome-panels', '.cl-window[data-skin~="accent"] .cl-window__bar', '.cl-window[data-skin~="accent"] .cl-window__panel',
+    ]);
   });
 });

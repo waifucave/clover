@@ -185,6 +185,14 @@ describe("a bot's shell skin", () => {
     expect(container.querySelector(".cl-window__sidebar-content")?.textContent).toBe("sidebar");
   });
 
+  test("a skin that still names the sidebar's old group dresses nothing of the sidebar: no mark, no colour, no paint", () => {
+    const { container } = render(frame({ skin: { sidebar: "#16132B", "sidebar.text": "#FFFFFF", "sidebar.muted": "#B3A9D2", "sidebar.selected": "#2A2243", "sidebar.hover": "#201A38", accent: "#6A45D4" } }));
+    const root = container.querySelector(".cl-window") as HTMLElement;
+    expect(root.getAttribute("data-skin")).toBe("accent");
+    expect(root.getAttribute("style") ?? "").not.toContain("sidebar");
+    expect(container.querySelector('.cl-skin-paint[data-for="sidebar"]')).toBeNull();
+  });
+
   test("the sidebar's content, the bar's title and the toggles are the same with and without a skin", () => {
     const plain = render(frame());
     const before = plain.container.querySelector(".cl-window__sidebar-content")?.innerHTML;
