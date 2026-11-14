@@ -1805,17 +1805,20 @@ function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fon
       const n = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(Math.ceil(v), max) : undefined);
       const width = n(said.width, 1200);
       const height = n(said.height, 4000);
+      // A reading of no size at all is no reading: the frame waits for the next one (or the fallback), never stays at nothing.
+      if (kind === "button" && (width === 0 || height === 0)) return;
       byPage.current = true;
       setBox((b) => (b.width === width && b.height === height ? b : { ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) }));
     };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
-  }, []);
+  }, [kind]);
   // A page that never says its size (a script blocked, a slow start) is given a few lines after a moment, so it is never
   // a frame of no height for good.
   useEffect(() => {
     if (src === undefined || !loaded || box.height !== undefined) return;
-    const t = setTimeout(() => setBox((b) => (b.height !== undefined ? b : { ...b, height: Math.ceil(fontPx * 1.4 * (kind === "field" ? Math.min(lines ?? 3, 3) : 2)) })), 1200);
+    // A label button with no word of its size gets a width too (a frame with a height and no width is a button nobody can press).
+    const t = setTimeout(() => setBox((b) => (b.height !== undefined ? b : { ...b, height: Math.ceil(fontPx * 1.4 * (kind === "field" ? Math.min(lines ?? 3, 3) : 2)), ...(kind === "button" && b.width === undefined ? { width: Math.ceil(fontPx * 8) } : {}) })), 1200);
     return () => clearTimeout(t);
   }, [src, loaded, box.height, kind, lines, fontPx]);
   const ready = src !== undefined && loaded && box.height !== undefined;

@@ -58,6 +58,12 @@ describe("a sealed button's page", () => {
         expect(p).toContain('data-token="${TOKEN}"'.replace("${TOKEN}", TOKEN));
   });
 
+  test("its size is said when the button has one and said again as it changes; a reading of no size is never said", () => {
+    const p = buttonPage({ cardId: "card_0a1b2c3d", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve" });
+    expect(p).toContain("if (q.width <= 0 || q.height <= 0) return;");
+    expect(p).toContain("new ResizeObserver(send).observe(r)");
+  });
+
   test("a deny button takes the deny's own colours, not the approve's", () => {
     const p = buttonPage({ cardId: "card_x", token: TOKEN, option: "deny", label: "Deny", kind: "deny" });
     expect(p).toContain("seal-deny");

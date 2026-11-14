@@ -94,14 +94,25 @@ export const layerDocs = async (cdp: Cdp, id: string) => (await cdp.documents())
 export const frames = async (cdp: Cdp) => (await cdp.documents()).map((d) => `${d.url.slice(0, 50)}: ${d.text.replace(/\s+/g, " ").slice(0, 80)}`).join(" || ");
 
 async function clickIn(cdp: Cdp, what: string, docs: () => Promise<{ session: string }[]>, selector: string, text?: string, ms = 20_000): Promise<void> {
-  const at = await until(what, ms, async () => {
-    for (const d of await docs()) {
-      const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
-      if (c !== undefined) return { session: d.session, c };
+  // A document can load again between finding the element and pressing it (the app loads a window's document again to frame a
+  // layer installed after it was served, and each install does): the session found is then gone ("Session with given id not
+  // found"), and the element is found anew in the document that replaced it. Only that answer is taken for a reload.
+  for (let attempt = 0; ; attempt++) {
+    const at = await until(what, ms, async () => {
+      for (const d of await docs()) {
+        const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, () => frames(cdp));
+    try {
+      await cdp.click(at.session, at.c.x, at.c.y);
+      return;
+    } catch (err) {
+      if (attempt >= 3 || !/Session with given id not found/.test(String((err as Error).message))) throw err;
+      await sleep(500);
     }
-    return undefined;
-  }, () => frames(cdp));
-  await cdp.click(at.session, at.c.x, at.c.y);
+  }
 }
 export const clickTree = (cdp: Cdp, what: string, selector: string, text?: string, ms?: number) => clickIn(cdp, what, () => treeDocs(cdp), selector, text, ms);
 
