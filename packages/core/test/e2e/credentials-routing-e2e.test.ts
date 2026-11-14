@@ -130,8 +130,12 @@ describeWithEmbeddedRuntime("WS-19 end to end: a stored credential routes a real
   // that same session, and a session whose cwd is gone is now refused before any child
   // (`session_cwd_unavailable`) — which would mask the credential behaviour those tests pin.
   let liveCwd: string | undefined;
-  /** WS-25 §7: the daemon's console during B-1's real turn (swept in B-8), and the live child's argv +
-   *  environment as `ps` reports them. */
+  /** WS-25 §7: the daemon's console during B-1's real turn and during MAJOR 1's key rotation and the turn after it
+   *  (swept in B-8), and the live child's argv + environment as `ps` reports them. A successful turn writes no console
+   *  line of its own (the lines this sweep first read were the Keychain-service override notice, said on every
+   *  resolve until 6ae596a41 made it once per process), so the rotation is what gives the sweep lines to read: the
+   *  daemon's own line on the credential path, `credentials: replacing <session>'s child so its next turn picks up
+   *  the new <provider> credential`, written while the key is being changed. */
   const turnLines: string[] = [];
   let childCommandLine = "";
   /** A-M1: what every embedded session's Worker was started with (the spawn the SDK asked for: its argv
@@ -307,20 +311,27 @@ describeWithEmbeddedRuntime("WS-19 end to end: a stored credential routes a real
     const requestsBefore = fake!.requests.filter((r) => r.path.endsWith("/chat/completions")).length;
 
     // Rotating the SAME provider's key — the journey the review describes, with the same sentinel so
-    // the sweep below still has exactly one value to look for.
-    expect(await client.call<{ ok: boolean }>(METHODS.credentialSet, { providerId: "deepseek", apiKey: SENTINEL })).toEqual({ ok: true });
+    // the sweep below still has exactly one value to look for. WS-25 §7: the daemon's console from the
+    // rotation through the turn after it, for B-8's sweep (its credential-path line is written here).
+    const push = (...a: unknown[]): void => { turnLines.push(a.map(String).join(" ")); };
+    const spies = [spyOn(console, "error").mockImplementation(push), spyOn(console, "warn").mockImplementation(push), spyOn(console, "log").mockImplementation(push)];
+    try {
+      expect(await client.call<{ ok: boolean }>(METHODS.credentialSet, { providerId: "deepseek", apiKey: SENTINEL })).toEqual({ ok: true });
 
-    // The child is GONE from the driver table — ended resumably, not killed: the session is still
-    // listed and its record is intact.
-    expect(daemon!.clover!.get(liveSessionId)).toBeUndefined();
-    const stillListed = await client.call<{ sessions: Array<{ sessionId: string }> }>(METHODS.sessionList, {});
-    expect(stillListed.sessions.some((r) => r.sessionId === liveSessionId)).toBe(true);
+      // The child is GONE from the driver table — ended resumably, not killed: the session is still
+      // listed and its record is intact.
+      expect(daemon!.clover!.get(liveSessionId)).toBeUndefined();
+      const stillListed = await client.call<{ sessions: Array<{ sessionId: string }> }>(METHODS.sessionList, {});
+      expect(stillListed.sessions.some((r) => r.sessionId === liveSessionId)).toBe(true);
 
-    // ...and the next send builds a NEW INCARNATION, which is what re-reads the credential, the
-    // model and the connection. The durable generation counter is the observable: `open()` bumps it
-    // once per incarnation, and it moved.
-    await client.call(METHODS.sessionSend, { sessionId: liveSessionId, text: "after the key changed" });
-    await client.waitFor(() => client.events.filter((e) => e.type === "turn_completed" && e.sessionId === liveSessionId).length >= 2, 90_000);
+      // ...and the next send builds a NEW INCARNATION, which is what re-reads the credential, the
+      // model and the connection. The durable generation counter is the observable: `open()` bumps it
+      // once per incarnation, and it moved.
+      await client.call(METHODS.sessionSend, { sessionId: liveSessionId, text: "after the key changed" });
+      await client.waitFor(() => client.events.filter((e) => e.type === "turn_completed" && e.sessionId === liveSessionId).length >= 2, 90_000);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
     expect(rt.records.get(liveSessionId)!.generation).toBeGreaterThan(generationBefore);
 
     // The REPLACEMENT'S TURN reaches the fake too. This used to be recorded as a harness limitation
@@ -374,8 +385,9 @@ describeWithEmbeddedRuntime("WS-19 end to end: a stored credential routes a real
       remote.close();
 
       for (const line of lines) expect(line).not.toContain(SENTINEL);
-      // WS-25 §7: and the daemon's console during B-1's real, host-brokered turn.
-      expect(turnLines.length).toBeGreaterThan(0);
+      // WS-25 §7: and the daemon's console during B-1's real, host-brokered turn and MAJOR 1's rotation and the
+      // turn after it. Not vacuous: the rotation's own line on the credential path is among them.
+      expect(turnLines.some((l) => l.startsWith(`credentials: replacing ${codeSessionId}'s child`) && l.includes("deepseek"))).toBe(true);
       for (const line of turnLines) expect(line).not.toContain(SENTINEL);
     } finally {
       errSpy.mockRestore();
