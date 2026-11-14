@@ -7,7 +7,7 @@ describe("what a sender's words become (cleanLine)", () => {
   test("plain text, one line, capped; markup is only text; control and bidi marks become spaces", () => {
     expect(cleanLine(e("p"), { text: "  Rendering\n frame   4 of 9 " })?.text).toBe("Rendering frame 4 of 9");
     expect(cleanLine(e("p"), { text: "<b>bold</b> <img src=x onerror=alert(1)>" })?.text).toBe("<b>bold</b> <img src=x onerror=alert(1)>");
-    expect(cleanLine(e("p"), { text: "a‮b​c\u0000d" })?.text).toBe("a b c d");
+    expect(cleanLine(e("p"), { text: "a\u202eb\u200bc\u0000d" })?.text).toBe("a b c d");
     const long = cleanLine(e("p"), { text: "x".repeat(500) })!.text;
     expect([...long]).toHaveLength(LINE_TEXT_MAX);
     expect(long.endsWith("…")).toBe(true);
