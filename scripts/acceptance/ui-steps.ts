@@ -2752,6 +2752,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await openUntil("Juniper's own Browser panel drawn on her tab", () => layerHas("[data-juniper-browser]"));
       if (await inTreeNow("document.querySelector('[data-replaced-panel=browser][data-fell]')")) fail("Juniper's drawing Browser panel was swapped for the stock one");
       said.push("on Juniper's tab her own Browser panel replaced the stock one");
+      // The way back is the host's, outside her frame, from the first moment: Show Clover's panel, then Use Juniper's panel.
+      await press("Show Clover's panel", ".cl-panel__actions .cl-panel__text-button", "Show Clover's panel");
+      await until("Clover's own Browser panel in her place", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('[data-replaced-panel=browser][data-fell] [data-clover-entry^=\"clover/\"]')"), () => dumpFrames(cdp));
+      await press("Use Juniper's panel", ".cl-panel__actions .cl-panel__text-button", `Use ${BOT_PARTS_BOT}'s panel`);
+      await until("her own Browser panel drawn again", 20_000, async () => ((await layerHas("[data-juniper-browser]")) ? true : undefined), () => dumpFrames(cdp));
+      said.push("Show Clover's panel (in the host's header) put the stock panel in her place and Use Juniper's panel brought hers back");
       // On Alpha's tab the stock one shows, with none of Juniper's inside her panel sheet.
       await toTab("Alpha");
       await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
@@ -2780,7 +2786,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await press("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
       await until("the Plugins page", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')"), () => dumpFrames(cdp));
       await press("the Installed tab", "[role=tab]", "Installed");
-      const toggle = `[role=switch][aria-label="Its parts beyond Acceptance Juniper's tab"]`;
+      const toggle = `[role=switch][aria-label="Its parts beyond ${BOT_PARTS_BOT}'s tab"]`;
       await until("the app-parts switch on its row", 20_000, () => inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(toggle)})`), async () => `${renders ? (writeFileSync(join(renders, "plug-app-miss.png"), await cdp.screenshot()), "shot kept; ") : ""}page: ${JSON.stringify(((await inTree<string>(cdp, "(document.querySelector('.cl-plugin-index')?.innerText || 'no page').slice(0, 300)"))?.value ?? '').replace(/\s+/g, ' '))}; names: ${JSON.stringify((await inTree<string>(cdp, "JSON.stringify([...document.querySelectorAll('.cl-plugin-index__name')].map((e) => e.textContent).filter((t) => /Juniper|Acceptance/.test(t || '')))"))?.value)}; switches: ${JSON.stringify((await inTree<string>(cdp, "JSON.stringify([...document.querySelectorAll('[role=switch]')].map((e) => e.getAttribute('aria-label')))"))?.value)}; ${await dumpFrames(cdp)}`);
       if (renders) await shootWindow(cdp, renders, "plug-app-plugins-toggle", ctx.setAppearance);
       if (renders) await unshootWindow(cdp, ctx.setAppearance);
