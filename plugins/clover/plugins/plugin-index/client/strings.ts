@@ -78,7 +78,7 @@ export const S = {
   settingOff: "Off",
   settingAsks: "Changing this asks you first.",
   settingAsked: "Answer the card to change it.",
-  settingPerBot: "Set per bot, in that bot's settings.",
+  settingPerBot: "Set per bot, on that bot's Edit page.",
   signIns: "Sign-ins",
   signedIn: (account?: string) => (account ? `Signed in as ${account}` : "Signed in"),
   signedOut: "Signed out",

@@ -327,7 +327,7 @@ describe("the Plugins page: what is installed", () => {
     // A bot's setting: its value and where it is set, no control.
     const voice = settings.querySelector("[data-setting='voice']")!;
     expect(voice.querySelector("input, select, button")).toBeNull();
-    expect(voice.textContent).toContain("Set per bot, in that bot's settings.");
+    expect(voice.textContent).toContain("Set per bot, on that bot's Edit page.");
   });
 
   test("a plugin that holds notify: its notifications' mute switch reads notify.mutes and sets it on a click; its agent definitions", async () => {
