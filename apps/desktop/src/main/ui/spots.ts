@@ -248,6 +248,8 @@ export interface CellResult {
   /** In a list spot, entries a plugin's `hide` took out (and which), for Settings to offer back. */
   hiddenByPlugin: { entry: Candidate; by: Candidate }[];
   skipped: Skipped[];
+  /** The entries that lost a single or keyed cell, best first: what a winner may place inside itself with `<Spot entry>` (a bot's own panel around Clover's stock one). */
+  runnersUp: Candidate[];
   /** Which rule decided the winner over the runner-up, 1–6; 0 when there was no contest or a key decided; 7 for a full
    *  tie, settled by plugin id. */
   decidedBy: number;
@@ -351,7 +353,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   const inner: ResolveInput = { ...input, ctx, tree };
   const node = nodeId(spot, cellKey);
   const choices = input.choices ?? NO_CHOICES;
-  const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], hiddenByPlugin: [], skipped: [], decidedBy: 0 };
+  const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], hiddenByPlugin: [], runnersUp: [], skipped: [], decidedBy: 0 };
 
   const fill: Candidate[] = [];
   const style: Candidate[] = [];
@@ -449,5 +451,6 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   if (winner === undefined) return result;
   if (winner.entry.kind === "hide") result.hidden = true;
   else result.shown = [winner];
+  result.runnersUp = ranked.slice(1).filter((c) => c.entry.kind === "component");
   return result;
 }

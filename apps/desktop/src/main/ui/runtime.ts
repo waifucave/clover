@@ -756,12 +756,23 @@ export class UiRuntime {
     }
     // Only the trusted `clover` layer may say which kind of session a part shows (`when.session`).
     const { shape, cellKey, session, ctx } = this.cellOf(doc, part, spot, key, hints);
-    if (!this.declares(part, spot)) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
-    const cell = resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
+    const declared = this.declares(part, spot);
+    // A part that won a cell, or declares its spot, may place the cell's runner-up inside itself (`<Spot entry>`): a bot's own Browser
+    // panel around Clover's stock one, or the shell's fallback to it. `entry="stock"` names the shipped (bundled `clover` tree's) one.
+    const asksRunnerUp = hints.entry !== undefined;
+    const peek = asksRunnerUp ? resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey) : undefined;
+    const ownWinner = peek !== undefined && part.plugin !== undefined && peek.shown[0]?.plugin.id === part.plugin.id && peek.shown[0].entry.id === part.entryId;
+    const runnerUp = peek !== undefined && (declared || ownWinner)
+      ? peek.runnersUp.find((c) => (hints.entry === "stock" ? c.plugin.topId === "clover" && c.plugin.source === "bundled" : entryRef(c.entry) === hints.entry))
+      : undefined;
+    if (!declared && runnerUp === undefined) return { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, items: [], hidden: false, conflict: false, undeclared: true };
+    const cell = peek ?? resolveCell({ plugins: this.plugins, choices: this.choices, ctx, tree: this.tree }, spot, cellKey);
     // A data entry is the declaring part's to draw (`entries`): nothing is mounted for it.
     let shown = cell.shown.filter((c) => c.entry.kind !== "data");
+    if (runnerUp !== undefined && !(hints.entry === "stock" ? false : shown.some((c) => entryRef(c.entry) === hints.entry))) shown = [runnerUp];
+    else if (hints.entry === "stock" && runnerUp === undefined) shown = shown.filter((c) => c.plugin.topId === "clover" && c.plugin.source === "bundled");
     if (part.surfaceRef !== undefined) shown = shown.filter((c) => entryRef(c.entry) === part.surfaceRef);
-    if (hints.entry !== undefined) shown = shown.filter((c) => entryRef(c.entry) === hints.entry);
+    if (hints.entry !== undefined) shown = shown.filter((c) => hints.entry === "stock" || entryRef(c.entry) === hints.entry);
     const places = new Set<string>();
     const items: SpotItem[] = [];
     for (const c of shown) {
