@@ -66,7 +66,7 @@ export const PLUGIN_TEMPLATES: Readonly<Record<string, PluginTemplate>> = {
         contributes: { bot: { name, instructions: "bot/instructions.md" } },
       }),
       "bot/instructions.md": `You are ${name}. Say who you are and how you help, in a few short paragraphs.\n`,
-      "README.md": readme(name, "A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, a voice, an avatar and a theme."),
+      "README.md": readme(name, "A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, a voice, an avatar and a theme. What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `\"app\": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `\"scope\": \"own-bot\"` is this bot's alone."),
     }),
   },
 

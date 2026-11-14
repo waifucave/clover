@@ -1,6 +1,6 @@
 ---
 name: plugin-examples
-description: Minimal working Clover plugins to copy - a tool, a settings section, a status-bar entry, a whole app (sidebar button plus its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab and a child plugin, a model provider, a trigger, a data point other plugins fill, a UI spot of your own that another plugin fills, and a page that fits the space it gets. Each one is checked by Clover's validator and loaded through the registry in its tests.
+description: Minimal working Clover plugins to copy - a tool, a settings section, a status-bar entry, a whole app (sidebar button plus its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab and parts beside it, a model provider, a trigger, a data point other plugins fill, a UI spot of your own that another plugin fills, and a page that fits the space it gets. Each one is checked by Clover's validator and loaded through the registry in its tests.
 ---
 
 # Minimal working plugins
@@ -237,7 +237,7 @@ File `README.md`:
 ```markdown
 # Ex bot
 
-A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, a voice, an avatar and a theme.
+A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, a voice, an avatar and a theme. What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `"app": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `"scope": "own-bot"` is this bot's alone.
 
 Check it with `clover plugin validate`, and try it on this computer with `clover plugin dev .`.
 ```
@@ -698,11 +698,14 @@ export function Hello({ props }: { props: { size?: string } }) {
 }
 ```
 
-### Example: A bot with its own tab, and a child plugin for UI outside it (`ex-buddy`)
+### Example: A bot with its own tab, and parts beside it (`ex-buddy`)
 
-A bot's plugin draws in its own tab's spots (`bot.header`, `bot.side`, `bot.stage`, `bot.controls`, …): each gets
-`props.bot`, the bot it is drawn for. UI anywhere else (a Settings section, the status bar) goes in a child plugin,
-in `plugins/<folder>/`, which one OK covers with its parent.
+A plugin with a bot draws in what Bots offers on the bot's tab (`bot.header`, `bot.side`, `bot.stage`,
+`bot.controls`, …): each entry gets `props.bot`, the bot it is drawn for, and shows only on that bot's tab. A part for
+anywhere else (a Settings section, the status bar, an island tab) is beside the bot: here the Settings section is the
+same plugin's entry marked `"app": true`, which follows the app's rules, gets a line of its own on the OK card and comes
+under one switch with every other part beside the bot. A child plugin in `plugins/<folder>/` is the other way, with a
+switch of its own; here the status-bar line is one. One OK covers the folder.
 
 File `clover.json`:
 ```json
@@ -710,14 +713,15 @@ File `clover.json`:
   "manifest": 1,
   "id": "ex-buddy",
   "name": "Ex buddy",
-  "description": "A bot with a header and a side panel of its own.",
+  "description": "A bot with a header and a side panel of its own, and a Settings section beside it.",
   "engines": { "clover": "^1.0.0" },
   "client": { "entry": "client/index.ts" },
   "contributes": {
     "bot": { "name": "Ex buddy", "instructions": "bot/instructions.md" },
     "ui": [
       { "spot": "bot.header", "id": "header", "component": "BuddyHeader" },
-      { "spot": "bot.side", "id": "side", "component": "BuddySide" }
+      { "spot": "bot.side", "id": "side", "component": "BuddySide" },
+      { "spot": "settings.section", "id": "buddy", "component": "BuddySettings", "title": "Ex buddy", "app": true }
     ]
   }
 }
@@ -730,7 +734,8 @@ You are Ex buddy, a cheerful study partner. Keep answers short and ask one quest
 
 File `client/index.ts`:
 ```ts
-// Ex buddy's tab: its header and its side panel. Each is handed the bot it is drawn for.
+// Ex buddy's tab (its header and its side panel, each handed the bot it is drawn for) and, beside the bot, its
+// Settings section.
 import { createElement as h } from "@waifucave/clover-plugin-sdk/ui";
 
 interface TabProps { props: { bot: { id: string; name: string | { en: string } } } }
@@ -744,28 +749,32 @@ export function BuddyHeader({ props }: TabProps) {
 export function BuddySide() {
   return h("aside", { style: { padding: "var(--clover-space-m)", color: "var(--clover-color-text-muted)" } }, "Today: one page of notes.");
 }
+
+export function BuddySettings() {
+  return h("p", null, "Ex buddy has nothing to set yet.");
+}
 ```
 
-File `plugins/settings/clover.json`:
+File `plugins/status/clover.json`:
 ```json
 {
   "manifest": 1,
-  "name": "Ex buddy's settings",
+  "name": "Ex buddy's status line",
   "engines": { "clover": "^1.0.0" },
   "client": { "entry": "client/index.ts" },
   "contributes": {
-    "ui": [{ "spot": "settings.section", "id": "buddy", "component": "BuddySettings", "title": "Ex buddy" }]
+    "ui": [{ "spot": "status", "id": "buddy", "component": "BuddyStatus" }]
   }
 }
 ```
 
-File `plugins/settings/client/index.ts`:
+File `plugins/status/client/index.ts`:
 ```ts
-// A Settings section for Ex buddy: outside the bot's tab, so it lives in a child plugin.
+// A status-bar line for Ex buddy, in a child plugin: the user can turn it off on its own.
 import { createElement as h } from "@waifucave/clover-plugin-sdk/ui";
 
-export function BuddySettings() {
-  return h("p", null, "Ex buddy has nothing to set yet.");
+export function BuddyStatus() {
+  return h("span", { style: { color: "var(--clover-color-text-muted)" } }, "Ex buddy: one page today");
 }
 ```
 

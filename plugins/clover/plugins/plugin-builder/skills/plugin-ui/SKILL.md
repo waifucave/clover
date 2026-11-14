@@ -166,14 +166,15 @@ screen, not the parts around you.
   and sizes the frame to it (up to 100,000 px). So in a Settings section, the status bar or another plugin's spot,
   never size your root by `100vh` or `height: 100%`: those mean your frame, which is as tall as you say, and it stays
   at its first 150 px. Let your content decide.
-- **A fixed box**, set by the host, in a few places: the sidebar card a bot's child plugin fills (`sidebar`, with
-  `when.bot`) is the card's whole height; a `sidebar.app` badge is 48 x 18; and a plugin that hosts others may size the
+- **A fixed box**, set by the host, in a few places: a sidebar a plugin draws in place of the stock one (`sidebar`, an
+  app-wide part: it looks the same on every tab, so no entry there is tied to a bot) is the sidebar's whole height; a `sidebar.app` badge is 48 x 18; and a plugin that hosts others may size the
   frames in its own spot from its own stylesheet (`.slot > iframe { height: 72px !important }`: a `Spot` adds no
   element of its own, so the frame is a direct child of what holds it). Alpha's tab does so for her figure and room.
   In a fixed box, `100%` is that box, and short boxes are real: draw less, not smaller.
-- **A narrow window** (the main window under 900 px) rests a floating sidebar as a narrow rail, so the main area keeps
-  most of its width. `useMountContext().window.narrow` says so, and changes live: fold your layout the way the shell
-  folds its own (your own box may barely change).
+- **A narrow window** (the main window under 900 px): `useMountContext().window.narrow` says so, and changes live: fold
+  your layout the way the shell folds its own. A bot's tab is the window less the sidebar beside it, open or folded, so
+  size a tab's parts by the tab's own width (a container query on your layout's root, or `shell.state().sidebar.width`
+  in a frame), not the window's.
 - **What a host passes a nested part**: props (plain data, through `Spot`'s `props`) and the size of the frame (its
   stylesheet). CSS variables don't cross into another plugin's frame, so a host reads them and passes the values. The
   stage does so for an avatar renderer: its frame fills the stage, and its props hold `{ bot, file, format, name,
@@ -192,7 +193,8 @@ when its box is short.
 - It reaches the network only to hosts the plugin holds as `network:<host>` capabilities (a plain `fetch` there
   works); every other host is blocked.
 - It can't read another plugin's layer or Clover's own (each layer is its own origin), open windows, or take focus.
-- A bot's own plugin draws only in that bot's tab (plugin-manifest, "Children").
+- What a plugin draws inside its bot shows only on that bot's tab, in what Bots offers there; an entry marked
+  `"app": true` is beside the bot and follows the app's rules (building-plugins, "What a plugin brings").
 - A `web` entry (`{ "web": { "url": "https://…", "partition": "main" } }`) shows a web page in a frame instead of a
   component; its host is one of the plugin's network hosts.
 
