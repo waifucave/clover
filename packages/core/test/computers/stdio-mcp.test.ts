@@ -88,10 +88,16 @@ function request(ch: McpChannel, id: number, method: string, params: Record<stri
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  // A process that has exited but isn't reaped yet (a zombie, kept by a parent that doesn't wait: the CI runner's wrapper script
+  // reaps late) still answers signal 0; it is dead.
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    if (stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) === "Z") return false;
+  } catch { /* no /proc (macOS, Windows): signal 0 is the answer */ }
+  return true;
 };
 const until = async (f: () => boolean, ms = 5000) => {
   const end = Date.now() + ms;
