@@ -2603,8 +2603,25 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     };
     /** The bot's Browser panel on its own tab (the stock bar's toggle), opened. */
     const openBrowser = async () => {
-      if (!(await inTreeNow("document.querySelector('.cl-panel__view[data-view=browser]')"))) await press("the Browser toggle", ".cl-panel-toggle[aria-label=\"Show Browser\"]");
+      if (!(await inTreeNow("document.querySelector('.cl-panel__view[data-view=browser]')"))) await press("the Browser toggle", ".cl-panel-toggle[aria-label=\"Browser\"]");
       await until("the Browser panel open", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-panel__view[data-view=browser]')"), () => dumpFrames(cdp));
+    };
+    /** Opens the panel and waits for `check`, again when a plugin installed after the window was served made it load again (its first
+     *  layer's serving does, and the panel open at that moment closes: the app logs "loads again to frame a layer installed after it
+     *  was served"). */
+    const openUntil = async (what: string, check: () => Promise<boolean>) => {
+      let last = "";
+      for (let attempt = 0; attempt < 4; attempt++) {
+        await openBrowser().catch(() => undefined);
+        try {
+          await until(what, 12_000, async () => ((await check()) ? true : undefined));
+          return;
+        } catch (e) {
+          last = String(e);
+        }
+      }
+      const panel = await win("document.querySelector('.cl-panel__view[data-view=browser]')?.outerHTML.slice(0, 600) ?? 'no panel'");
+      fail(`${what}: not within 4 tries (${last.slice(0, 120)}; the panel: ${panel}; frames: ${await dumpFrames(cdp)})`);
     };
     const layerHas = async (sel: string) => {
       for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
@@ -2618,8 +2635,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await install("drawing", join(parent, "a"));
       // 1. Juniper's tab: her Browser panel replaces the stock one.
       await toTab(BOT_PARTS_BOT);
-      await openBrowser();
-      await until("Juniper's own Browser panel drawn on her tab", 30_000, async () => ((await layerHas("[data-juniper-browser]")) ? true : undefined), () => dumpFrames(cdp));
+      await openUntil("Juniper's own Browser panel drawn on her tab", () => layerHas("[data-juniper-browser]"));
       if (await inTreeNow("document.querySelector('[data-replaced-panel=browser][data-fell]')")) fail("Juniper's drawing Browser panel was swapped for the stock one");
       said.push("on Juniper's tab her own Browser panel replaced the stock one");
       // On Alpha's tab the stock one shows, with none of Juniper's inside her panel sheet.
@@ -2668,9 +2684,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // 4. A replacement that never draws: after two seconds the stock panel shows, the header says so, and the button tries again.
       await install("never", join(parent, "b"));
       await toTab(BOT_PARTS_BOT);
-      await openBrowser();
       const fellTitle = `${BOT_PARTS_BOT}'s browser panel didn't draw; showing Clover's.`;
-      await until("the panel falling back to Clover's own", 30_000, () => inTree<boolean>(cdp, `document.querySelector('.cl-panel__view[data-view=browser]')?.getAttribute('aria-label') === ${JSON.stringify(fellTitle)}`), () => dumpFrames(cdp));
+      const fellNow = async () => (await win(`document.querySelector('.cl-panel__view[data-view=browser]')?.getAttribute('aria-label')`)) === fellTitle;
+      await openUntil("the panel falling back to Clover's own", fellNow);
       if (!(await inTreeNow("document.querySelector('[data-replaced-panel=browser] [data-clover-entry^=\"clover/\"]')"))) fail("after the fall back the stock Browser panel isn't in the panel");
       await press("Try Juniper's again", ".cl-panel__text-button", `Try ${BOT_PARTS_BOT}'s again`);
       await until("the fall back again (her panel still doesn't draw)", 30_000, () => inTree<boolean>(cdp, `document.querySelector('.cl-panel__view[data-view=browser]')?.getAttribute('aria-label') === ${JSON.stringify(fellTitle)}`), () => dumpFrames(cdp));
