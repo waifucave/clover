@@ -53,7 +53,7 @@ How to read it:
 | `app.root` | single | app | — | The main window's root: the shell, which declares every other spot. |
 | `app.surface` | list | app | — | Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float. |
 | `bot.tab` | keyed | app | — | Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key. |
-| `sidebar` | single | shell | — | The sidebar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, reading and acting through `shell.*`): it then shows only while that bot's tab does. |
+| `sidebar` | single | shell | — | The sidebar: the app's own, the same on every tab. A plugin may fill it for the whole app (its own component, in its own frame, reading and acting through `shell.*`); an entry tied to a bot's tab (`when.bot`, or inside… |
 | `bar` | single | shell | — | The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: "none"` there is no bar at all and the bot's own controls (`bot.… |
 | `sidebar.bot` | keyed | shell | — | A bot's row in the sidebar, keyed by bot: its state and what waits for the user. |
 | `sidebar.app` | list | shell | — | App buttons in the sidebar; `opens` names the `main` and `panel` key it shows. |

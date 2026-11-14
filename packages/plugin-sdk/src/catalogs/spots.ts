@@ -78,7 +78,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key." },
   // The shell's spots (`app.root`).
   { name: "sidebar", shape: "single", declaredBy: "shell", botsOffer: false, context: ["bot"], fields: none, props: none,
-    doc: "The sidebar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, reading and acting through `shell.*`): it then shows only while that bot's tab does." },
+    doc: "The sidebar: the app's own, the same on every tab. A plugin may fill it for the whole app (its own component, in its own frame, reading and acting through `shell.*`); an entry tied to a bot's tab (`when.bot`, or inside a bot's plugin without `app: true`) is refused." },
   { name: "bar", shape: "single", declaredBy: "shell", botsOffer: true, context: ["bot"], fields: none, props: none,
     doc: "The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: \"none\"` there is no bar at all and the bot's own controls (`bot.controls`) sit in its page." },
   { name: "sidebar.bot", shape: "keyed", declaredBy: "shell", botsOffer: false, context: ["bot"], fields: none,
