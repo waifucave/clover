@@ -49,6 +49,36 @@ with `Spot`, or a data point (no `props`) that other plugins fill with entries i
 plugin-examples, "A UI spot of your own", shows the pair. Name what its add-ons may do in the spot's `doc`, and pass
 them only the props they need.
 
+## A panel of your own on the right
+
+The right side of a tab holds panels, each with a button in the tab's bar (the stock ones are keyed `session`,
+`terminal`, `diff`, `files`, `browser` and `agent`). A `panel` entry whose `key` is not one of those ADDS a panel of
+your own, with a button of its own:
+
+```json
+{ "spot": "panel", "key": "sheets", "title": "Sheets", "component": "SheetsPanel", "when": { "session": ["coding"] } }
+```
+
+- **`title` is required**: it names the button (plain text or `{ "en": … }`). `clover plugin validate` refuses a panel
+  without one. `icon` is optional, and a file path given there is not drawn yet: the button shows the stock panel
+  glyph. The `key` is lowercase letters,
+  digits and hyphens, starting with a letter, 32 at most. What draws it is a `component` or a `web` page.
+- **Where it shows.** In a plugin with no bot, and beside a bot (`"app": true`): on every tab of the kinds
+  `when.session` names (`bot`, `agent`, `coding`; every tab when absent). Inside a bot's plugin (no `app`): on that
+  bot's tab only, whatever `when.session` says.
+- **The button** comes after the stock ones. Past three plugin panels on a tab, the rest go into one "Other panels"
+  menu. Pressing it opens your component in the panel; two panels are open at most, so a third pushes the oldest out.
+- **Space**: your frame fills the panel's column and scrolls inside itself, like a `main` page ("Fitting the space you
+  get"). The column is narrower than the main area: lay it out for a narrow width first.
+- **From your own frames** you can open, close or toggle it by its bare key, with the `shell.control` capability:
+  `const api = usePluginApi(); await api.shell.openPanel("sheets")` (`closePanel`, `togglePanel`). `shell.state()`
+  lists it in `panels.available` and `panels.open` as `<your plugin id>#sheets`.
+- **Two panels in one plugin** each need their own `id`.
+- The OK card says it ("It adds a panel, "Sheets", …"), and the Plugins page labels the plugin "Panel".
+
+A panel is for something the user keeps beside the conversation (a document, a sheet, a preview, a board). A whole
+page of your own is `main` with a `sidebar.app` button ("A whole app"); a part inside a stock panel is `panel.view`.
+
 ## An app a bot can work in
 
 An app's host half can serve an MCP server too, so a bot edits the same project the user sees: the tools change the
