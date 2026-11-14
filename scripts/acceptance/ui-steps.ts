@@ -2012,11 +2012,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (!Number.isFinite(outer) || !Number.isFinite(inner) || Math.abs(outer - inner) > 40) fail(`outerWidth in her frame (${outer}) is not the window's width (${inner})`);
       // 1b. The window the app opens (a tab of 1000 px or more beside the open sidebar, 1280 less 248) is her wide room, in her room's frame
       // (its size from the sidebar's measured width) and in her layout (its container queries on the scene) alike; her controls start at her
-      // tab's own margin, since the sidebar lies under the window's own buttons.
+      // tab's own margin, since the sidebar lies under the window's own buttons. (A layout's classes are prefixed with its plugin's id.)
       const sideWidth = Number(await win("Math.round(document.querySelector('.cl-window__sidebar').getBoundingClientRect().width)"));
       const herTab = inner - sideWidth;
       const roomSaid = (await inTree<string>(cdp, "document.querySelector('.rm') ? document.querySelector('.rm').dataset.size : null"))?.value;
-      const leadShown = (await inTree<boolean>(cdp, "(() => { const e = document.querySelector('.alpha-pane-lead'); return e ? getComputedStyle(e).display !== 'none' : null; })()"))?.value;
+      const leadShown = (await inTree<boolean>(cdp, "(() => { const e = document.querySelector('[class*=\"alpha-pane-lead\"]'); return e ? getComputedStyle(e).display !== 'none' : null; })()"))?.value;
       const inset = (await inTree<string>(cdp, "document.querySelector('.ac') ? getComputedStyle(document.querySelector('.ac')).paddingLeft : null"))?.value;
       if (herTab >= 1000 && (roomSaid !== "wide" || leadShown !== true)) fail(`her tab is ${herTab} px (the window ${inner} less the sidebar ${sideWidth}), her wide room's width, but her room says ${roomSaid} and her layout ${leadShown ? "wide" : "not wide"}`);
       if (inset !== "16px") fail(`her controls start ${inset} in from her tab's edge beside the open sidebar, not her 16 px margin`);

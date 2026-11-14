@@ -37,7 +37,7 @@ html, body { background: transparent !important; margin: 0; height: 100%; overfl
 .rm__grass { position: absolute; left: 0; right: 0; bottom: 0; height: 300px; contain: strict; pointer-events: none; }
 .rm .rm__grass svg { width: 100%; height: 100%; stroke: none; }
 .rm[data-size="wide"] .rm__grass { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 220px), transparent); }
-.rm[data-size="narrow"] .rm__grass { top: 160px; bottom: auto; height: 100px; }
+.rm[data-size="narrow"] .rm__grass { top: 140px; bottom: auto; height: 120px; }
 /* In front of the figure, behind everything below: the scene's foreground fills this slot. */
 .rm__fore { position: absolute; inset: 0; pointer-events: none; }
 
