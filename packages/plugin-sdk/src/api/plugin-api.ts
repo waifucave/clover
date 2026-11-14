@@ -492,6 +492,8 @@ export interface SettingsApi {
 export interface ConversationApi {
   list(filter?: { bot?: string; kinds?: SessionView["kind"][] }): Promise<SessionView[]>;
   get(session: string): Promise<SessionView>;
+  /** Every session's view as it changes: a new one (a coding session started from the CLI, another window or a bot's agent), a status change, a title. */
+  watch(listener: (session: SessionView) => void): Unsubscribe;
   history(session: string, page: { before?: number; limit: number }): Promise<{ events: Record<string, unknown>[]; hasMore: boolean }>;
   /** A follow whose replay can't read the session's history ends with one `{ type: "follow_ended", reason }` event. */
   follow(session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe;

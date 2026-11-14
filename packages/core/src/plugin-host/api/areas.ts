@@ -24,7 +24,7 @@
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
 import type { grantFiles } from "../../fence/plugin-grants";
 import { foldTitle, ROUTINE_FIRE_PAYLOAD_MAX } from "@waifucave/clover-plugin-sdk";
-import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading } from "@waifucave/clover-protocol";
+import { topPluginIdOf, USAGE_METHODS, type BotView, type Caller, type DeviceView, type PlanReading, type SessionView } from "@waifucave/clover-protocol";
 import type { UsageLedger } from "../../usage/ledger";
 import { PIECE_BYTES, type VoicePlay } from "../../voices/service";
 import { mainSessionIdFor } from "../../sessions/ids";
@@ -233,6 +233,11 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       return side().host.list(typeof f.bot === "string" ? { bot: f.bot } : {}).filter((v) => kinds === undefined || kinds.includes(v.kind));
     },
     "conversation.get": (_ctx, args) => sessionOf(stringArg(args, 0, "the session")),
+    "conversation.watch": (ctx, args) => {
+      const listener = listenerArg<SessionView>(args, 0);
+      const host = side().host;
+      return watch(ctx, () => host.watch((view) => listener(view)));
+    },
     "conversation.history": (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const page = opt(args[1]);

@@ -16,6 +16,7 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
   const emitted: unknown[] = [];
   const outputs = new Set<(o: { terminalId: string; data: string; exited?: { code: number | null } }) => void>();
   const subscribers = new Set<(r: unknown) => void>();
+  const viewWatchers = new Set<(v: unknown) => void>();
   const closed: string[] = [];
   const opened: unknown[] = [];
   const grepped: unknown[] = [];
@@ -27,6 +28,7 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
         deliver: async (id: string, input: unknown) => (delivered.push({ id, input }), { seq: 1 }),
         history: (_id: string, q: { afterSeq: number; limit: number }) => o.historyThrows ? (() => { throw new Error("the log is unreadable"); })() : (o.records ?? []).filter((r) => (r as { seq: number }).seq > q.afterSeq).slice(0, q.limit),
         length: () => o.length ?? (o.records?.length ?? 0),
+        watch: (fn: (v: unknown) => void) => (viewWatchers.add(fn), () => viewWatchers.delete(fn)),
         subscribe: (_id: string, fn: (r: unknown) => void) => (subscribers.add(fn), () => subscribers.delete(fn)),
         onTransient: (_id: string, fn: (e: { type: string }) => void) => { if (o.transientThrows) throw new Error("no transients"); for (const e of o.transients ?? []) fn(e); return () => {}; },
       },
@@ -64,7 +66,7 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
   const router = createApiRouter({ registry: { get: (id: string) => (id === "tarot" || id === "other" ? record(id, granted) : undefined) }, handlers: [parts.handlers] });
   const call = (path: string, args: unknown[], over: Partial<{ pluginId: string; process: "shared" | "ui"; caller: Caller; session: string }> = {}) =>
     router({ pluginId: over.pluginId ?? "tarot", process: over.process ?? "shared", path, args, caller: over.caller ?? { kind: "plugin", pluginId: "tarot" }, ...(over.session ? { session: over.session } : {}) });
-  return { call, delivered, treeCalls, written, emitted, outputs, subscribers, closed, opened, grepped, forget: parts.forget };
+  return { viewWatchers, call, delivered, treeCalls, written, emitted, outputs, subscribers, closed, opened, grepped, forget: parts.forget };
 }
 
 const failure = (p: Promise<unknown>) => p.then(() => undefined, (e: unknown) => e as ContractError);
@@ -136,6 +138,17 @@ describe("the API's areas", () => {
     expect(w.outputs.size).toBe(0);
     expect((await failure(w.call("terminal.input", ["t_1", { data: "x" }], { process: "ui" })))?.code).toBe("not_found");
     expect(w.emitted).toEqual([{ type: "terminal_output", pluginId: "tarot", terminalId: "t_1", data: "gone\r\n", exited: { code: 1 } }]);
+  });
+
+  test("conversation.watch hands over each session's view as it changes, and stops when stopped", async () => {
+    const w = world({});
+    const got: unknown[] = [];
+    const stop = (await w.call("conversation.watch", [(v: unknown) => got.push(v)])) as () => void;
+    expect(w.viewWatchers.size).toBe(1);
+    for (const fn of w.viewWatchers) fn({ id: "code-9", kind: "coding" });
+    expect(got).toEqual([{ id: "code-9", kind: "coding" }]);
+    stop();
+    expect(w.viewWatchers.size).toBe(0);
   });
 
   test("follow: a replay whose read throws ends the follow and frees its watch, its queue not left growing", async () => {
