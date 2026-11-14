@@ -1773,9 +1773,24 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     cpSync(join(exampleDir, "sample-model"), join(folder, "model"), { recursive: true });
     writeFileSync(join(folder, "bot", "instructions.md"), "You are a test bot.\n");
     writeFileSync(join(folder, "tab", "layout.json"), JSON.stringify({ layout: 1, root: { stack: [{ spot: "conversation", grow: 1 }, { spot: "bot.stage", grow: 1 }], grow: 1 } }));
+    // Its host half: one command that cues the figure's `happy` expression through the plugin API (`avatar.control`), the ordinary path
+    // a bot plugin takes; the answer is the app's own (`ok`, or why the cue wasn't played).
+    mkdirSync(join(folder, "host"), { recursive: true });
+    writeFileSync(join(folder, "host", "index.ts"), [
+      "// The acceptance run's picture bot: its one command cues the renderer's `happy` expression with `api.avatar.cue`.",
+      "let held: { avatar: { cue(cue: unknown): Promise<unknown> | unknown } } | undefined;",
+      "export async function start(api: { avatar: { cue(cue: unknown): Promise<unknown> | unknown } }): Promise<void> { held = api; }",
+      "export async function stop(): Promise<void> {}",
+      "export async function cue(): Promise<{ text: string }> {",
+      "  if (held === undefined) return { text: \"cue: no api\" };",
+      "  return { text: `cue: ${JSON.stringify(await held.avatar.cue({ type: \"expression\", name: \"happy\" }))}` };",
+      "}",
+      "",
+    ].join("\n"));
     writeFileSync(join(folder, "clover.json"), JSON.stringify({
       manifest: 1, id: botId, name, description: "The acceptance run's bot with a community-format avatar.", version: "0.0.1", engines: { clover: "^1.0.0" },
-      contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
+      capabilities: ["avatar.control"], host: { entry: "host/index.ts", runtime: "bun" },
+      contributes: { commands: [{ name: "cue", description: "Cues the figure's happy expression", handler: "cue" }], bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
     }));
     const installed: string[] = [];
     try {
@@ -1814,7 +1829,20 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (!states.has("idle")) fail(`the quiet bot's stage never showed the idle picture (${[...states.keys()].join(", ") || "nothing"})`);
       if (states.has("talk")) fail("the quiet bot's stage showed the talk picture");
       const shown = [...states.entries()].map(([s, f]) => `${s} (${f})`).join(", ");
-      return `the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
+      // useAvatarControl: the bot's own command cues `happy` through the plugin API; the renderer's frame (which called setCatalogue and onCue
+      // through the hook) swaps to its second picture set, drawn by code, and says so in its own attributes.
+      const CUED = "(() => { const e = document.querySelector('[data-pngtuber]'); const svg = e && e.querySelector('svg[role=img]'); return e ? { state: e.getAttribute('data-pngtuber'), label: svg ? svg.getAttribute('aria-label') : null, img: !!e.querySelector('img') } : null; })()";
+      const ran = await until("the bot's cue command to answer", 30_000, async () => {
+        const r = await rpc.request<{ text?: string }>("command.run", { name: `${botId}.cue` }).catch(() => undefined);
+        return r?.text?.startsWith("cue:") && r.text.includes('"ok":true') ? r.text : undefined;
+      }, async () => `command.run said ${JSON.stringify(await rpc.request("command.run", { name: `${botId}.cue` }).catch((e) => String(e)))}`);
+      const cued = await until("the renderer showing the cued picture set", 15_000, async () => {
+        const r = await cdp.evaluate(first.session, CUED).catch(() => undefined) as { state: string; label: string | null; img: boolean } | null | undefined;
+        return r?.state === "happy" && r.label !== null ? r : undefined;
+      }, async () => `the renderer says ${JSON.stringify(await cdp.evaluate(first.session, CUED).catch(() => "?"))}; ${ran}`);
+      if (cued.img) fail("the cued picture set still draws the files' pictures beside the code-drawn one");
+      const cuedSaid = `useAvatarControl: the bot's command cued happy (${ran}) and the renderer's frame switched from idle to its code-drawn picture set "${cued.label}" (data-pngtuber=happy)`;
+      return `${cuedSaid}; the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
     } finally {
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
@@ -2616,6 +2644,32 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (Number.isNaN(Number(await attrOf("approvals"))) || Number.isNaN(Number(await attrOf("questions")))) fail(`the hooks gave no list: ${JSON.stringify(page.attrs)}`);
       const absent = [await attrOf("usersend"), await attrOf("composerhost")];
       if (absent.join(",") !== "undefined,undefined") fail(`useUserSend / useComposerHost for a third party's page should be undefined, were ${absent.join(", ")}`);
+      // useViewFrame: the hook was given the probe's box element; what the frame measured of it is compared with the harness's own
+      // measurement of the same element in the real window (its box and the viewport), and main's answer to the hook's report is in the app log
+      // (this plugin has no `browser` capability, so main refuses to place a view for it, and says so).
+      await until("the probe's frame box and surface answers", 20_000, async () => ((await attrOf("viewframe")) !== "" && (await attrOf("surfaceenv")) !== "" ? true : undefined), async () => `page said ${JSON.stringify((await find('[data-acceptance-window="page"]'))?.attrs)}`);
+      const frameSaid = await attrOf("viewframe");
+      const frameM = /^(-?\d+),(-?\d+) (\d+)x(\d+) in (\d+)x(\d+)$/.exec(frameSaid);
+      if (frameM === null) fail(`useViewFrame's element wasn't measured: ${JSON.stringify(frameSaid)}`);
+      const [fx, fy, fw, fh, vw, vh] = frameM!.slice(1).map(Number) as [number, number, number, number, number, number];
+      let own: { x: number; y: number; w: number; h: number; vw: number; vh: number } | undefined;
+      for (const d of await layerDocs()) {
+        const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acceptance-window="box"]'); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), vw: innerWidth, vh: innerHeight }; })()`).catch(() => null);
+        if (v !== null && typeof v === "object") own = v as typeof own;
+      }
+      if (own === undefined) fail("the probe's box element isn't in any of the plugin's documents");
+      const mine = own!;
+      if (fw <= 0 || fh !== 24) fail(`useViewFrame's element was ${fw}x${fh}, not a drawn box 24 tall`);
+      if (Math.abs(fw - mine.w) > 3 || Math.abs(fh - mine.h) > 1 || Math.abs(fx - mine.x) > 3 || Math.abs(fy - mine.y) > 3 || vw !== mine.vw || vh !== mine.vh) fail(`the frame's box ${frameSaid} differs from the harness's measure of the same element ${JSON.stringify(mine)}`);
+      if (fx + fw > vw + 1 || fy + fh > vh + 1) fail(`the frame's box ${frameSaid} lies outside its viewport`);
+      const refused = ctx.appLog().split("\n").filter((l) => l.includes("may not place the acceptance-window view"));
+      if (refused.length === 0) fail("main didn't answer the view frame's report (no `may not place the acceptance-window view` line in the app log)");
+      // useSurface / useSurfaceEnvironment: this frame is a tab's, not a surface window's root, so the request answers nothing and the environment is none.
+      const surfaceSaid = await attrOf("surface");
+      const envSaid = await attrOf("surfaceenv");
+      if (surfaceSaid !== "function; asked: undefined") fail(`useSurface from a tab's frame gave ${JSON.stringify(surfaceSaid)}`);
+      if (envSaid !== "none") fail(`useSurfaceEnvironment in a tab's frame gave ${JSON.stringify(envSaid)}, not none`);
+      const hooksSaid = `useViewFrame was given the probe's box and the frame measured it at ${frameSaid} (the harness measured the same element at ${mine.x},${mine.y} ${mine.w}x${mine.h} in ${mine.vw}x${mine.vh}); main answered its report: ${refused[0]!.replace(/^\S+\s*/, "").slice(0, 110)}; useSurface (${surfaceSaid}) and useSurfaceEnvironment (${envSaid}) answered for a frame on a tab, not on a surface window`;
       // useKept: counted twice, the child remounted, the count is kept.
       await press("kept +1", '[data-acceptance-window="kept"]');
       await press("kept +1 again", '[data-acceptance-window="kept"]');
@@ -2679,7 +2733,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const listed = await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].map((e) => (e.textContent || '').trim()).join(' | ')").catch(() => "?");
       if (stillListed !== false) fail(`the pill still lists the plugin as a target while it is off (menu: ${String(listed)})`);
       const offSaid = `switched off (plugin.setEnabled), the pill's menu no longer lists it (it lists: ${String(listed).slice(0, 80)})`;
-      return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}; ${offSaid}`;
+      return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; ${hooksSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}; ${offSaid}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
     }
