@@ -1,14 +1,15 @@
 // `/_t/` and a bot's own model files: served by the kinds the installed renderer of the bot's format declared (`avatar.formats`), only
 // from the folder the avatar sits in, by real path; everything else stays as it was (no JSON for themes, layouts, bots of no format).
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 mock.module("electron", () => ({ app: {}, ipcMain: {}, protocol: {}, webFrameMain: {}, BrowserWindow: class {} }));
 
 let handler: (request: Request) => Response | Promise<Response>;
-const dir = mkdtempSync(join(tmpdir(), "clover-avjson-"));
+// The long, real spelling (Windows' temp folder is a short name, `RUNNER~1`): the folders the route compares are real paths.
+const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "clover-avjson-")));
 
 function folder(name: string, files: Record<string, string>): string {
   const base = join(dir, name);

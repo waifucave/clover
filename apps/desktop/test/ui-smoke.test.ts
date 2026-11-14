@@ -186,7 +186,10 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     // The first click opens a file; the second saves one: each answer is in the file the smoke's picker reads, by kind.
     const saved = join(h, "export.bin");
     writeFileSync(pickFile, `open=${video}\nsave=${saved}\n`);
-    const r = smoke(electron(), [root], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_INPUT: "click", CLOVER_SMOKE_PICK_FILES: pickFile, CLOVER_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", CLOVER_SMOKE_SETTLE_MS: "1500" });
+    // A CI Linux runner has no GPU: Chromium gives a page WebGL there only through its software renderer (as the galleries' browser is
+    // launched), so this run asks for it; macOS and Windows have a GL context of their own.
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_INPUT: "click", CLOVER_SMOKE_PICK_FILES: pickFile, CLOVER_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", CLOVER_SMOKE_SETTLE_MS: "1500" });
     const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
     const frame = surfaces.find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
     expect(frame, r.output).toBeDefined();

@@ -12,7 +12,7 @@ import { cssVar } from "../../src/catalog";
 import { readTheme } from "../../src/theme";
 import type { ThemeLayer } from "./themes";
 
-export const ALPHA_LAYER: ThemeLayer = { id: "alpha", theme: readTheme(alphaTheme, { strict: true }), css: alphaCss, base: "plugins/alpha/tab/" };
+export const ALPHA_LAYER: ThemeLayer = { id: "alpha", theme: readTheme(alphaTheme, { strict: true, plugin: "alpha" }), css: alphaCss, base: "plugins/alpha/tab/" };
 
 const v = cssVar;
 

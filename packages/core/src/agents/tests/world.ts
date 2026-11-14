@@ -148,7 +148,11 @@ export class World {
     mkdirSync(this.project, { recursive: true });
     mkdirSync(this.cloverHome, { recursive: true });
     this.level = o.level ?? "automatic";
-    this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome });
+    // The fence's temp folder is the world's own: the default, /tmp, holds the world's folders when the machine's temp is /tmp (Linux), and a
+    // bot's agent's sandbox takes out every write root that holds its folder, leaving it no temp to write.
+    const fenceTemp = join(this.root, "fence-temp");
+    mkdirSync(fenceTemp, { recursive: true });
+    this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome, temp: fenceTemp });
     const others = Object.fromEntries(Object.entries(o.otherComputers ?? {}).map(([name, home]) => [name, { home }]));
     this.tree = new FakeTree({ clock: this.clock, computers: { ...others, [this.computer]: { home: this.userHome } }, botComputer: () => "Studio" });
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });

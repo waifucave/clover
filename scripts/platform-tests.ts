@@ -27,7 +27,7 @@
 // bun's failure, an empty list, a missing or short "Ran N tests across M files" summary (a dropped file is a failure),
 // and, with --config on Linux, on a skipped test or an empty file it can't account for (a macOS test left unmarked
 // would otherwise run nowhere). A clear Bun crash (exit 133 or a signal, no summary) is re-run once.
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -239,13 +239,21 @@ export function slowestTests(xml: string, n: number): Array<{ seconds: number; t
 
 interface Run { exitCode: number | null; output: string }
 
-function runBun(cwd: string, files: readonly string[], junit?: string, timeoutMs?: number): Run {
+/** Runs one `bun test`, its output shown as it comes (a job that hangs says which file it was in) and kept for the checks below. */
+function runBun(cwd: string, files: readonly string[], junit?: string, timeoutMs?: number, show = true): Promise<Run> {
   const args = ["test", ...(timeoutMs !== undefined ? ["--timeout", String(timeoutMs)] : []), ...(junit ? ["--reporter=junit", `--reporter-outfile=${junit}`] : []), ...files.map((f) => `./${f}`)];
-  const r = spawnSync(process.execPath, args, { cwd, encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 });
-  return { exitCode: r.status, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const take = (to: NodeJS.WriteStream) => (d: Buffer) => { const t = d.toString("utf8"); output += t; if (show) to.write(t); };
+    child.stdout.on("data", take(process.stdout));
+    child.stderr.on("data", take(process.stderr));
+    child.on("error", (e) => resolve({ exitCode: 1, output: `${output}${e.message}\n` }));
+    child.on("close", (code) => resolve({ exitCode: code, output }));
+  });
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
   const args = parseArgs(process.argv.slice(2));
   const cwd = join(repoRoot, args.cwd ?? ".");
@@ -270,7 +278,7 @@ function main(): number {
   if (args.checkKnownFailures && cfg) {
     for (const [f, e] of Object.entries(cfg.linuxKnownFailures)) {
       if (!existsSync(join(rootAbs, f))) continue; // configProblems names it
-      const r = runBun(cwd, [toCwd(f)], undefined, args.timeoutMs);
+      const r = await runBun(cwd, [toCwd(f)], undefined, args.timeoutMs, false);
       if (r.exitCode === 0) problems.push(`${f} now passes on Linux: remove it from linuxKnownFailures (owner ${e.owner})`);
       else console.log(`platform-tests: known Linux failure, still failing as listed: ${f} (owner ${e.owner}: ${e.cause})`);
     }
@@ -281,12 +289,10 @@ function main(): number {
   const tmp = mkdtempSync(join(tmpdir(), "platform-tests-"));
   try {
     const junit = (!args.darwin && cfg) || args.slowest > 0 ? join(tmp, "junit.xml") : undefined;
-    let r = runBun(cwd, files.map(toCwd), junit, args.timeoutMs);
-    process.stdout.write(r.output);
+    let r = await runBun(cwd, files.map(toCwd), junit, args.timeoutMs);
     if (isClearCrash(r.exitCode, r.output)) {
       console.log(`::warning::bun crashed (${r.exitCode === null ? "a signal" : `exit ${r.exitCode}`}, no summary): re-running once`);
-      r = runBun(cwd, files.map(toCwd), junit, args.timeoutMs);
-      process.stdout.write(r.output);
+      r = await runBun(cwd, files.map(toCwd), junit, args.timeoutMs);
     }
     problems.push(...runProblems(r.exitCode, r.output, files.length));
     if (junit && args.slowest > 0 && existsSync(junit)) {
@@ -309,4 +315,4 @@ function main(): number {
 }
 
 // exitCode, not exit(): a pipe takes the whole output (bun's report and summary) before the process ends.
-if (import.meta.main) process.exitCode = main();
+if (import.meta.main) void main().then((code) => { process.exitCode = code; });

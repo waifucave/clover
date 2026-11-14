@@ -447,7 +447,8 @@ import dns from "node:dns/promises";
 import net from "node:net";
 const out = {};
 try { out.proxied = await (await fetch("http://api.test:${listed}/")).text(); } catch (e) { out.proxied = String(e.cause?.code ?? e.message); }
-try { out.unlisted = (await fetch("http://other.test:${other}/")).status; } catch (e) { out.unlisted = String(e.cause?.code ?? e.message); }
+out.node = process.version;
+try { out.unlisted = (await fetch("http://other.test:${other}/")).status; } catch (e) { out.unlisted = String(e.cause?.code ?? e.message); out.unlistedWhy = String(e.cause?.message ?? e.message); }
 const connect = (host, port) => new Promise((resolve) => {
   const s = net.connect(port, host);
   s.setTimeout(5000, () => { s.destroy(); resolve("timeout"); });

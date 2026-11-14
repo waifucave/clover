@@ -112,11 +112,13 @@ function plugin(files: Record<string, Buffer | string>): string {
 describe("a plugin's icon, read and served", () => {
   test("one descriptor: a FIFO, a link at the end, an empty or too-big file give nothing (and never block)", () => {
     const folder = plugin({ "a.png": png(4, 4), "empty.png": "", "big.png": Buffer.alloc(ICON_MAX_BYTES + 1, 1) });
-    expect(Bun.spawnSync(["mkfifo", join(folder, "fifo.png")]).exitCode).toBe(0);
+    // A FIFO is a POSIX file: Windows has none to plant.
+    const fifo = process.platform !== "win32";
+    if (fifo) expect(Bun.spawnSync(["mkfifo", join(folder, "fifo.png")]).exitCode).toBe(0);
     symlinkSync(join(folder, "a.png"), join(folder, "link.png"));
     expect(readSmallFile(join(folder, "a.png"), ICON_MAX_BYTES)?.length).toBe(png(4, 4).length);
     const started = Date.now();
-    for (const name of ["fifo.png", "link.png", "empty.png", "big.png", "missing.png"]) expect([name, readSmallFile(join(folder, name), ICON_MAX_BYTES)]).toEqual([name, undefined]);
+    for (const name of [...(fifo ? ["fifo.png"] : []), "link.png", "empty.png", "big.png", "missing.png"]) expect([name, readSmallFile(join(folder, name), ICON_MAX_BYTES)]).toEqual([name, undefined]);
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 

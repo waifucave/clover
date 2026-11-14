@@ -69,7 +69,12 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 1100 }, de
 const problems = [];
 page.on("pageerror", (e) => problems.push(`page error: ${e.message}`));
 page.on("console", (m) => {
-  if (m.type() === "error") problems.push(`console error: ${m.text()}`);
+  if (m.type() !== "error") return;
+  // A plugin's icon is the app's own `/_icon/<id>` route, which a static page has no server for: the Plugins page's
+  // gallery rows ask for it and meet the puzzle that stands in for one that does not load (that is the state shown).
+  // Chromium's "Failed to load resource" line names the resource in its location, so only that route is let through.
+  if (m.text().startsWith("Failed to load resource") && /\/_icon\//.test(m.location().url)) return;
+  problems.push(`console error: ${m.text()}`);
 });
 
 await page.goto(pathToFileURL(join(site, "index.html")).href);
