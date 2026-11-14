@@ -517,4 +517,22 @@ describe("the bot tab kept across pages", () => {
     render(<KeptTab shown={true}><div data-clover-entry="clover/shell#x" /></KeptTab>);
     expect((document.querySelector(".cl-shell-kept") as HTMLElement).hasAttribute("data-held")).toBe(false);
   });
+
+  test("the cap lifts the hold with no animation frame at all (a hidden window, a display asleep)", async () => {
+    const raf = globalThis.requestAnimationFrame, caf = globalThis.cancelAnimationFrame;
+    // Frames asked for and never given.
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    try {
+      render(<KeptTab shown={true} holdMaxMs={80}><iframe data-clover-entry="alpha#room" /></KeptTab>);
+      const box = document.querySelector(".cl-shell-kept") as HTMLElement;
+      expect(box.hasAttribute("data-held")).toBe(true);
+      await act(() => new Promise((r) => setTimeout(r, 200)));
+      expect(box.hasAttribute("data-held")).toBe(false);
+      expect(box.style.visibility).toBe("");
+    } finally {
+      globalThis.requestAnimationFrame = raf;
+      globalThis.cancelAnimationFrame = caf;
+    }
+  });
 });
