@@ -126,8 +126,15 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
   const window: SurfaceHostApi = useCoalesced(surface);
   // Once per API object, then from `bot_changed` (a list bound afresh each render looped `bot.list`: ./pill-bots).
   const bots: PillHost["bots"] = usePillBots(api);
+  // The plugins' `pill.target` entries (title and handler data; the daemon runs the handler when the pill sends to one).
+  const listed = useSpotEntries("pill.target").entries;
+  const targets = useMemo<NonNullable<PillHost["targets"]>>(
+    () => listed.filter((e) => typeof e.fields.title === "string").map((e) => ({ ref: e.ref, pluginId: e.pluginId, pluginName: e.pluginName, id: e.id, title: e.fields.title as string })),
+    [listed],
+  );
   const host: PillHost = {
     bots,
+    ...(targets.length > 0 ? { targets } : {}),
     send: (to, text) => (send !== undefined ? send(to, text) : Promise.resolve()),
     ...(environment !== undefined ? { environment, window } : {}),
     t,

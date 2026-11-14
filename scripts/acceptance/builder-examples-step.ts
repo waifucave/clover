@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readExamples, type Example } from "../../plugins/clover/plugins/plugin-builder/test/examples";
-import { callTurn, fail, leave, until, type ExampleCtx } from "./example-steps";
+import { callTurn, fail, frames, leave, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { clickShown, drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
 
 export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) and ex-buddy's header and side panel on its bot's tab are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from Alpha; each removed afterwards";
@@ -157,7 +157,30 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await openSidebarEntry(ctx, "Ex fit");
     const page = await drawn(ctx, "ex-fit", "Ex fit", "its page");
     const tile = await drawn(ctx, "ex-fit-tile", "Sunny, 21", "ex-fit-tile's tile inside the page");
-    return `its page drawn from its sidebar entry ("${page.text.replace(/\s+/g, " ").trim().slice(0, 50)}") with ex-fit-tile's tile in it ("${tile.text.replace(/\s+/g, " ").trim().slice(0, 40)}")`;
+    // Its page fills its column (row 1.76): the frame the shell hosts it in is as tall as the column it stands in, the page inside
+    // reads the same height as its own window, and the page's own content is a good deal shorter than that (so a frame that took
+    // the content's height would be small).
+    const fill = await until("ex-fit's frame measured against its column", 20_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const v = await cdp.evaluate(d.session, `(() => {
+          const f = [...document.querySelectorAll('iframe[data-clover-fill]')].find((e) => /^ex-fit(?!-)/.test(e.getAttribute('data-clover-entry') || ''));
+          if (!f) return null;
+          let col = f.parentElement;
+          while (col && getComputedStyle(col).display === 'contents') col = col.parentElement;
+          const main = f.closest('.cl-window__main');
+          const r = f.getBoundingClientRect();
+          return JSON.stringify({ frame: Math.round(r.height), col: col ? Math.round(col.clientHeight - parseFloat(getComputedStyle(col).paddingTop || '0') - parseFloat(getComputedStyle(col).paddingBottom || '0')) : 0, colBox: col ? col.clientHeight + ' ' + getComputedStyle(col).padding + ' ' + col.className : '', main: main ? Math.round(main.getBoundingClientRect().height) : 0, entry: f.getAttribute('data-clover-entry') });
+        })()`).catch(() => null);
+        if (typeof v === "string") return JSON.parse(v) as { frame: number; col: number; colBox: string; main: number; entry: string };
+      }
+      return undefined;
+    }, async () => frames(cdp));
+    const inside = Number(await cdp.evaluate(page.session, "document.documentElement.clientHeight").catch(() => NaN));
+    const content = Number(await cdp.evaluate(page.session, "(() => { const kids = [...document.body.children]; return kids.length ? Math.max(...kids.map((e) => e.getBoundingClientRect().bottom)) : 0; })()").catch(() => NaN));
+    if (Math.abs(fill.frame - fill.col) > 2) fail(`ex-fit's frame is ${fill.frame}px tall, its column's content ${fill.col}px (${fill.entry}; column ${fill.colBox})`);
+    if (fill.main > 0 && fill.frame < fill.main * 0.6) fail(`ex-fit's frame (${fill.frame}px) doesn't fill the main column (${fill.main}px)`);
+    if (!Number.isFinite(inside) || Math.abs(inside - fill.frame) > 2) fail(`ex-fit's page reads a ${inside}px window inside a ${fill.frame}px frame`);
+    return `its page drawn from its sidebar entry ("${page.text.replace(/\s+/g, " ").trim().slice(0, 50)}") with ex-fit-tile's tile in it ("${tile.text.replace(/\s+/g, " ").trim().slice(0, 40)}"); its frame is ${fill.frame}px tall in a ${fill.col}px column (the page inside reads ${inside}px; its content ends at ${Math.round(content)}px)`;
   });
 
   // The bots: listed, and ex-buddy's header and side panel on its tab.

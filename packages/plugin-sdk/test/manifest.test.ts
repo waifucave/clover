@@ -775,6 +775,14 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
   });
 });
 
+describe("a pill target (`pill.target`) is data: a title and a handler, with no component", () => {
+  const target = (extra: Record<string, unknown>) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { ui: [{ spot: "pill.target", id: "lights", title: "Lights", ...extra }] } });
+  test("a handler alone is enough; with neither a handler nor a component it is still refused", () => {
+    expect(codes(target({ handler: "target" }))).toEqual([]);
+    expect(codes(target({}))).toContain("error:entry:ui_one_of:/contributes/ui/0");
+  });
+});
+
 describe("a message action (`conversation.message.action`): data the conversation draws, a press runs a `ui` handler", () => {
   const withAction = (action: Record<string, unknown>, extra: Record<string, unknown> = { host: { entry: "host/index.ts" } }) =>
     validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra, contributes: { ui: [{ spot: "conversation.message.action", id: "pin", ...action }] } });

@@ -978,7 +978,9 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     f.error("entry", "message_action_data", at, "a message action is data the conversation draws: `title`, `icon`, `call` and `on`, with no `component`, `web`, `style`, `layout` or `hide`");
     return false;
   }
-  if (kinds.length !== 1 && !commandOnly && !actionOnly) {
+  // A pill target is data too: the Dispatch pill draws its row from `title`, and the user's words go to `handler`.
+  const targetOnly = e.spot === "pill.target" && typeof e.handler === "string" && kinds.length === 0;
+  if (kinds.length !== 1 && !commandOnly && !actionOnly && !targetOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
