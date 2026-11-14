@@ -80,6 +80,13 @@ describe("the new fields", () => {
     expect(lines.indexOf("Everywhere, with a switch of its own: an island tab, tools, skills.")).toBe(lines.indexOf("It adds: bot, mcpServers, skills, ui.") + 1);
   });
 
+  test("a row for its bot in the sidebar (`sidebar.bot`, keyed by bot id) only as a part beside the bot, named on the Everywhere line", () => {
+    const row = (app: boolean) => mika({ ui: [{ spot: "sidebar.bot", key: "mika", component: "Row", ...(app ? { app: true } : {}) }] });
+    expect(row(false).issues.map((i) => i.code)).toEqual(["bot_spot_not_offered"]);
+    expect(row(true).issues).toEqual([]);
+    expect(botPartLines(row(true).manifest)).toEqual(["Everywhere, with a switch of its own: the bots' sidebar rows."]);
+  });
+
   test("an entry on a point another plugin declares is beside the bot; one on a point of its own tree is inside", () => {
     const parts = pluginParts({ id: "mika", contributes: { bot: { name: "Mika" }, "island.line": [{ id: "day", handler: "line" }], "mika.scenes": [{ id: "beach" }], "avatar.formats": [{ id: "png" }] } });
     expect(parts.beside.map((p) => [p.ref, p.kind])).toEqual([["island.line/0", "island.line"], ["avatar.formats/0", "avatar.formats"]]);
