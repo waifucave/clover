@@ -7,7 +7,7 @@
 //   mcp.stage                     her stage tools (tools.ts)
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
 //   islandLine                    her line on the island (the island's `island.line` point): what she is doing now
-//   scene, outfit, mood           her commands (/scene, /outfit, /mood)
+//   scene, outfit, mood           her commands (/scene, /outfit, /mood; /outfit writes her outfit setting on her own model)
 //   ui.pinReply                   the pin in her replies' row of actions: the reply's first sentence, pinned to her stage
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +22,7 @@ import { runStageTool, STAGE_TOOLS } from "./tools";
 
 interface AlphaApi extends StageApi {
   readonly plugin?: Pick<PluginSelf, "id">;
-  readonly settings: Pick<SettingsApi, "get">;
+  readonly settings: Pick<SettingsApi, "get"> & Partial<Pick<SettingsApi, "set">>;
   readonly avatar?: Pick<AvatarApi, "cue" | "catalogue" | "watch">;
   /** `conversation.read`: the pin reads the reply it pins from the log. */
   readonly conversation?: Partial<Pick<ConversationApi, "get" | "history">>;
@@ -43,7 +43,7 @@ const ready = (): StageStore => {
 
 export async function start(a: AlphaApi): Promise<void> {
   api = a;
-  store = new StageStore(a);
+  store = new StageStore(a, { bot: a.plugin?.id ?? "alpha" });
   await store.refreshScenes();
 }
 

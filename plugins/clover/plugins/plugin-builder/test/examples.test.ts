@@ -62,7 +62,11 @@ describe("each example passes Clover's validator", () => {
       const v = await validatePluginFolder(writeExample(root, ex), { os: "macos" });
       expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
       expect(v.ok).toBe(true);
-      if (ex.folder === "ex-buddy") expect(v.children.map((c) => c.id)).toEqual(["ex-buddy/settings"]);
+      if (ex.folder === "ex-buddy") {
+        expect(v.children.map((c) => c.id)).toEqual(["ex-buddy/status"]);
+        // Its Settings section is beside the bot ("app": true): the OK card says so on a line of its own.
+        expect(v.okText).toContain("Everywhere, with a switch of its own: a Settings section.");
+      }
     });
   }
 });
@@ -118,7 +122,7 @@ describe("all of them load through the registry in a temp home", () => {
       const r = opened.registry.get(ex.folder)!;
       expect({ id: ex.folder, state: r.state, ok: ["running", "waiting"].includes(r.state) }).toEqual({ id: ex.folder, state: r.state, ok: true });
     }
-    const child = opened.registry.get("ex-buddy/settings");
+    const child = opened.registry.get("ex-buddy/status");
     expect(child === undefined ? "missing" : ["running", "waiting"].includes(child.state) ? "loads" : child.state).toBe("loads");
   });
 
@@ -399,10 +403,10 @@ test("a child plugin with code and no engines of its own is invalid; with them, 
   const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-builder-child-engines-")));
   temps.push(root);
   const buddy = examples.find((e) => e.folder === "ex-buddy")!;
-  const child = JSON.parse(buddy.files["plugins/settings/clover.json"]!) as Record<string, unknown>;
+  const child = JSON.parse(buddy.files["plugins/status/clover.json"]!) as Record<string, unknown>;
   expect(child.engines).toEqual({ clover: "^1.0.0" });
   delete child.engines;
-  const dir = writeExample(root, { ...buddy, files: { ...buddy.files, "plugins/settings/clover.json": JSON.stringify(child) } });
+  const dir = writeExample(root, { ...buddy, files: { ...buddy.files, "plugins/status/clover.json": JSON.stringify(child) } });
   const v = await validatePluginFolder(dir, { os: "macos" });
   expect(JSON.stringify(v)).toContain("engines_missing");
 });

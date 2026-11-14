@@ -28,7 +28,7 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 | `platforms` | no | Where its code runs: some of `darwin-arm64`, `windows-x64`, `linux-x64`, `linux-arm64`; default all. |
 | `adult` | no | `true` keeps the whole tree off until the user confirms they are 18+. |
 | `enabledByDefault` | no | Children only (default `true`): `false` ships it off until the user turns it on. |
-| `scope` | no | Who gets its tools, skills, agents and hooks: `bots` (bots and the agents they start), `agents` (every agent, no bot), `both` (default), or `own-bot` (a bot's plugin: only its own bot and that bot's agents). |
+| `scope` | no | Who gets its tools, skills, agents and hooks: `bots` (bots and the agents they start), `agents` (every agent, no bot), `both` (default), or `own-bot` (in a plugin with a bot: inside the bot, only that bot, its side threads and the agents it starts). The default for its parts; each tool server, skill, agent definition, hook and command may say its own. |
 | `onlyBackends` | no | Only these agent backends receive it, e.g. `["claude-code"]`. Rarely needed. |
 | `host` | for host code | `{ "entry": "host/index.ts", "runtime": "bun" }`; see below. |
 | `client` | for components | `{ "entry": "client/index.ts", "css": ["client/style.css"], "isolated": true }`: `isolated` (default false) makes its pages cross-origin isolated, for `SharedArrayBuffer`; see plugin-ui. |
@@ -100,17 +100,19 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
 - **`mcpServers`** (by name: letters, digits, `_`, `-`): `type` `host` (the host half's `mcp.<name>` export) or
   `stdio` (`command`, `args`, `env`) or `http` (a remote server: `url`, `headers`). `tools`: per tool `preload` or `on-demand`, `"*"` the
   default (on-demand when unsaid). `readOnly` / `contained`: tools that skip the card (plugin-cards). `instructions`
-  (a Markdown file, about 4 KB at most), `perComputer`, `scope`, `when: { os }`. A session sees a tool as
-  `mcp__<server>__<tool>`.
-- **`skills`** (list of paths or globs): `skills/*/SKILL.md`. Each file starts with `---` frontmatter holding `name`
-  and `description`; the description is what a bot searches, so say when to use it.
+  (a Markdown file, about 4 KB at most), `perComputer`, `scope` (its own, over the plugin's: `own-bot` keeps the
+  server's tools inside the plugin's bot), `when: { os }`. A session sees a tool as `mcp__<server>__<tool>`.
+- **`skills`** (list): a path or glob (`skills/*/SKILL.md`), or `{ "path": "<glob>", "scope": "own-bot" }` for skills
+  inside the plugin's bot. Each file starts with `---` frontmatter holding `name` and `description`; the description is
+  what a bot searches, so say when to use it.
 - **`agents`** (list): a Markdown file path, or `{ id, name, backend, model, effort, instructions, computer, root,
-  plugins: { only, except } }`.
+  plugins: { only, except }, scope }` (`scope: "own-bot"`: a definition only the plugin's bot may start).
 - **`hooks`** (list): `{ id, on: [<events>], tools: ["Bash", "mcp__*"], handler | command + args, timeoutMs,
   scope: "bots" | "agents" | "both" | "own-bot" }`. Events and what each may return: plugin-catalog. `own-bot`
   limits it to the sessions of this tree's own bots (and the OK card says so).
-- **`commands`** (list): `{ name, description, args (JSON Schema), handler, runsOn }`: the user runs them from the
-  composer. `key` is accepted but not bound yet.
+- **`commands`** (list): `{ name, description, args (JSON Schema), handler, runsOn, scope }`: the user runs them from
+  the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
+  only that one. `key` is a default shortcut (building-plugins, "Limits today").
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
 - **`voices`** (list): `{ id, name, speak, listen, auth, handler }`.
 - **`voiceModes`** (list, at most one): `{ id, name, handler }`: a voice mode for the voice slot (Settings › Voice);
@@ -119,7 +121,8 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   Clover's own services use these; a bot building a plugin for a user rarely needs them. Their fields are in the SDK's
   schema (`ServiceSchema`: `{ id, name, handler, runsOn }`).
 - **`themes`** (list): `{ id, file }`, a theme file (plugin-examples has one; tokens in plugin-catalog).
-- **`locales`** (list): `{ lang, file }`: a JSON file of the plugin's strings in that language, read with `t`.
+- **`locales`** (list): `{ lang, file }`: a JSON file of the plugin's strings in that language, read with `t`. In a
+  plugin with a bot, `"app": true` lets a table translate other plugins' keys too (it is then beside the bot).
 - **`ui`** (list): the plugin's UI; next section.
 
 Every entry above may also carry `declares` (below).
@@ -161,6 +164,7 @@ Other plugins fill a UI spot with a `ui` entry (`"spot": "<your-id>.<name>"`) an
 A plugin may hold child plugins one level down, at `plugins/<folder>/clover.json`. A child has no `id` (it is
 `<parent-id>/<folder>`), no `namespace`, `version` or `adult` of its own, and may set `enabledByDefault: false`. One OK
 covers the whole tree, and a child that fails is off alone. A child with code (a `host` or a `client`) needs its own
-`engines` (`{ "clover": "^1.0.0" }`): it doesn't take its parent's, and without it the child is invalid. Use a child for an optional part, and for a bot's UI
-outside its own tab: a bot's plugin may put UI only in its tab's spots (`bot.header`, `bot.side`, `bot.stage`,
-`bot.controls`, `conversation`, `composer`…), with `when.bot` naming only itself.
+`engines` (`{ "clover": "^1.0.0" }`): it doesn't take its parent's, and without it the child is invalid. Use a child for an optional part
+the user may turn off on its own. A child is one way to bring something beside a bot; the other is the same plugin's
+entry marked `"app": true` (building-plugins, "What a plugin brings"): every such part comes under one switch, while
+each child has its own. A child that holds no bot of its own follows the app's rules, whatever its parent holds.

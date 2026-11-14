@@ -7,6 +7,7 @@
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PointsApi, SettingsApi, SyncedStore, UiSendApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
 import type { AvatarApi, AvatarCue, AvatarCueResult } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import { DEFAULT_OUTFIT, isOutfit, OUTFIT_SETTING, OUTFIT_VALUES, outfitCues, outfitOf, outfitTitle, pickOutfit, wearsHerOutfits } from "./outfits";
 import {
   applyStage, CATALOG_KEY, CATALOG_WRITES_PER_MINUTE, CONTROLS, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,
   STAGE_WRITES_PER_SECOND, stageBytes, type Scene, type StageCatalog, type StageChange, type StageResult, type StageState,
@@ -16,7 +17,10 @@ import {
 export interface StageApi {
   readonly storage: { readonly synced: Pick<SyncedStore, "get" | "set"> };
   readonly ui: UiSendApi;
-  readonly settings?: Pick<SettingsApi, "get">;
+  /** Her settings: `scene` read, `outfit` read and written (her outfit lives there, client/outfits.ts). */
+  readonly settings?: Pick<SettingsApi, "get"> & Partial<Pick<SettingsApi, "set">>;
+  /** `bots.read`: whether the user picked another avatar for her (the user layer's `avatar`), which leaves her outfit setting aside. */
+  readonly bots?: { get(bot: string): Promise<{ readonly userLayer?: readonly string[] }> };
   readonly points?: Pick<PointsApi, "entries">;
   /** The public avatar calls (`avatar.control`, `avatar.read`): how her stage reaches her figure, whatever draws it. */
   readonly avatar?: Pick<AvatarApi, "cue" | "catalogue">;
@@ -45,13 +49,49 @@ function readScenes(raw: unknown): Scene[] | undefined {
 export class StageStore {
   readonly #api: StageApi;
   readonly #now: () => number;
+  /** Her bot's id (her plugin's). */
+  readonly #bot: string;
   #chain: Promise<unknown> = Promise.resolve();
   #window = { start: 0, n: 0 };
   #catalogWindow = { start: 0, n: 0 };
 
-  constructor(api: StageApi, o: { now?: () => number } = {}) {
+  constructor(api: StageApi, o: { now?: () => number; bot?: string } = {}) {
     this.#api = api;
     this.#now = o.now ?? Date.now;
+    this.#bot = o.bot ?? "alpha";
+  }
+
+  /** Whether the model her stage shows wears her outfits: no other avatar picked for her (the user layer's), and the loaded
+   *  model's outfit parts are hers (or no model has said its names yet: her own is the one she starts with). */
+  async wearsHers(catalog: StageCatalog | undefined): Promise<boolean> {
+    const bot = await this.#api.bots?.get(this.#bot).catch(() => undefined);
+    if (bot?.userLayer?.includes("avatar") === true) return false;
+    return catalog === undefined || wearsHerOutfits(catalog.outfit);
+  }
+
+  /** The outfit her setting says (the default when it says none). */
+  async outfit(): Promise<string> {
+    return outfitOf(await this.#api.settings?.get(OUTFIT_SETTING).catch(() => undefined));
+  }
+
+  /** One of her outfits on or off, on her own model: her `outfit` setting picks it (the Edit page's picker shows the same),
+   *  and her figure is dressed in it while it is drawn. Nothing drawing her keeps the choice for when it is. */
+  async #dress(change: { part: string; on?: boolean }, state: StageState): Promise<StageResult> {
+    const part = change.part.normalize("NFC");
+    if (!isOutfit(part)) return { ok: false, said: `Her outfits are ${OUTFIT_VALUES.join(", ")} (her own model's; ${DEFAULT_OUTFIT} is the one she starts in).` };
+    const set = this.#api.settings?.set;
+    if (set === undefined) return { ok: false, said: "Her outfit setting can't be changed here." };
+    const next = pickOutfit(outfitOf(await this.#api.settings?.get(OUTFIT_SETTING).catch(() => undefined)), part, change.on);
+    // The renderer's no comes first, from what it says it does (the catalogue the core judges cues by), so a refusal saves
+    // nothing. Then the setting, then the cues: her tab dresses her from the setting too, and a cue sent before the setting
+    // changed would have it dress her back in the old one.
+    const drawn = await this.#api.avatar?.catalogue().catch(() => undefined);
+    if (drawn !== undefined && !drawn.capabilities.includes("outfits")) return { ok: false, said: `this renderer (${drawn.renderer}) doesn't do outfits` };
+    await set.call(this.#api.settings, OUTFIT_SETTING, next);
+    if (drawn !== undefined) for (const cue of outfitCues(next)) if ((await this.#cue(cue)).ok === false) break;
+    const dressed: StageState = { ...state, outfit: Object.fromEntries(OUTFIT_VALUES.map((o) => [o, o === next])) };
+    await this.#write(dressed);
+    return { ok: true, state: dressed, said: `Outfit: ${outfitTitle(next)}`, shown: { kind: "outfit", label: "Outfit", value: outfitTitle(next) } };
   }
 
   /** Publishes the scenes (hers and those other plugins add through `alpha.scenes`: `{ id, title }` each) under
@@ -143,6 +183,11 @@ export class StageStore {
       if (!counting && this.#window.n >= STAGE_WRITES_PER_SECOND) return { ok: false, said: "Her stage is changing too fast; try again in a moment." };
       if (change.kind === "expression" || change.kind === "motion" || change.kind === "outfit" || change.kind === "celebrate") await this.#syncCatalogue();
       const v = await this.read();
+      if (change.kind === "outfit" && (await this.wearsHers(v.catalog))) {
+        const dressed = await this.#dress(change, v.state);
+        if (dressed.ok) this.#window.n++;
+        return dressed;
+      }
       const r = applyStage(v.state, change, { ...(v.catalog ? { catalog: v.catalog } : {}), scenes: v.scenes });
       if (!r.ok) return r;
       if (stageBytes(r.state) > STAGE_MAX_BYTES) return { ok: false, said: "Her stage is full; unpin a note first." };

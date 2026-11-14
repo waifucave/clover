@@ -70,14 +70,14 @@ function fakeFrames(step = 16) {
 }
 
 describe("the VRM avatar with the app's avatar control", () => {
-  test("it publishes the mood expressions it has and the figure's box, plays a mood cue with a hold, and takes both back", async () => {
+  test("it publishes the mood expressions and outfit parts it has and the figure's box, plays a mood cue with a hold, switches an outfit part, and takes both back", async () => {
     const fake = fakeRenderer();
     const frames = fakeFrames();
     const listeners = new Set<(c: FigureCue) => void>();
     const names: (FigureNames | undefined)[] = [];
     const boxes: (FigureBox | undefined)[] = [];
     const control = { onCue: (l: (c: FigureCue) => void) => { listeners.add(l); return () => listeners.delete(l); }, setCatalogue: (n: FigureNames | undefined) => void names.push(n), setBox: (b: FigureBox | undefined) => void boxes.push(b) };
-    const { unmount } = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} control={control} />);
+    const { unmount, container } = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} control={control} />);
     await waitFor(() => expect(names.at(-1)).toBeDefined());
     const have = names.at(-1)!.expressions;
     expect(have).toContain("happy");
@@ -88,6 +88,14 @@ describe("the VRM avatar with the app's avatar control", () => {
     listeners.forEach((l) => l({ type: "expression", name: "nonsense" }));
     listeners.forEach((l) => l({ type: "lookAt", point: { x: 0.3, y: 0 } }));
     listeners.forEach((l) => l({ type: "lookAt", point: null }));
+    // Its outfit parts, with what shows; an outfit cue switches one, says so again, and the figure names what it wears.
+    expect(names.at(-1)!.outfits).toEqual([{ name: "lilac-dress", on: true }, { name: "navy-uniform", on: false }, { name: "yellow-raincoat", on: false }]);
+    expect(container.querySelector("figure")!.getAttribute("data-outfit")).toBe("lilac-dress");
+    listeners.forEach((l) => l({ type: "outfit", part: "lilac-dress", on: false }));
+    listeners.forEach((l) => l({ type: "outfit", part: "yellow-raincoat", on: true }));
+    listeners.forEach((l) => l({ type: "outfit", part: "cape", on: true }));
+    await waitFor(() => expect(container.querySelector("figure")!.getAttribute("data-outfit")).toBe("yellow-raincoat"));
+    expect(names.at(-1)!.outfits.filter((o) => o.on).map((o) => o.name)).toEqual(["yellow-raincoat"]);
     frames.run(300);
     unmount();
     expect(listeners.size).toBe(0);

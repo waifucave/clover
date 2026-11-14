@@ -84,6 +84,41 @@
       "default": "meadow",
       "scope": "device"
     },
+    "outfit": {
+      "type": "enum",
+      "title": {
+        "en": "Outfit",
+        "ja": "衣装"
+      },
+      "description": {
+        "en": "What she wears on her stage. It applies to her own model: with another avatar picked for her, that model shows its own outfit parts.",
+        "ja": "ステージで彼女が着る服。彼女自身のモデルに適用されます。別のアバターを選んでいるときは、そのモデル自身の衣装パーツが表示されます。"
+      },
+      "options": [
+        {
+          "value": "lilac-dress",
+          "title": {
+            "en": "Lilac dress",
+            "ja": "ライラックのドレス"
+          }
+        },
+        {
+          "value": "navy-uniform",
+          "title": {
+            "en": "Navy uniform",
+            "ja": "紺の制服"
+          }
+        },
+        {
+          "value": "yellow-raincoat",
+          "title": {
+            "en": "Yellow raincoat",
+            "ja": "黄色のレインコート"
+          }
+        }
+      ],
+      "default": "lilac-dress"
+    },
     "effects": {
       "type": "enum",
       "title": {
@@ -213,7 +248,7 @@
         "readOnly": [
           "stage_status"
         ],
-        "scope": "bots"
+        "scope": "own-bot"
       }
     },
     "hooks": [
@@ -282,7 +317,8 @@
           ],
           "additionalProperties": false
         },
-        "handler": "scene"
+        "handler": "scene",
+        "scope": "own-bot"
       },
       {
         "name": "mood",
@@ -309,13 +345,14 @@
           ],
           "additionalProperties": false
         },
-        "handler": "mood"
+        "handler": "mood",
+        "scope": "own-bot"
       },
       {
         "name": "outfit",
         "description": {
-          "en": "Turn one of Alpha's outfit parts on or off.",
-          "ja": "アルファの衣装の一部をオン・オフします。"
+          "en": "Change Alpha's outfit (lilac-dress, navy-uniform, yellow-raincoat); on another avatar picked for her, turn one of its parts on or off.",
+          "ja": "アルファの衣装を替えます（lilac-dress、navy-uniform、yellow-raincoat）。別のアバターでは、そのパーツをオン・オフします。"
         },
         "args": {
           "type": "object",
@@ -333,7 +370,8 @@
           ],
           "additionalProperties": false
         },
-        "handler": "outfit"
+        "handler": "outfit",
+        "scope": "own-bot"
       }
     ],
     "locales": [

@@ -13,23 +13,49 @@ from then on it runs.
 
 ## What a plugin brings, and where each thing may show
 
-A plugin is a box of things. Each thing plugs into something and follows that thing's rules: a tool or a skill goes to
-bots and coding agents, an island tab follows the island's rules, a part of the window follows the app's, and a bot
-follows the rules of the app's Bots feature.
+Whoever owns a plug sets the rules for what plugs into it. There is no kind of plugin to pick: a plugin is a box of
+things, and each thing follows the rules of what it plugs into. A bot follows the rules of Bots (the app's own part that
+holds bots), a tool or a skill goes to bots and coding agents, an island tab or a line on the island follows the
+island's rules, and a part of the window follows the app's.
 
-In this build a plugin that brings a bot (a `bot` entry) is held to these:
+A plugin that brings a bot (a `bot` entry) holds two kinds of things:
 
-| | a plugin that brings a bot | any other plugin |
+| | inside the bot | beside the bot |
 | :- | :- | :- |
-| where its UI goes | only inside its own bot's tab: a theme, a layout, components for the spots inside the tab, the look of approval cards there | any spot: the window's parts, Settings sections, the island, every bot's tab, or only some bots' tabs with `when.bot` |
-| what it can't dress | Settings, the bot's Edit page, the island, the pill, other bots' tabs. The check refuses such an entry (`bot_spot_outside_tab`, `bot_when_other_bot`) | nothing by this rule (a sealed card's inside takes only the `card.*` tokens, from anyone) |
-| its tools, skills, hooks | serve every bot, or only its own with `scope: "own-bot"` | serve every bot |
+| what makes it so | a `ui` entry (or a `locales` table) with no mark; a tool server, skill, agent definition, hook or command whose scope is `own-bot` (its own `scope`, else the plugin's) | a `ui` or `locales` entry with `"app": true`; a tool server, skill, agent definition, hook or command with any other scope; an entry on another plugin's point (`island.line`) |
+| where it goes | only that bot's tab, and only what Bots offers (below) | anywhere a plugin with no bot may put it: every bot's tab, the window's parts, Settings, the island |
+| who it serves | that bot alone: its conversation, its side threads and the agents it starts | every bot and coding agent its scope says |
+| how the user turns it off | with the bot (the plugin's own switch) | one switch for all of them ("its parts beyond the bot's tab"), so the user can keep the bot and turn the rest off |
 
-Leave the left sidebar alone in a bot's theme: it is the app's and is meant to look the same on every tab.
+**What Bots offers a bot, on its own tab only:** everything inside the tab (`bot.tab`, `bot.header`,
+`bot.header.action`, `bot.stage`, `bot.side`, `bot.controls`, `conversation`, `conversation.message`,
+`conversation.message.extra`, `conversation.message.action`, `tool.result`, `composer`, `composer.action`, `avatar`,
+`file.preview`); the top bar, which it may restyle or replace (`bar`, `chrome.title`, `chrome.action`,
+`chrome.actions`, `chrome.sidebar`, `chrome.drag`); and the right panels (`panel` keyed `browser` or `agent`,
+`chrome.panels`). Its own settings (the manifest's `settings`) are drawn by the app, not by the bot.
 
-A plugin that brings a bot and also wants something outside the bot's tab (a look for the whole app, an island tab, a
-Settings section) puts it in a **child plugin** in its folder (`plugins/<name>/clover.json`): one install and one OK
-card for the folder, and the child has its own on/off switch, so the user can keep the bot and turn the rest off.
+**What Bots never offers**, to a bot or to any entry tied to a bot's tab with `when.bot`: the left sidebar (`sidebar`,
+`sidebar.bot`, `sidebar.app`), Settings (`settings.section`) and the bots' Edit page (`bot.editor.section`). They look
+the same on every tab. The check refuses each case by name: `bot_spot_not_offered` (an unmarked entry on a spot Bots
+doesn't offer), `bot_panel_not_offered` (a panel other than `browser` or `agent`), `bot_when_other_bot` (an inside
+entry whose `when.bot` names another bot), `bot_tied_not_offered` (any plugin's entry on one of those five with
+`when.bot`) and `bot_editor_stock` (a bot's own `bot.editor.section`). Each message says the fix: mark the entry
+`"app": true` to show it everywhere, with a switch of its own. A bot's theme gets the same treatment: its `shell` block
+may shape the top bar and the panels (`bar`, `accent`, `bar.*`, `panel.*`); a sidebar name there is ignored, with the
+warning `shell_not_offered`.
+
+**More scoped wins.** On a bot's tab, what is limited to that bot (its own entries, an entry whose `when.bot` names it,
+or one the user ticked for it) beats what dresses every bot's tab, so a plugin that styles all bots' composers never
+takes the look a bot gives its own.
+
+**The island takes two things** from any plugin: a line (`island.line`: `{ id, handler }`, and the island asks the
+handler for a line of text, an icon and a progress, and draws it in its own style when Clover isn't in front;
+plugin-ui, "Putting a line on the island") and a whole tab (`island.tab`, a component; in a plugin with a bot, mark it
+`"app": true`).
+
+The OK card says what a plugin with a bot brings beside it, in one line ("Everywhere, with a switch of its own: …"),
+with a checkbox the user may untick. A child plugin in the folder (`plugins/<name>/clover.json`, plugin-manifest
+"Children") is still a way to bring an optional part with a switch of its own; it is no longer the only way.
 
 ## The tools (the only place the skills name them)
 
@@ -61,7 +87,7 @@ tool" for these.
 - **plugin-loop**: the whole loop, step by step: scaffold, check, install, edit in place, reload, read errors. Read it
   before your first tool call.
 - **plugin-examples**: minimal working plugins to start from: a tool, a settings section, a status-bar entry, a whole
-  app (a sidebar button and its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab, a model provider, a trigger, a
+  app (a sidebar button and its own page), an app whose tools let a bot drive its open page, a theme, a bot, a bot with its own tab and parts beside it, a model provider, a trigger, a
   point other plugins fill, a UI spot of your own that another plugin fills, and a page that fits the space it gets.
 - **plugin-manifest**: `clover.json` field by field.
 - **plugin-catalog**: everything a plugin can add or use, from the SDK's catalogs: points, spots, capabilities and the
@@ -95,8 +121,9 @@ the user.
 
 ## Limits today (don't build on these)
 
-- A bot's plugin adds UI only in its own tab; UI anywhere else goes in a child plugin of it (plugin-manifest,
-  "Children").
+- A bot's own `panel` entry for `browser` or `agent` passes the check, but this build doesn't draw a replacement panel
+  yet; a bot's settings show on the Plugins page until its Edit page has their section; and the switch for a plugin's
+  parts beside its bot is the OK card's checkbox, with no toggle on the Plugins page yet.
 - A command's `key` (`mod+shift+k`) is a default shortcut while the Clover window has the focus; one that clashes with
   the app's own or another plugin's stays unbound.
 - There is no point for an app page's own menu or context menu.

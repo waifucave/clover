@@ -249,6 +249,27 @@ describe("PluginFolders", () => {
     ]);
   });
 
+  test("a bundled bot plugin updated with its tools and commands moved inside the bot and a new setting runs again on the next scan with no card (Alpha's own-bot step, 2026-11-14)", async () => {
+    const w = world();
+    const alpha = join(w.bundledDir, "alpha");
+    const bot = { bot: { name: "Alpha", instructions: "bot/instructions.md" } };
+    const server = (scope: string) => ({ stage: { type: "host", tools: { "*": "preload" }, scope } });
+    const command = (scope?: string) => [{ name: "outfit", description: { en: "Outfit." }, handler: "outfit", ...(scope ? { scope } : {}) }];
+    w.write(alpha, {
+      "clover.json": manifest("alpha", { scope: "own-bot", host: { entry: "server/index.ts" }, settings: { scene: { type: "enum", title: { en: "Scene" }, options: ["meadow"], default: "meadow" } }, contributes: { ...bot, mcpServers: server("bots"), commands: command() } }),
+      "bot/instructions.md": "You are Alpha.\n", "server/index.ts": "export const outfit = () => ({ text: 'ok' });\n",
+    });
+    await w.folders.scan();
+    expect(w.core.get("alpha")).toMatchObject({ state: "running", source: "bundled" });
+    const was = w.core.get("alpha")!.treeHash;
+    w.write(alpha, {
+      "clover.json": manifest("alpha", { scope: "own-bot", host: { entry: "server/index.ts" }, settings: { scene: { type: "enum", title: { en: "Scene" }, options: ["meadow"], default: "meadow" }, outfit: { type: "enum", title: { en: "Outfit" }, options: ["lilac-dress", "navy-uniform"], default: "lilac-dress" } }, contributes: { ...bot, mcpServers: server("own-bot"), commands: command("own-bot") } }),
+    });
+    await w.folders.scan();
+    expect(w.core.get("alpha")).toMatchObject({ state: "running", source: "bundled" });
+    expect(w.core.get("alpha")!.treeHash).not.toBe(was);
+  });
+
   test("a development folder gets the static checks too: a dependency it doesn't ship, or a reach outside, makes it invalid (#234's check 5, K3)", async () => {
     const w = world();
     const dev = join(w.home, "dev", "luna");

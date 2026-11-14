@@ -336,3 +336,46 @@ test("plugin-ui's island line section matches the island's rules", async () => {
   const island = JSON.parse(readFileSync(join(ROOT, "plugins/clover/plugins/island/clover.json"), "utf8"));
   expect(Object.keys(island.contributes.ui[0].declares)).toContain("island.line");
 });
+
+// The plug rule as the skills teach it (spec §5.5's first block): held to the offer list, the never list, the check's
+// codes and the OK card's line, and no kind of plugin named as a type.
+describe("the skills teach the plug rule as built", () => {
+  const entry = text(ENTRY);
+  const section = entry.slice(entry.indexOf("## What a plugin brings"), entry.indexOf("## The tools"));
+  test("the entry skill names every spot Bots offers, the two panels, and the five it never offers", async () => {
+    const { BOTS_OFFER, SAME_ON_EVERY_TAB } = await import("@waifucave/clover-plugin-sdk");
+    for (const [spot, offer] of BOTS_OFFER) {
+      expect({ spot, named: section.includes(`\`${spot}\``) }).toEqual({ spot, named: true });
+      if (offer !== true) for (const key of offer) expect({ spot, key, named: section.includes(`\`${key}\``) }).toEqual({ spot, key, named: true });
+    }
+    for (const spot of SAME_ON_EVERY_TAB) expect({ spot, never: section.includes(`\`${spot}\``) }).toEqual({ spot, never: true });
+  });
+  test("each refusal code it names is the check's, and the old one is gone from every skill", () => {
+    const validate = readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/validate.ts"), "utf8") + readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/tree.ts"), "utf8");
+    const codes = [...section.matchAll(/`((?:bot|shell)_[a-z_]+)`/g)].map((m) => m[1]!);
+    expect(codes.length).toBeGreaterThanOrEqual(6);
+    for (const code of codes) expect({ code, real: validate.includes(`"${code}"`) }).toEqual({ code, real: true });
+    for (const n of names) expect({ n, old: text(n).includes("bot_spot_outside_tab") }).toEqual({ n, old: false });
+  });
+  test("no skill names a kind of plugin as a type", () => {
+    for (const n of names) expect({ n, typed: /\b(bot|app) plugins?\b/i.test(text(n).replace(/[`"][^`"\n]*[`"]/g, "")) }).toEqual({ n, typed: false });
+  });
+  test("a part beside the bot is `\"app\": true` and gets the OK card's line; own-bot on each part kind validates", () => {
+    expect(section).toContain('"app": true');
+    expect(section).toContain("Everywhere, with a switch of its own");
+    const r = validateManifest({
+      manifest: 1, id: "luna", name: "Luna", engines: { clover: "^1.0.0" }, client: { entry: "client/index.ts" }, host: { entry: "host/index.ts" },
+      contributes: {
+        bot: { name: "Luna", instructions: "bot/instructions.md" },
+        ui: [{ spot: "bot.side", component: "Side" }, { spot: "island.tab", id: "day", title: "Luna's day", component: "Day", app: true }],
+        mcpServers: { stage: { type: "host", scope: "own-bot" } },
+        skills: [{ path: "skills/*/SKILL.md", scope: "own-bot" }],
+        agents: [{ id: "helper", name: "Helper", backend: "clover-code", instructions: "agents/helper.md", scope: "own-bot" }],
+        commands: [{ name: "wave", description: { en: "Wave." }, handler: "wave", scope: "own-bot" }],
+      },
+    });
+    expect(r.issues.filter((i) => i.severity === "error").map((i) => i.code)).toEqual([]);
+    const refused = validateManifest({ manifest: 1, id: "luna", name: "Luna", engines: { clover: "^1.0.0" }, client: { entry: "client/index.ts" }, contributes: { bot: { name: "Luna", instructions: "bot/instructions.md" }, ui: [{ spot: "island.tab", id: "day", title: "Luna's day", component: "Day" }] } });
+    expect(refused.issues.map((i) => i.code)).toContain("bot_spot_not_offered");
+  });
+});

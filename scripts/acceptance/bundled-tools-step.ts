@@ -54,7 +54,9 @@ const INPUTS: Record<string, Record<string, unknown>> = {
 const HONEST: Record<string, RegExp> = {
   set_expression: /Her tab hasn't loaded a model yet|The model has no expression/,
   play_motion: /Her tab hasn't loaded a model yet|The model has no motion/,
-  toggle_outfit: /Her tab hasn't loaded a model yet|The model has no outfit part/,
+  // On her own model a name that isn't one of her outfits is refused with their names (plugins/alpha/server/store.ts), so the
+  // smoke's call changes nothing.
+  toggle_outfit: /Her tab hasn't loaded a model yet|The model has no outfit part|Her outfits are lilac-dress, navy-uniform, yellow-raincoat/,
 };
 
 /** What a bundled plugin calling into a core that doesn't serve the call looks like. */

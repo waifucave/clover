@@ -10,13 +10,13 @@ const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "../../../plugins/al
 const engines = { clover: "^1.0.0" };
 
 describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
-  test("Alpha: her UI, skills, agent, hooks and commands are inside her; her stage server (scope `bots`) and her island line are beside; her OK lines are as they were", () => {
+  test("Alpha: her UI, her stage server (scope `own-bot`), skills, agent, hooks and commands are inside her; her island line is beside; her OK lines are as they were", () => {
     const r = validateManifest(ALPHA, { bundled: true });
     expect(r.issues).toEqual([]);
     const parts = pluginParts(r.manifest);
-    // The island's point is the island's plug, not her tab: beside her, under the switch.
-    expect(parts.beside.map((p) => p.ref)).toEqual(["mcpServers/stage", "island.line/0"]);
-    expect(parts.inside.map((p) => p.ref)).toEqual(["ui/0", "ui/1", "ui/2", "ui/3", "ui/4", "ui/5", "locales/0", "locales/1", "skills/0", "agents/0", "hooks/0", "hooks/1", "hooks/2", "commands/0", "commands/1", "commands/2"]);
+    // The island's point is the island's plug, not her tab: beside her, under the switch. Her stage tools are hers alone.
+    expect(parts.beside.map((p) => p.ref)).toEqual(["island.line/0"]);
+    expect(parts.inside.map((p) => p.ref)).toEqual(["ui/0", "ui/1", "ui/2", "ui/3", "ui/4", "ui/5", "locales/0", "locales/1", "mcpServers/stage", "skills/0", "agents/0", "hooks/0", "hooks/1", "hooks/2", "commands/0", "commands/1", "commands/2"]);
     expect(describeOk(r)).toEqual([
       "alpha runs code on your computers.",
       "It adds: bot, themes, mcpServers, hooks, island.line, skills, agents, commands, locales, ui.",

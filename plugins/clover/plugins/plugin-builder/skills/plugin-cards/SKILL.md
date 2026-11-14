@@ -64,9 +64,9 @@ Never put a tool that changes anything outside the plugin's display on either li
 
 ## Other cards a plugin can cause
 
-- A bot plugin that picks its own model (`bot.model.default`): the user gets a card before the bot first uses that
+- A plugin whose bot picks its own model (`bot.model.default`): the user gets a card before the bot first uses that
   provider. Leave `model` out to use the user's default model and skip it.
-- A bot plugin with a `voice`: a card before that voice first speaks.
+- A plugin whose bot has a `voice`: a card before that voice first speaks.
 - `required` settings and sign-ins (`auth`): not cards, but the plugin waits until the user fills them in.
 
 ## Asking for the least
@@ -76,6 +76,6 @@ Never put a tool that changes anything outside the plugin's display on either li
 3. Keep files the plugin makes in its data folder (no capability). When it needs the user's own files, ask for
    `files` and work on what the user picks (plugin-ui, "Files and media"), not on paths it chooses itself.
 4. One network host, named exactly, rather than several; none if the plugin can work offline.
-5. A bot's plugin: `scope: "own-bot"` on the plugin (its persona: skills, agents, hooks) or on its hooks, and no `model` unless the bot needs a particular one.
+5. A plugin with a bot: keep what belongs to the bot inside it with `scope: "own-bot"` (on the plugin, or on one tool server, skill, agent definition, hook or command), and no `model` unless the bot needs a particular one. A part beside the bot (`"app": true`, or a tool for every bot) adds a line to the card and a switch of its own.
 6. Mark read-only tools `readOnly` and display-only tools `contained`, honestly; the card names them.
 7. Say all of it to the user before the install, in plain words, so the card holds no surprise.

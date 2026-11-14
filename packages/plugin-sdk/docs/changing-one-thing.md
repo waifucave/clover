@@ -46,7 +46,7 @@ In a list spot (`bot.header.action`, `status`, `sidebar.app`…), a `hide` names
 ]
 ```
 
-A bot plugin's entries apply in its own tab only; any other plugin's apply in every tab. The user's own choices win.
+Entries inside a bot apply in its own tab only; any other plugin's, and a bot's entries marked `"app": true`, apply in every tab. The user's own choices win.
 The bot editor's "Hidden by plugins" lists each part a plugin's hide takes out of that bot's tab, which plugin hid it,
 and a switch that shows it again (in the user's UI settings, the spot's `shown` list names the hide they switched off).
 Limits:
@@ -99,7 +99,7 @@ the usual rules pick one and Settings shows the choice. The window's top-bar but
 
 ## Move or resize one part
 
-Only for a bot's own tab: a bot plugin's `tab/layout.json` may start from the stock tab and say only what changes.
+Only for a bot's own tab: the `tab/layout.json` of the plugin that holds the bot may start from the stock tab and say only what changes.
 
 ```json
 { "layout": 1, "extends": "default", "changes": [

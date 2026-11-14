@@ -12,6 +12,7 @@ import { Grass } from "./grass";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 import { localDay } from "./seen";
 import { controlsInset, roomSize, tabWidth, TOGGLE_GAP_PX, TOGGLE_PX } from "./room-size";
+import { cuesToDress, dressedIn, nextOutfit, OUTFIT_SETTING, outfitOf, outfitTitle, wearsHerOutfits, type Outfit } from "./outfits";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
 const UI = 'ui-rounded, "SF Pro Rounded", system-ui, "Hiragino Sans", sans-serif';
@@ -178,6 +179,42 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
     el.textContent = CSS;
     document.head.append(el);
   }, []);
+  // Her outfit (her `outfit` setting, the Edit page's picker's): on her own model her stage dresses her in it whenever the
+  // setting or the model changes. With another avatar picked for her, the setting is left aside and that model's parts stay
+  // as they are.
+  const [outfit, setOutfit] = useState<Outfit | undefined>();
+  useEffect(() => {
+    const read = () => void api.settings?.get(OUTFIT_SETTING).then((v) => setOutfit(outfitOf(v)), () => setOutfit(outfitOf(undefined)));
+    read();
+    return api.settings?.watch?.(OUTFIT_SETTING, read);
+  }, [api]);
+  const parts = cat?.outfits ?? [];
+  const hers = bot !== undefined && bot.otherAvatar !== true && wearsHerOutfits(parts.map((o) => o.name));
+  const dressed = outfit !== undefined && dressedIn(parts, outfit);
+  // What her figure shows now, part by part: any change while she isn't dressed in her outfit (a cue that landed, or her model
+  // loaded again mid-way and starting from its own defaults) dresses her again from what it shows, until she is.
+  const showing = parts.map((o) => `${o.name}:${o.on ? 1 : 0}`).join(" ");
+  // The last cues her tab sent to dress her and what came back, on the room for a test to read (`data-dressing`).
+  const sent = useRef<string[]>([]);
+  useEffect(() => {
+    if (!hers || outfit === undefined || dressed) return;
+    let live = true;
+    void (async () => {
+      // The setting as it is now: her tool or the Edit page may have changed it since this frame read it.
+      const asked = api.settings?.get(OUTFIT_SETTING);
+      const now = asked === undefined ? outfit : outfitOf(await asked.catch(() => outfit));
+      if (!live) return;
+      if (now !== outfit) { setOutfit(now); return; }
+      for (const cue of cuesToDress(parts, outfit)) {
+        if (!live) return;
+        const r = await avatar?.cue?.(cue).catch((e: unknown) => ({ ok: false, reason: String(e) }));
+        sent.current = [...sent.current.slice(-7), `${cue.part}:${cue.on ? 1 : 0}=${r === undefined ? "none" : r.ok ? "ok" : (r as { reason?: string }).reason}`];
+      }
+    })();
+    return () => { live = false; };
+    // `parts` is read through `showing`, its on/off by name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hers, outfit, dressed, avatar, showing, api]);
   // The window's state: the sidebar beside her tab (its measured width sizes her room) and how far the window's own buttons reach.
   useEffect(() => shell?.watch?.(setWin), [shell]);
 
@@ -220,10 +257,13 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const play = (cue: AvatarCue): void => {
     void avatar?.cue?.(cue).then((r) => setSaid(r.ok ? "" : r.message), () => setSaid("That didn't play"));
   };
-  const tools: { name: string; glyph: ReactNode; off: string | undefined; go: () => void }[] = [
+  const tools: { name: string; glyph: ReactNode; off: string | undefined; title?: string; go: () => void }[] = [
     { name: "Wave", glyph: WAVE, off: why("motions", wave !== undefined, "This model has no wave"), go: () => wave && play({ type: "motion", name: wave }) },
     { name: "Pose", glyph: POSE, off: why("motions", poses.length > 0, "This model has no other motions"), go: () => { const n = poses[turn.current.pose++ % poses.length]; if (n) play({ type: "motion", name: n }); } },
-    { name: "Outfit", glyph: OUTFIT, off: why("outfits", outfits.length > 0, "This model has no outfit parts"), go: () => { const o = outfits[turn.current.outfit++ % outfits.length]; if (o) play({ type: "outfit", part: o.name, on: !o.on }); } },
+    // On her own model the button puts on her next outfit (her setting, so the Edit page's picker agrees); on another model it switches its parts in turn.
+    hers && outfit !== undefined
+      ? { name: "Outfit", glyph: OUTFIT, off: undefined, title: `Outfit: ${outfitTitle(outfit)}`, go: () => void api.settings?.set(OUTFIT_SETTING, nextOutfit(outfit)).catch(() => setSaid("Her outfit didn't change")) }
+      : { name: "Outfit", glyph: OUTFIT, off: why("outfits", outfits.length > 0, "This model has no outfit parts"), go: () => { const o = outfits[turn.current.outfit++ % outfits.length]; if (o) play({ type: "outfit", part: o.name, on: !o.on }); } },
     { name: "Expression", glyph: SMILE, off: why("expressions", exprs.length > 0, "This model has no expressions"), go: () => setListing((o) => !o) },
   ];
   // The bubble sits beside her head: from the figure's box (the renderer's own, or the app's default), else a fixed place in the upper part of the stage.
@@ -238,7 +278,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   })();
 
   return (
-    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} style={{ "--rm-title-left": `${controlsInset(win) + TOGGLE_PX + TOGGLE_GAP_PX}px` } as CSSProperties} aria-label="Alpha's room">
+    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} data-dressing={`${outfit ?? "?"} | ${showing} | ${sent.current.join(" ")}`} style={{ "--rm-title-left": `${controlsInset(win) + TOGGLE_PX + TOGGLE_GAP_PX}px` } as CSSProperties} aria-label="Alpha's room">
       <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} className="rm__grass" /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>
@@ -257,7 +297,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
         </section>
         <div className="rm__tools" role="toolbar" aria-label="Stage tools">
           {tools.map((t) => (
-            <button key={t.name} type="button" className="rm__tool" aria-label={t.name} aria-disabled={t.off !== undefined || undefined} title={t.off ?? t.name} aria-expanded={t.name === "Expression" && t.off === undefined ? listing : undefined} onClick={() => { if (t.off === undefined) t.go(); }}><span>{t.glyph}</span>{t.name}</button>
+            <button key={t.name} type="button" className="rm__tool" aria-label={t.name} aria-disabled={t.off !== undefined || undefined} title={t.off ?? t.title ?? t.name} aria-expanded={t.name === "Expression" && t.off === undefined ? listing : undefined} onClick={() => { if (t.off === undefined) t.go(); }}><span>{t.glyph}</span>{t.name}</button>
           ))}
           {listing && exprs.length > 0 ? (
             <div className="rm__list" role="menu" aria-label="Expressions">

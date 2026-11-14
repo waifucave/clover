@@ -94,6 +94,30 @@ export interface LoadedAvatar {
   focus: { x: number; y: number; z: number };
 }
 
+/** The most outfit parts a model may name; a model marking more has the first this many. */
+export const OUTFIT_PARTS_MAX = 32;
+// eslint-disable-next-line no-control-regex
+const OUTFIT_NAME = /^[^\u0000-\u001f\u007f-\u009f\u2028\u2029]{1,64}$/;
+
+/**
+ * A model's outfit parts: the nodes its author marks in the glTF node's `extras` with `"clover": { "outfit": "<name>" }`
+ * (several nodes may carry one name: a dress's bodice, skirt and sleeves switch together). A part shows as the file draws
+ * it, unless the mark also says `"on": false`, when it starts hidden (an alternative outfit). Switching a part only shows or
+ * hides its nodes; nothing else in the model changes. By name, in the order the model first names them.
+ */
+export function outfitParts(root: Object3D): Map<string, Object3D[]> {
+  const parts = new Map<string, Object3D[]>();
+  root.traverse((o) => {
+    const mark = (o.userData as { clover?: { outfit?: unknown; on?: unknown } } | undefined)?.clover;
+    const name = mark?.outfit;
+    if (typeof name !== "string" || !OUTFIT_NAME.test(name)) return;
+    if (!parts.has(name) && parts.size >= OUTFIT_PARTS_MAX) return;
+    if (mark?.on === false) o.visible = false;
+    parts.set(name, [...(parts.get(name) ?? []), o]);
+  });
+  return parts;
+}
+
 export class AvatarScene {
   readonly scene = new Scene();
   readonly camera = new PerspectiveCamera(24, 1, 0.05, 20);
@@ -108,6 +132,8 @@ export class AvatarScene {
   /** The figure's height, top and the head's height, measured once it loads. */
   private bounds = { top: 1.45, bottom: 0, head: 1.3, left: -0.3, right: 0.3, z: 0 };
   private lookTarget: Object3D | null = null;
+  /** The model's outfit parts (`outfitParts`), by name. */
+  private outfits = new Map<string, Object3D[]>();
   private disposed = false;
   private framing: Framing;
   private crop: Crop | undefined;
@@ -167,6 +193,7 @@ export class AvatarScene {
     });
     this.unload();
     this.vrm = vrm;
+    this.outfits = outfitParts(vrm.scene);
     this.scene.add(vrm.scene);
     this.measure(vrm);
     const focus = this.frame(this.framing);
@@ -263,6 +290,19 @@ export class AvatarScene {
     return em ? MOOD_EXPRESSIONS.filter((n) => em.getExpression(n) != null) : [];
   }
 
+  /** The outfit parts this model marks, each with whether it shows now. */
+  outfitNames(): { name: string; on: boolean }[] {
+    return [...this.outfits].map(([name, nodes]) => ({ name, on: nodes.some((n) => n.visible) }));
+  }
+
+  /** Shows or hides an outfit part's nodes; false when the model has no part by that name. */
+  setOutfit(name: string, on: boolean): boolean {
+    const nodes = this.outfits.get(name);
+    if (nodes === undefined) return false;
+    for (const n of nodes) n.visible = on;
+    return true;
+  }
+
   /** Makes the figure look at a point of the stage in its own square (-1 to 1 from the centre, y down); null: at
    *  nothing in particular. */
   lookAt(point: { x: number; y: number } | null): void {
@@ -324,6 +364,7 @@ export class AvatarScene {
     this.scene.remove(this.vrm.scene);
     VRMUtils.deepDispose(this.vrm.scene);
     this.vrm = null;
+    this.outfits = new Map();
   }
 
   dispose(): void {

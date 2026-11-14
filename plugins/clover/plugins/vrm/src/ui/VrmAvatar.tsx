@@ -5,7 +5,9 @@
 // paused), spec open question 33's budget, and draws at most 30 frames a second at rest, 60 while speech plays;
 // with reduced motion the body holds still and only the eyes and mouth move. The model's licence fields are
 // honoured: a model that asks for credit, or that its maker marked a placeholder, carries a credit line, on a
-// plate in a band of its own below the avatar, never over it.
+// plate in a band of its own below the avatar, never over it. A model's outfit parts are the nodes its author marks in
+// the glTF node's `extras` as `"clover": { "outfit": "<name>" }` (`"on": false` for one that starts hidden, an
+// alternative outfit; several nodes may share a name): the catalogue lists them, and an outfit cue shows or hides them.
 //
 // The file is read with a running cap: a Content-Length over it is refused before the body is read, and the
 // body streams in until it passes the cap, then stops.
@@ -176,6 +178,10 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const scene = useRef<AvatarScene | null>(null);
   const [status, setStatus] = useState<Status>({ state: "loading" });
+  /** The outfit parts showing, by name (space-separated), for the figure's `data-outfit`. */
+  const [worn, setWorn] = useState("");
+  /** The last outfit cues it heard, for a test to read (`data-cues`). */
+  const heard = useRef<string[]>([]);
   const [visible, setVisible] = useState(true);
   const latest = useRef(props);
   latest.current = props;
@@ -378,8 +384,19 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
     const sc = scene.current;
     if (!control || status.state !== "ready" || !sc) return;
     const have = sc.expressionNames();
-    control.setCatalogue({ expressions: have, motions: [], outfits: [] });
+    // The model's outfit parts (its author's marks), each with whether it shows: said again whenever one switches.
+    const tell = () => {
+      const outfits = sc.outfitNames();
+      control.setCatalogue({ expressions: have, motions: [], outfits });
+      setWorn(outfits.filter((o) => o.on).map((o) => o.name).join(" "));
+    };
+    tell();
     const play = (c: FigureCue) => {
+      if (c.type === "outfit") {
+        heard.current = [...heard.current.slice(-7), `${c.part}:${c.on ? 1 : 0}`];
+        if (sc.setOutfit(c.part, c.on)) tell();
+        return;
+      }
       if (c.type === "expression" && (have as readonly string[]).includes(c.name) && (MOOD_EXPRESSIONS as readonly string[]).includes(c.name)) {
         const old = cued.current.expression;
         cued.current.expression = { name: c.name, level: old?.name === c.name ? old.level : 0, to: 1, holdLeft: 12 };
@@ -445,7 +462,7 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
 
   const line = status.state === "ready" ? creditLine(status.meta, credit) : null;
   return (
-    <figure ref={figure} className="clvr-avatar" data-state={status.state} data-running={running || undefined} aria-label={name}>
+    <figure ref={figure} className="clvr-avatar" data-state={status.state} data-running={running || undefined} data-outfit={worn !== "" ? worn : undefined} data-cues={heard.current.join(" ") || undefined} aria-label={name}>
       <div ref={view} className="clvr-view">
         <canvas ref={canvas} className="clvr-canvas" aria-hidden="true" />
         {status.state === "loading" ? (

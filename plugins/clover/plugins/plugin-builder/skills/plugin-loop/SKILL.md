@@ -88,8 +88,8 @@ what they see. The picture is a fresh draw of the page, so what your page does w
   that isn't the UI SDK or React (plugin-ui), or a typo.
 - **The host half failed**: the status tool's log lines hold the thrown error; a handler named in the manifest must
   be an export of `host.entry` with that exact name.
-- **Nothing shows**: the spot's part isn't on screen yet (open it), `when` doesn't match, a bot's plugin drew outside
-  its tab, or the entry's `component` isn't exported. The screenshot tool shows the page as drawn, its frames (is
+- **Nothing shows**: the spot's part isn't on screen yet (open it), `when` doesn't match, an entry inside a bot asked for
+  something Bots doesn't offer (the check names it; add `"app": true` to put it beside the bot), or the entry's `component` isn't exported. The screenshot tool shows the page as drawn, its frames (is
   your plugin's there, and how big?) and your plugin's console errors.
 - **A tool isn't there**: on-demand tools are loaded with `Glossary`; the session sees `mcp__<server>__<tool>`.
 - **A "… stopped" note in your conversation**: a plugin you built crashed until Clover stopped it (the note names it,
