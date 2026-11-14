@@ -180,6 +180,8 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
   const [status, setStatus] = useState<Status>({ state: "loading" });
   /** The outfit parts showing, by name (space-separated), for the figure's `data-outfit`. */
   const [worn, setWorn] = useState("");
+  /** The last outfit cues it heard, for a test to read (`data-cues`). */
+  const heard = useRef<string[]>([]);
   const [visible, setVisible] = useState(true);
   const latest = useRef(props);
   latest.current = props;
@@ -391,6 +393,7 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
     tell();
     const play = (c: FigureCue) => {
       if (c.type === "outfit") {
+        heard.current = [...heard.current.slice(-7), `${c.part}:${c.on ? 1 : 0}`];
         if (sc.setOutfit(c.part, c.on)) tell();
         return;
       }
@@ -459,7 +462,7 @@ export function VrmAvatar(props: VrmAvatarProps): ReactElement {
 
   const line = status.state === "ready" ? creditLine(status.meta, credit) : null;
   return (
-    <figure ref={figure} className="clvr-avatar" data-state={status.state} data-running={running || undefined} data-outfit={worn !== "" ? worn : undefined} aria-label={name}>
+    <figure ref={figure} className="clvr-avatar" data-state={status.state} data-running={running || undefined} data-outfit={worn !== "" ? worn : undefined} data-cues={heard.current.join(" ") || undefined} aria-label={name}>
       <div ref={view} className="clvr-view">
         <canvas ref={canvas} className="clvr-canvas" aria-hidden="true" />
         {status.state === "loading" ? (

@@ -194,6 +194,8 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   // What her figure shows now, part by part: any change while she isn't dressed in her outfit (a cue that landed, or her model
   // loaded again mid-way and starting from its own defaults) dresses her again from what it shows, until she is.
   const showing = parts.map((o) => `${o.name}:${o.on ? 1 : 0}`).join(" ");
+  // The last cues her tab sent to dress her and what came back, on the room for a test to read (`data-dressing`).
+  const sent = useRef<string[]>([]);
   useEffect(() => {
     if (!hers || outfit === undefined || dressed) return;
     let live = true;
@@ -205,7 +207,8 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
       if (now !== outfit) { setOutfit(now); return; }
       for (const cue of cuesToDress(parts, outfit)) {
         if (!live) return;
-        await avatar?.cue?.(cue).catch(() => undefined);
+        const r = await avatar?.cue?.(cue).catch((e: unknown) => ({ ok: false, reason: String(e) }));
+        sent.current = [...sent.current.slice(-7), `${cue.part}:${cue.on ? 1 : 0}=${r === undefined ? "none" : r.ok ? "ok" : (r as { reason?: string }).reason}`];
       }
     })();
     return () => { live = false; };
@@ -275,7 +278,7 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   })();
 
   return (
-    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} style={{ "--rm-title-left": `${controlsInset(win) + TOGGLE_PX + TOGGLE_GAP_PX}px` } as CSSProperties} aria-label="Alpha's room">
+    <div className="rm" data-size={size} data-state={state} data-dark={night || undefined} data-dressing={`${outfit ?? "?"} | ${showing} | ${sent.current.join(" ")}`} style={{ "--rm-title-left": `${controlsInset(win) + TOGGLE_PX + TOGGLE_GAP_PX}px` } as CSSProperties} aria-label="Alpha's room">
       <div className="rm__fore" data-slot="foreground" aria-hidden="true"><Grass scene={stage.scene} dark={night} className="rm__grass" /></div>
       <header className="rm__title">
         <h1 className="rm__name">{props.bot.name}</h1>

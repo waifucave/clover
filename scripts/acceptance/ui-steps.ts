@@ -2150,7 +2150,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // (`plugin.settings.set`, the Edit page's picker's call) shows on her stage, and her tool's change shows in the setting.
       const worn = async () => (await inTree<string>(cdp, "(() => { const f = document.querySelector('figure.clvr-avatar[data-outfit]'); return f ? f.dataset.outfit : null; })()"))?.value;
       const outfitSet = async () => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "alpha" })).settings.find((x) => x.key === "outfit")?.value;
-      const wears = (what: string, want: string) => until(what, 30_000, async () => ((await worn()) === want ? true : undefined), async () => `her figure wears ${await worn()}, the setting says ${JSON.stringify(await outfitSet())}`);
+      const trail = async () => `the figure: ${(await inTree<string>(cdp, "(() => { const f = document.querySelector('figure.clvr-avatar[data-outfit]'); return f ? document.querySelectorAll('figure.clvr-avatar').length + ' in its document, heard ' + (f.dataset.cues || 'nothing') : null; })()"))?.value}; her room: ${(await inTree<string>(cdp, "(() => { const r = document.querySelector('.rm[data-dressing]'); return r ? r.dataset.dressing : null; })()"))?.value}`;
+      const wears = (what: string, want: string) => until(what, 30_000, async () => ((await worn()) === want ? true : undefined), async () => `her figure wears ${await worn()}, the setting says ${JSON.stringify(await outfitSet())}; ${await trail()}`);
       let outfitSaid = "";
       try {
         await wears("her lilac dress, the default", "lilac-dress");
