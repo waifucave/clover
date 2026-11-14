@@ -155,6 +155,18 @@
   height: auto;
 }
 
+/* Open, the two halves are in the first row, after the sidebar's own button: icons only, each as wide as a rail row's
+   icon button, so the row holds the window's controls, the button, the pair and Clover's mark. */
+.cl-sidebar:not([data-collapsed]) .cl-sidebar__switch {
+  margin-left: 6px;
+}
+
+.cl-sidebar:not([data-collapsed]) .cl-sidebar__switch-option {
+  flex: none;
+  width: 34px;
+  padding: 0;
+}
+
 .cl-sidebar__switch-option {
   display: inline-flex;
   flex: 1 1 0;

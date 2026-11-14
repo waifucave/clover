@@ -366,37 +366,39 @@ export function Sidebar(props: SidebarProps) {
     </button>
   );
 
+  // Bots or code. Open, it sits in the first row, between the sidebar's own button and Clover's mark (the owner, November
+  // 14): two icons on a track, named by their labels and titles, since the row has no room for words beside the window's
+  // controls. Folded, it is the rail's own pair, one above the other.
+  const sides = (
+    <div className="cl-sidebar__switch" role="radiogroup" aria-label={S.sides}>
+      {(["bots", "code"] as const).map((key) => {
+        const label = key === "bots" ? S.sideBots : S.sideCode;
+        return (
+          <button key={key} type="button" role="radio" aria-checked={side === key} className="cl-sidebar__switch-option" aria-label={label} title={label} onClick={() => props.onSideChange(key)}>
+            {key === "bots" ? <IconBots /> : <IconCode />}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <nav className="cl-sidebar" aria-label={S.nav} data-collapsed={collapsed || undefined} data-side={side}>
       {/* The window's own controls (the traffic lights on macOS) draw over this row's start. */}
       <div className="cl-sidebar__top">
         <span className="cl-sidebar__controls" aria-hidden="true" />
         {!collapsed && toggle}
+        {!collapsed && sides}
         {!collapsed && (
           <span className="cl-sidebar__brand" title={S.app}>
-            <CloverMark size={16} />
+            <CloverMark size={20} />
           </span>
         )}
         {collapsed && <Corner {...(props.corner ?? {})} />}
       </div>
       {collapsed && toggle && <div className="cl-sidebar__rail-toggle">{toggle}</div>}
 
-      <div className="cl-sidebar__switch" role="radiogroup" aria-label={S.sides}>
-        {(["bots", "code"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            role="radio"
-            aria-checked={side === key}
-            className="cl-sidebar__switch-option"
-            aria-label={collapsed ? (key === "bots" ? S.sideBots : S.sideCode) : undefined}
-            onClick={() => props.onSideChange(key)}
-          >
-            {key === "bots" ? <IconBots /> : <IconCode />}
-            {!collapsed && <span>{key === "bots" ? S.sideBots : S.sideCode}</span>}
-          </button>
-        ))}
-      </div>
+      {collapsed && sides}
 
       <ul className="cl-sidebar__actions">
         {action("new", <IconPlus />, side === "bots" ? S.newChat : S.newSession, props.onNew)}
