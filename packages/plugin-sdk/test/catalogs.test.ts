@@ -167,21 +167,12 @@ describe("points and spots", () => {
     const names = SPOTS.map((s) => s.name);
     for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section", "bot.editor.section",
       "bot.header", "bot.stage", "bot.side", "conversation", "composer", "avatar", "composer.action", "conversation.message", "tool.result",
-      "conversation.message.extra", "bot.header.action", "status", "menu.message", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
+      "conversation.message.extra", "bot.header.action", "status", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
     expect(msg.keys).toEqual(MESSAGE_KINDS);
     expect(msg.keep).toEqual(["approval"]);
     expect(msg.needs).toEqual(["conversation.read"]);
     expect(new Set(names).size).toBe(names.length);
-    // A message's menu needs nothing to add an item; its `command` runs with the props, the text only for
-    // `conversation.read` (lane F's F-M3).
-    const menu = SPOTS.find((s) => s.name === "menu.message")!;
-    expect(menu.needs).toBeUndefined();
-    expect(menu.gates).toEqual({ "message.text": "conversation.read" });
-    expect(menu.fields.safeParse({ title: "Quote it", command: "reader.quote" }).success).toBe(true);
-    expect(menu.fields.safeParse({ title: "Quote it", command: "quote" }).success).toBe(false);
-    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1" }, role: "bot" }).success).toBe(true);
-    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1", text: "hi" }, role: "user" }).success).toBe(true);
     expect(SPOTS.find((s) => s.name === "panel.view")!.doc).toBe("A spot inside each panel view, keyed by the view's id.");
   });
 

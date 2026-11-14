@@ -30,7 +30,7 @@ export interface SpotInfo {
   readonly keep?: readonly string[];
   readonly needs?: readonly string[];
   /** Props that reach only a plugin holding a capability, by their dotted path in the props: the spot itself needs
-   *  none (`menu.message`'s `message.text` needs `conversation.read`). */
+   *  none (no spot uses this yet). */
   readonly gates?: Readonly<Record<string, string>>;
   readonly context?: readonly string[];
   /** For a keyed spot: a key no plugin fills shows the declaring part's placeholder, which offers to find a plugin
@@ -50,8 +50,6 @@ const none = z.object({});
 const BotRef = z.object({ id: z.string(), name: Text });
 const titled = z.object({ title: Text, icon: Path.optional() });
 const titledOpt = z.object({ title: Text.optional(), icon: Path.optional() });
-/** A command by its full name, `<namespace>.<name>` (§5.4). */
-const CommandRef = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*\.[a-z][a-zA-Z0-9_-]{0,63}$/);
 /** A conversation item as the conversation view draws it: its id, its kind and its time on the shared clock, plus the
  *  kind's own fields (lane F's, settled at F-M2). An approval item carries only its card's id, computer and state; the
  *  sealed text never reaches a plugin. Under the `tool` key, the item is a run of consecutive calls (`calls`). */
@@ -154,10 +152,6 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "tool.result", shape: "keyed", declaredBy: "conversation", botsOffer: true, needs: ["conversation.read"], context: ["bot"], fields: none,
     props: z.object({ ...inConversation, tool: z.string() }),
     doc: "A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call." },
-  { name: "menu.message", shape: "list", declaredBy: "conversation", botsOffer: false, context: ["bot"],
-    fields: titled.extend({ command: CommandRef }), gates: { "message.text": "conversation.read" },
-    props: z.object({ bot: BotRef, session: z.string(), message: z.object({ id: z.string(), text: z.string().optional() }), role: z.enum(["user", "bot"]) }),
-    doc: "Items in a message's menu. Picking one runs its `command` (`command.run`) with these props as its args; the message's text is there only for a plugin with `conversation.read`." },
   { name: "file.preview", shape: "keyed", declaredBy: "file-view", botsOffer: true, fields: none,
     props: z.object({ path: z.string(), mediaType: z.string() }),
     doc: "A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab." },

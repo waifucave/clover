@@ -144,6 +144,22 @@ export interface NotifierUpdate {
   sender: { pluginId: string; name: string; bundled: boolean };
 }
 
+/** What an `island.line` entry's handler returns (`points.call` of the entry's `handler`, no args): the line it wants on the
+ *  island now, or nothing (`undefined` or `null`) for none. The island draws it in its own style, so every field is only
+ *  data the island checks again: `text` is plain text (no markup; control characters become spaces; cut at 80 characters
+ *  with an ellipsis), `icon` one of the island's named icons (`bolt`, `check`, `clock`, `info`, `sync`, `link`; any other
+ *  name draws no icon), `progress` a number from 0 to 1 (clamped; anything else draws no bar), and `bot` the id of the bot
+ *  the line is about (an id that doesn't look like one is dropped). The line's id is its entry's. A handler that takes more
+ *  than 1.5 seconds, or throws, shows no line that time. */
+export interface IslandLine {
+  text: string;
+  icon?: string;
+  progress?: number;
+  bot?: string;
+}
+/** An `island.line` entry's handler: called with no arguments, as the plugin. */
+export type IslandLineHandler = (args: undefined, ctx: HandlerContext) => Promise<IslandLine | null | undefined> | IslandLine | null | undefined;
+
 /** A `webhook.ingress` entry's handler (§7): an object of handlers the webhook trigger calls through `points.call`
  *  with `method`. Provisional for lanes D (the trigger) and I (the forwarder). Webhooks reach the trigger by pull:
  *  `next` waits up to `waitMs` (at most `WEBHOOK_NEXT_WAIT_MAX_MS`), and the trigger sets that call's `timeoutMs` to

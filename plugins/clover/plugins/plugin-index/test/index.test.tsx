@@ -139,6 +139,16 @@ describe("the Plugins page: what is installed", () => {
   const groupNames = () => screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"));
   const names = (group: string) => within(screen.getByRole("list", { name: group })).getAllByRole("listitem").map((li) => li.querySelector(".cl-plugin-index__name")?.textContent);
 
+  test("a row shows what the plugin brings as small labels, and its parts keep their own; none names a kind of plugin", async () => {
+    await mount({});
+    const row = screen.getByRole("button", { name: "Open Tarot panel" }).closest("li")!;
+    expect([...row.querySelectorAll(".cl-plugin-index__label")].map((e) => e.textContent)).toEqual(["Tools", "Island tab", "App page"]);
+    const listed = toInstalled(INSTALLED, "en", INSTALLED_ICONS);
+    expect(listed.find((p) => p.id === "clover")?.labels).toEqual(["Tools", "Skills", "Island tab", "Settings section", "Theme", "Avatar renderer"]);
+    expect(listed.find((p) => p.id === "clover")?.parts).toEqual([{ name: "Shell", labels: [] }, { name: "Settings", labels: [] }]);
+    expect(listed.find((p) => p.id === "weather-routine")?.labels).toBeUndefined();
+  });
+
   test("one plugin.list, no call per plugin; grouped by what needs you, on and off; children under their parent", async () => {
     const { core } = await mount({});
     expect(core.calls.map((c) => c.method)).toEqual(["plugin.list", "plugin.ui"]);

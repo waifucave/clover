@@ -473,6 +473,38 @@
       }
     },
     {
+      "name": "island.line",
+      "shape": "list",
+      "declaredBy": "clover/island",
+      "kind": "code",
+      "doc": "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when Clover isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+            "format": "handler",
+            "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
+          }
+        },
+        "required": [
+          "id",
+          "handler"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "avatar.formats",
       "shape": "list",
       "declaredBy": "clover/character",
@@ -2706,130 +2738,6 @@
           "item",
           "ctx",
           "tool"
-        ]
-      }
-    },
-    {
-      "name": "menu.message",
-      "shape": "list",
-      "declaredBy": "conversation",
-      "botsOffer": false,
-      "gates": {
-        "message.text": "conversation.read"
-      },
-      "context": [
-        "bot"
-      ],
-      "doc": "Items in a message's menu. Picking one runs its `command` (`command.run`) with these props as its args; the message's text is there only for a plugin with `conversation.read`.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "en": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "en"
-                ],
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          },
-          "icon": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          },
-          "command": {
-            "type": "string",
-            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*\\.[a-z][a-zA-Z0-9_-]{0,63}$"
-          }
-        },
-        "required": [
-          "title",
-          "command"
-        ]
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          },
-          "session": {
-            "type": "string"
-          },
-          "message": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "text": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "user",
-              "bot"
-            ]
-          }
-        },
-        "required": [
-          "bot",
-          "session",
-          "message",
-          "role"
         ]
       }
     },

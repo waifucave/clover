@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
@@ -43,6 +43,20 @@ export const UI_STEPS = [
   "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
   "a third-party plugin fills the window's spots in Alpha's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
 ] as const;
+
+/** A coding session in a folder of the run's user home, started when the run has none (`agent.start` as
+ *  the app starts one); true when one is listed by `session.list`. Its folder: `alpha-code-work`. */
+async function ensureCodingSession(ctx: Ctx): Promise<boolean> {
+  const rpc = ctx.rpc;
+  const listed = async () => (await rpc.request<{ sessions: { kind?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.some((x) => x.kind === "coding");
+  if (await listed()) return true;
+  const computerName = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {}).catch(() => ({ computers: [] }))).computers[0]?.name;
+  if (ctx.home === undefined || computerName === undefined) return false;
+  const dir = join(dirname(ctx.home), "alpha-code-work");
+  mkdirSync(dir, { recursive: true });
+  await rpc.request("agent.start", { backend: "clover-code", computer: computerName, root: `home/${computerName}/alpha-code-work` }, 60_000);
+  return listed();
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 class Failed extends Error {}
@@ -259,19 +273,20 @@ export async function layGround(cdp: Cdp, scheme: "dark" | "light"): Promise<voi
 }
 
 /** One picture of the app's window per scheme, at 1280x800, offscreen, into `dir`: `plugins-<name>-<scheme>.png`. */
-export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): Promise<string[]> {
+export async function shootWindow(cdp: Cdp, dir: string, name: string, setAppearance?: (scheme: "dark" | "light" | "system") => void, width = 1280): Promise<string[]> {
   const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
   if (appRoot === undefined) return [];
   const out: string[] = [];
-  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width, height: 800, deviceScaleFactor: 1, mobile: false }, appRoot.session);
   for (const scheme of ["dark", "light"] as const) {
     setAppearance?.(scheme);
     for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
     await layGround(cdp, scheme);
     await new Promise((r) => setTimeout(r, 1_500));
     const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, appRoot.session) as { data: string };
-    writeFileSync(join(dir, `plugins-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
-    out.push(`plugins-${name}-${scheme}.png`);
+    const file = `plugins-${name}${width === 1280 ? "" : `-w${width}`}-${scheme}.png`;
+    writeFileSync(join(dir, file), Buffer.from(shot.data, "base64"));
+    out.push(file);
   }
   return out;
 }
@@ -1058,10 +1073,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     let iconSeen = "";
     let grantedPath = "";
     let grantSkipped = "";
+    let labelsSaid = "";
     const appRoot = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
     const shoot = async (name: string) => {
       if (!renders || appRoot === undefined) return;
+      // Wide, then narrow: the page's own width is the window's.
       rendered.push(...(await shootWindow(cdp, renders, name, ctx.setAppearance)));
+      if (name === "installed" || name === "detail") rendered.push(...(await shootWindow(cdp, renders, name, ctx.setAppearance, 560)));
     };
     try {
       if (renders) {
@@ -1093,8 +1111,24 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const grantToken = `grant:${crypto.randomUUID()}`;
       const granted = await rpc.request("plugin.grant.add", { pluginId: pick!.id, token: grantToken, path: grantedPath, kind: "file", access: "read" }).then(() => true, (err: unknown) => { grantSkipped = String((err as Error).message ?? err); return false; });
       if (!granted && grantSkipped === "") grantSkipped = "refused";
+      // What each plugin brings, as small labels under its name: the row shows what the core derived from its contributions
+      // (`plugin.get`'s `labels`: a bot's own plugin brings Bot, a plugin with a tool brings Tools), and the detail shows
+      // the same; none of them names a kind of plugin.
+      const rowLabels = async (name: string) => (await inTree<string>(cdp, `(() => { const b = [...document.querySelectorAll('button[aria-label]')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(`Open ${name}`)}); const u = b && b.closest('li') ? b.closest('li').querySelector('.cl-plugin-index__labels') : null; return u ? JSON.stringify([...u.querySelectorAll('.cl-plugin-index__label')].map((e) => e.textContent)) : null; })()`))?.value;
+      const wantLabels = async (id: string) => ((await rpc.request<{ plugin: { labels?: string[] } }>("plugin.get", { id })).plugin.labels ?? []);
+      const pickWant = await wantLabels(pick!.id);
+      if (!pickWant.includes("Tools")) fail(`${pick!.id} has a tool but the core's labels for it are ${JSON.stringify(pickWant)}`);
+      const pickRow = await until(`${pick!.name}'s labels in its row`, 15_000, async () => rowLabels(pick!.name));
+      if (pickRow !== JSON.stringify(pickWant)) fail(`${pick!.name}'s row shows ${pickRow}, the core derived ${JSON.stringify(pickWant)}`);
+      const alphaWant = await wantLabels("alpha");
+      const alphaRow = await rowLabels("Alpha");
+      if (!alphaWant.includes("Bot") || alphaRow !== JSON.stringify(alphaWant)) fail(`Alpha's labels: the core derived ${JSON.stringify(alphaWant)} (a bot's own plugin brings Bot), her row shows ${alphaRow}`);
+      if ([...pickWant, ...alphaWant].some((l) => /plugin|type|kind/i.test(l))) fail(`a label names a kind of plugin: ${[...pickWant, ...alphaWant].join(", ")}`);
+      labelsSaid = `its row shows what it brings (${pickWant.join(", ")}) and Alpha's shows ${alphaWant.join(", ")}, both as the core derived them`;
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
       await waitText(`${pick!.name}'s detail with its tool`, pick!.tool);
+      const detailLabels = await until("its detail's labels", 15_000, async () => (await inTree<string>(cdp, "(() => { const u = document.querySelector('.cl-plugin-index__detail > .cl-plugin-index__labels'); return u ? JSON.stringify([...u.querySelectorAll('.cl-plugin-index__label')].map((e) => e.textContent)) : null; })()"))?.value);
+      if (detailLabels !== JSON.stringify(pickWant)) fail(`its detail shows ${detailLabels}, its row showed ${JSON.stringify(pickWant)}`);
       if (renders) {
         await shoot("detail");
         // Its key: the app's own dialog (a core page over the window), never a field on the page.
@@ -1260,7 +1294,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (dataDir !== undefined) await until("its data folder gone with it", 15_000, async () => (existsSync(dataDir) ? undefined : true), async () => `${dataDir} still holds ${JSON.stringify(readdirSync(dataDir))}`);
     const dataSaid = dataDir !== undefined ? "Remove and delete its data… pressed on its card, the plugin and its data folder gone" : "Remove and delete its data… pressed on its card, the plugin gone";
     const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders and adult not driven (no picker control)";
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; ${labelsSaid}, the detail the same; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
@@ -1940,6 +1974,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await press("her Expression tool again", ".rm__tool", "Expression");
         stageTools += "; Expression opened a list of the model's own expressions";
       }
+      // A coding session to go to, started before the next tab change (the window reads its session list on a tab change; the app starts one the same way); `session.list` is the door that lists it (`conversation.list` is a plugin-host call, not an RPC).
+      const code = await ensureCodingSession(ctx);
       // 4. A plain bot: the stock bar and the stock sidebar are back.
       await press(`${name} in her sidebar`, ".as__row", name);
       await until("the stock bar back", 20_000, async () => ((await win("!!document.querySelector('.cl-window__bar') && w.dataset.barMode")) === "standard" ? true : undefined), async () => `${await win("w.dataset.barMode")} || ${await dumpFrames(cdp)}`);
@@ -1948,8 +1984,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // 5. Back to Alpha (her chrome returns), then the Code side when this run has a coding session (the stock chrome returns on it too).
       await press("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha");
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
-      const code = (await rpc.request<{ sessions: { kind?: string }[] }>("conversation.list", {}).catch(() => ({ sessions: [] }))).sessions.some((x) => x.kind === "coding");
-      let side = "this run has no coding session, so her Code switch had nowhere to go (not pressed)";
+      let side = "this run could not start a coding session, so her Code switch had nowhere to go (not pressed)";
       if (code) {
         await press("her Code switch", ".as__opt", "Code");
         await until("the stock bar on the Code side", 20_000, async () => ((await win("!!document.querySelector('.cl-window__bar') && w.dataset.barMode")) === "standard" ? true : undefined));
@@ -2433,7 +2468,17 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const said = JSON.stringify(r ?? {});
         return said.includes(words) ? said : undefined;
       }, async () => `the report says ${JSON.stringify(await rpc.request("command.run", { name: `${id}.report` }).catch((e) => String(e)))}`);
-      return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}`;
+      // A plugin that is off is not a target: switched off, the pill's menu no longer lists it (and the daemon refuses a send to it).
+      await rpc.request("plugin.setEnabled", { id, enabled: false }, 30_000);
+      await until(`${id} off`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "off") ? true : undefined));
+      await sleep(800);
+      if ((await cdp.evaluate(s, "document.querySelectorAll('[role=menuitemradio]').length").catch(() => 0)) === 0) await pillPress("the pill's target button again", "button[data-menu-toggle=targets]");
+      await sleep(600);
+      const stillListed = await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].some((e) => (e.textContent || '').includes('Acceptance window'))").catch(() => undefined);
+      const listed = await cdp.evaluate(s, "[...document.querySelectorAll('[role=menuitemradio]')].map((e) => (e.textContent || '').trim()).join(' | ')").catch(() => "?");
+      if (stillListed !== false) fail(`the pill still lists the plugin as a target while it is off (menu: ${String(listed)})`);
+      const offSaid = `switched off (plugin.setEnabled), the pill's menu no longer lists it (it lists: ${String(listed).slice(0, 80)})`;
+      return `${id} installed from its folder, OK'd on its card ${ok}; in Alpha's tab it filled composer.action (its button pressed in the window), conversation.message keyed user (it drew ${JSON.stringify(user.slice(0, 40))}), the tool call's card (${carded}), conversation.message.extra (${extra.attrs["data-kind"]} under a message) and tool.result for ${toolResult.attrs["data-tool"]} (the call's result in its cell); the Dispatch pill listed its pill.target, a pick and the Send circle sent the words to its host handler (${reported.slice(0, 80)}); its probe: ${listsSaid}; useUserSend and useComposerHost are undefined for it; useKept kept 2 over a remount; useDrag offered text and claimed it; useMenu from a click answered ${menuSaid}; useOpen answered ${openSaid.slice(0, 80)}; ${offSaid}`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
     }

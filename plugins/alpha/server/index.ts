@@ -6,6 +6,7 @@
 //   start(api) / stop(reason)     loads the stage from her store; writes it back on stop
 //   mcp.stage                     her stage tools (tools.ts)
 //   onTurnStart, onToolAfter, onTurnEnd   her hooks, which only observe (hooks.ts)
+//   islandLine                    her line on the island (the island's `island.line` point): what she is doing now
 //   scene, outfit, mood           her commands (/scene, /outfit, /mood)
 //   ui.pinReply                   the pin in her replies' row of actions: the reply's first sentence, pinned to her stage
 import { readFileSync } from "node:fs";
@@ -55,9 +56,25 @@ const hooks = () => stageHooks({
   store: ready(), bot: api?.plugin?.id ?? "alpha", today,
   reactions: async () => (await setting("reactions").catch(() => undefined)) !== false,
 });
-export const onTurnStart = (args: HookArgs) => hooks().onTurnStart(args);
-export const onToolAfter = (args: HookArgs) => hooks().onToolAfter(args);
-export const onTurnEnd = (args: HookArgs) => hooks().onTurnEnd(args);
+/** When her activity last moved (a turn began, a tool ran): her island line is hers only while it is recent, so a turn that
+ *  never reached `turn.end` (a crash, a stopped daemon) doesn't leave "thinking" on the island. */
+let movedAt = 0;
+export const ACTIVITY_LINE_MS = 3 * 60_000;
+export const onTurnStart = (args: HookArgs) => { movedAt = Date.now(); return hooks().onTurnStart(args); };
+export const onToolAfter = (args: HookArgs) => { movedAt = Date.now(); return hooks().onToolAfter(args); };
+export const onTurnEnd = (args: HookArgs) => { movedAt = 0; return hooks().onTurnEnd(args); };
+
+/** Her line on the island (`island.line`, the island's own point: `{ id: "activity", handler: "islandLine" }`): what she is
+ *  doing now, in words and one icon, while a turn is running; nothing otherwise. The island asks when Clover isn't in front,
+ *  and stops asking while she answers nothing until a bot starts work; idle, this is one comparison and no read. It draws the
+ *  line in its own style under her name; she sets only these words. The tool's label is the one her stage already shows (its
+ *  name and a file's name, never a path). */
+export async function islandLine(): Promise<{ text: string; icon: string; bot: string } | undefined> {
+  if (store === undefined || Date.now() - movedAt > ACTIVITY_LINE_MS) return undefined;
+  const a = (await store.read()).state.activity;
+  if (a?.kind !== "thinking" && a?.kind !== "tool") return undefined;
+  return { text: a.kind === "thinking" ? "Thinking" : `Working, last ran ${a.label}`, icon: a.kind === "thinking" ? "clock" : "bolt", bot: api?.plugin?.id ?? "alpha" };
+}
 
 const said = async (r: Promise<{ said: string }>) => ({ text: (await r).said });
 export const scene = async (args: { scene?: unknown }) => said(ready().change({ kind: "scene", scene: typeof args?.scene === "string" ? args.scene : "" }));

@@ -31,14 +31,14 @@ const summary = (id: string, name: string, o: Partial<PluginSummary> = {}): Plug
 });
 
 export const INSTALLED: PluginSummary[] = [
-  summary("clover", "Clover", { source: "bundled", version: "0.4.0", children: ["clover/shell", "clover/settings"] }),
+  summary("clover", "Clover", { labels: ["Tools", "Skills", "Island tab", "Settings section", "Theme", "Avatar renderer"], source: "bundled", version: "0.4.0", children: ["clover/shell", "clover/settings"] }),
   summary("clover/shell", "Shell", { parent: "clover", source: "bundled" }),
   summary("clover/settings", "Settings", { parent: "clover", source: "bundled" }),
-  summary("tarot-panel", "Tarot panel", { version: "1.2.0", description: "Draws a card each morning and keeps a reading journal beside the conversation." }),
+  summary("tarot-panel", "Tarot panel", { labels: ["Tools", "Island tab", "App page"], version: "1.2.0", description: "Draws a card each morning and keeps a reading journal beside the conversation." }),
   summary("weather-routine", "Weather routine", { version: "0.3.1", state: "found", enabled: false, reason: "waiting for your OK" }),
   summary("mcp-linear", "linear", { source: "wrapped", version: "0.0.0" }),
   summary("story-mode", "Story mode", { source: "index", state: "invalid", enabled: false, reason: "needs a newer Clover (plugin API ^2.0.0)" }),
-  summary("terminal-plus", "Terminal plus", { version: "0.9.0", state: "off", enabled: false, icon: "assets/icon.png" }),
+  summary("terminal-plus", "Terminal plus", { labels: ["Tools", "Settings section"], version: "0.9.0", state: "off", enabled: false, icon: "assets/icon.png" }),
   summary("my-panel", "My panel", { source: "dev", dev: true, state: "stopped", reason: "plugin stopped: it crashed three times in two minutes" }),
 ];
 

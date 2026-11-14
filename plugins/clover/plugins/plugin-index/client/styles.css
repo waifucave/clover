@@ -441,3 +441,23 @@
     transition: none;
   }
 }
+
+/* What a plugin brings: small labels under its name, wrapping on a narrow page. */
+.cl-plugin-index__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--clover-space-xs);
+  margin: var(--clover-space-xs) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-plugin-index__label {
+  padding: 0 var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-caption);
+  line-height: 18px;
+  white-space: nowrap;
+}

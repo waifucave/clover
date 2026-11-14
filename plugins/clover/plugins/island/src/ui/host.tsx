@@ -9,6 +9,7 @@ import { setTranslator, type Translator } from "../strings";
 import type { IslandCard, QuestionCard } from "../model/cards";
 import type { SurfaceEnvironment } from "../model/placement";
 import type { IslandTabEntry } from "./Island";
+import type { LineSource } from "./Lines";
 import { IslandSurface, type SurfaceHostApi } from "./IslandSurface";
 
 export interface IslandHost {
@@ -24,6 +25,10 @@ export interface IslandHost {
   working?: number;
   /** The `island.tab` entries after Needs you, in their order: `<Spot name="island.tab">`, one entry at a time. */
   tabs?: readonly IslandTabEntry[];
+  /** The plugins' lines (`island.line`): the point's entries and a call of an entry's handler, off the plugin API. */
+  lines?: LineSource;
+  /** `bots.read`: a bot's name for its id, for a line that names a bot. */
+  botName?: (id: string) => string | undefined;
   /** `bots.read`: the bots, so another plugin named as one gets no tab. */
   bots?: readonly { id: string; name: string }[];
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
@@ -62,6 +67,8 @@ export function IslandApp(_: IslandEntryProps<{ surface: string }>): ReactElemen
       working={host.working}
       tabs={host.tabs}
       botNames={botNames}
+      lines={host.lines}
+      botName={host.botName}
       host={host.window}
       onAnswerQuestion={host.onAnswerQuestion}
       reducedMotion={host.reducedMotion}

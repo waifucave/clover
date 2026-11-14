@@ -23,6 +23,17 @@
           "island.tab": {
             "shape": "list",
             "props": { "type": "object", "properties": { "expanded": { "type": "boolean" } } }
+          },
+          "island.line": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": ["id", "handler"],
+              "properties": {
+                "id": { "type": "string" },
+                "handler": { "type": "string", "format": "handler" }
+              }
+            }
           }
         }
       }
