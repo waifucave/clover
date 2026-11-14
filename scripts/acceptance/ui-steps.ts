@@ -1965,11 +1965,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // 2b. The figure's box (`avatar.box` and `avatar.watch`, `avatar.read`): her "Right now" bubble is placed from the box her stage's renderer
       // publishes (inline left/top, set only once a box is known), and moves when the box does: the window made a little narrower
       // changes the stage's box, and the bubble follows it; widened again, it comes back. With the sidebar folded so the window's
-      // width leaves her the wide room the bubble shows in.
+      // width leaves her the wide room the bubble and her stage tools show in.
       await press("her sidebar toggle (for the bubble)", ".ac__btn", "Hide the sidebar");
       await until("the stock sidebar folded", 10_000, async () => ((await collapsed()) ? true : undefined));
       const bubble = async () => (await inTree<string>(cdp, "(() => { const e = document.querySelector('.rm__say'); return e && e.getClientRects().length > 0 && e.style.top !== '' ? e.style.left + '|' + e.style.top : null; })()"))?.value;
       let boxSaid = "";
+      let stageTools = "";
       try {
         const placedAt = await until("her bubble placed from the figure's box (avatar.box)", 60_000, () => bubble(), async () => `${(await inTree<string>(cdp, "document.querySelector('.rm') ? document.querySelector('.rm').dataset.size + ' ' + (document.querySelector('.rm__say') ? 'bubble ' + document.querySelector('.rm__say').getAttribute('style') : 'no bubble') : 'no room'"))?.value}`);
         const appTop = (await cdp.documents()).find((d) => d.url === "clover-core://app/");
@@ -1985,6 +1986,16 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const near = (v: string | undefined, w: string) => { const x = nums(v), y = nums(w); return x.length === y.length && x.length > 0 && x.every((n, i) => Math.abs(n - y[i]!) <= 8); };
         await until("her bubble back where it was (within a few px)", 30_000, async () => (near(await bubble(), placedAt) ? true : undefined), async () => `now ${await bubble()}, was ${placedAt}`);
         boxSaid = `her bubble was placed from the figure's box (${placedAt}), moved with it when the window narrowed (${movedTo}) and came back`;
+        // 2c. Her stage tools (in her wide room, the sidebar folded): each is present; one that the figure's renderer can do opens its list (Expression, from the model's catalogue), the others say why not.
+        const toolNames = (await inTree<string>(cdp, "(() => { const t = [...document.querySelectorAll('.rm__tool')]; return t.length ? JSON.stringify(t.map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on'))) : null; })()"))?.value ?? "[]";
+        if (!/Expression/.test(toolNames)) fail(`her stage tools are not drawn (${toolNames})`);
+        stageTools = `her stage tools were drawn (${toolNames})`;
+        if ((await inTree<boolean>(cdp, "!!document.querySelector('.rm__tool[aria-label=Expression]:not([aria-disabled])')")) !== undefined) {
+          await press("her Expression tool", ".rm__tool", "Expression");
+          await until("her expression list", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.rm__list [role=menuitem]')"));
+          await press("her Expression tool again", ".rm__tool", "Expression");
+          stageTools += "; Expression opened a list of the model's own expressions";
+        }
       } finally {
         if (await collapsed()) await press("her sidebar toggle (back open)", ".ac__btn", "Show the sidebar").catch(() => undefined);
       }
@@ -1997,15 +2008,6 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await press(`her ${control} control again`, ".ac__act", control);
       await until("the panel sheet closed", 10_000, async () => ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')")) === undefined ? true : undefined));
       const panels = `her ${control} control opened the panel in her sheet and closed it`;
-      // 3b. Her stage tools: each is present; one that the figure's renderer can do opens its list (Expression, from the model's catalogue), the others say why not.
-      const toolNames = (await inTree<string>(cdp, "(() => { const t = [...document.querySelectorAll('.rm__tool')]; return t.length ? JSON.stringify(t.map(e => e.getAttribute('aria-label') + ':' + (e.getAttribute('aria-disabled') ?? 'on'))) : null; })()"))?.value ?? "[]";
-      let stageTools = `her stage tools (${toolNames})`;
-      if (/Expression/.test(toolNames) && (await inTree<boolean>(cdp, "!!document.querySelector('.rm__tool[aria-label=Expression]:not([aria-disabled])')")) !== undefined) {
-        await press("her Expression tool", ".rm__tool", "Expression");
-        await until("her expression list", 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.rm__list [role=menuitem]')"));
-        await press("her Expression tool again", ".rm__tool", "Expression");
-        stageTools += "; Expression opened a list of the model's own expressions";
-      }
       // 4. More scoped wins: her composer keeps her own look against the all-bots style.
       const herTokens = await until("her composer's tokens", 20_000, () => composerTokens(), () => dumpFrames(cdp));
       if (herTokens.surface === EVERY.surface) fail(`on Alpha's tab the all-bots composer style's color.surface (${EVERY.surface}) beat her own composer style's (tab/pane.json)`);
