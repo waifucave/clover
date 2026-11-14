@@ -125,7 +125,7 @@ async function run(ctx: ExampleCtx): Promise<string> {
         const r = f.getBoundingClientRect();
         const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
         const chain = []; for (let e = f; e && chain.length < 12; e = e.parentElement) { const c = getComputedStyle(e); chain.push([e.tagName, c.opacity, c.filter, c.transform, c.overflow, c.visibility].join('|')); }
-        return { vis: document.visibilityState, rect: [r.x, r.y, r.width, r.height], win: [innerWidth, innerHeight], atPoint: at ? at.tagName + (at === f ? ' (the frame)' : ' (not the frame)') : null, chain };
+        return { vis: document.visibilityState, state: f.getAttribute('data-clover-sealed-state'), style: f.getAttribute('style'), rect: [r.x, r.y, r.width, r.height], win: [innerWidth, innerHeight], atPoint: at ? at.tagName + (at === f ? ' (the frame)' : ' (not the frame)') : null, chain };
       })())`).catch(() => "gone");
       inA = `${d.url.slice(0, 60)} ${String(v)}`;
     }

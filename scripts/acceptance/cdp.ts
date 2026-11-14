@@ -6,7 +6,7 @@
 export interface ConsoleEntry { session: string; url: string; level: string; text: string }
 export interface FrameInfo { session: string; url: string; type: string; targetId?: string }
 
-type Pending = { resolve(v: any): void; reject(e: Error): void };
+type Pending = { method: string; resolve(v: any): void; reject(e: Error): void };
 
 export class Cdp {
   private seq = 0;
@@ -37,7 +37,7 @@ export class Cdp {
   send<T = any>(method: string, params: object = {}, session?: string): Promise<T> {
     const id = ++this.seq;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { method, resolve, reject });
       this.ws.send(JSON.stringify({ id, method, params, ...(session !== undefined ? { sessionId: session } : {}) }));
       setTimeout(() => { if (this.pending.delete(id)) reject(new Error(`${method}: no answer`)); }, 20_000);
     });
@@ -47,7 +47,7 @@ export class Cdp {
     if (typeof m.id === "number") {
       const p = this.pending.get(m.id);
       this.pending.delete(m.id);
-      if (m.error) p?.reject(new Error(`${m.error.message}`)); else p?.resolve(m.result);
+      if (m.error) p?.reject(new Error(`${m.error.message}${p.method === "" ? "" : ` (${p.method})`}`)); else p?.resolve(m.result);
       return;
     }
     for (const l of this.listeners) { try { l(m); } catch { /* a probe's own */ } }
