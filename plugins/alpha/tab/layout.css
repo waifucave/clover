@@ -72,6 +72,9 @@
 /* The panels open as a card, centre-left, while the figure steps aside; the card and the layers around it take no pointer except the card itself. */
 .alpha-panels { align-self: flex-start; width: min(780px, 54%); margin: 76px 0 120px 17%; min-height: 0; pointer-events: none; }
 @container alpha-scene (max-width: 1100px) {
+  /* Her room (the whole scene's width here) holds only her name now, nothing to press: the stage under it takes the pointer
+     (its own controls, the voice chip). */
+  .alpha-room { pointer-events: none; }
   .alpha-sheet { border-radius: 22px; }
   .alpha-pane { flex: 0 0 min(580px, 100%); padding: 56px 16px 16px; }
   .alpha-pane-lead, .alpha-stage-gap, .alpha-pane-gap, .alpha-chip-gap { display: none; }
