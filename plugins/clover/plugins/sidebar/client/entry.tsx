@@ -25,6 +25,8 @@ export interface SidebarEntryProps {
   /** The shell holds whether the sidebar is a rail of icons (a bot's tab may start it collapsed): set, the sidebar follows it. */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
+  /** The rail's corner (`SidebarProps.corner`): whether the window's own buttons live there, and where to say they hide. */
+  corner?: { native?: boolean; onHiddenChange?: (hidden: boolean) => void; initialOpen?: boolean };
 }
 
 /** The shell's route as the sidebar's, and back. */
@@ -202,6 +204,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       onPlugins={() => go({ kind: "plugins" })}
       collapsed={collapsed}
       onToggleCollapsed={() => setCollapsed((c) => !c)}
+      {...(props.corner ? { corner: props.corner } : {})}
       renderBot={(bot, standard: ReactNode) => {
         const view = bots.find((b) => b.id === bot.id);
         return (

@@ -356,6 +356,7 @@ async function ready(): Promise<void> {
     listens: holds,
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     shellState: (id, state) => shellStates.set(id, state),
+    windowControls: (id, hidden) => setWindowControlsHidden(id, hidden),
     rootCommand: (_id, name) => {
       if (name === "restart-normally") void restart(false);
       if (name === "restart-safe-mode") void restart(true);
@@ -721,6 +722,20 @@ sealed.onMinted = (cardId, element, windowId) => { if (element !== "own") noteSt
 const botNames = new Map<string, string>();
 /** What each window's shell last said of its place (`app.open` waits on it). */
 const shellStates = new Map<number, ShellState>();
+
+/** macOS: the main window's own buttons (the traffic lights) hide while its shell says so (the sidebar a rail, its corner pill closed).
+ *  Only the main window; in full screen the system shows them in its own bar, so they are left alone; a document that loads again
+ *  shows them until its shell reports. */
+let windowControlsHidden = false;
+function applyWindowControls(): void {
+  if (process.platform !== "darwin" || mainWindow === undefined || mainWindow.isDestroyed()) return;
+  mainWindow.setWindowButtonVisibility(!windowControlsHidden || mainWindow.isFullScreen());
+}
+function setWindowControlsHidden(windowId: number, hidden: boolean): void {
+  if (mainWindow === undefined || mainWindow.isDestroyed() || mainWindow.id !== windowId || windowControlsHidden === hidden) return;
+  windowControlsHidden = hidden;
+  applyWindowControls();
+}
 async function refreshBotNames(client: { request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> }): Promise<void> {
   try {
     const r = await client.request<{ bots?: { id?: unknown; name?: unknown }[] }>("bot.list", {}, 4_000);
@@ -1610,6 +1625,11 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
     shuttingDown = true;
   });
   win.on("focus", () => runtime.focusReturned(id));
+  // The window's own buttons: back whenever its document loads again (its shell says anew whether they hide), and never hidden in full screen.
+  windowControlsHidden = false;
+  win.webContents.on("did-start-navigation", (details) => { if (details.isMainFrame && !details.isSameDocument) setWindowControlsHidden(id, false); });
+  win.on("enter-full-screen", applyWindowControls);
+  win.on("leave-full-screen", applyWindowControls);
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
   win.once("ready-to-show", () => showMainWindow(win));
   await win.loadURL("clover-core://app/");

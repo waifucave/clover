@@ -172,3 +172,69 @@ describe("the room for the window's controls, and ids", () => {
     expect(rule('.cl-sidebar__dot[data-status="needs-you"]')).toContain("--clover-color-attention");
   });
 });
+
+describe("the rail's corner", () => {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const corner = (c: HTMLElement) => c.querySelector(".cl-sidebar__corner") as HTMLElement | null;
+
+  test("open, the sidebar has no corner; collapsed with no window buttons at this end, Clover's mark just sits there", () => {
+    const open = setup();
+    expect(corner(open.container)).toBeNull();
+    cleanup();
+    const rail = setup({ collapsed: true });
+    const el = corner(rail.container)!;
+    expect(el.getAttribute("data-native")).toBeNull();
+    expect(el.querySelector(".cl-sidebar-mark")).not.toBeNull();
+    fireEvent.mouseEnter(el);
+    expect(el.getAttribute("data-open")).toBeNull();
+  });
+
+  test("where the window's buttons live there: they hide with the rail, the pill brings them back on hover, and it closes only when the pointer is seen outside it", async () => {
+    const said: boolean[] = [];
+    const { container, unmount } = setup({ collapsed: true, corner: { native: true, onHiddenChange: (h) => said.push(h) } });
+    const el = corner(container)!;
+    expect(el.getAttribute("data-native")).toBe("true");
+    expect(said).toEqual([true]);
+    el.getBoundingClientRect = () => ({ left: 8, top: 7, right: 108, bottom: 37, width: 100, height: 30, x: 8, y: 7, toJSON: () => ({}) }) as DOMRect;
+
+    fireEvent.mouseEnter(el);
+    expect(el.getAttribute("data-open")).toBe("true");
+    expect(el.querySelector(".cl-sidebar__corner-buttons")).not.toBeNull();
+    expect(said).toEqual([true]);
+    await wait(130);
+    expect(said).toEqual([true, false]);
+
+    // The pointer over the pill, then gone from the page (over the window's own buttons, which are not the page's): it stays open.
+    fireEvent.mouseMove(document, { clientX: 40, clientY: 20 });
+    fireEvent.mouseLeave(el);
+    await wait(200);
+    expect(el.getAttribute("data-open")).toBe("true");
+
+    // Seen outside, and back in time: it stays. Seen outside for good: it closes and the buttons hide again.
+    fireEvent.mouseMove(document, { clientX: 300, clientY: 200 });
+    fireEvent.mouseMove(document, { clientX: 60, clientY: 20 });
+    await wait(200);
+    expect(el.getAttribute("data-open")).toBe("true");
+    fireEvent.mouseMove(document, { clientX: 300, clientY: 200 });
+    await wait(200);
+    expect(el.getAttribute("data-open")).toBeNull();
+    expect(said).toEqual([true, false, true]);
+
+    // The rail gone, the buttons are given back.
+    unmount();
+    expect(said).toEqual([true, false, true, false]);
+  });
+
+  test("the window losing focus closes the pill", async () => {
+    const said: boolean[] = [];
+    const { container } = setup({ collapsed: true, corner: { native: true, onHiddenChange: (h) => said.push(h), initialOpen: true } });
+    const el = corner(container)!;
+    expect(el.getAttribute("data-open")).toBe("true");
+    await wait(130);
+    expect(said).toEqual([false]);
+    fireEvent.blur(window);
+    await wait(20);
+    expect(el.getAttribute("data-open")).toBeNull();
+    expect(said).toEqual([false, true]);
+  });
+});

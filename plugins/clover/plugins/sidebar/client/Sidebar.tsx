@@ -5,7 +5,7 @@
 // account with the settings gear at the bottom. Collapsed, it is a rail of icons, each with its
 // accessible name. It paints no background of its own: the window frame puts the sidebar's material
 // (or its solid colour) behind it.
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   CloverMark,
   IconArchive,
@@ -272,6 +272,65 @@ function banners(props: SidebarProps): Banner[] {
   return out;
 }
 
+/** How long the pill waits before the window's own buttons show (the mark is still sliding out of their place) and
+ *  before it closes once the pointer is seen outside it. */
+const CORNER_SHOW_MS = 90;
+const CORNER_CLOSE_MS = 140;
+/** How far outside the pill the pointer may stray before it counts as gone. */
+const CORNER_SLACK = 6;
+
+/** The rail's corner: Clover's mark at the window's top corner, and (where the window's own buttons live there) the
+ *  pill that brings them back on hover. The pill closes only when the pointer is SEEN outside it or the window loses
+ *  focus: the buttons are the window's, not the page's, so the pointer leaving the page over them must not close it. */
+function Corner({ native = false, onHiddenChange, initialOpen = false }: NonNullable<SidebarProps["corner"]>) {
+  const [open, setOpen] = useState(initialOpen && native);
+  const ref = useRef<HTMLDivElement>(null);
+  const said = useRef<boolean | undefined>(undefined);
+  const say = (hidden: boolean) => {
+    if (said.current === hidden) return;
+    said.current = hidden;
+    onHiddenChange?.(hidden);
+  };
+  // The buttons hide as soon as the rail shows, come back a moment after the pill opens, and are given back when the rail goes.
+  useEffect(() => {
+    if (!native) return;
+    if (!open) return say(true);
+    const t = setTimeout(() => say(false), CORNER_SHOW_MS);
+    return () => clearTimeout(t);
+  }, [native, open]);
+  useEffect(() => () => { if (native && said.current === true) onHiddenChange?.(false); }, []);
+  useEffect(() => {
+    if (!native || !open) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const outside = (x: number, y: number) => {
+      const box = ref.current?.getBoundingClientRect();
+      return box === undefined || x < box.left - CORNER_SLACK || x > box.right + CORNER_SLACK || y < box.top - CORNER_SLACK || y > box.bottom + CORNER_SLACK;
+    };
+    const move = (e: MouseEvent) => {
+      if (!outside(e.clientX, e.clientY)) {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = undefined;
+      } else if (timer === undefined) timer = setTimeout(() => setOpen(false), CORNER_CLOSE_MS);
+    };
+    const blur = () => setOpen(false);
+    document.addEventListener("mousemove", move);
+    window.addEventListener("blur", blur);
+    return () => {
+      document.removeEventListener("mousemove", move);
+      window.removeEventListener("blur", blur);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [native, open]);
+  return (
+    <div ref={ref} className="cl-sidebar__corner" data-native={native || undefined} data-open={open || undefined} title={S.app} onMouseEnter={native ? () => setOpen(true) : undefined}>
+      {native && <span className="cl-sidebar__corner-buttons" aria-hidden="true" />}
+      <span className="cl-sidebar__corner-mark">
+        <CloverMark size={16} />
+      </span>
+    </div>
+  );
+}
+
 export function Sidebar(props: SidebarProps) {
   const { side, collapsed = false } = props;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set(props.initialFoldedProjects ?? []));
@@ -318,6 +377,7 @@ export function Sidebar(props: SidebarProps) {
             <CloverMark size={16} />
           </span>
         )}
+        {collapsed && <Corner {...(props.corner ?? {})} />}
       </div>
       {collapsed && toggle && <div className="cl-sidebar__rail-toggle">{toggle}</div>}
 

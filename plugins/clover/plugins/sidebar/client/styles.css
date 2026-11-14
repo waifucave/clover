@@ -70,6 +70,69 @@
   color: var(--clover-plugin-clover-mark);
 }
 
+/* The rail's corner: Clover's mark where the window's own buttons were. Where they live there (`data-native`), hovering
+   the mark opens a pill over the bar: the buttons' room at its start (the window draws them, 12 px dots 20 px apart from
+   16 px in), the mark at its end. The pill hangs past the rail's edge, over the bar. */
+.cl-sidebar[data-collapsed] .cl-sidebar__top {
+  position: relative;
+}
+
+.cl-sidebar__corner {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 7px;
+  transform: translateY(-50%);
+  border: 1px solid transparent;
+  border-radius: var(--clover-radius-round);
+  color: var(--clover-plugin-clover-mark);
+  -webkit-app-region: no-drag;
+  transition:
+    background-color var(--clover-motion-fast) var(--clover-motion-easing),
+    border-color var(--clover-motion-fast) var(--clover-motion-easing),
+    box-shadow var(--clover-motion-fast) var(--clover-motion-easing);
+}
+
+/* Without the window's buttons at this end, the mark sits in the middle of the rail's top. */
+.cl-sidebar__corner:not([data-native]) {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.cl-sidebar__corner-buttons {
+  flex: none;
+  width: 0;
+  transition: width var(--clover-motion-fast) var(--clover-motion-easing);
+}
+
+.cl-sidebar__corner-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+.cl-sidebar__corner[data-open] {
+  border-color: var(--clover-color-hairline-raised);
+  background: var(--clover-color-float);
+  box-shadow: var(--clover-shadow-raised);
+}
+
+.cl-sidebar__corner[data-open] .cl-sidebar__corner-buttons {
+  width: 68px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-sidebar__corner,
+  .cl-sidebar__corner-buttons {
+    transition: none;
+  }
+}
+
 .cl-sidebar__rail-toggle {
   display: flex;
   justify-content: center;

@@ -84,6 +84,12 @@
   -webkit-app-region: no-drag;
 }
 
+/* The sidebar as a rail, where the window's own buttons live at its corner: the rail's corner pill opens over the bar's
+   start, so the bar's content starts clear of it. */
+.cl-window:has(.cl-sidebar[data-collapsed] .cl-sidebar__corner[data-native]) .cl-window__bar {
+  padding-left: 34px;
+}
+
 .cl-window__title {
   display: inline-flex;
   align-items: center;

@@ -104,6 +104,9 @@ describe("shell.* from a plugin's frame", () => {
     expect(cleanReport({ state: { ...state(), dialog: "settings" } })?.state.dialog).toBe("settings");
     expect(cleanReport({ state: { ...state(), dialog: "evil" } })?.state).not.toHaveProperty("dialog");
     expect(cleanReport({ state: state(), account: { name: 3 } })?.account).toBeUndefined();
+    // Whether the window's own buttons hide (the sidebar a rail, its corner pill closed): only a plain true is kept.
+    expect(cleanReport({ state: state(), controlsHidden: true })?.controlsHidden).toBe(true);
+    for (const v of [false, "true", 1, undefined, {}]) expect(cleanReport({ state: state(), controlsHidden: v })).not.toHaveProperty("controlsHidden");
     expect((r?.state as unknown as Record<string, unknown>).extra).toBeUndefined();
     expect(cleanReport({ state: { tab: { kind: "weird" } } })).toBeUndefined();
     expect(cleanReport(null)).toBeUndefined();

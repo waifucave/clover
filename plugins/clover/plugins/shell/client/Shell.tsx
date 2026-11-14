@@ -8,7 +8,7 @@
 // `bot-editor`. Panels by tab (the owner's item 90): a coding session has its column, the terminal, the changes, the
 // files and the browser; a bot's tab has its slim column (`bot.side`) and the browser, and one of its coding agents
 // opens in the panel as a live tab of its own.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import type { ShellAct } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { BotRef, EntryProps, SessionKind, SessionView } from "../runtime/types";
@@ -45,6 +45,9 @@ export interface ShellStart {
   panels?: string[];
   /** A bot's coding agent open in the panel. */
   agent?: string;
+  /** The sidebar starts as its rail; with `corner: "open"`, the rail's corner pill drawn open (a gallery screen). */
+  sidebar?: "collapsed";
+  corner?: "open";
 }
 
 export interface ShellProps {
@@ -56,7 +59,7 @@ export interface ShellProps {
   /** Where the window is, for the plugin frames that read it (`shell.state`); the app's own layer hands it to the core. */
   /** The essential handles the shown bot's own controls offer (`shell.provide`). */
   provides?: { sidebar: boolean; drag: boolean };
-  report?: (report: { state: ShellState; apps: readonly ShellApp[]; account?: { name: string; detail?: string } }) => void;
+  report?: (report: { state: ShellState; apps: readonly ShellApp[]; account?: { name: string; detail?: string }; controlsHidden?: boolean }) => void;
 }
 
 const tabKey = (r: ShellRoute | undefined) => (r ? `${r.route}:${r.params.bot ?? r.params.session ?? ""}` : "");
@@ -278,7 +281,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const shape = shapeOf(skin);
   // The sidebar is the app's own and the same on every tab: one fold the user's toggle sets (a bot's own toggle sets the same
   // one), kept for the window's life.
-  const [collapsedBy, setCollapsedBy] = useKept<Record<string, boolean>>("shell.sidebar", () => ({}));
+  const [collapsedBy, setCollapsedBy] = useKept<Record<string, boolean>>("shell.sidebar", (): Record<string, boolean> => (props.start?.sidebar === "collapsed" ? { "*": true } : {}));
   const sidebarCollapsed = collapsedBy["*"] ?? false;
   // The sidebar's drawn width (Window measures it): a tab starts at its right edge, so a bot's frames size themselves by it.
   const [sidebarWidth, setSidebarWidth] = useState<number | undefined>();
@@ -286,6 +289,11 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const px = (v: unknown, or: number) => { const n = Number.parseFloat(String(v ?? "")); return Number.isFinite(n) && n >= 0 ? Math.round(n) : or; };
   const safeArea = { left: px(tokens["frame.window.controls"], 80), top: px(tokens["frame.inset.top"], 44) };
   const setCollapsed = (v: boolean) => setCollapsedBy((c) => ({ ...c, "*": v }));
+  // The window's own buttons over the sidebar's corner (macOS's traffic lights): the rail's corner says when they hide (the rail
+  // showing, its pill closed), and the report carries it to the app.
+  const [controlsHidden, setControlsHidden] = useState(false);
+  const corner = useMemo(() => ({ native: safeArea.left > 0, onHiddenChange: setControlsHidden, ...(props.start?.corner === "open" ? { initialOpen: true } : {}) }), [safeArea.left, props.start?.corner]);
+  useEffect(() => { if (!sidebarCollapsed) setControlsHidden(false); }, [sidebarCollapsed]);
   const chrome: Omit<ChromeApi, "place" | "panels"> | undefined = botRef && kind
     ? {
         bot: botRef, kind, title,
@@ -323,10 +331,11 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     });
     return () => { live = false; };
   }, [api, core, props.report === undefined]);
-  const reportKey = JSON.stringify([stateOut, appsOut, account]);
+  const hideControls = sidebarCollapsed && controlsHidden;
+  const reportKey = JSON.stringify([stateOut, appsOut, account, hideControls]);
   const report = props.report;
   useEffect(() => {
-    report?.({ state: stateOut, apps: appsOut, ...(account ? { account } : {}) });
+    report?.({ state: stateOut, apps: appsOut, ...(account ? { account } : {}), ...(hideControls ? { controlsHidden: true } : {}) });
   }, [report, reportKey]);
 
   // An act a bot's own plugin asked for: once per request. Main checked it (the capability, whose tab shows, the user's press); this only does it.
@@ -370,7 +379,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
       onSidebarWidth={setSidebarWidth}
       safeArea={safeArea}
       barFill={botRef ? (stock) => <Spot name="bar" forBot={botRef.id} props={{ bot: botRef, title }} fallback={stock} /> : undefined}
-      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, collapsed: sidebarCollapsed, onCollapsedChange: setCollapsed }} />}
+      sidebar={<Spot name="sidebar" props={{ route: shown ?? { route: "bot", params: {} }, navigate, collapsed: sidebarCollapsed, onCollapsedChange: setCollapsed, corner }} />}
       title={title}
       toggles={toggles}
       side={side}

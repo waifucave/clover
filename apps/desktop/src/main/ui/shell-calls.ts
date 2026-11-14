@@ -102,8 +102,8 @@ export function hearsShell(plugin: { id: string; capabilities: ReadonlySet<strin
   return ownsShownBot(plugin.id, state) && apiCallAllowed("shell.state", "ui", [...plugin.capabilities]);
 }
 
-/** A report from the shell, kept only as the data it must be: a tab, a bot id, the sidebar's fold and width, the panels' names, the safe area, the app buttons. */
-export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; account?: ShellAccount } | undefined {
+/** A report from the shell, kept only as the data it must be: a tab, a bot id, the sidebar's fold and width, the panels' names, the safe area, the app buttons, and whether the window's own buttons hide. */
+export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; account?: ShellAccount; controlsHidden?: true } | undefined {
   const r = obj(v);
   const s = obj(r.state);
   const tab = obj(s.tab);
@@ -131,5 +131,7 @@ export function cleanReport(v: unknown): { state: ShellState; apps: ShellApp[]; 
     },
     apps,
     ...(typeof acc.name === "string" && acc.name.length <= 128 ? { account: { name: acc.name, ...(typeof acc.detail === "string" && acc.detail.length <= 128 ? { detail: acc.detail } : {}) } } : {}),
+    // The sidebar is a rail and its corner pill is closed: the window's own buttons (macOS's traffic lights) hide.
+    ...(r.controlsHidden === true ? { controlsHidden: true as const } : {}),
   };
 }

@@ -151,6 +151,11 @@ export interface SidebarProps {
    *  window's controls (`--cl-window-controls`, 80 px by default). */
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  /** The rail's corner. Collapsed, Clover's mark sits at the window's top corner. Where the window's own buttons draw
+   *  over that corner (macOS's traffic lights: `native`), they are hidden while the rail shows, and hovering the mark
+   *  opens a pill with the buttons at its start and the mark at its end; `onHiddenChange` says when the window should
+   *  hide them. `initialOpen` draws the pill open at first (a gallery story). */
+  corner?: { native?: boolean; onHiddenChange?: (hidden: boolean) => void; initialOpen?: boolean };
   /** The `sidebar.bot` spot: a plugin draws a bot's row its own way. */
   renderBot?: (bot: SidebarBot, standard: ReactNode) => ReactNode;
 }

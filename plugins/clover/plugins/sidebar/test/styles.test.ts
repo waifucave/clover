@@ -9,8 +9,9 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
 /** Leaves that may move or fade: they never hold a sealed frame. */
 const LEAVES: string[] = [".cl-sidebar-icon"];
 
-/** Nothing in the sidebar leaves the flow. */
-const POSITIONED: string[] = [];
+/** The one thing that leaves the flow: the rail's corner (Clover's mark, and the pill that brings the window's own buttons
+ *  back on hover). It stays in the first row, the bar's band, where no sealed frame is ever drawn. */
+const POSITIONED: string[] = [".cl-sidebar__corner"];
 
 describe("the sidebar stylesheet", () => {
   test("uses exactly the tokens tokens.ts names", () => {
