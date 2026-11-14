@@ -80,7 +80,8 @@ describe("a file tool's path in a folder Clover is kept out of", () => {
     }
   });
 
-  test("a secret place Clover can't look into is refused as a secret place, never as a folder to ask the user to let Clover into", async () => {
+  // ~/Library/Mail is a secret place on macOS only (the check reads the host's own OS), so on Linux and Windows it is an ordinary unreachable folder.
+  test.skipIf(process.platform !== "darwin")("a secret place Clover can't look into is refused as a secret place, never as a folder to ask the user to let Clover into", async () => {
     const { user, call, asked } = world(undefined, { home: true });
     chmodSync(join(user, "Library", "Mail"), 0o000);
     try {
