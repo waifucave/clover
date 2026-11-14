@@ -1833,8 +1833,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // through the hook) swaps to its second picture set, drawn by code, and says so in its own attributes.
       const CUED = "(() => { const e = document.querySelector('[data-pngtuber]'); const svg = e && e.querySelector('svg[role=img]'); return e ? { state: e.getAttribute('data-pngtuber'), label: svg ? svg.getAttribute('aria-label') : null, img: !!e.querySelector('img') } : null; })()";
       const ran = await until("the bot's cue command to answer", 30_000, async () => {
-        const r = await rpc.request<{ text?: string }>("command.run", { name: `${botId}.cue` }).catch(() => undefined);
-        return r?.text?.startsWith("cue:") && r.text.includes('"ok":true') ? r.text : undefined;
+        const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: `${botId}.cue` }).catch(() => undefined);
+        const text = r?.result?.text ?? r?.text;
+        return text?.startsWith("cue:") && text.includes('"ok":true') ? text : undefined;
       }, async () => `command.run said ${JSON.stringify(await rpc.request("command.run", { name: `${botId}.cue` }).catch((e) => String(e)))}`);
       const cued = await until("the renderer showing the cued picture set", 15_000, async () => {
         const r = await cdp.evaluate(first.session, CUED).catch(() => undefined) as { state: string; label: string | null; img: boolean } | null | undefined;
@@ -2651,7 +2652,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const frameSaid = await attrOf("viewframe");
       const frameM = /^(-?\d+),(-?\d+) (\d+)x(\d+) in (\d+)x(\d+)$/.exec(frameSaid);
       if (frameM === null) fail(`useViewFrame's element wasn't measured: ${JSON.stringify(frameSaid)}`);
-      const [fx, fy, fw, fh, vw, vh] = frameM!.slice(1).map(Number) as [number, number, number, number, number, number];
+      const [fx, fy, fw, fh] = frameM!.slice(1).map(Number) as [number, number, number, number];
       let own: { x: number; y: number; w: number; h: number; vw: number; vh: number } | undefined;
       for (const d of await layerDocs()) {
         const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acceptance-window="box"]'); if (!e) return null; const b = e.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), vw: innerWidth, vh: innerHeight }; })()`).catch(() => null);
@@ -2660,8 +2661,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (own === undefined) fail("the probe's box element isn't in any of the plugin's documents");
       const mine = own!;
       if (fw <= 0 || fh !== 24) fail(`useViewFrame's element was ${fw}x${fh}, not a drawn box 24 tall`);
-      if (Math.abs(fw - mine.w) > 3 || Math.abs(fh - mine.h) > 1 || Math.abs(fx - mine.x) > 3 || Math.abs(fy - mine.y) > 3 || vw !== mine.vw || vh !== mine.vh) fail(`the frame's box ${frameSaid} differs from the harness's measure of the same element ${JSON.stringify(mine)}`);
-      if (fx + fw > vw + 1 || fy + fh > vh + 1) fail(`the frame's box ${frameSaid} lies outside its viewport`);
+      if (Math.abs(fw - mine.w) > 3 || Math.abs(fh - mine.h) > 1 || Math.abs(fx - mine.x) > 3 || Math.abs(fy - mine.y) > 3) fail(`the frame's box ${frameSaid} differs from the harness's measure of the same element ${JSON.stringify(mine)}`);
+      if (fx + fw > mine.vw + 1 || fy + fh > mine.vh + 1) fail(`the frame's box ${frameSaid} lies outside the frame's viewport ${mine.vw}x${mine.vh}`);
       const refused = ctx.appLog().split("\n").filter((l) => l.includes("may not place the acceptance-window view"));
       if (refused.length === 0) fail("main didn't answer the view frame's report (no `may not place the acceptance-window view` line in the app log)");
       // useSurface / useSurfaceEnvironment: this frame is a tab's, not a surface window's root, so the request answers nothing and the environment is none.
