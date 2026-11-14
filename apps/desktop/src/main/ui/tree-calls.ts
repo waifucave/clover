@@ -94,8 +94,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
   // Settings › Voice (Clover Voice's part) reads and writes its own settings too (which voice is active here), the
   // write by the user's choice in its list.
-  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART], anyId: [PLUGINS_PART] },
-  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART], gesture: [PLUGINS_PART, VOICE_PART], anyId: [PLUGINS_PART] },
+  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART, BOT_EDITOR_PART] },
+  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART, BOT_EDITOR_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card). The avatar's two
   // fields (`avatar`, `avatarCredit`) are the character plugin's section's alone, and the editor writes none of them
   // (`userLayerWhy`).
@@ -395,7 +395,9 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   if (method === "plugin.settings.set") {
     if (typeof p.id !== "string" || typeof p.key !== "string") return { why: "which setting?" };
     if (!Object.hasOwn(p, "value")) return { why: "set it to what?" };
-    return { params: { id: p.id, key: p.key, value: p.value, noSecret: true } };
+    // The bot's Edit page sets a setting kept per bot for that bot (its plugin's id is the bot's): the one `bot` a page may name.
+    const bot = part === BOT_EDITOR_PART && typeof p.bot === "string" && p.bot === p.id ? { bot: p.bot } : {};
+    return { params: { id: p.id, key: p.key, value: p.value, ...bot, noSecret: true } };
   }
   // Another 24 hours of code that reloads asks on the same card as adding it.
   if (method === "plugin.dev.renew") return typeof p.path === "string" ? { params: { path: p.path, card: true } } : { why: "which development folder?" };

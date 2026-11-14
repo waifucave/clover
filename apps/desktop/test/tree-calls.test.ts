@@ -65,7 +65,7 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { BOT_EDITOR_PART, CHARACTER_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, SHELL_PART, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
+import { BOT_EDITOR_PART, CHARACTER_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, SHELL_PART, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, pageParams, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
 function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
   const calls: string[] = [];
@@ -365,8 +365,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "voice.listen": { parts: [SHELL_PART], gesture: [] },
   // The shell's player saying an utterance ended: a report with no gesture (it lets the voice mode go on, never starts a sound).
   "voice.played": { parts: [SHELL_PART], gesture: [] },
-  "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART, "clover/voice"], gesture: [], ownId: ["clover/settings", "clover/voice"] },
-  "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART, "clover/voice"], gesture: [PLUGINS_PART, "clover/voice"], ownId: ["clover/settings", "clover/voice"] },
+  "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], gesture: [], ownId: ["clover/settings", "clover/voice"] },
+  "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], gesture: [PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], ownId: ["clover/settings", "clover/voice"] },
   "bot.setUserLayer": { parts: ["clover/bot-editor", "clover/character"], gesture: ["clover/bot-editor", "clover/character"] },
   "bot.importAvatar": { parts: [CHARACTER_PART], gesture: [CHARACTER_PART] },
   "session.resend": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
@@ -1101,5 +1101,14 @@ describe("a message action (`conversation.messageAction`): main finds the entry 
   test("the handler's failure reaches the page as its own sentence, a path cut out", async () => {
     const t = press({ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { request: async () => { throw new Error("pinReply failed reading /Users/someone/.secret/file"); } });
     await expect(routeCall(t.r)).rejects.toThrow("pinReply failed reading …");
+  });
+});
+
+describe("a setting from the bot's Edit page", () => {
+  test("names the bot only when it is the plugin's own bot, and only from the bot editor", () => {
+    const set = (part: string, p: Record<string, unknown>) => pageParams("plugin.settings.set", p, part, new PickTokens());
+    expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" })).toEqual({ params: { id: "juniper", key: "loud", value: true, bot: "juniper", noSecret: true } });
+    expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "alpha" })).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
+    expect(set(PLUGINS_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" })).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
   });
 });
