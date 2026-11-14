@@ -2,7 +2,7 @@
 // style and hide entries, `needs` and `keep`, list spots and safe mode.
 import { describe, expect, test } from "bun:test";
 import { readUiEntry, type UiPlugin } from "../src/main/ui/model";
-import { NO_CHOICES, SpotTree, entryRef, partOf, resolveCell, type CellContext, type UiChoices } from "../src/main/ui/spots";
+import { NO_CHOICES, SpotTree, entryRef, ownPanelCandidates, partOf, resolveCell, type CellContext, type UiChoices } from "../src/main/ui/spots";
 
 let enabled = 0;
 function plugin(id: string, ui: Record<string, unknown>[], opts: Partial<Pick<UiPlugin, "source" | "isBot" | "bots" | "enabledAt">> & { caps?: string[] } = {}): UiPlugin {
@@ -400,5 +400,29 @@ describe("a message action entry: data the conversation draws", () => {
     expect([e.kind, e.id, e.fields]).toEqual(["data", "pin", { title: "Pin", icon: "assets/pin.png", call: "pinReply", on: "assistant" }]);
     expect(readUiEntry("alpha", { spot: "conversation.message.extra", id: "pin", title: "Pin", call: "pinReply" })).toBeUndefined();
     expect(readUiEntry("alpha", { spot: "conversation.message.action", id: "pin", title: "Pin" })).toBeUndefined();
+  });
+});
+
+describe("panels plugins add (§5.5)", () => {
+  const office = plugin("office", [{ spot: "panel", key: "sheets", title: "Sheets", component: "Sheets", order: 20 }, { spot: "panel", key: "slides", title: "Slides", component: "Slides", order: 10, when: { session: "coding" } }, { spot: "panel", key: "browser", component: "Mine" }]);
+  const ids = (c: CellContext, plugins = [office]) => ownPanelCandidates({ plugins, ctx: c }).map((x) => `${x.plugin.id}#${x.entry.key}`);
+  test("lists non-stock keys in order, those whose when.session applies, never a stock key", () => {
+    expect(ids(inTab("alpha"))).toEqual(["office#sheets"]);
+    expect(ids(inTab("alpha", { session: "coding" } as Partial<CellContext>))).toEqual(["office#slides", "office#sheets"]);
+  });
+  test("a plugin of a bot's own is listed only on that bot's tab", () => {
+    const own = plugin("juniper", [{ spot: "panel", key: "notes", title: "Notes", component: "N" }], { isBot: true });
+    expect(ids(inTab("juniper"), [own])).toEqual(["juniper#notes"]);
+    expect(ids(inTab("alpha"), [own])).toEqual([]);
+  });
+});
+
+describe("an added panel resolves in its own cell", () => {
+  test("keyed by its key, it is what shows there", () => {
+    const office = plugin("office", [{ spot: "panel", id: "sheets", key: "sheets", title: "Sheets", component: "Sheets" }, { spot: "panel", id: "slides", key: "slides", title: "Slides", component: "Slides", when: { session: ["coding"] } }]);
+    const r = resolveCell({ plugins: [shell, office], ctx: inTab("alpha") }, "panel", "sheets");
+    expect(shownRefs(r)).toEqual(["office#sheets"]);
+    const c = resolveCell({ plugins: [shell, office], ctx: { os: "macos", session: "coding" } as CellContext }, "panel", "slides");
+    expect(shownRefs(c)).toEqual(["office#slides"]);
   });
 });

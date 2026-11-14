@@ -92,7 +92,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "The main area, keyed by route: bot, agent, settings, plugins, app." },
   { name: "panel", shape: "keyed", declaredBy: "shell", botsOffer: ["browser", "agent"], context: ["session"], placeholder: true, fields: titledOpt,
     props: z.object({ app: z.string(), session: z.string().optional(), bot: z.string().optional() }),
-    doc: "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder." },
+    doc: "The panel host, keyed by panel: each stock panel (session, terminal, diff, files, browser, agent) is a plugin of its own, and replaceable. An entry whose key is not a stock one ADDS a panel of the plugin's own, with a button of its own beside the stock ones: it needs a `title`, `icon` is optional, and `when.session` (`bot`, `agent`, `coding`) says which tabs show it (all when absent). Inside a bot's plugin it shows on that bot's tab only; beside the bot (`\"app\": true`) or in a plugin with no bot, on every tab of the kinds it names. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a stock key no plugin fills shows the host's placeholder." },
   { name: "panel.view", shape: "keyed", declaredBy: "shell", botsOffer: false, fields: titled,
     props: z.object({ view: z.string(), session: z.string().optional() }),
     doc: "A spot inside each panel view, keyed by the view's id." },
@@ -175,11 +175,25 @@ export const BOTS_OFFER: ReadonlyMap<string, true | readonly string[]> = new Map
   SPOTS.flatMap((s) => (s.botsOffer === false ? [] : [[s.name, s.botsOffer === true ? true : s.botsOffer] as const])),
 );
 
+/** The stock right panels, each a `panel` entry's key (the session column included): a `panel` entry with one of these
+ *  keys replaces that panel; with any other key it adds a panel of its own (§5.5). */
+export const STOCK_PANEL_KEYS: readonly string[] = ["session", "terminal", "diff", "browser", "files", "agent"];
+
+/** What an added panel's key looks like: lower-case words and digits with hyphens, as an id in the shell's state. */
+export const OWN_PANEL_KEY_RE = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** Whether a `panel` entry with this key adds a panel of its own rather than replacing a stock one. */
+export function isOwnPanelKey(key: string | undefined): boolean {
+  return key !== undefined && !STOCK_PANEL_KEYS.includes(key);
+}
+
 /** Whether Bots offers `spot` (and `key`, in a keyed spot it offers by key) to a bot's plugin. A keyed spot offered by
- *  key takes only an entry naming one of them: one with no key would fill every key. */
+ *  key takes only an entry naming one of them: one with no key would fill every key. The `panel` spot also takes a key
+ *  that isn't a stock panel's: a panel of the bot's own, on its own tab. */
 export function botsOffer(spot: string, key?: string): boolean {
   const offer = BOTS_OFFER.get(spot);
   if (offer === undefined) return false;
+  if (spot === "panel" && isOwnPanelKey(key)) return true;
   return offer === true || (key !== undefined && offer.includes(key));
 }
 

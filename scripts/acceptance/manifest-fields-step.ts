@@ -168,11 +168,12 @@ export const BOT_PARTS_BOT = "Juniper";
 /** A plugin with a bot: an island tab beside it (`"app": true`), a tool server inside it (`own-bot`, JuniperStage) and
  *  one beside it (JuniperNotes), and its tab's Browser panel replaced. `model` is the model Alpha runs, so its bot's
  *  turns reach the run's fake provider. */
-export function writeBotParts(root: string, model: string, o: { client?: string; settings?: Record<string, unknown> } = {}): string {
+export function writeBotParts(root: string, model: string, o: { client?: string; settings?: Record<string, unknown>; ownPanels?: boolean } = {}): string {
   return writePlugin(join(root, FIELDS_IDS.bot), {
     manifest: 1, id: FIELDS_IDS.bot, name: "Acceptance Juniper", version: "0.0.1", engines: ENGINES,
     host: { entry: "host/index.js", runtime: "bun" }, client: { entry: "client/index.js" },
     ...(o.settings !== undefined ? { settings: o.settings } : {}),
+    ...(o.ownPanels === true ? { capabilities: ["shell.control"] } : {}),
     contributes: {
       bot: { name: BOT_PARTS_BOT, instructions: "bot/instructions.md", model: { default: model } },
       mcpServers: {
@@ -185,7 +186,9 @@ export function writeBotParts(root: string, model: string, o: { client?: string;
       commands: [{ name: "scene", description: "Sets Juniper's scene", handler: "scene", scope: "own-bot", args: { type: "object", additionalProperties: false } }],
       ui: [
         { spot: "island.tab", id: "day", title: "Juniper's day", component: "Day", app: true },
-        { spot: "panel", key: "browser", component: "Browser" },
+        { spot: "panel", ...(o.ownPanels === true ? { id: "browser" } : {}), key: "browser", component: "Browser" },
+        // Panels of her own (§5.5): Scene inside her, on her tab only; Desk beside her (`app`), on every tab.
+        ...(o.ownPanels === true ? [{ spot: "panel", id: "scene", key: "scene", title: "Scene", component: "Scene" }, { spot: "panel", id: "desk", key: "desk", title: "Desk", component: "Desk", app: true }] : []),
       ],
     },
   }, hostSource({ stage: ["JuniperStage"], notes: ["JuniperNotes", "JuniperRun"] }, { scene: "return { text: \"scene-ran\" };" }, {
@@ -228,6 +231,8 @@ export function ownBotWrong(o: { juniperGlossary: string; alphaGlossary: string;
  *  mounts (a module that waits forever: the frame reports no size, so the shell shows the stock panel in its stead). */
 export const BOT_PARTS_CLIENT = {
   drawing: "import { createElement } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\n",
+  /** Her tab's panels of her own: Scene draws a marker, Desk has a button whose press asks the window to open Scene (`shell.openPanel`). */
+  own: "import { createElement, usePluginApi } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Day = () => null;\nexport const Browser = () => createElement(\"div\", { \"data-juniper-browser\": \"\" }, \"Juniper's own browser panel\");\nexport const Scene = () => createElement(\"div\", { \"data-juniper-scene\": \"\" }, \"Juniper's scene panel\");\nexport const Desk = () => { const api = usePluginApi(); return createElement(\"div\", { \"data-juniper-desk\": \"\", style: { padding: 16 } }, createElement(\"button\", { type: \"button\", \"data-open-scene\": \"\", style: { padding: \"12px 20px\" }, onClick: () => { void api.shell?.openPanel(\"scene\").catch(() => undefined); } }, \"Open Scene\")); };\n",
   never: "await new Promise(() => {});\nexport const Day = () => null;\nexport const Browser = () => null;\n",
 } as const;
 /** Settings the plugin carries for the bot's Edit page: one for the bot (the section's switch) and one for the account. */
@@ -271,7 +276,7 @@ export function writeRefusals(root: string): Refusal[] {
   }, undefined, { "client/index.js": "export const Part = () => null;\n", "icon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n" });
   const out: Refusal[] = [
     { code: "bot_panel_not_offered", what: "a panel key other than Browser and agent", folder: bot("acc-refuse-panel", { spot: "panel", key: "terminal", component: "Part" }),
-      words: `Bots offers the Browser and agent panels on ${REFUSAL_BOT}'s tab; "terminal" isn't one of them.` },
+      words: `Bots offers the Browser and agent panels on ${REFUSAL_BOT}'s tab, and a panel of its own (any other key, with a title); "terminal" isn't one of them.` },
     { code: "bot_when_other_bot", what: "an entry tied to another bot (Alpha)", folder: bot("acc-refuse-other-bot", { spot: "composer", component: "Part", when: { bot: "alpha" } }),
       words: `"composer" inside ${REFUSAL_BOT}'s tab is ${REFUSAL_BOT}'s; dressing other bots' tabs is an app part: add "app": true.` },
     { code: "bot_spot_not_offered", what: "an unmarked entry on a spot Bots doesn't offer (status)", folder: bot("acc-refuse-status", { spot: "status", component: "Part" }),
@@ -335,3 +340,21 @@ export function offerWrong(o: { bot: readonly string[]; coding: readonly string[
   if (offered(o.coding, "CcOnly")) wrong.push("the coding session on Clover's own agent was offered CcOnly (onlyBackends: claude-code)");
   return wrong;
 }
+
+/** The ordinary plugin that adds panels (no bot: §5.5, "an Office plugin"): Sheets on every kind of tab, Slides on coding sessions only.
+ *  `titleless` leaves Slides without its `title`, which the check refuses. */
+export const OFFICE_ID = "acc-office";
+export function writeOfficePanels(root: string, o: { titleless?: boolean } = {}): string {
+  return writePlugin(join(root, OFFICE_ID), {
+    manifest: 1, id: OFFICE_ID, name: "Acceptance Office", version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    contributes: {
+      ui: [
+        { spot: "panel", id: "sheets", key: "sheets", title: "Sheets", component: "Sheets" },
+        { spot: "panel", id: "slides", key: "slides", ...(o.titleless === true ? {} : { title: "Slides" }), component: "Slides", when: { session: ["coding"] } },
+      ],
+    },
+  }, undefined, {
+    "client/index.js": "import { createElement } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Sheets = () => createElement(\"div\", { \"data-office-sheets\": \"\" }, \"Sheets panel\");\nexport const Slides = () => createElement(\"div\", { \"data-office-slides\": \"\" }, \"Slides panel\");\n",
+  });
+}
+export const OFFICE_REFUSAL = "The panel \"slides\" adds a panel of its own: it needs a `title`, which names its button.";

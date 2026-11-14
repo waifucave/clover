@@ -16,13 +16,14 @@ import { useLiveList, useLoad } from "./data";
 import { PanelEmpty, PanelHost } from "./PanelHost";
 import { belongsIn, PanelToggles, toggleView, VIEWS_BY_KIND } from "./PanelToggles";
 import type { PanelViewId } from "./panel-types";
-import type { PanelView } from "./panel-types";
+import type { OwnPanel, PanelView } from "./panel-types";
 import { Spot, useApprovals, useCore, useKept, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import { S } from "./strings";
 import { fieldText, plain } from "../runtime/views";
 import { Window, shapeOf, skinOf } from "./Window";
 import { KeptTab } from "./KeptTab";
 import { ReplacedPanel } from "./ReplacedPanel";
+import { entryRef } from "../runtime/resolve";
 import type { ChromeApi } from "./chrome";
 
 /** The panel keys besides the session column, each a `panel` entry's key. */
@@ -166,6 +167,11 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     ...PANEL_KEYS.map((id) => entriesOf("panel", id, panelProps(id))),
   ];
   const filledList = entryLists.map((l) => l.length > 0);
+  // The panels plugins add (a `panel` entry whose key isn't a stock panel's): the main process lists those that apply on this tab, and each
+  // is named `<plugin id>#<key>` in the window's state so two plugins' keys never collide.
+  const ownEntries = entriesOf("panel", "*", panelProps("*"));
+  const ownById = new Map<string, (typeof ownEntries)[number]>(kind ? ownEntries.flatMap((e) => (e.key !== undefined && fieldText(e.fields?.title) !== undefined ? [[`${e.pluginId}#${e.key}`, e] as const] : [])) : []);
+  const own: OwnPanel[] = [...ownById].map(([id, e]) => ({ id, title: fieldText(e.fields?.title)!, ...(typeof e.fields?.icon === "string" ? { icon: e.fields.icon } : {}) }));
   // A bot's own plugin may fill the Browser or its agent's panel on its tab (the winner is not a shipped part): such a panel is watched, and
   // when it does not draw the stock one shows in its place until the person asks to try the bot's again.
   const replacedOnTab = (id: string): boolean => {
@@ -177,7 +183,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // The person chose Clover's panel over the bot's for a tab's panel (kept while the window is open; no setting).
   const [stockChosen, setStockChosen] = useState<Record<string, boolean>>({});
   const fellKey = (id: string) => `${key}|${id}`;
-  const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1])]);
+  const filled = new Set<string>([...(filledList[0] ? ["session"] : []), ...PANEL_KEYS.filter((_, i) => filledList[i + 1]), ...ownById.keys()]);
   // Not before the tab's session is known: its kind decides which panels fit it (`when.session`), and until then it is a guess.
   const settled = (shown?.route !== "agent" || session !== undefined) && (agent === undefined || agentSession !== undefined);
   // Nor before every spot has answered once: a window document that loads again (a plugin's layer first served) starts with empty
@@ -190,6 +196,17 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     ? open
         .filter((id) => id !== "session")
         .map((id) => {
+          const added = ownById.get(id);
+          if (added !== undefined) {
+            const title = fieldText(added.fields?.title)!;
+            return {
+              id,
+              title,
+              content: (header: HTMLElement | null, usedLast: boolean) => (
+                <Spot name="panel" spotKey={added.key} entry={entryRef(added)} {...(botRef ? { forBot: botRef.id } : {})} props={{ app: added.key, session: tabSession, sessionKind: kind, ...(botRef ? { bot: botRef.id } : {}), header, usedLast }} fallback={<PanelEmpty id={id} title={title} onFindPlugin={() => undefined} />} />
+              ),
+            };
+          }
           const base = id === "agent" ? (agentSession?.title ?? S.views.agent!) : (S.views[id] ?? id);
           const empty = <PanelEmpty id={id} title={S.views[id] ?? id} onFindPlugin={(k) => navigate({ route: "plugins", params: { spot: "panel", key: k } })} />;
           if (replacedOnTab(id) && botRef) {
@@ -241,7 +258,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   // A bot's tab draws its bar buttons through the chrome parts (`chrome.tsx`), so its layout may place them; any other tab (an agent's,
   // a code session's) has the standard bar's row.
   const toggles = kind && !botRef ? (
-    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} />
+    <PanelToggles kind={kind} open={open} onToggle={(id) => setOpen(toggleView(open, id))} available={VIEWS_BY_KIND[kind].filter((id) => filled.has(id))} own={own} />
   ) : undefined;
 
   const statusEntries = useSpotEntries("status").entries;
@@ -292,6 +309,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
         open,
         available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [],
         toggleView: (id) => setOpen(toggleView(open, id)),
+        own,
         editBot: () => navigate({ route: "bot-editor", params: { bot: botRef.id } }),
         sidebarCollapsed,
         toggleSidebar: () => setCollapsed(!sidebarCollapsed),
@@ -305,7 +323,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     ...(botRef ? { bot: botRef.id } : {}),
     ...(dialog ? { dialog: "settings" as const } : {}),
     sidebar: { collapsed: sidebarCollapsed, side: kind === "coding" ? "code" : "bots", ...(sidebarWidth !== undefined ? { width: sidebarWidth } : {}) },
-    panels: { open, available: kind ? VIEWS_BY_KIND[kind].filter((id) => filled.has(id)) : [] },
+    panels: { open, available: kind ? [...VIEWS_BY_KIND[kind].filter((id) => filled.has(id)), ...own.map((o) => o.id)] : [], ...(kind && own.length > 0 ? { titles: Object.fromEntries(own.map((o) => [o.id, o.title])) } : {}) },
     safeArea,
   };
   const appsOut: ShellApp[] = appEntries.flatMap((e) => (typeof e.fields?.opens === "string" && fieldText(e.fields?.title) !== undefined ? [{ id: e.fields.opens, title: fieldText(e.fields.title)!, ...(typeof e.fields?.icon === "string" ? { icon: e.fields.icon } : {}) }] : []));
@@ -331,8 +349,8 @@ export function Shell({ props }: EntryProps<ShellProps>) {
 
   // An act a bot's own plugin asked for: once per request. Main checked it (the capability, whose tab shows, the user's press); this only does it.
   const handled = useRef(props.act?.n ?? 0);
-  const latest = useRef({ chrome, navigate, open, setOpen, setCollapsed, sidebarCollapsed, sessions, bots, kind });
-  latest.current = { chrome, navigate, open, setOpen, setCollapsed, sidebarCollapsed, sessions, bots, kind };
+  const latest = useRef({ chrome, navigate, open, setOpen, setCollapsed, sidebarCollapsed, sessions, bots, kind, ownIds: own.map((o) => o.id) });
+  latest.current = { chrome, navigate, open, setOpen, setCollapsed, sidebarCollapsed, sessions, bots, kind, ownIds: own.map((o) => o.id) };
   const act = props.act;
   useEffect(() => {
     if (act === undefined || act.n === handled.current) return;
@@ -341,7 +359,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
     const a = act.act;
     if (a.kind === "sidebar") l.setCollapsed(a.collapsed ?? !l.sidebarCollapsed);
     else if (a.kind === "panel") {
-      if (!l.kind || !VIEWS_BY_KIND[l.kind].includes(a.view as PanelViewId)) return;
+      if (!l.kind || !(VIEWS_BY_KIND[l.kind].includes(a.view as PanelViewId) || l.ownIds.includes(a.view))) return;
       const has = l.open.includes(a.view);
       if (a.to === "open" ? !has : a.to === "closed" ? has : true) l.setOpen(toggleView(l.open, a.view as PanelViewId));
     } else if (a.kind === "editor") {

@@ -650,7 +650,12 @@ export interface ShellState {
    *  its right edge. */
   readonly sidebar: { readonly collapsed: boolean; readonly side: "bots" | "code"; readonly width?: number };
   /** The panels of the tab: the views open now, and the ones it offers. */
-  readonly panels: { readonly open: readonly string[]; readonly available: readonly string[] };
+  readonly panels: {
+    readonly open: readonly string[];
+    readonly available: readonly string[];
+    /** The names of the panels plugins add (their ids, `<plugin id>#<key>`, are in `open` and `available`): what a button for one says. */
+    readonly titles?: Readonly<Record<string, string>>;
+  };
   /** How far the window's own native controls (the traffic lights) reach from the window's top left, in CSS pixels: nothing
    *  drawn may sit under them (0 where the system draws them at the other end). A tab beside the sidebar is under them only
    *  for `left` less `sidebar.width`: none when the sidebar, open or a rail, already lies under them. */

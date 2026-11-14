@@ -102,7 +102,7 @@ export function AlphaControls({ props }: { props: { bot: BotRef } }) {
       <div className="ac__drag" aria-hidden="true" />
       <div className="ac__group" role="toolbar" aria-label="Alpha">
         {(win?.panels.available ?? []).map((view) => (
-          <button key={view} type="button" className="ac__act" aria-label={PANEL_NAMES[view] ?? view} title={PANEL_NAMES[view] ?? view} aria-pressed={open.has(view)} onClick={() => run(shell?.togglePanel?.(view))}>{view === "browser" ? GLOBE : PANEL}<span className="ac__lbl">{PANEL_NAMES[view] ?? view}</span></button>
+          <button key={view} type="button" className="ac__act" aria-label={PANEL_NAMES[view] ?? win?.panels.titles?.[view] ?? view} title={PANEL_NAMES[view] ?? win?.panels.titles?.[view] ?? view} aria-pressed={open.has(view)} onClick={() => run(shell?.togglePanel?.(view))}>{view === "browser" ? GLOBE : PANEL}<span className="ac__lbl">{PANEL_NAMES[view] ?? win?.panels.titles?.[view] ?? view}</span></button>
         ))}
         <button type="button" className="ac__act" aria-label={`Edit ${props.bot.name}`} title={`Edit ${props.bot.name}`} onClick={() => run(shell?.openBotEditor?.())}>{EDIT}<span className="ac__lbl">Edit {props.bot.name}</span></button>
       </div>

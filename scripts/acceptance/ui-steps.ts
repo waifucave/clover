@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
-import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, FIELDS_IDS, writeBotParts } from "./manifest-fields-step";
+import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, FIELDS_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBotParts, writeOfficePanels } from "./manifest-fields-step";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
 export interface UiRow { name: string; status: UiStatus; detail: string }
@@ -45,6 +45,7 @@ export const UI_STEPS = [
   "a third-party plugin fills the window's spots in Alpha's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
   "a third-party plugin fills file.preview for images: a coding session's Files panel shows a picture through the plugin's own component (its name and media type), with no \"no preview\" note",
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
+  "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
 ] as const;
 
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
@@ -2941,6 +2942,154 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
       await escape().catch(() => undefined);
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+    }
+  });
+
+  // 27: panels a plugin adds (§5.5, the owner, November 14: "an Office plugin for sheets, slides and documents"). An ordinary plugin
+  // (acc-office, no bot): Sheets on every tab, Slides on coding sessions only; on Alpha's tab her controls draw Sheets' button and not
+  // Slides', the panel opens beside the stock Browser and draws from its own layer; on a coding session the stock bar has both buttons.
+  // A plugin with a bot (Juniper): Scene inside her (her tab only), Desk beside her (every tab); Desk's frame presses a button that calls
+  // shell.openPanel("scene") and the window opens hers; the Plugins page's parts-beside-her switch takes Desk away everywhere and leaves
+  // Scene. A manifest panel with no title is refused with its words.
+  await step(27, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const bot = FIELDS_IDS.bot;
+    const parent = mkdtempSync(join(tmpdir(), "clover-own-panels-"));
+    const said: string[] = [];
+    const press = async (what: string, selector: string, text?: string, ms = 20_000) => {
+      const at = await until(what, ms, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(700);
+    };
+    const has = async (sel: string) => (await inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(sel)})`)) !== undefined;
+    const layerHas = async (id: string, sel: string) => {
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
+        if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(sel)})`).catch(() => false)) === true) return true;
+      }
+      return false;
+    };
+    const pressLayer = async (id: string, sel: string) => {
+      const at = await until(`${sel} in ${id}'s frame`, 30_000, async () => {
+        for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
+          const c = await cdp.centerOf(d.session, sel).catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(700);
+    };
+    const install = async (id: string, folder: string) => {
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
+    };
+    const toTab = async (name: string) => {
+      await escape();
+      await press("the Bots side", ".cl-sidebar__switch-option, .cl-sidebar [role=radio]", "Bots").catch(() => undefined);
+      await press(`${name} in the sidebar`, SIDEBAR_ITEMS, name);
+    };
+    /** Alpha's own controls draw a button for each panel the window offers, named by its title. */
+    const alphaButton = (title: string) => `.ac__act[aria-label=${JSON.stringify(title)}]`;
+    const ownButton = (id: string) => `[data-own-panel=${JSON.stringify(id)}]`;
+    const view = (id: string) => `[data-view=${JSON.stringify(id)}]`;
+    /** Opens a panel by its button and waits for it drawn: a plugin installed after the window was served loads the window's frame once more
+     *  when its layer is first served and the panel open at that moment closes, so the button is pressed again until it draws. */
+    const openOwn = async (button: string, id: string, layer: string, marker: string) => {
+      let last = "";
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (!(await has(`${button}[aria-pressed="true"]`)) || !(await has(view(id)))) {
+          if (await has(`${button}[aria-pressed="true"]`)) await press("the button (close, to open again)", button);
+          await press(`the ${id} button`, button);
+        }
+        try {
+          await until(`${id} open and drawn`, 12_000, async () => ((await has(view(id))) && (await layerHas(layer, marker)) ? true : undefined));
+          return;
+        } catch (e) {
+          last = String(e);
+        }
+      }
+      const views = (await inTree<string>(cdp, "[...document.querySelectorAll('[data-view]')].map((e) => e.getAttribute('data-view')).join(',')"))?.value;
+      const html = (await inTree<string>(cdp, `(() => { const v = document.querySelector(${JSON.stringify(view(id))}); return v ? [...v.children].slice(1).map((c) => c.outerHTML).join('').replace(/<svg.*?<\\/svg>/g, '').slice(0, 300) : null; })()`))?.value ?? 'none';
+      const urls = (await cdp.documents()).filter((d) => !d.url.startsWith('clover-plugin://clover/')).map((d) => d.url.slice(0, 50)).join(' | ');
+      fail(`${id} not open and drawn in 4 tries (${last.slice(0, 80)}; views: ${views}; its view: ${html.slice(0, 200)}; documents: ${urls}; log: ${ctx.appLog().split("\n").filter((l) => /acc-office|refus|layers|loads again/.test(l)).slice(-5).join(" // ").slice(0, 900)})`);
+    };
+    const sheets = `${OFFICE_ID}#sheets`;
+    const slides = `${OFFICE_ID}#slides`;
+    try {
+      // 0. Refused by its words: a panel with no title.
+      const bad = writeOfficePanels(join(parent, "bad"), { titleless: true });
+      const refusal = await rpc.request("plugin.install", { source: { from: "folder", path: bad } }, 60_000).then(() => undefined, (e: unknown) => String(e));
+      if (refusal === undefined) fail("a panel entry with no title was installed");
+      if (!refusal!.includes(OFFICE_REFUSAL)) fail(`a panel with no title was refused as ${JSON.stringify(refusal!.slice(0, 300))}, not with ${JSON.stringify(OFFICE_REFUSAL)}`);
+      rmSync(bad, { recursive: true, force: true });
+      said.push(`a panel entry with no title is refused: "${OFFICE_REFUSAL}"`);
+      // 1. The ordinary plugin on Alpha's tab.
+      await install(OFFICE_ID, writeOfficePanels(join(parent, "office")));
+      await toTab("Alpha");
+      await until("Alpha's controls with a Sheets button", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(alphaButton("Sheets"))})`), () => dumpFrames(cdp));
+      if (await has(alphaButton("Slides"))) fail("Slides (coding sessions only) has a button on Alpha's tab");
+      await openOwn(alphaButton("Sheets"), sheets, OFFICE_ID, "[data-office-sheets]");
+      await press("Alpha's Browser button", alphaButton("Browser"));
+      await until("Sheets open beside the stock Browser", 20_000, async () => ((await has(view(sheets))) && (await has(view("browser"))) ? true : undefined), () => dumpFrames(cdp));
+      said.push("on Alpha's tab her controls drew a Sheets button and none for Slides; Sheets opened, drew from the plugin's layer and stayed open beside the stock Browser panel");
+      await press("Alpha's Sheets button (close)", alphaButton("Sheets"));
+      await press("Alpha's Browser button (close)", alphaButton("Browser"));
+      // 2. A coding session: the stock bar has both buttons, the Slides one opens and draws.
+      const codeId = await ensureCodingSession(ctx, {}) ?? fail("this run could not start a coding session");
+      await toCodingSession(cdp, codeId, press);
+      await until("the coding session's bar with both buttons", 30_000, async () => ((await has(ownButton(sheets))) && (await has(ownButton(slides))) ? true : undefined), () => dumpFrames(cdp));
+      await openOwn(ownButton(slides), slides, OFFICE_ID, "[data-office-slides]");
+      await press("the Slides button (close)", ownButton(slides));
+      said.push("on a coding session the stock bar had a button for Sheets and one for Slides, and Slides opened and drew");
+      // 3. Juniper (a bot plugin): Scene inside her, Desk beside her.
+      const folder = writeBotParts(join(parent, "bot"), "anthropic/claude-sonnet-5-5", { client: BOT_PARTS_CLIENT.own, settings: BOT_PARTS_SETTINGS, ownPanels: true });
+      await install(bot, folder);
+      await toTab(BOT_PARTS_BOT);
+      await until("Juniper's bar with Scene and Desk and Sheets", 30_000, async () => ((await has(ownButton(`${bot}#scene`))) && (await has(ownButton(`${bot}#desk`))) && (await has(ownButton(sheets))) ? true : undefined), () => dumpFrames(cdp));
+      await toTab("Alpha");
+      await until("Alpha's controls with Desk", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(alphaButton("Desk"))})`), () => dumpFrames(cdp));
+      if (await has(alphaButton("Scene"))) fail("Juniper's inside panel, Scene, has a button on Alpha's tab");
+      said.push("Juniper's tab has buttons for Scene, Desk and Sheets; Alpha's has Desk (beside her) and not Scene (inside her)");
+      // 4. shell.openPanel from her own frame.
+      await toTab(BOT_PARTS_BOT);
+      await openOwn(ownButton(`${bot}#desk`), `${bot}#desk`, bot, "[data-open-scene]");
+      if (await has(view(`${bot}#scene`))) fail("Scene was open before its panel was asked for");
+      await pressLayer(bot, "[data-open-scene]");
+      await until("Scene opened by shell.openPanel from Desk's frame and drawn", 30_000, async () => ((await has(view(`${bot}#scene`))) && (await layerHas(bot, "[data-juniper-scene]")) ? true : undefined), () => dumpFrames(cdp));
+      said.push("Desk's frame pressed shell.openPanel(\"scene\") and Juniper's Scene panel opened beside it and drew");
+      // 5. The parts-beside-her switch: Desk goes, Scene stays.
+      await escape();
+      await press("the sidebar's Plugins entry", SIDEBAR_ITEMS, "Plugins");
+      await until("the Plugins page", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-plugin-index__tabs')"), () => dumpFrames(cdp));
+      await press("the Installed tab", "[role=tab]", "Installed");
+      const toggle = `[role=switch][aria-label="Its parts beyond ${BOT_PARTS_BOT}'s tab"]`;
+      await until("the app-parts switch on her row", 20_000, () => inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(toggle)})`), () => dumpFrames(cdp));
+      await press("the app-parts switch", toggle);
+      await until("her app parts off in the daemon", 30_000, async () => {
+        const r = await rpc.request<{ plugin: { state: string; parts?: { app?: { enabled?: boolean } } } }>("plugin.get", { id: bot }).catch(() => undefined);
+        return r?.plugin.state === "running" && r.plugin.parts?.app?.enabled === false ? true : undefined;
+      });
+      await toTab("Alpha");
+      await until("Alpha's controls without Desk", 30_000, async () => ((await has(".ac__act[aria-label=Browser]")) && !(await has(alphaButton("Desk"))) ? true : undefined), () => dumpFrames(cdp));
+      await toTab(BOT_PARTS_BOT);
+      await until("Juniper's bar: Scene kept, Desk gone", 30_000, async () => ((await has(ownButton(`${bot}#scene`))) && !(await has(ownButton(`${bot}#desk`))) ? true : undefined), () => dumpFrames(cdp));
+      said.push("with her parts beside her off the Desk button was gone on both tabs and her Scene button stayed on her own");
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
+      return said.join("; ");
+    } finally {
+      for (const id of [bot, OFFICE_ID]) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+      await escape().catch(() => undefined);
+      await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots").catch(() => undefined);
       await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
     }
   });

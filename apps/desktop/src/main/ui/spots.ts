@@ -18,7 +18,7 @@
 // "The smaller part": the part a plugin dresses is the smallest spot holding all its entries in that tab, a child
 // counting as its own plugin (a send-button plugin dresses the button, a bot's tab look the whole tab, a shell the
 // app). The spots form a tree: the catalog's declarations, and each plugin's `declares` under the spot its entry fills.
-import { SAME_ON_EVERY_TAB, SPOTS, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
+import { SAME_ON_EVERY_TAB, SPOTS, isOwnPanelKey, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type PointDeclaration, type UiEntry, type UiPlugin } from "./model";
 
 export type Os = "macos" | "windows" | "linux";
@@ -345,6 +345,31 @@ function userPick(choices: UiChoices, spot: string, key: string | undefined, bot
     if (forBot !== undefined) return forBot;
   }
   return choices.picks.find((p) => matches(p) && p.bot === undefined);
+}
+
+/** The key a part asks the `panel` spot's entries with to get every panel a plugin ADDS (an entry whose key isn't a stock
+ *  panel's, §5.5), instead of one key's: the shell lists them for its toggles. */
+export const OWN_PANELS_KEY = "*";
+
+/** The panels plugins add that apply in this context (the tab's bot and kind of session), in their order: by `order`, then
+ *  plugin and id. Each is its own cell's candidate: the shell places an entry by its ref (`<Spot entry>`). Two entries of one
+ *  plugin with one key (one per kind of tab) are one panel here: the first that applies. */
+export function ownPanelCandidates(input: Pick<ResolveInput, "plugins" | "ctx">): Candidate[] {
+  const found: Candidate[] = [];
+  const seen = new Set<string>();
+  for (const plugin of input.plugins) {
+    if (!runs(plugin, input.ctx)) continue;
+    for (const entry of plugin.entries) {
+      if (entry.spot !== "panel" || entry.key === undefined || !isOwnPanelKey(entry.key)) continue;
+      if (entry.kind !== "component" && entry.kind !== "web") continue;
+      if (!applies(plugin, entry, input.ctx)) continue;
+      const id = `${plugin.id}#${entry.key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      found.push({ plugin, entry, tier: 2 });
+    }
+  }
+  return found.sort((a, b) => (a.entry.order ?? 500) - (b.entry.order ?? 500) || (a.plugin.id < b.plugin.id ? -1 : a.plugin.id > b.plugin.id ? 1 : 0) || (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0));
 }
 
 /** Resolves one cell: what shows there, what dresses it, and why. */

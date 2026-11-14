@@ -102,7 +102,7 @@ describe("the envelope", () => {
 describe("code, engines and platforms", () => {
   test("data, web or code is worked out from the manifest (§5.3)", () => {
     expect(validateManifest(min()).class).toBe("data");
-    const web = validateManifest({ ...min(), contributes: { ui: [{ spot: "panel", key: "luna", web: { url: "https://luna.example.com/", partition: "main" } }] } });
+    const web = validateManifest({ ...min(), contributes: { ui: [{ spot: "panel", key: "luna", title: "Luna", web: { url: "https://luna.example.com/", partition: "main" } }] } });
     expect(web.class).toBe("web");
     expect(web.networkHosts).toEqual(["luna.example.com"]);
     const stdio = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { blender: { type: "stdio", command: "uvx", args: ["blender-mcp"] } } } });
@@ -257,6 +257,27 @@ describe("contributes", () => {
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "S", window: { type: "overlay" } }] } }), "ui_window_not_surface")).toBe(true);
   });
 
+  test("a `panel` entry whose key isn't a stock panel's adds a panel: it needs a title and a plain key; inside a bot it is the bot's tab's (§5.5)", () => {
+    const base = { ...min(), id: "sheets", engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
+    const ui = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, contributes: { ui: entries } });
+    const said = (r: ReturnType<typeof validateManifest>, code: string) => r.issues.find((i) => i.code === code)?.message;
+    // An ordinary plugin: a key that is not a stock one, a title, an optional icon, `when.session` for the kinds.
+    expect(ui({ spot: "panel", key: "sheets", component: "Sheets", title: "Sheets", icon: "i.svg", when: { session: ["coding", "bot"] } }).issues).toEqual([]);
+    expect(ui({ spot: "panel", key: "sheets", component: "Sheets", title: { en: "Sheets", ja: "シート" } }).issues).toEqual([]);
+    expect(said(ui({ spot: "panel", key: "sheets", component: "Sheets" }), "panel_title")).toBe("The panel \"sheets\" adds a panel of its own: it needs a `title`, which names its button.");
+    expect(has(ui({ spot: "panel", key: "Sheets 2", component: "Sheets", title: "S" }), "panel_key")).toBe(true);
+    expect(has(ui({ spot: "panel", key: "x".repeat(33), component: "Sheets", title: "S" }), "panel_key")).toBe(true);
+    // A stock key keeps its meaning: a replacement, no title needed.
+    expect(ui({ spot: "panel", key: "browser", component: "B" }).issues).toEqual([]);
+    // Inside a bot's plugin: its own panel is offered on its tab; the stock keys keep the old rule.
+    const bot = { name: "Luna", instructions: "bot/instructions.md" };
+    const inBot = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, id: "luna", contributes: { bot, ui: entries } });
+    expect(inBot({ spot: "panel", key: "notes", component: "Notes", title: "Notes" }).issues).toEqual([]);
+    expect(has(inBot({ spot: "panel", key: "notes", component: "Notes" }), "panel_title")).toBe(true);
+    expect(has(inBot({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe(true);
+    expect(inBot({ spot: "panel", key: "notes", component: "Notes", title: "Notes", app: true, when: { session: "coding" } }).issues).toEqual([]);
+  });
+
   test("a bot's plugin fills only what Bots offers on its own tab, unless a part says `\"app\": true` (§5.5, the owner's rule of November 14)", () => {
     const bot = { name: "Luna", instructions: "bot/instructions.md" };
     const base = { ...min(), id: "luna", engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
@@ -269,8 +290,8 @@ describe("contributes", () => {
     expect(said(ui({ spot: "island.tab", component: "T", title: "Tarot" }), "bot_spot_not_offered")).toBe(
       "Bots doesn't offer \"island.tab\" to Luna: a bot's plugin dresses only its own tab (inside it, its top bar, its Browser and agent panels). To show it everywhere, add \"app\": true; it then gets a switch of its own.");
     expect(has(ui({ spot: "status", component: "S" }), "bot_spot_not_offered")).toBe(true);
-    expect(said(ui({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab; \"terminal\" isn't one of them.");
-    expect(said(ui({ spot: "panel", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab; an entry with no key would fill every panel.");
+    expect(said(ui({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab, and a panel of its own (any other key, with a title); \"terminal\" isn't one of them.");
+    expect(said(ui({ spot: "panel", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab, and a panel of its own (any other key, with a title); an entry with no key would fill every panel.");
     expect(said(ui({ spot: "bot.editor.section", component: "E" }), "bot_editor_stock")).toBe("Luna's Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.");
     expect(said(ui({ spot: "composer", component: "C", when: { bot: "alpha" } }), "bot_when_other_bot")).toBe("\"composer\" inside Luna's tab is Luna's; dressing other bots' tabs is an app part: add \"app\": true.");
     // Beside the bot (`app`): the app's rules, as any plugin's: other bots' tabs and the island included.
@@ -413,7 +434,7 @@ describe("declared points (§5.4)", () => {
   test("a UI spot is declared only by a ui entry with a component", () => {
     const spot = { "luna.deck": { shape: "list", props: {} } };
     expect(has(validateManifest({ ...base, host: { ...base.host, declares: spot } }), "spot_declarer", "plugin")).toBe(true);
-    const ok = validateManifest({ ...base, contributes: { ui: [{ spot: "panel", key: "luna", component: "Panel", declares: spot }] } });
+    const ok = validateManifest({ ...base, contributes: { ui: [{ spot: "panel", key: "luna", title: "Luna", component: "Panel", declares: spot }] } });
     expect(ok.issues).toEqual([]);
     expect(ok.declares[0]).toEqual({ name: "luna.deck", by: "ui/0", shape: "list", spot: true, wellKnown: false });
   });
@@ -428,8 +449,8 @@ describe("declared points (§5.4)", () => {
     expect(two.declares.map((d) => [d.name, d.by])).toEqual([["file.preview", "ui/0"], ["file.preview", "ui/1"]]);
     const own = (props: Record<string, unknown>) => ({ "luna.deck": { shape: "list", props } });
     const differ = validateManifest({ ...base, contributes: { ui: [
-      { id: "a", spot: "panel", key: "a", component: "A", declares: own({}) },
-      { id: "b", spot: "panel", key: "b", component: "B", declares: own({ type: "object" }) },
+      { id: "a", spot: "panel", key: "a", title: "A", component: "A", declares: own({}) },
+      { id: "b", spot: "panel", key: "b", title: "B", component: "B", declares: own({ type: "object" }) },
     ] } });
     expect(codes(differ)).toContain("error:entry:point_duplicate:/contributes/ui/1/declares/luna.deck");
     const data = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list" } } },
@@ -454,6 +475,18 @@ describe("declared points (§5.4)", () => {
 });
 
 describe("the OK's text", () => {
+  test("says each panel a plugin adds, with its title and where it shows (§5.5)", () => {
+    const ok = (id: string, contributes: Record<string, unknown>) => describeOk(validateManifest({ ...min(), id, engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" }, contributes }), { os: "macos" });
+    expect(ok("sheets", { ui: [{ spot: "panel", key: "sheets", component: "S", title: "Sheets", when: { session: ["coding", "bot"] } }] }))
+      .toContain("It adds a panel, \"Sheets\", on the right of coding sessions, bots' tabs, with a button of its own beside the right panels' buttons.");
+    expect(ok("docs", { ui: [{ spot: "panel", key: "docs", component: "D", title: { en: "Documents" } }] }))
+      .toContain("It adds a panel, \"Documents\", on the right of every tab, with a button of its own beside the right panels' buttons.");
+    const bot = { name: "Luna", instructions: "bot/instructions.md" };
+    expect(ok("luna", { bot, ui: [{ spot: "panel", key: "notes", component: "N", title: "Notes" }] }))
+      .toContain("It adds a panel, \"Notes\", to Luna's tab, with a button of its own beside the right panels' buttons.");
+    // A replacement of a stock panel adds no panel.
+    expect(ok("browsy", { ui: [{ spot: "panel", key: "browser", component: "B" }] }).some((l) => l.startsWith("It adds a panel"))).toBe(false);
+  });
   test("says what the plugin is, what it adds, what it reaches and what it warns about", () => {
     const r = validateManifest({
       ...min(), engines: { clover: "^1.0.0" }, capabilities: ["approvals", "network:api.luna.example"], addons: { description: "Tarot decks" },

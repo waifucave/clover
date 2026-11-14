@@ -6,6 +6,7 @@
 import type { ReactNode } from "react";
 import { IconAgent, IconDiff, IconFolder, IconGlobe, IconMore, IconSession, IconTerminal } from "./icons";
 import { S } from "./strings";
+import { OwnPanelToggles } from "./OwnPanelToggles";
 import type { PanelTogglesProps, PanelView, PanelViewId, SessionKind } from "./panel-types";
 
 /** The views each kind of tab offers, in the order their toggles show. */
@@ -51,7 +52,7 @@ export function PanelToggleButton({ id, kind, open, onToggle }: { id: PanelViewI
   );
 }
 
-export function PanelToggles({ kind, open, onToggle, onMore, available, skip }: PanelTogglesProps & { skip?: readonly string[] }) {
+export function PanelToggles({ kind, open, onToggle, onMore, available, skip, own }: PanelTogglesProps & { skip?: readonly string[] }) {
   const offered = VIEWS_BY_KIND[kind].filter((id) => (available === undefined || available.includes(id)) && !(skip ?? []).includes(id));
   return (
     <div className="cl-panel-toggles" data-kind={kind}>
@@ -73,6 +74,7 @@ export function PanelToggles({ kind, open, onToggle, onMore, available, skip }: 
           </button>
         );
       })}
+      {own !== undefined && own.length > 0 && <OwnPanelToggles own={own} open={open} onToggle={onToggle} />}
       {onMore && (
         <button type="button" className="cl-panel-toggle" aria-label={S.more} title={S.more} onClick={onMore}>
           <IconMore />

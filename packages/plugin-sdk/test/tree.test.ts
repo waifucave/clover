@@ -37,7 +37,7 @@ const LUNA = {
   "locales/fr.json": { locale: 1, lang: "fr", strings: { "luna.greeting": "Bonjour", "luna.cards": { one: "{n} carte", other: "{n} cartes" } } },
   "plugins/tarot-panel/clover.json": {
     manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" },
-    contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+    contributes: { ui: [{ spot: "panel", key: "tarot", title: "Tarot", component: "TarotPanel" }] },
   },
   "plugins/tarot-panel/client/index.tsx": "export function TarotPanel() { return null; }",
 };
@@ -62,7 +62,7 @@ describe("a bot plugin with a child", () => {
       ...plain,
       "plugins/tarot-panel/clover.json": {
         manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" }, capabilities: ["approvals"],
-        contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+        contributes: { ui: [{ spot: "panel", key: "tarot", title: "Tarot", component: "TarotPanel" }] },
       },
     };
     const p = await validateTree(folder(placer), { folderName: "luna" });
@@ -113,7 +113,7 @@ describe("a bot plugin with a child", () => {
       ...LUNA,
       "plugins/tarot-panel/clover.json": {
         manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx", css: ["client/panel.css"] },
-        contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+        contributes: { ui: [{ spot: "panel", key: "tarot", title: "Tarot", component: "TarotPanel" }] },
       },
     };
     const r = await validateTree(folder(files), { folderName: "luna" });
