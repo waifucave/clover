@@ -71,3 +71,18 @@ export interface BotEditorProps {
   onChange: (patch: BotPatch) => void;
   onBack: () => void;
 }
+
+/** One of the bot's plugin's settings as the stock section draws it (a secret is left out: its key is entered in the app's own dialog). */
+export type StockSetting = {
+  key: string;
+  title: string;
+  description?: string;
+  /** One value per bot: saved with the bot named. */
+  perBot: boolean;
+  value?: unknown;
+} & (
+  | { type: "string" | "color" }
+  | { type: "number"; min?: number; max?: number }
+  | { type: "boolean" }
+  | { type: "enum"; options: { value: string; title: string }[] }
+);

@@ -262,3 +262,23 @@
   gap: 12px;
   min-width: 0;
 }
+
+/* A bot's settings, as a section of the Edit page headed with its name (the plugin's `settings`, stock controls). */
+.cl-bot-editor__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cl-bot-editor__settings-title {
+  margin: 8px 0 0;
+  font-size: var(--clover-font-size-title);
+  font-weight: var(--clover-font-weight-medium);
+  color: var(--clover-color-text);
+}
+
+.cl-bot-editor__inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

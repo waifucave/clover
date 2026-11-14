@@ -9,7 +9,8 @@ import { plain } from "../../shell/runtime/views";
 import { BotEditor } from "./BotEditor";
 import { Spot, useApprovals, useCore, usePluginApi } from "./sdk";
 import { S } from "./strings";
-import type { BotEditorModel, BotField, BotPatch, HiddenPartChoice, TabPatchChoice } from "./types";
+import { SettingsSection } from "./SettingsSection";
+import type { BotEditorModel, BotField, BotPatch, HiddenPartChoice, StockSetting, TabPatchChoice } from "./types";
 
 export interface BotEditorEntryProps {
   route?: string;
@@ -110,6 +111,20 @@ export async function hiddenPartsOf(core: CoreClient | undefined, bot: string): 
   return { parts: out, lists };
 }
 
+/** The bot's plugin's settings as `plugin.settings.get` gives them, for the stock section: every kind but a secret. */
+export function stockSettingsOf(rows: readonly { key: string; type: string; title: unknown; description?: unknown; scope?: string; options?: (string | { value: string; title: unknown })[]; min?: number; max?: number; value?: unknown }[]): StockSetting[] {
+  return rows.flatMap((r): StockSetting[] => {
+    const title = plain(r.title as never) || r.key;
+    const description = plain(r.description as never);
+    const base = { key: r.key, title, ...(description ? { description } : {}), perBot: r.scope === "bot", ...(r.value !== undefined ? { value: r.value } : {}) };
+    if (r.type === "string" || r.type === "color") return [{ ...base, type: r.type }];
+    if (r.type === "boolean") return [{ ...base, type: "boolean" }];
+    if (r.type === "number") return [{ ...base, type: "number", ...(r.min !== undefined ? { min: r.min } : {}), ...(r.max !== undefined ? { max: r.max } : {}) }];
+    if (r.type === "enum") return [{ ...base, type: "enum", options: (r.options ?? []).map((o) => (typeof o === "string" ? { value: o, title: o } : { value: o.value, title: plain(o.title as never) || o.value })) }];
+    return [];
+  });
+}
+
 export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const api = usePluginApi();
   const core = useCore();
@@ -120,6 +135,9 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   const [themes, setThemes] = useState<{ id: string; name: string }[]>([]);
   const [waiting, setWaiting] = useState<{ field: BotField; card: string } | undefined>(undefined);
   const [tabPatches, setTabPatches] = useState<TabPatchChoice[]>([]);
+  const [stock, setStock] = useState<StockSetting[]>([]);
+  const [stockNote, setStockNote] = useState<string | undefined>(undefined);
+  const [stockRev, setStockRev] = useState(0);
   const [hidden, setHidden] = useState<{ parts: HiddenPartChoice[]; lists: { spot: string; bot?: string; order: string[]; hidden: string[]; shown?: string[] }[] }>({ parts: [], lists: [] });
 
   useEffect(() => {
@@ -141,6 +159,16 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       live = false;
     };
   }, [core]);
+
+  // The bot's plugin's settings (the bot's id is its plugin's): read again after each save.
+  useEffect(() => {
+    if (!id || !core) return;
+    let live = true;
+    void core.call("plugin.settings.get", { id, bot: id }).then((r) => live && setStock(stockSettingsOf(r.settings as never)), () => live && setStock([]));
+    return () => {
+      live = false;
+    };
+  }, [core, id, stockRev]);
 
   useEffect(() => {
     if (waiting && !cards.some((c) => c.id === waiting.card)) setWaiting(undefined);
@@ -171,7 +199,28 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       own={bot.userLayer.filter((f): f is BotField => f !== "avatar")}
       model={{ value: bot.model, ...(bot.effort ? { effort: bot.effort } : {}), models }}
       {...(bot.voice ? { voice: bot.voice } : {})}
-      sections={<Spot name="bot.editor.section" props={{ bot: { id: bot.id, name: bot.name } }} />}
+      sections={
+        <>
+          <SettingsSection
+            bot={{ id: bot.id, name: plain(bot.name) }}
+            settings={stock}
+            {...(stockNote ? { note: stockNote } : {})}
+            onSet={(key, value) => {
+              if (!core) return;
+              setStockNote(undefined);
+              const perBot = stock.find((s) => s.key === key)?.perBot === true;
+              void core.call("plugin.settings.set", { id: bot.id, key, value, ...(perBot ? { bot: bot.id } : {}), noSecret: true }).then(
+                (r) => {
+                  if ((r as { applied?: boolean }).applied === false) setStockNote(S.waiting);
+                  setStockRev((n) => n + 1);
+                },
+                () => setStockRev((n) => n + 1),
+              );
+            }}
+          />
+          <Spot name="bot.editor.section" props={{ bot: { id: bot.id, name: bot.name } }} />
+        </>
+      }
       themes={themes}
       {...(bot.theme ? { theme: bot.theme } : {})}
       lan={bot.lan === true}

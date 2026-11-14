@@ -198,4 +198,27 @@ describe("the sections other plugins add (`bot.editor.section`)", () => {
     expect(rows.indexOf("a plugin's section")).toBe(rows.indexOf("Model") + 1);
     expect(rows[rows.indexOf("a plugin's section") + 1]).toBe("Voice");
   });
+
+  test("the bot's settings are a stock section headed with its name: each kind a control, saved with the bot named; a secret is left out", async () => {
+    const { core } = await mount(ALPHA_VIEW, undefined, {
+      "plugin.settings.get": () => ({
+        settings: [
+          { key: "scene", type: "enum", title: "Scene", scope: "bot", value: "meadow", options: [{ value: "meadow", title: "Meadow" }, { value: "room", title: "Room" }] },
+          { key: "effects", type: "boolean", title: "Effects", scope: "bot", value: true },
+          { key: "nickname", type: "string", title: "Nickname", scope: "bot", value: "Al" },
+          { key: "size", type: "number", title: "Size", value: 3 },
+          { key: "key", type: "secret", title: "API key", set: false },
+        ],
+      }) as never,
+      "plugin.settings.set": () => ({ applied: true }) as never,
+    });
+    const section = screen.getByRole("region", { name: "Alpha" });
+    expect(within(section).getAllByRole("combobox").length + within(section).getAllByRole("switch").length + within(section).getAllByRole("textbox").length + within(section).getAllByRole("spinbutton").length).toBe(4);
+    expect(within(section).queryByText("API key")).toBeNull();
+    fireEvent.change(within(section).getByRole("combobox", { name: "Scene" }), { target: { value: "room" } });
+    fireEvent.click(within(section).getByRole("switch", { name: "Effects" }));
+    await act(() => settle());
+    const sets = core.calls.filter((c) => c.method === "plugin.settings.set").map((c) => c.params);
+    expect(sets).toEqual([{ id: "alpha", key: "scene", value: "room", bot: "alpha", noSecret: true }, { id: "alpha", key: "effects", value: false, bot: "alpha", noSecret: true }]);
+  });
 });
