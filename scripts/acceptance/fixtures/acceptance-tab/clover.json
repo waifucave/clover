@@ -31,7 +31,7 @@
     ],
     "commands": [
       {
-        "name": "acceptance-tab.say",
+        "name": "say",
         "description": "Sets the line the plugin puts on the island, or clears it when no text is given.",
         "args": {
           "type": "object",
