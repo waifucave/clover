@@ -5,12 +5,17 @@
 //
 // The world counts the calls still in flight, so the gallery says it is ready only once every screen has drawn its
 // data (`whenIdle`).
+import { useMemo } from "react";
 import archiveManifest from "../../archive/clover.json";
 import * as archiveClient from "../../archive/client/index";
 import { ARCHIVED, HISTORY as ARCHIVE_HISTORY } from "../../archive/gallery/fixtures";
 import botEditorManifest from "../../bot-editor/clover.json";
 import * as botEditorClient from "../../bot-editor/client/index";
 import { AVATARS } from "../../bot-editor/gallery/fixtures";
+import browserViewManifest from "../../browser-view/clover.json";
+import * as browserViewClient from "../../browser-view/client/index";
+import { fakeBrowser } from "../../browser-view/gallery/fake-api";
+import { TAB_VIEWS as BROWSER_TABS } from "../../browser-view/gallery/fixtures";
 import characterManifest from "../../character/clover.json";
 import * as characterClient from "../../character/client/index";
 import composerManifest from "../../composer/clover.json";
@@ -62,6 +67,24 @@ interface Manifest {
   contributes: { ui: Record<string, unknown>[] };
 }
 
+/** The browser panel over its own gallery's stand-in browser (tabs in memory, no live view: the frame shows its placeholder),
+ *  the tabs given to whoever the panel is opened for. The panel reads its API from its own provider, so the world hands it in here. */
+const GalleryBrowserPanel: EntryComponent = (p) => {
+  const props = (p as { props?: { bot?: string; session?: string } }).props;
+  const bot = props?.bot;
+  const session = props?.session;
+  const api = useMemo(() => {
+    const owner = bot ? ({ kind: "bot", bot } as const) : session ? ({ kind: "session", session } as const) : ({ kind: "user" } as const);
+    return fakeBrowser(BROWSER_TABS.map((t) => ({ ...t, owner })), { shows: false });
+  }, [bot, session]);
+  const Panel = browserViewClient.BrowserPanel as unknown as EntryComponent;
+  return (
+    <browserViewClient.PluginApiProvider api={{ browser: api }}>
+      <Panel {...p} />
+    </browserViewClient.PluginApiProvider>
+  );
+};
+
 const PARTS: { dir: string; manifest: Manifest; client: Record<string, unknown> }[] = [
   { dir: "shell", manifest: shellManifest as Manifest, client: shellClient },
   { dir: "character", manifest: characterManifest as Manifest, client: characterClient },
@@ -72,6 +95,7 @@ const PARTS: { dir: string; manifest: Manifest; client: Record<string, unknown> 
   { dir: "panel-terminal", manifest: panelTerminalManifest as Manifest, client: panelTerminalClient },
   { dir: "panel-diff", manifest: panelDiffManifest as Manifest, client: panelDiffClient },
   { dir: "panel-files", manifest: panelFilesManifest as Manifest, client: panelFilesClient },
+  { dir: "browser-view", manifest: browserViewManifest as Manifest, client: { ...browserViewClient, BrowserPanel: GalleryBrowserPanel } },
   { dir: "settings", manifest: settingsManifest as Manifest, client: settingsClient },
   { dir: "bot-editor", manifest: botEditorManifest as Manifest, client: botEditorClient },
   { dir: "plugin-index", manifest: pluginIndexManifest as Manifest, client: pluginIndexClient },

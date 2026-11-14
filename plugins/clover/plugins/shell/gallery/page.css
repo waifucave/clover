@@ -119,6 +119,7 @@ body {
   position: absolute;
   top: 16px;
   left: 17px;
+  z-index: 20;
   display: flex;
   gap: 10px;
   pointer-events: none;

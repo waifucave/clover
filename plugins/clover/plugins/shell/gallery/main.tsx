@@ -16,6 +16,7 @@ import "../../panel-terminal/gallery/stories.css";
 import "../../panel-diff/client/styles.css";
 import "../../panel-diff/gallery/stories.css";
 import "../../panel-files/client/styles.css";
+import "../../browser-view/client/styles.css";
 import "../../settings/client/styles.css";
 import "../../bot-editor/client/styles.css";
 import "../../character/client/styles.css";
@@ -92,7 +93,7 @@ function StoryView({ story }: { story: Story }) {
       {story.notes && <p className="g-story__notes">{story.notes}</p>}
       <div className="g-frame" data-desktop={story.desktop || undefined} style={{ width: story.width ?? 880, height: story.height }}>
         <Boundary id={story.id}>{story.render()}</Boundary>
-        {story.desktop && (
+        {story.desktop && story.controls !== "hidden" && (
           <span className="g-frame__controls" aria-hidden="true">
             <span />
             <span />

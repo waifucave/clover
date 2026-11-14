@@ -12,5 +12,7 @@ export interface Story {
   height?: number;
   /** A whole window: drawn on a desktop wallpaper, with the macOS window controls over its corner. */
   desktop?: boolean;
+  /** A desktop window whose own controls are hidden (the sidebar's rail with its corner pill closed). */
+  controls?: "hidden";
   render: () => ReactNode;
 }

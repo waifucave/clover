@@ -159,7 +159,7 @@ const SCREENS: { id: string; title: string; notes: string; config: ScreenConfig 
   { id: "code", title: "The code side, a run folded into one line", notes: "A coding session with the session column open: where it runs (the computer and its level), context, connectors, outputs, changes.", config: code(["session"]) },
   { id: "terminal", title: "The terminal panel open", notes: "panel-terminal fills the panel spot keyed terminal; its tabs sit in the panel's header.", config: code(["terminal"]) },
   { id: "diff", title: "The changes panel open", notes: "panel-diff: main → working tree, the first file open, unified.", config: code(["diff"]) },
-  { id: "browser", title: "The browser panel, with no browser plugin yet", notes: "The browser panel is another plugin's. While nothing fills its key there is no Browser toggle, and a panel left open for it closes.", config: code(["browser"]) },
+  { id: "browser", title: "The browser panel open", notes: "browser-view fills the panel spot keyed browser: its tabs, back, forward and reload, the address bar, and the frame the Clover Browser's live view fills (a placeholder here).", config: code(["browser"]) },
   { id: "files", title: "The files panel open", notes: "panel-files: the session's folder, read from the computer that holds it.", config: code(["files"]) },
   { id: "two-panels", title: "Two panels at once", notes: "The changes over the terminal, each with its own header.", config: code(["diff", "terminal"]) },
   { id: "settings", title: "Settings", notes: "The settings window over the app: Clover's own sections on the left, Appearance on the right.", config: { start: { route: { route: "settings", params: {} }, under: CODE_TAB, panels: ["session"] }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
@@ -212,6 +212,13 @@ const M2: { id: string; title: string; notes: string; config: ScreenConfig }[] =
   },
 ];
 
+/** The sidebar as its rail: Clover's mark at the window's corner where its own controls were, and the pill that brings them back. */
+const RAIL: { id: string; title: string; notes: string; config: ScreenConfig; controls?: "hidden" }[] = [
+  { id: "rail", title: "The sidebar as a rail", notes: "The window's own controls are hidden; Clover's mark sits at the corner in their place.", controls: "hidden", config: alpha([...GREETING, ...BASIC], { start: { route: BOT_TAB, sidebar: "collapsed" } }) },
+  { id: "rail-corner", title: "The rail's corner, hovered", notes: "Hovering the mark opens a pill over the bar: the window's own controls at its start, the mark at its end.", config: alpha([...GREETING, ...BASIC], { start: { route: BOT_TAB, sidebar: "collapsed", corner: "open" } }) },
+  { id: "rail-code", title: "The rail on the code side", notes: "The same corner beside a coding session.", controls: "hidden", config: { ...code(["session"]), start: { route: CODE_TAB, panels: ["session"], sidebar: "collapsed" } } },
+];
+
 export const screenStories: Story[] = [
   ...SCREENS.flatMap((s) =>
     SIZES.map((size) => ({
@@ -226,6 +233,7 @@ export const screenStories: Story[] = [
   ),
   ...OWNER.map((s) => ({ id: `screen/${s.id}-1512`, title: `${s.title} (1512 × 950)`, notes: s.notes, width: 1512, height: 950, desktop: true, render: () => <Screen config={s.config} /> })),
   ...M2.map((s) => ({ id: `screen/${s.id}-1440`, title: `${s.title} (1440 × 900)`, notes: s.notes, width: 1440, height: 900, desktop: true, render: () => <Screen config={s.config} /> })),
+  ...RAIL.map((s) => ({ id: `screen/${s.id}-1440`, title: `${s.title} (1440 × 900)`, notes: s.notes, width: 1440, height: 900, desktop: true, ...(s.controls ? { controls: s.controls } : {}), render: () => <Screen config={s.config} /> })),
 ];
 
 /** The M2 screens' ids, for the gallery test. */

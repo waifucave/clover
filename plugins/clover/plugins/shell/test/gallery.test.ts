@@ -101,7 +101,7 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(42);
+    expect(screenStories.length).toBe(45);
     expect(M2_SCREENS).toHaveLength(13);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
@@ -118,9 +118,12 @@ describe("the gallery", () => {
     const frame = (id: string) => root!.querySelector(`[data-story="screen/${id}-1440"]`)!;
     expect(frame("terminal").querySelector(".cl-panel .cl-term")).toBeTruthy();
     expect(frame("diff").querySelector(".cl-panel .cl-diff")).toBeTruthy();
-    // No browser plugin is in this build: no toggle for it, and a browser panel asked for is not left open on the placeholder.
-    expect(frame("browser").querySelector(".cl-panel")).toBeNull();
-    expect(frame("browser").querySelector('.cl-panel-toggle[aria-label="Browser"]')).toBeNull();
+    // The browser panel is the bundled browser-view, over its own stand-in browser: its toggle, its tabs and its address.
+    expect(frame("browser").querySelector(".cl-panel .cl-browser-panel")).toBeTruthy();
+    expect(frame("browser").querySelector('.cl-panel-toggle[aria-label="Browser"]')).toBeTruthy();
+    // The sidebar as a rail: Clover's mark at the corner where the window's own buttons were; one screen draws its pill open.
+    expect(frame("rail").querySelector(".cl-sidebar[data-collapsed] .cl-sidebar__corner[data-native]:not([data-open])")).toBeTruthy();
+    expect(frame("rail-corner").querySelector(".cl-sidebar[data-collapsed] .cl-sidebar__corner[data-native][data-open] .cl-sidebar__corner-buttons")).toBeTruthy();
     expect(frame("files").querySelector(".cl-panel .cl-files")).toBeTruthy();
     expect(frame("two-panels").querySelectorAll(".cl-panel__view")).toHaveLength(2);
     expect(frame("code").querySelector(".cl-window__side .cl-session")).toBeTruthy();
@@ -148,18 +151,18 @@ describe("the gallery", () => {
       if (PAGES.includes(story.id)) {
         expect([story.id, kind]).toEqual([story.id, undefined]);
       } else if (kind === "bot") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser"]]);
         expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
         // The slim column, if open, has nothing about a folder.
         expect([story.id, frame.querySelector('.cl-session[data-kind="coding"]')]).toEqual([story.id, null]);
       } else if (kind === "agent") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Browser"]]);
       } else {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Files"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Browser", "Files"]]);
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
-    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([17, 1, 17]);
+    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([19, 1, 18]);
   });
 
   test("a bot's slim column shows its agents, and one opens in the panel with its own composer and model picker", () => {
