@@ -15,7 +15,7 @@ import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
 import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import { NO_CHOICES, SpotTree, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
+import { NO_CHOICES, SpotTree, botScope, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
@@ -325,7 +325,7 @@ export class UiRuntime {
     return plugin === undefined || file === undefined ? undefined : this.tabSpec(plugin, file);
   }
 
-  /** A bot's layout's `prefer` lists, for the cells in its tab (rule 3). */
+  /** A bot's layout's `prefer` lists, for the cells in its tab (rule 4). */
   private preferFor(bot: string): Readonly<Record<string, readonly string[]>> | undefined {
     const tab = this.tabSpecOf(bot);
     if (tab === undefined) return undefined;
@@ -337,9 +337,11 @@ export class UiRuntime {
     return m.styles.some((c) => c.entry.style !== undefined);
   }
 
-  /** A document's sheets (§5.5's stack): the base and global themes over the whole document, each bot's theme in its
-   *  tab (stopping at another tab), each style entry in its part (stopping at a smaller part another dresses, the
-   *  would-be winner last), then the user's own CSS. The core root takes none (its CSP allows no inline style). */
+  /** A document's sheets (§5.5's stack): the base and global themes over the whole document, the style entries for all
+   *  bots, each bot's theme in its tab (stopping at another tab) and its layout's own CSS, the style entries limited to the
+   *  tab's bot (each in its part, stopping at a smaller part another dresses, the would-be winner last), then the user's own
+   *  CSS. More scoped wins: a bot's own look comes after a plugin that styles all bots' tabs. The core root takes none (its
+   *  CSP allows no inline style). */
   sheetsFor(doc: Mount): ThemeSheet[] {
     if (doc.kind !== "frame") return [];
     const inDoc = [...this.mounts.values()].filter((m) => this.docOf(m)?.id === doc.id);
@@ -350,6 +352,18 @@ export class UiRuntime {
       const css = this.themes.themeSheet(t.plugin, t.theme, whole);
       if (css !== "") out.push({ id: `${t.kind}:${t.plugin.id}`, css });
     }
+    const styleSheets = (limited: boolean) => {
+      for (const m of inDoc) {
+        for (const c of m.styles) {
+          if (c.entry.style === undefined || (botScope(c.plugin, c.entry) !== "all") !== limited) continue;
+          const t = this.themes.read(c.plugin, c.entry.style);
+          if (t === null) continue;
+          const css = this.themes.themeSheet(c.plugin, t, { root: partSelector(m.id), limit: "[data-clover-styled]:not(:scope)" });
+          if (css !== "") out.push({ id: `style:${c.plugin.id}#${c.entry.id}:${m.id}`, css });
+        }
+      }
+    };
+    styleSheets(false);
     for (const m of inDoc) {
       const bot = this.tabOf(m);
       if (bot === undefined) continue;
@@ -365,17 +379,9 @@ export class UiRuntime {
       const css = this.layouts.sheet(this.tabSpec(m.plugin, file), { root: partSelector(m.id), limit: "[data-clover-part]:not(:scope)" });
       if (css !== "") out.push({ id: `layout:${m.plugin.id}:${m.id}`, css });
     }
-    for (const m of inDoc) {
-      for (const c of m.styles) {
-        if (c.entry.style === undefined) continue;
-        const t = this.themes.read(c.plugin, c.entry.style);
-        if (t === null) continue;
-        const css = this.themes.themeSheet(c.plugin, t, { root: partSelector(m.id), limit: "[data-clover-styled]:not(:scope)" });
-        if (css !== "") out.push({ id: `style:${c.plugin.id}#${c.entry.id}:${m.id}`, css });
-      }
-      // The part a style entry dresses is contained, as a tab's root is (a frame's root; an inline part has no box).
-      if (m.id === doc.id && this.styledOf(m)) out.push({ id: `contain:${m.id}`, css: `${partSelector(m.id)}{contain:layout paint}` });
-    }
+    styleSheets(true);
+    // The part a style entry dresses is contained, as a tab's root is (a frame's root; an inline part has no box).
+    for (const m of inDoc) if (m.id === doc.id && this.styledOf(m)) out.push({ id: `contain:${m.id}`, css: `${partSelector(m.id)}{contain:layout paint}` });
     const own = this.choices.overrides?.css;
     if (own !== undefined && own !== "") {
       const cleaned = cleanCss(own, { pluginId: "user", scope: whole });
@@ -430,7 +436,7 @@ export class UiRuntime {
 
   private retheme(m: Mount): void {
     const w = this.windows.get(m.windowId);
-    const styles = m.styles.filter((c) => c.entry.style !== undefined).map((c) => ({ plugin: c.plugin, file: c.entry.style! }));
+    const styles = m.styles.filter((c) => c.entry.style !== undefined).map((c) => ({ plugin: c.plugin, file: c.entry.style!, limited: botScope(c.plugin, c.entry) !== "all" }));
     m.tokens = partTokens(this.themes, {
       plugins: this.plugins,
       choices: this.choices,

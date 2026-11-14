@@ -333,6 +333,39 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     expect(sheets.at(-1)).toEqual({ id: "user", css: `@scope ([data-clover-part="${shell.info.mount}"]){.x{color:blue}}` });
   });
 
+  test("more scoped wins: a style for all bots goes under a bot's theme and its own styles, in tokens and in sheets", () => {
+    // Luna's theme sets the accent; her own composer style sets the surface. A plugin's style for every bot's composer sets both.
+    const luna = themed("luna", {
+      "theme.json": JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "#123456" }, css: "tab.css" }),
+      "tab.css": ".p { color: green }",
+      "pane.json": JSON.stringify({ theme: 1, name: "Pane", tokens: { "color.surface": "#111111" }, css: "pane.css" }),
+      "pane.css": ".p { color: red }",
+    }, { themes: [{ id: "luna", file: "theme.json" }], isBot: true, botTheme: "luna", name: "Luna", ui: [{ spot: "composer", id: "pane", style: "pane.json" }] });
+    const everyone = themed("paint", {
+      "paint.json": JSON.stringify({ theme: 1, name: "Paint", tokens: { "color.accent": "#AAAAAA", "color.surface": "#222222" }, css: "paint.css" }),
+      "paint.css": ".p { color: blue }",
+    }, { ui: [{ spot: "composer", id: "paint", style: "paint.json" }] });
+    const plain = themed("plainbot", {}, { isBot: true, name: "Plain" });
+    const s = setup([luna, everyone, plain]);
+    const shell = mountShell(s);
+    const composerIn = (bot: string) => {
+      const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", bot).items[0]!;
+      return s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { kind: string; mount: string; tokens?: Record<string, unknown> };
+    };
+    s.sent.length = 0;
+    const onLuna = composerIn("luna");
+    expect([onLuna.tokens?.["color.accent"], onLuna.tokens?.["color.surface"]]).toEqual(["#123456", "#111111"]);
+    // The sheets: the all-bots style, then Luna's theme in her tab, then her own style.
+    const ids = (sheetsSent(s, shell.shellFrame).at(-1) ?? []).map((x) => x.id);
+    const at = (id: string) => ids.findIndex((x) => x.startsWith(id));
+    expect(at(`style:paint#paint:${onLuna.mount}`)).toBeGreaterThanOrEqual(0);
+    expect(at(`style:paint#paint:${onLuna.mount}`)).toBeLessThan(at("bot:luna:"));
+    expect(at("bot:luna:")).toBeLessThan(at(`style:luna#pane:${onLuna.mount}`));
+    // A bot with no theme of its own: the all-bots style shows (over the base for bot tabs).
+    const onPlain = composerIn("plainbot");
+    expect([onPlain.tokens?.["color.accent"], onPlain.tokens?.["color.surface"]]).toEqual(["#AAAAAA", "#222222"]);
+  });
+
   test("the core root takes no sheets; a sheet that didn't change isn't sent again", () => {
     const s = setup([lunaBot()]);
     expect(s.root.sheets).toBeUndefined();
@@ -379,12 +412,12 @@ describe("a bot's layout (§5.5)", () => {
     ] });
   });
 
-  test("its spots are the tab's; its `prefer` is rule 3 there (the bundled composer over an installed one)", () => {
+  test("its spots are the tab's; its `prefer` is rule 4 there (the bundled composer over an installed one)", () => {
     const s = setup([...composerFixture(), layoutBot(LAYOUT, FILES)]);
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "clover/composer#composer" }]);
-    // Without the layout's preference the installed composer wins (rule 5), as in Alpha's tab.
+    // Without the layout's preference the installed composer wins (rule 6), as in Alpha's tab.
     const alpha = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     expect(s.rt.resolve(shell.shellFrame, alpha.mount, "composer").items).toMatchObject([{ kind: "frame", ref: "fixture-composer#composer" }]);
     // The composer in a layout is the declaring (bundled, shell) document's own: its session counts through the layout part.

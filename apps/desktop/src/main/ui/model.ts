@@ -2,14 +2,14 @@
 // (`UiPluginView`, lane B's protocol), read into the entries the spot resolver ranks. Pure: no Electron import, so it
 // is unit-tested under Bun.
 //
-// Three fields the resolver needs are not in `UiPluginView` yet (asked of lane B): `source` (rule 5, "a plugin the
-// user installed, over a bundled one"), `enabledAt` (rule 6, "the most recently enabled") and `capabilities` (`needs`).
+// Three fields the resolver needs are not in `UiPluginView` yet (asked of lane B): `source` (rule 6, "a plugin the
+// user installed, over a bundled one"), `enabledAt` (rule 7, "the most recently enabled") and `capabilities` (`needs`).
 // Until they are, `readUiPlugins` takes them from `plugin.list` and the plugin's detail when given, and otherwise
 // falls back to: bundled for the `clover` tree and `alpha`, the order the daemon listed them in, and no capabilities.
 import { UiPluginView as UiPluginViewSchema, type AvatarFormatView, type UiPluginView } from "@waifucave/clover-protocol";
 import { SPOTS } from "@waifucave/clover-plugin-sdk";
 
-/** Where a plugin came from, as the resolver's rule 5 sees it. */
+/** Where a plugin came from, as the resolver's rule 6 sees it. */
 export type UiSource = "bundled" | "installed" | "dev";
 
 export interface PointDeclaration {
@@ -83,7 +83,7 @@ export interface UiPlugin {
   /** Its client CSS files, relative to its folder (the manifest's `client.css`). */
   css: readonly string[];
   source: UiSource;
-  /** When it was last switched on; the resolver's rule 6. */
+  /** When it was last switched on; the resolver's rule 7. */
   enabledAt: number;
   capabilities: ReadonlySet<string>;
   /** Bots whose tabs it dresses (`when.bot`, or the user's ticks); `all` includes bots added later. */
@@ -254,7 +254,7 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
 function fromView(v: Record<string, unknown>): UiPluginExtras {
   const strings = (x: unknown) => (Array.isArray(x) && x.every((y) => typeof y === "string") ? (x as string[]) : undefined);
   // The core's source names (B-M1's enum): bundled, index, npm, local, wrapped, dev. What the runtime cares about is
-  // where the plugin came from as the resolver rule 5 reads it: the bundled tree, a dev one, or installed beside them.
+  // where the plugin came from as the resolver rule 6 reads it: the bundled tree, a dev one, or installed beside them.
   const source = v.source === "bundled" ? "bundled" : v.source === "dev" ? "dev" : v.source === "index" || v.source === "npm" || v.source === "local" || v.source === "wrapped" ? "installed" : undefined;
   // The daemon's view says a bot as `bot: { name, theme?, layout? }` (plugin-host/ui.ts); the older flat names stay read.
   const bot = v.bot !== null && typeof v.bot === "object" ? (v.bot as Record<string, unknown>) : undefined;
