@@ -46,6 +46,9 @@ export interface RegistryRuleOptions {
   /** This computer's platform (`darwin-arm64`, …): a plugin whose `platforms` leaves it out is off here, with why.
    *  Absent: no plugin is held to its `platforms` (a test's rules). */
   platform?: string;
+  /** What a plugin brings, for the Plugins page's small labels (the plugin SDK's `contributionLabels`, over the plugin's
+   *  manifest and its children's). Absent: the records carry none (a test's rules). */
+  labels?: (manifests: readonly (Manifest | undefined)[]) => string[];
 }
 
 /** Why a plugin is off on this computer by its `platforms` (its own, else its top plugin's), or undefined when it runs
@@ -266,6 +269,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       scope: m.scope ?? "both",
       adult: top.manifest.adult === true,
       children: ids.filter((c) => parentOf(c) === id),
+      // What it brings, for the Plugins page's small labels: a top plugin's include its children's.
+      labels: (opts.labels ?? (() => []))([held.invalid === undefined ? held.manifest : undefined, ...ids.filter((c) => parentOf(c) === id).map((c) => (plugins.get(c)?.invalid === undefined ? plugins.get(c)?.manifest : undefined))]),
       dev: held.dev ?? false,
       folder: held.folder ?? `/plugins/${id.replace("/", "/plugins/")}`,
       manifest: held.invalid === undefined ? structuredClone(m) : undefined,

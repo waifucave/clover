@@ -101,6 +101,9 @@ export const PluginSummary = z.object({
   scope: z.union([Scope, z.literal("own-bot")]),
   adult: z.boolean(),
   children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
+  /** The small labels for what it brings (Bot, Tools, Island tab…), from its contributions; a top-level plugin's include its
+   *  children's, a child's are its own. The one derivation is the plugin SDK's `contributionLabels`. */
+  labels: z.array(utf16(40)).max(40).optional(),
   /** A development folder (§5.6), on this computer only. */
   dev: z.boolean(),
 });

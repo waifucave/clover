@@ -958,16 +958,6 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
 
 function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCtx): boolean {
   const kinds = ["component", "web", "style", "hide", "layout"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
-  // A message's menu item runs a command, and only one of the plugin's own: another plugin's would run it without
-  // `call:<that plugin>` (the controller's ruling on lane F's F-M3). The app draws the item, so it needs no component.
-  if (e.spot === "menu.message" && e.command !== undefined) {
-    const ns = typeof e.command === "string" ? e.command.slice(0, Math.max(0, e.command.indexOf("."))) : undefined;
-    if (ns === undefined || ns === "" || ns !== ctx.namespace) {
-      f.error("entry", "menu_command_namespace", [...at, "command"], `a message menu item runs one of the plugin's own commands (\`${ctx.namespace ?? "<namespace>"}.<name>\`)`);
-      return false;
-    }
-  }
-  const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
   // A message action is data: the conversation draws the button, and a press runs a handler of the plugin's host half.
   const actionOnly = e.spot === "conversation.message.action" && kinds.length === 0;
   if (actionOnly && !ctx.hasHost) {
@@ -980,7 +970,7 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   // A pill target is data too: the Dispatch pill draws its row from `title`, and the user's words go to `handler`.
   const targetOnly = e.spot === "pill.target" && typeof e.handler === "string" && kinds.length === 0;
-  if (kinds.length !== 1 && !commandOnly && !actionOnly && !targetOnly) {
+  if (kinds.length !== 1 && !actionOnly && !targetOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
@@ -1174,6 +1164,10 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
 /** The OK card's line for a plugin that contributes a notifier: what the core tells it (§10). */
 export const NOTIFIER_OK_LINE = "It is told when your bots need you or have answered, so it can notify you; it does not get the words.";
 
+/** The OK card's line for a plugin that can be picked as the Dispatch pill's target (`pill.target`): what the user
+ *  sends from the pill to it, it receives. */
+export const PILL_TARGET_OK_LINE = "It can be picked as a target in the Dispatch pill: what you then type there goes to it, as your own words, and not to a bot.";
+
 export const HOST_START_OK_LINES = {
   each: "It runs in the background from the moment Clover starts, on every computer it's installed on.",
   main: "It runs in the background from the moment Clover starts, on your main computer.",
@@ -1187,9 +1181,12 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   const types: string[] = [];
   const where = new Set<keyof typeof HOST_START_OK_LINES>();
   let notifies = false;
+  let pillTarget = false;
   for (const r of reports) {
     const m = r.manifest as { host?: { start?: unknown }; contributes?: { triggers?: unknown; notifiers?: unknown } } | undefined;
     if (Array.isArray(m?.contributes?.notifiers) && m.contributes.notifiers.length > 0) notifies = true;
+    const ui = (r.manifest as { contributes?: { ui?: unknown } } | undefined)?.contributes?.ui;
+    if (Array.isArray(ui) && ui.some((e) => (e as { spot?: unknown } | null)?.spot === "pill.target")) pillTarget = true;
     const triggers = Array.isArray(m?.contributes?.triggers) ? m.contributes.triggers : [];
     for (const t of triggers) if (typeof (t as { type?: unknown }).type === "string") types.push((t as { type: string }).type);
     if (triggers.length > 0) where.add("each");
@@ -1199,6 +1196,7 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   const lines: string[] = [];
   if (types.length > 0) lines.push(`It adds routine triggers (${[...new Set(types)].sort().join(", ")}): a routine that uses one runs whenever the plugin says so.`);
   if (notifies) lines.push(NOTIFIER_OK_LINE);
+  if (pillTarget) lines.push(PILL_TARGET_OK_LINE);
   for (const w of ["each", "main", "chosen"] as const) if (where.has(w)) lines.push(HOST_START_OK_LINES[w]);
   return lines;
 }

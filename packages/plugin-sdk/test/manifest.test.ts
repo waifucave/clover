@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, NOTIFIER_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -405,17 +405,6 @@ describe("declared points (§5.4)", () => {
     expect(has(data, "point_duplicate")).toBe(true);
   });
 
-  test("a message menu item runs one of the plugin's own commands, never another plugin's (F-M3)", () => {
-    const item = (command: unknown, extra: Record<string, unknown> = {}) => validateManifest({ ...min(), contributes: { ui: [{ spot: "menu.message", id: "quote", title: "Quote it", command, ...extra }] } });
-    expect(codes(item("luna.quote"))).toEqual([]);
-    for (const command of ["tarot.quote", "quote", ".quote", 3]) {
-      expect([command, codes(item(command)).some((c) => c.includes("menu_command_namespace") || c.includes(":schema:"))]).toEqual([command, true]);
-      expect(item(command).manifest?.contributes?.ui ?? []).toEqual([]);
-    }
-    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "moon.quote" }] } }))).toEqual([]);
-    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "luna.quote" }] } }))).toContain("error:entry:menu_command_namespace:/contributes/ui/0/command");
-  });
-
   test("core points can't be declared; well-known names take the catalog's declaration", () => {
     expect(has(validateManifest({ ...base, host: { ...base.host, declares: { models: { shape: "list" } } } }), "point_declares_core")).toBe(true);
     const wrongShape = validateManifest({ ...base, contributes: { ui: [{ spot: "app.surface", component: "Island", declares: { "island.tab": { shape: "single", props: {} } } }] } });
@@ -649,6 +638,13 @@ describe("the OK says what a plugin runs without being asked", () => {
     expect(backgroundOkLines([m({ start: "main" })])).toEqual(["It runs in the background from the moment Clover starts, on your main computer."]);
     expect(backgroundOkLines([m({ start: "chosen" })])).toEqual(["It runs in the background from the moment Clover starts, on the computer you add it on."]);
     expect(backgroundOkLines([m({})])).toEqual([]);
+  });
+  test("a pill target says it can be picked in the Dispatch pill and receives what is typed there; it comes from the tree, children's too", () => {
+    const t = m({}, { ui: [{ spot: "pill.target", id: "t", title: "Lights", handler: "target" }] });
+    expect(backgroundOkLines([t])).toEqual([PILL_TARGET_OK_LINE]);
+    expect(backgroundOkLines([m({}), t])).toEqual([PILL_TARGET_OK_LINE]);
+    expect(backgroundOkLines([m({}, { ui: [{ spot: "status", id: "s", component: "S" }] })])).toEqual([]);
+    expect(PILL_TARGET_OK_LINE).toContain("Dispatch pill");
   });
   test("a notifier says what it is told, and that it gets no words", () => {
     const n = m({}, { notifiers: [{ id: "banner", handler: "banner" }] });

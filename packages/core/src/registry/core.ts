@@ -12,7 +12,7 @@ import {
   EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot,
 } from "../contracts/plugin-registry-rules";
 import type { CoreEntries, Manifest, PointDecl } from "../contracts/sdk-types";
-import { mayHoldCapability } from "@waifucave/clover-plugin-sdk";
+import { contributionLabels, mayHoldCapability } from "@waifucave/clover-plugin-sdk";
 import type { ChangeKind } from "./changes";
 import type { PluginState as StoredState, RegistryStore } from "./state";
 
@@ -446,7 +446,7 @@ export class RegistryCore implements PluginRegistry {
     }
     this.#persist(ids);
     const before = this.#snap;
-    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability, ...(this.#o.platform !== undefined ? { platform: this.#o.platform } : {}) });
+    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability, labels: contributionLabels, ...(this.#o.platform !== undefined ? { platform: this.#o.platform } : {}) });
     const changes = registryChanges(before, this.#snap);
     for (const change of changes) this.#listeners.emit(change);
     // A plugin whose tree changed under the same id (an update applied, a folder edited) and is still there, when the

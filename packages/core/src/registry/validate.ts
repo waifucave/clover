@@ -4,7 +4,7 @@
 // older format to the newest one (§5.1 "Formats").
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
-import { backgroundOkLines, describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
+import { backgroundOkLines, contributionLabels, describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 import { agentEnvLines } from "./folders";
@@ -23,6 +23,8 @@ export interface PluginSummaryReport {
   toolNames: string[];
   settings: string[];
   fetchesCode: string[];
+  /** The small labels for what it brings (the Plugins page's), from its contributions; a top plugin's include its children's. */
+  labels: string[];
   ok: boolean;
 }
 
@@ -41,10 +43,10 @@ export interface FolderValidation {
   issues: ValidationIssue[];
 }
 
-const summary = (r: ManifestReport, fallback: string): PluginSummaryReport => ({
+const summary = (r: ManifestReport, fallback: string, labels: string[]): PluginSummaryReport => ({
   id: r.id ?? fallback, class: r.class, contributions: r.contributions, declares: r.declares, networkHosts: r.networkHosts,
   dynamicHosts: r.dynamicHosts, helperPermissions: r.helperPermissions, capabilities: r.capabilities, toolNames: r.toolNames,
-  settings: r.settings, fetchesCode: r.fetchesCode, ok: r.ok,
+  settings: r.settings, fetchesCode: r.fetchesCode, labels, ok: r.ok,
 });
 
 export async function validatePluginFolder(folder: string, opts: { os?: "macos" | "windows" | "linux"; bundled?: boolean } = {}): Promise<FolderValidation> {
@@ -72,8 +74,8 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
     folder,
     ok: hash !== undefined && tree.ok && issues.every((i) => i.severity !== "error"),
     ...(hash ? { treeHash: hash } : {}),
-    ...(tree.top.manifest ? { plugin: summary(tree.top, name) } : {}),
-    children: tree.children.map((c) => ({ ...summary(c.report, `${name}/${c.folder}`), folder: c.folder, ok: c.ok })),
+    ...(tree.top.manifest ? { plugin: summary(tree.top, name, contributionLabels([tree.top.manifest, ...tree.children.map((c) => c.report.manifest)])) } : {}),
+    children: tree.children.map((c) => ({ ...summary(c.report, `${name}/${c.folder}`, contributionLabels([c.report.manifest])), folder: c.folder, ok: c.ok })),
     ...(tree.bareItem ? { bareItem: tree.bareItem } : {}),
     restylesCards: tree.restylesCards,
     restylesWindow: tree.restylesWindow,
@@ -88,6 +90,7 @@ export function renderValidation(v: FolderValidation): string {
   const list = (label: string, xs: readonly string[]) => lines.push(`  ${label}: ${xs.length > 0 ? xs.join(", ") : "none"}`);
   const plugin = (p: PluginSummaryReport, indent = "") => {
     lines.push(`${indent}${p.id} (${p.class})`);
+    list(`${indent}brings`, p.labels);
     list(`${indent}contributes`, p.contributions.map((c) => `${c.point} (${c.entries})`));
     if (p.declares.length > 0) list(`${indent}declares`, p.declares.map((d) => `${d.name} (${d.shape}${d.spot ? ", a spot" : ""})`));
     list(`${indent}network hosts`, p.networkHosts.concat(p.dynamicHosts ? ["(more from its settings)"] : []));

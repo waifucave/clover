@@ -12,7 +12,7 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { buildPluginModule } from "../../registry/build";
-import { validatePluginFolder } from "../../registry/validate";
+import { renderValidation, validatePluginFolder } from "../../registry/validate";
 import { pluginRegistryMethods } from "../registry-methods";
 import { pluginToolContained, pluginToolReadOnly } from "../../registry/read-only-tools";
 import { pluginHooks, type HookSession } from "../../runtime-sdk/turn-loop/hooks";
@@ -52,6 +52,16 @@ describe("the SDK's examples install as they ship", () => {
       const v = await validatePluginFolder(join(EXAMPLES, id), { os: "macos" });
       expect({ id, ok: v.ok, errors: v.issues.filter((i) => i.severity === "error") }).toEqual({ id, ok: true, errors: [] });
     }
+  });
+
+  test("the validate report names what each plugin brings, with the same labels the registry's records carry; a parent's include its child's", async () => {
+    const v = await validatePluginFolder(join(EXAMPLES, "example-notes"), { os: "macos" });
+    expect(v.plugin!.labels).toEqual(expect.arrayContaining(["Tools", "Bot"]));
+    const child = v.children.find((c) => c.labels.includes("Bot"))!;
+    expect(child.labels).toContain("Bot");
+    expect(v.plugin!.labels).toEqual(expect.arrayContaining(child.labels));
+    expect(renderValidation(v)).toContain("brings: ");
+    expect(renderValidation(v)).not.toMatch(/brings:[^\n]*(plugin|type|kind)/i);
   });
 
   test("example-notes: installed, OK'd and running with its child bot; its card names its cardless tools and no network; its two lists hold", async () => {

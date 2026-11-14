@@ -18,6 +18,7 @@ export * from "./manifest/hook-command";
 export * from "./manifest/names";
 export * from "./manifest/validate";
 export * from "./manifest/tree";
+export * from "./manifest/labels";
 export * from "./manifest/args";
 export * from "./manifest/keys";
 
