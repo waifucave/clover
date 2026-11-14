@@ -82,13 +82,13 @@ export class StageStore {
     const set = this.#api.settings?.set;
     if (set === undefined) return { ok: false, said: "Her outfit setting can't be changed here." };
     const next = pickOutfit(outfitOf(await this.#api.settings?.get(OUTFIT_SETTING).catch(() => undefined)), part, change.on);
-    for (const cue of outfitCues(next)) {
-      const played = await this.#cue(cue);
-      if (played.ok) continue;
-      if (played.reason === "no-renderer") break;
-      return { ok: false, said: played.message };
-    }
+    // The renderer's no comes first, from what it says it does (the catalogue the core judges cues by), so a refusal saves
+    // nothing. Then the setting, then the cues: her tab dresses her from the setting too, and a cue sent before the setting
+    // changed would have it dress her back in the old one.
+    const drawn = await this.#api.avatar?.catalogue().catch(() => undefined);
+    if (drawn !== undefined && !drawn.capabilities.includes("outfits")) return { ok: false, said: `this renderer (${drawn.renderer}) doesn't do outfits` };
     await set.call(this.#api.settings, OUTFIT_SETTING, next);
+    if (drawn !== undefined) for (const cue of outfitCues(next)) if ((await this.#cue(cue)).ok === false) break;
     const dressed: StageState = { ...state, outfit: Object.fromEntries(OUTFIT_VALUES.map((o) => [o, o === next])) };
     await this.#write(dressed);
     return { ok: true, state: dressed, said: `Outfit: ${outfitTitle(next)}`, shown: { kind: "outfit", label: "Outfit", value: outfitTitle(next) } };

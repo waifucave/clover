@@ -74,9 +74,18 @@ describe("her outfit, on her own model", () => {
     const quiet = setup({ answer: () => ({ ok: false, reason: "no-renderer", message: "nothing is drawing this bot's figure right now" }) });
     expect(await quiet.run("toggle_outfit", { part: "yellow-raincoat", on: true })).toMatchObject({ content: [{ text: "Outfit: Yellow raincoat" }] });
     expect(quiet.set).toEqual([["outfit", "yellow-raincoat"]]);
-    const old = setup({ catalogue: HERS, answer: () => ({ ok: false, reason: "unsupported", message: "this renderer (x) doesn't do outfits" }) });
-    expect(await old.run("toggle_outfit", { part: "navy-uniform", on: true })).toMatchObject({ isError: true });
-    expect(old.set).toEqual([]);
+    const old = setup({ catalogue: { ...HERS, capabilities: HERS.capabilities.filter((c) => c !== "outfits") } });
+    expect(await old.run("toggle_outfit", { part: "navy-uniform", on: true })).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("doesn't do outfits") }] });
+    expect([old.set, old.a.cues]).toEqual([[], []]);
+  });
+
+  test("the setting is written before her figure is cued, so her tab, which dresses her from the setting, never dresses her back", async () => {
+    // What the setting said as each cue reached her figure.
+    const seen: unknown[] = [];
+    const s = setup({ catalogue: HERS, answer: () => { seen.push(s.settings.outfit); return { ok: true }; } });
+    await s.run("toggle_outfit", { part: "navy-uniform", on: true });
+    expect(s.a.cues).toEqual(outfitCues("navy-uniform"));
+    expect(seen).toEqual(outfitCues("navy-uniform").map(() => "navy-uniform"));
   });
 });
 
