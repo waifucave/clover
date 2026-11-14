@@ -185,7 +185,7 @@ describe("the dialog layer's keyboard, the focus outside it", () => {
     try {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 15_000 });
     } catch (e) {
-      throw new Error(`the dialog stayed open; live keydown listeners: ${JSON.stringify((globalThis as { __keydownLedger?: () => string[] }).__keydownLedger?.())}; keydowns seen: ${JSON.stringify(seen)}; active: ${document.activeElement?.nodeName}; roots: ${document.body.children.length}; host onClose calls: ${onClose.mock.calls.length}; dialog still there: ${screen.queryByRole("dialog") !== null}`, { cause: e });
+      throw new Error(`the dialog stayed open; escape preventDefault by: ${JSON.stringify((globalThis as { __escapePrevented?: () => string[] }).__escapePrevented?.())}; keydowns seen: ${JSON.stringify(seen)}; active: ${document.activeElement?.nodeName}; roots: ${document.body.children.length}; host onClose calls: ${onClose.mock.calls.length}; dialog still there: ${screen.queryByRole("dialog") !== null}`, { cause: e });
     } finally {
       document.removeEventListener("keydown", watch, true);
       document.removeEventListener("keydown", watch);

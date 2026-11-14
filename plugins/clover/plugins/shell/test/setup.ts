@@ -29,3 +29,16 @@ for (const t of [document, window, document.body, document.documentElement] as o
     };
   }
 }
+
+// Diagnostic (temporary): who calls preventDefault on an Escape keydown, with the stack.
+const prevented: string[] = [];
+(globalThis as { __escapePrevented?: () => string[] }).__escapePrevented = () => prevented;
+for (let o: object | null = new KeyboardEvent("keydown"); o !== null; o = Object.getPrototypeOf(o)) {
+  if (!Object.prototype.hasOwnProperty.call(o, "preventDefault")) continue;
+  const was = (o as { preventDefault: () => void }).preventDefault;
+  (o as { preventDefault: () => void }).preventDefault = function (this: Event) {
+    if ((this as KeyboardEvent).key === "Escape") prevented.push((new Error().stack ?? "").split("\n").slice(2, 7).map((x) => x.trim().replace(/^at /, "").replace(/^.*\/(plugins|node_modules)\//, "$1/").slice(0, 110)).join(" < "));
+    return was.call(this);
+  };
+  break;
+}
