@@ -54,7 +54,10 @@ async function connect(path: string) {
   const socket = await Bun.connect({ unix: path, socket: {
     data(_s, chunk) {
       for (const l of decoder.push(chunk)) {
-        const m = JSON.parse(l) as { id?: number };
+        const m = JSON.parse(l) as { id?: number; method?: string };
+        // The app's heartbeat: a real app answers `app.ping` at once; a daemon that hears nothing for 15 s ends the connection (and,
+        // from a slow runner, the test process, which is the connection's own peer).
+        if (m.method === "app.ping" && m.id !== undefined) { writer.enqueue(encodeLine({ jsonrpc: "2.0", id: m.id, result: { ok: true } })); continue; }
         if (typeof m.id === "number") { pending.get(m.id)?.(m as never); pending.delete(m.id); }
       }
     },
