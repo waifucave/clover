@@ -38,8 +38,17 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 
   test("what the daemon doesn't serve is refused", () => {
-    for (const m of ["models.catalog", "session.changes", "session.connectors", "session.context", "session.createPr", "session.diff", "session.outputs"]) {
+    for (const m of ["models.catalog", "session.changes", "session.createPr"]) {
       expect(verdict("clover/panel", m)).toMatchObject({ ok: false, owned: true });
+    }
+  });
+
+  test("the session panels' reads: each from the part that draws it, no gesture", () => {
+    expect(verdict("clover/panel-diff", "session.diff")).toMatchObject({ ok: true });
+    expect(verdict("clover/panel", "session.diff")).toMatchObject({ ok: false, owned: true });
+    for (const m of ["session.outputs", "session.context", "session.connectors"]) {
+      expect(verdict("clover/panel", m)).toMatchObject({ ok: true });
+      expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
     }
   });
 
@@ -345,6 +354,10 @@ describe("the Settings page's ui.set", () => {
  *  whether the id is held to the calling part's own. */
 const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; ownId?: string[] }> = {
   "ui.settings": { parts: "any", gesture: [] },
+  "session.diff": { parts: ["clover/panel-diff"], gesture: [] },
+  "session.outputs": { parts: ["clover/panel"], gesture: [] },
+  "session.context": { parts: ["clover/panel"], gesture: [] },
+  "session.connectors": { parts: ["clover/panel"], gesture: [] },
   "ui.set": { parts: ["clover/settings", "clover/character", "clover/voice"], gesture: ["clover/settings", "clover/character", "clover/voice"] },
   "voice.stop": { parts: ["clover/character"], gesture: ["clover/character"] },
   "voice.speak": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
@@ -405,6 +418,10 @@ const WORST: Record<string, Worst> = {
   "voice.listen": "held recording", // audio to the bot's own listening voice, only while a hold the user's own press opened is live in that window (listen.ts): main names the bot and numbers the pieces, refuses any with no hold, and the core still asks its provider check; no hold, no call
   "voice.speak": "harmless change", // speaks one of the bot's own replies, read from its log, with its voice; nothing else moves
   "ui.settings": "read", // the app's settings as the parts show them
+  "session.diff": "read", // a session's changes in its folder: git read only (no optional locks, no fsmonitor, no external diff or textconv), bounded
+  "session.outputs": "read", // the names of the files in a session's outputs folder
+  "session.context": "read", // a session's last measured prompt size against its model's window
+  "session.connectors": "read", // counts of the plugin MCP servers a session gets and of those waiting for a sign-in
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
   "plugin.settings.get": "read", // a key's value never: only whether one is set
   "plugin.settings.set": "sealed card", // a setting a host, env, args, hook or backend takes from cards; a key is refused (noSecret, and main looks the kind up); the rest are plain

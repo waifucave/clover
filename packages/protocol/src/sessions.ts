@@ -218,6 +218,40 @@ export type MemoryEntry = z.infer<typeof MemoryEntry>;
 
 const SessionParams = z.object({ id: SessionId });
 
+/** One line of a session's diff: context, added or removed, with its numbers on each side. */
+export const SessionDiffLine = z.object({
+  kind: z.enum(["context", "add", "del"]),
+  old: z.number().int().nonnegative().optional(),
+  new: z.number().int().nonnegative().optional(),
+  text: utf16(100_000),
+});
+export const SessionDiffHunk = z.object({ header: utf16(2_000), lines: z.array(SessionDiffLine) });
+/** One file a coding session or an agent changed in its folder (`session.diff`). `tooLarge`: past the per-file or the
+ *  total bound, listed with its counts but no lines. */
+export const SessionDiffFile = z.object({
+  path: utf16(4_096, 1),
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+  from: utf16(4_096).optional(),
+  added: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+  hunks: z.array(SessionDiffHunk).optional(),
+  tooLarge: z.boolean().optional(),
+  binary: z.boolean().optional(),
+});
+export type SessionDiffFile = z.infer<typeof SessionDiffFile>;
+export const SessionDiff = z.object({
+  /** What it compares against: the folder's branch (or `HEAD`), or that it has no commits yet. Empty for no repo. */
+  base: utf16(256),
+  /** What it compares: the working tree. */
+  target: utf16(256),
+  /** Other targets the panel may offer: none yet. */
+  targets: z.array(utf16(256)).max(16),
+  files: z.array(SessionDiffFile).max(1_000),
+  /** Why the list is empty or short (no folder, not a git repository, on another computer, what the bounds cut). */
+  notice: utf16(1_000).optional(),
+});
+export type SessionDiff = z.infer<typeof SessionDiff>;
+
 /** A model as a picker lists it (`models.list`). */
 export const ModelListing = z.object({
   /** The qualified catalog id `session.setModel` takes. */
@@ -310,6 +344,30 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: SessionId, before: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(500) }),
     result: z.object({ events: z.array(z.record(z.string(), z.unknown())), hasMore: z.boolean() }),
     doc: "A page of a session's past events, newest last; sealed card fields never reach a plugin (§5.4).",
+  }),
+  sessionDiff: defineMethod({
+    name: "session.diff", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: z.object({ id: SessionId, target: utf16(256).optional() }),
+    result: SessionDiff,
+    doc: "A coding session's or an agent's changes in its folder, read only: the working tree against HEAD (untracked files as added), per file with its hunks, bounded per file and in total. A folder that isn't a git repository, or isn't on this computer, answers no files and a notice. A plugin's own connection (a layer) also needs the capability files, since the diff carries file contents.",
+  }),
+  sessionOutputs: defineMethod({
+    name: "session.outputs", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: z.object({ id: SessionId, limit: z.number().int().min(1).max(100).optional() }),
+    result: z.object({ items: z.array(z.object({ id: utf16(255, 1), name: utf16(255, 1), kind: z.enum(["page", "file", "image"]) })).max(100), more: z.number().int().nonnegative() }),
+    doc: "The files a session delivered to its outputs folder (`<home>/outputs/<session>`), newest first: names and kinds only, never their content.",
+  }),
+  sessionContext: defineMethod({
+    name: "session.context", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: SessionParams,
+    result: z.object({ used: z.number().min(0).max(1), tokens: z.number().int().nonnegative(), window: z.number().int().positive() }).nullable(),
+    doc: "How full a session's context is: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's context window; null when either isn't known.",
+  }),
+  sessionConnectors: defineMethod({
+    name: "session.connectors", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: SessionParams,
+    result: z.object({ total: z.number().int().nonnegative(), needSignIn: z.number().int().nonnegative() }),
+    doc: "How many plugin MCP servers a session gets, and how many of them belong to a plugin with a sign-in that isn't signed in: counts only.",
   }),
   sessionSend: defineMethod({
     name: "session.send", owner: "D", roles: ["app", "cli", "remote", "web"], userOnly: true,

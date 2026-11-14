@@ -11,7 +11,10 @@
       "client/styles.css"
     ]
   },
-  "capabilities": [],
+  "capabilities": [
+    "conversation.read",
+    "files"
+  ],
   "contributes": {
     "ui": [
       {

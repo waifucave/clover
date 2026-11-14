@@ -4292,6 +4292,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         return typeof v === "string" && v !== "" ? v : undefined;
       },
       voiceForget: () => pluginHost?.settings.layerSet(CLOVER_VOICE, "active", null),
+      // The session panels' reads (sessions/panel-reads.ts): a model's context window from the catalog; and the plugin
+      // MCP servers a session gets (the driver's own list), with how many belong to a plugin that has sign-ins and none
+      // of them signed in.
+      contextWindowOf: (model) => {
+        const w = rowForTag(model)?.contextWindow?.value;
+        return typeof w === "number" && w > 0 ? w : undefined;
+      },
+      connectorsOf: async (view) => {
+        const servers = pluginMcp?.servers(view.kind, view.backend, view.bot) ?? [];
+        const waiting = new Map<string, boolean>();
+        for (const plugin of new Set(servers.map((x) => x.plugin))) {
+          const auth = await pluginAuth?.list(plugin).catch(() => []) ?? [];
+          waiting.set(plugin, auth.length > 0 && !auth.some((a) => a.state === "signed-in" || a.state === "refreshing"));
+        }
+        return { total: servers.length, needSignIn: servers.filter((x) => waiting.get(x.plugin) === true).length };
+      },
       voiceTell: (text) => {
         try {
           notifyService?.send(CLOVER_VOICE, { title: "Voice", body: text });

@@ -53,7 +53,7 @@ import { createBotSide } from "./bots/wiring";
 import { LeaseMainComputer, soleComputer, type MainComputer } from "./bots/main-computer";
 import type { DriverFactory } from "./bots/service";
 import type { Clock } from "./contracts/clock";
-import type { PluginRegistry } from "./contracts/plugin-registry";
+import { grantsInForce, type PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
@@ -64,6 +64,7 @@ import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
 import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
 import { usageMethods } from "./usage/rpc";
+import { sessionPanelMethods, type SessionPanelDeps } from "./sessions/panel-reads";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
 import { botDeliveryCheck, linkBotRelay, mountSessionDelivery } from "./links/bot-relay";
 import { peerSessionMethods } from "./bots/rpc";
@@ -111,6 +112,10 @@ export interface DaemonBotsInput {
   voiceChosen?: NonNullable<BotSideOptions["voices"]>["chosen"];
   voiceTell?: NonNullable<BotSideOptions["voices"]>["tell"];
   voiceForget?: NonNullable<BotSideOptions["voices"]>["forget"];
+  /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
+   *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
+  contextWindowOf?: SessionPanelDeps["contextWindowOf"];
+  connectorsOf?: SessionPanelDeps["connectorsOf"];
   /** The plugin host the bots' voices stream from, where the daemon gives no `pluginHost` (whose ingress and
    *  triggers this leaves off). */
   voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
@@ -515,6 +520,25 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));
+      // The session panels' reads: a coding session's or an agent's changes (its folder on this computer, through the
+      // tree), its outputs, its context use and its connectors (sessions/panel-reads.ts).
+      const treeOf = node?.tree;
+      Object.assign(input.handlers, laneMethodHandlers(sessionPanelMethods({
+        home: input.cloverHome,
+        view: (id) => s.host.get(id),
+        history: (id, o) => s.host.history(id, o),
+        length: (id) => s.host.length(id),
+        localFolder: (root) => {
+          if (treeOf === undefined) return { reason: "This computer has no folder tree, so the session's folder can't be read." };
+          let at: { computer: string; path: string };
+          try { at = treeOf.resolve(root); } catch (err) { return { reason: `The session's folder can't be read here (${err instanceof Error ? err.message : String(err)}).` }; }
+          if (at.computer !== runner.self) return { reason: `The session's folder is on ${at.computer}, so its changes are shown there.` };
+          return { path: at.path };
+        },
+        ...(b.contextWindowOf === undefined ? {} : { contextWindowOf: b.contextWindowOf }),
+        ...(b.connectorsOf === undefined ? {} : { connectorsOf: b.connectorsOf }),
+        grantsOf: (pluginId) => grantsInForce(b.registry.get(pluginId)),
+      })));
       // Lane D's usage rows (`usage.rows`, `usage.summary`): its ledger, counting the bot side's sessions as they run.
       const ledger = new UsageLedger({ path: cloverUsageDbPath(input.cloverHome), computer: runner.self });
       const counter = new CloverUsageCounter({ ledger, host: s.host, warn: (line) => log(`[usage] ${line}`) });
