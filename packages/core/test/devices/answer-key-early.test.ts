@@ -103,11 +103,19 @@ describe.skipIf(process.platform === "win32")("a real daemon whose links are sti
       expect(r?.error, r?.error?.message).toBeUndefined();
       expect(r?.result).toEqual({ applied: true });
       // The links haven't finished: their own methods aren't in the table yet.
-      expect((await c.request("device.list")).error?.code).toBe(-32601);
+      // A call to a method with no handler yet waits for the daemon's late parts (at most 60 s) instead of being refused: asked now,
+      // it is answered once the links are up.
+      const waiting = c.request("device.list");
+      await Bun.sleep(300);
+      let settled = false;
+      void waiting.then(() => { settled = true; });
+      await Bun.sleep(50);
+      expect(settled).toBe(false);
       // The same key again applies at once (every connection registers it).
       expect((await c.request("device.answerKey.set", { publicKey: k.publicKey, signature: k.signature, held: "none" })).result).toEqual({ applied: true });
       // Once the links are up, the registry they serve holds the key the app registered early.
       release();
+      expect((await waiting).error).toBeUndefined();
       let listed: { devices?: { isThis: boolean; answerKey?: { publicKey: string } }[] } | undefined;
       for (let i = 0; i < 100 && listed === undefined; i++) {
         const l = await c.request("device.list");
