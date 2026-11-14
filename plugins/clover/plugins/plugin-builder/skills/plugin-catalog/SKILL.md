@@ -133,7 +133,7 @@ How to read it:
 - **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (clover), `desktop.show` (clover), `host.call` (ui), `host.on` (ui), `keys.delete` (clover), `keys.open` (clover), `keys.publicKey` (clover), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `points.call` (both), `points.entries` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `speech.modes` (both), `speech.piece` (host), `speech.play` (host), `speech.stop` (host), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `t` (ui), `ui.send` (host)
 - **call:***: `commands.run` (both)
 - **network:***: `net.fetch` (both)
-- **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both)
+- **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both), `conversation.watch` (both)
 - **conversation.post**: `conversation.answer` (ui), `conversation.note` (both), `conversation.send` (both)
 - **bots.read**: `bots.get` (both), `bots.list` (both), `bots.watch` (both)
 - **computers.read**: `computers.get` (both), `computers.list` (both), `computers.watch` (both)
