@@ -28,5 +28,5 @@ test("an example's files are written as a plugin folder, ex-buddy's child plugin
     for (const [path, body] of Object.entries(ex.files)) expect(readFileSync(join(folder, path), "utf8")).toBe(body);
     expect((JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")) as { id: string }).id).toBe(ex.folder);
   }
-  expect(existsSync(join(dir, "ex-buddy", "plugins", "settings", "clover.json"))).toBe(true);
+  expect(existsSync(join(dir, "ex-buddy", "plugins", "status", "clover.json"))).toBe(true);
 });

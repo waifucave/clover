@@ -3,7 +3,7 @@
 // tests, and this row installs every one from a folder (its files written under the run's temp folder, `plugin.install`
 // over RPC, its `plugin-ok` OK card approved: ex-tool's pressed in the window), reaches running or enabled, and then, in
 // the window, sees each part drawn by its own layer:
-//   ex-settings, ex-point, ex-board, ex-buddy's child: their Settings sections (the Settings dialog, by title);
+//   ex-settings, ex-point, ex-board, ex-buddy's part beside its bot: their Settings sections (the Settings dialog, by title);
 //   ex-status: its line in the status bar; ex-app, ex-timeline, ex-fit: their pages, from their sidebar entries;
 //   ex-board-widget: its widget inside ex-board's section; ex-fit-tile: its tile inside ex-fit's page;
 //   ex-buddy: its header and side panel on its bot's tab (the bot in `bot.list`); ex-bot: in `bot.list`;
@@ -85,7 +85,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
       const s = await stateOf(ctx, id);
       return s === "running" || s === "enabled" ? s : undefined;
     }, async () => `it is ${(await stateOf(ctx, id)) ?? "gone"}${(await rpc.request<{ plugin: { reason?: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.reason ? ` (${(await rpc.request<{ plugin: { reason?: string } }>("plugin.get", { id })).plugin.reason})` : ""}`);
-    // A child plugin of its own (ex-buddy's settings) has no card of its own beside the parent's, or one more to approve.
+    // A child plugin of its own (ex-buddy's status line) has no card of its own beside the parent's, or one more to approve.
     for (const c of await cardsNow(ctx)) if (c.kind === "plugin-ok" && c.pluginId?.startsWith(`${id}/`)) await ctx.approveCard(c.id);
     approved.push(id);
   }
@@ -117,9 +117,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const w = await drawnInSettings(ctx, "Ex board", "ex-board-widget", "Hello from a small widget", "ex-board-widget's widget inside ex-board's section");
     return `ex-board's Settings section drawn with ex-board-widget's widget inside it, handed its props ("${w.text.trim().slice(0, 40)}")`;
   });
-  await check("ex-buddy's child", async () => {
-    const d = await drawnInSettings(ctx, "Ex buddy", "ex-buddy", "Ex buddy has nothing to set yet.", "its child's Settings section");
-    return `its child plugin's Settings section drawn (${d.url.slice(0, 60)})`;
+  await check("ex-buddy's part beside its bot", async () => {
+    const d = await drawnInSettings(ctx, "Ex buddy", "ex-buddy", "Ex buddy has nothing to set yet.", "its Settings section (an `app: true` part of the bot's own plugin)");
+    return `its Settings section, a part beside its bot, drawn (${d.url.slice(0, 60)})`;
   });
   await check("ex-status", async () => {
     const d = await drawn(ctx, "ex-status", "Ex status is on", "its status line");
