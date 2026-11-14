@@ -2222,8 +2222,8 @@ async function main(): Promise<void> {
           ...(box === undefined || box.label !== BOT_PARTS_CHECKBOX.label || box.checked !== true ? [`its OK card's checkbox for the parts beyond ${BOT_PARTS_BOT}'s tab is ${JSON.stringify(box ?? "missing")}`] : []),
         ];
         if (cardWrong.length > 0) wrong.push(`${juniper.id}: ${cardWrong.join("; ")}`);
-        const bots = (await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots;
-        const own = bots.find((x) => x.id === juniper.id)?.mainSession;
+        const own = await until(`${juniper.id}'s bot listed`, 30_000, async () => (await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((x) => x.id === juniper.id)?.mainSession)
+          .catch(() => undefined);
         if (own === undefined) wrong.push(`${juniper.id} is on, but bot.list has no bot ${juniper.id}`);
         else {
           const offeredOn = async (s: string, tag: string) => {
