@@ -110,3 +110,17 @@ describe("one list of her outfits", () => {
     expect(json.nodes.filter((n) => n.extras?.clover?.outfit !== undefined && n.extras.clover.on !== false).every((n) => n.extras!.clover!.outfit === DEFAULT_OUTFIT)).toBe(true);
   });
 });
+
+describe("her tab dresses her from what her figure shows", () => {
+  const showing = (...on: string[]) => OUTFIT_VALUES.map((name) => ({ name, on: on.includes(name) }));
+  test("the same cues as her server's, less those her figure already shows", () => {
+    expect<unknown>(tab.outfitCues("navy-uniform")).toEqual(outfitCues("navy-uniform"));
+    expect(tab.cuesToDress(showing("lilac-dress"), "navy-uniform")).toEqual([{ type: "outfit", part: "lilac-dress", on: false }, { type: "outfit", part: "navy-uniform", on: true }]);
+    expect(tab.cuesToDress(showing(), "navy-uniform")).toEqual([{ type: "outfit", part: "navy-uniform", on: true }]);
+    expect(tab.cuesToDress(showing("navy-uniform"), "navy-uniform")).toEqual([]);
+  });
+  test("a model loaded again mid-way (its default back on beside the new outfit) gets the default off", () => {
+    expect(tab.cuesToDress(showing("lilac-dress", "navy-uniform"), "navy-uniform")).toEqual([{ type: "outfit", part: "lilac-dress", on: false }]);
+    expect(tab.dressedIn(showing("lilac-dress", "navy-uniform"), "navy-uniform")).toBe(false);
+  });
+});

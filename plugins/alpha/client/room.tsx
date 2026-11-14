@@ -12,7 +12,7 @@ import { Grass } from "./grass";
 import { GLYPH, NOW, useBot, useDark, useSeen, type BotRef } from "./live";
 import { localDay } from "./seen";
 import { controlsInset, roomSize, tabWidth, TOGGLE_GAP_PX, TOGGLE_PX } from "./room-size";
-import { dressedIn, nextOutfit, OUTFIT_SETTING, outfitCues, outfitOf, outfitTitle, wearsHerOutfits, type Outfit } from "./outfits";
+import { cuesToDress, dressedIn, nextOutfit, OUTFIT_SETTING, outfitOf, outfitTitle, wearsHerOutfits, type Outfit } from "./outfits";
 
 const SERIF = '"Iowan Old Style", "Palatino", "Hoefler Text", ui-serif, Georgia, serif';
 const UI = 'ui-rounded, "SF Pro Rounded", system-ui, "Hiragino Sans", sans-serif';
@@ -191,10 +191,27 @@ export function AlphaRoom({ props }: { props: { bot: BotRef } }) {
   const parts = cat?.outfits ?? [];
   const hers = bot !== undefined && bot.otherAvatar !== true && wearsHerOutfits(parts.map((o) => o.name));
   const dressed = outfit !== undefined && dressedIn(parts, outfit);
+  // What her figure shows now, part by part: any change while she isn't dressed in her outfit (a cue that landed, or her model
+  // loaded again mid-way and starting from its own defaults) dresses her again from what it shows, until she is.
+  const showing = parts.map((o) => `${o.name}:${o.on ? 1 : 0}`).join(" ");
   useEffect(() => {
     if (!hers || outfit === undefined || dressed) return;
-    void (async () => { for (const cue of outfitCues(outfit)) await avatar?.cue?.(cue).catch(() => undefined); })();
-  }, [hers, outfit, dressed, avatar]);
+    let live = true;
+    void (async () => {
+      // The setting as it is now: her tool or the Edit page may have changed it since this frame read it.
+      const asked = api.settings?.get(OUTFIT_SETTING);
+      const now = asked === undefined ? outfit : outfitOf(await asked.catch(() => outfit));
+      if (!live) return;
+      if (now !== outfit) { setOutfit(now); return; }
+      for (const cue of cuesToDress(parts, outfit)) {
+        if (!live) return;
+        await avatar?.cue?.(cue).catch(() => undefined);
+      }
+    })();
+    return () => { live = false; };
+    // `parts` is read through `showing`, its on/off by name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hers, outfit, dressed, avatar, showing, api]);
   // The window's state: the sidebar beside her tab (its measured width sizes her room) and how far the window's own buttons reach.
   useEffect(() => shell?.watch?.(setWin), [shell]);
 

@@ -28,3 +28,7 @@ export const outfitCues = (outfit: Outfit): OutfitCue[] => [
   ...OUTFIT_VALUES.filter((v) => v !== outfit).map((part) => ({ type: "outfit" as const, part, on: false })),
   { type: "outfit" as const, part: outfit, on: true },
 ];
+/** Of those, the ones her figure still needs, from what it shows now (`outfits`, the renderer's catalogue): each other
+ *  outfit of hers that shows goes off, then `outfit` goes on unless it shows. */
+export const cuesToDress = (outfits: readonly { name: string; on: boolean }[], outfit: Outfit): OutfitCue[] =>
+  outfitCues(outfit).filter((c) => (outfits.find((x) => x.name === c.part)?.on === true) !== c.on);
