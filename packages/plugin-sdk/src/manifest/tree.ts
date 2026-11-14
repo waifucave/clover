@@ -9,7 +9,7 @@ import { spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
 import { DEFAULT_TAB_LAYOUT, LayoutContributionSchema, LayoutFileSchema, contributionProblems, isLayoutPatch, layoutPaths, layoutSpots, resolveLayoutFile } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
-import { resolveShell } from "../formats/shell";
+import { resolveShell, SHELL_NOT_OFFERED, SHELL_NOT_OFFERED_WORDS } from "../formats/shell";
 import { ThemeSchema, setsCardTokens } from "../formats/theme";
 import { parseJsonc } from "../jsonc";
 import { MANIFEST_FILE } from "../version";
@@ -280,6 +280,9 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
         f.warn(full, "shell_dropped", ["shell"], `in ${appearance} appearance the window doesn't use its ${d.group} group: ${d.why}`);
       }
     }
+    // The sidebar's old names: Bots doesn't offer the sidebar (§5.5). Said once per name, light or dark.
+    const named = new Set([...Object.keys(t.shell.tokens), ...Object.keys(t.shell.dark?.tokens ?? {})]);
+    for (const name of SHELL_NOT_OFFERED) if (named.has(name)) f.warn(full, "shell_not_offered", ["shell", name], SHELL_NOT_OFFERED_WORDS(name));
   }
   return setsCardTokens(t);
 }
