@@ -365,6 +365,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await press("mousePressed", at.x, at.y, 1);
     for (let i = 1; i <= 6; i++) { await press("mouseMoved", at.x + i * 20, at.y + i * 10, 1); await sleep(40); }
     await press("mouseReleased", at.x + 120, at.y + 60, 0);
+    // A press and move sent to the page also select what they cross (the sidebar's words, and her frames beside it); a real
+    // drag of a title area is the system's and selects nothing, so the selection the synthetic one left is taken back.
+    await cdp.evaluate(side.session, "(() => { getSelection()?.removeAllRanges(); return true; })()").catch(() => undefined);
     const line = await until("the app's log of the window's move", 8_000, async () => (moved().length > was ? moved()[moved().length - 1] : undefined)).catch(() => undefined);
     if (line === undefined) fail(`dragging the title row (${at.x},${at.y}) by (120, 60) moved the window nowhere: the app logged no move`);
     // The line is the window's own position before and after (win.getPosition), so this is its bounds, moved by the drag.
