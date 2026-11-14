@@ -155,4 +155,10 @@ function Gallery() {
 }
 
 const root = document.getElementById("root");
-if (root) createRoot(root).render(<Gallery />);
+if (root) {
+  const mounted = createRoot(root);
+  mounted.render(<Gallery />);
+  // The test (gallery.test.ts) shares its document with the other test files: it unmounts the gallery when it is done, so the document-level
+  // listeners the gallery's dialogs hold (Escape) go with it. Taking the node out of the document leaves them behind.
+  (globalThis as { __galleryUnmount?: () => void }).__galleryUnmount = () => mounted.unmount();
+}
