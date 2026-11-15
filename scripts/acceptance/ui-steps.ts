@@ -3284,7 +3284,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return undefined;
     };
     const finished = (id: string, kind: string, what: string) =>
-      until(`${id}'s ${kind} part ${what}`, 60_000, async () => { const a = await part(id, kind); return a !== undefined && a["data-state"] !== "recording" ? a : undefined; }, () => dumpFrames(cdp));
+      until(`${id}'s ${kind} part ${what}`, 60_000, async () => { const a = await part(id, kind); return a !== undefined && a["data-state"] !== "recording" ? a : undefined; }, async () => `${id}'s ${kind} part: ${JSON.stringify(await part(id, kind))}; its documents: ${(await cdp.documents()).filter((x) => x.url.includes("acc-mic")).map((x) => x.url.slice(0, 60)).join(" | ")}; log: ${ctx.appLog().split("\n").filter((l) => /acc-mic|microphone|media/i.test(l)).slice(-5).join(" // ")}`);
     const install = async (id: string) => {
       const folder = writeMicrophone(parent, id, { mic: id === MIC_IDS.holder });
       const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
