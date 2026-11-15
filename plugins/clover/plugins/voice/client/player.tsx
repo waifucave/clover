@@ -1,7 +1,8 @@
 // Clover Voice's background part (`app.background`, spec §6.6): the player. It accepts the host half's speech streams
 // (`streams.accept("speech")`), plays them one at a time in the device's speech turn (`src/player.ts`), sends the
 // bots' mouths as speech cues (`src/levels.ts`, `avatar.control.all`), and hears the host half's stop and push-to-talk
-// hold and its own "Speak replies" setting (off: what plays stops). It draws nothing.
+// hold (`streams.accept("control")`, a stream's meta) and its own "Speak replies" setting (off: what plays stops). It
+// draws nothing.
 import { useEffect } from "react";
 import { usePluginApi } from "./sdk";
 import { SpeechCues } from "../src/levels";
@@ -63,13 +64,11 @@ export function Player() {
         player.end(id);
       })().catch(() => player.end(id));
     });
-    const offStop = api.host.on("stop", (d) => {
-      const bot = (d as { bot?: unknown } | null)?.bot;
-      if (typeof bot === "string") player.stop(bot);
-    });
-    const offHold = api.host.on("hold", (d) => {
-      const h = d as { utterance?: unknown; on?: unknown } | null;
-      if (typeof h?.utterance === "string") player.hold(h.utterance, h.on === true);
+    // The host half's controls: a stream with only its meta (the user's stop on a bot, push-to-talk's hold).
+    const controls = api.streams.accept("control", (stream, meta) => {
+      void stream.cancel("read").catch(() => undefined);
+      if (meta.op === "stop" && typeof meta.bot === "string") player.stop(meta.bot);
+      else if (meta.op === "hold" && typeof meta.utterance === "string") player.hold(meta.utterance, meta.on === true);
     });
     let live = true;
     const mute = (): void => void api.settings.get<boolean>("speakReplies").then((on) => { if (live) player.setMuted(on === false); }, () => undefined);
@@ -78,8 +77,7 @@ export function Player() {
     return () => {
       live = false;
       accepting();
-      offStop();
-      offHold();
+      controls();
       offMute();
       player.stopAll();
       cues.close();

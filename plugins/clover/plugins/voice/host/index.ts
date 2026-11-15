@@ -17,6 +17,9 @@ export const PROVIDERS = "clover.voice.providers";
 export const MODES = "clover.voice.modes";
 /** The stream to the player. */
 export const SPEECH = "speech";
+/** The player's controls (stop a bot, hold for push-to-talk): a stream with only its `meta`, which reaches the
+ *  background part wherever it runs. */
+export const CONTROL = "control";
 
 /** A bot's voice, from this plugin's settings. */
 export interface BotVoice { provider: string; voice: string; model?: string }
@@ -141,11 +144,16 @@ export async function replies(input: HookInput): Promise<void> {
   if (!said.speaking) log(`${bot}'s reply wasn't spoken: ${said.note}`);
 }
 
+/** Tells the player something (`meta`, no bytes). */
+function tell(meta: Record<string, unknown>): void {
+  void api?.streams.open(CONTROL, { meta }).then((w) => w.close(), () => undefined).catch(() => undefined);
+}
+
 /** Stops what `bot` says now: its provider streams, and the player (the stage's chip). */
 function stopBot(bot: string): void {
   for (const c of speaking.get(bot) ?? []) c.abort();
   speaking.delete(bot);
-  api?.ui.send("stop", { bot });
+  tell({ op: "stop", bot });
 }
 
 /** The plugin's ui table (`host.call`): the speak button's `speak`, the chip's `stop`, and a bot's voice for its
@@ -217,7 +225,7 @@ export const voice = {
     const v = await voiceOf(args.bot);
     if (v === undefined) throw new Error(`${args.bot} has no voice; it is text-only`);
     // The user talks: whatever sounds stops, and nothing starts until they let go.
-    a.ui.send("hold", { utterance: args.utterance, on: true });
+    tell({ op: "hold", utterance: args.utterance, on: true });
     const id = `cl_${(++count).toString(36)}`;
     let close = () => {};
     const heard = new Promise<string>((resolve, reject) => {
@@ -239,13 +247,13 @@ export const voice = {
     } finally {
       hearing.delete(args.utterance);
       h.close();
-      api?.ui.send("hold", { utterance: args.utterance, on: false });
+      tell({ op: "hold", utterance: args.utterance, on: false });
     }
   },
   async listenEnd(args: { bot: string; utterance: string }): Promise<void> {
     const h = hearing.get(args.utterance);
     hearing.delete(args.utterance);
     h?.close();
-    api?.ui.send("hold", { utterance: args.utterance, on: false });
+    tell({ op: "hold", utterance: args.utterance, on: false });
   },
 };

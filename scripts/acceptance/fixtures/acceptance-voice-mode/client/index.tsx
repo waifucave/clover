@@ -1,4 +1,4 @@
-// The acceptance voice mode's background part: on its host half's `say`, it takes the device's speech turn
+// The acceptance voice mode's background part: on its host half's `say` (a stream with only its meta), it takes the device's speech turn
 // (`device/speech`), plays a tone for that long (an AudioContext; the test build is muted at the app's output), lets the
 // turn go, and records the span with its host half. It draws nothing. Its document's root shows what it holds now
 // (`data-avm-speaking`) for the run's record.
@@ -32,12 +32,12 @@ export function Speaker() {
       await turn.done();
       await api.host.call("record", { what, from, to: Date.now() });
     };
-    const off = api.host.on("say", (d) => {
-      const s = d as { what?: unknown; seconds?: unknown } | null;
-      if (typeof s?.what !== "string" || typeof s.seconds !== "number") return;
-      const what = s.what;
-      const seconds = s.seconds;
-      chain = chain.then(() => say(what, seconds)).catch(() => undefined);
+    const off = api.streams.accept("say", (stream, meta) => {
+      void stream.cancel("read").catch(() => undefined);
+      if (typeof meta.what !== "string" || typeof meta.seconds !== "number") return;
+      const what = meta.what;
+      const seconds = meta.seconds;
+      chain = chain.then(() => say(what, seconds)).catch((e: unknown) => api.host.call("record", { what: `error:${e instanceof Error ? e.message : String(e)}`, from: 0, to: 0 }).catch(() => undefined));
     });
     return () => {
       off();

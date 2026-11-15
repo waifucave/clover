@@ -10,7 +10,6 @@ function fake(o: { settings?: Record<string, unknown>; modes?: unknown[]; histor
   const settings = new Map<string, unknown>(Object.entries(o.settings ?? {}));
   const opened: { name: string; meta: Record<string, unknown>; bytes: number; closed: boolean }[] = [];
   const asked: { point: string; args: unknown }[] = [];
-  const sent: [string, unknown][] = [];
   const api = {
     plugin: { id: "clover/voice" },
     settings: {
@@ -31,17 +30,16 @@ function fake(o: { settings?: Record<string, unknown>; modes?: unknown[]; histor
       open: async (name: string, opts: { meta: Record<string, unknown> }) => {
         const rec = { name, meta: opts.meta, bytes: 0, closed: false };
         opened.push(rec);
-        return { getWriter: () => ({ write: async (c: Uint8Array) => { rec.bytes += c.length; }, close: async () => { rec.closed = true; }, abort: async () => undefined }) };
+        return { close: async () => { rec.closed = true; }, getWriter: () => ({ write: async (c: Uint8Array) => { rec.bytes += c.length; }, close: async () => { rec.closed = true; }, abort: async () => undefined }) };
       },
     },
     conversation: {
       get: async (session: string) => ({ id: session, kind: session.startsWith("b_") ? "bot" : "side-thread", bot: "alpha" }),
       history: async () => ({ events: o.history ?? [], hasMore: false }),
     },
-    ui: { send: (e: string, d: unknown) => void sent.push([e, d]) },
   };
   host.start(api as never);
-  return { opened, asked, sent, settings };
+  return { opened, asked, settings };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
@@ -104,6 +102,7 @@ describe("Clover Voice's host half", () => {
     await host.ui.forget({ bot: "alpha" });
     expect(await host.ui.voiceOf({ bot: "alpha" })).toBeNull();
     await host.ui.stop({ bot: "alpha" });
-    expect(f.sent).toEqual([["stop", { bot: "alpha" }]]);
+    await settle();
+    expect(f.opened.map((s) => [s.name, s.meta, s.closed])).toEqual([["control", { op: "stop", bot: "alpha" }, true]]);
   });
 });
