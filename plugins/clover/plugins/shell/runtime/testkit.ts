@@ -56,6 +56,7 @@ export function fakeApi(
     memory: { list: none("memory.list"), read: none("memory.read") },
     routines: { list: none("routines.list"), runs: none("routines.runs"), fire: none("routines.fire") },
     logs: { read: none("logs.read"), follow: () => () => undefined },
+    turns: { take: none("turns.take"), done: none("turns.done"), extend: none("turns.extend"), state: none("turns.state"), watch: () => () => undefined },
     points: {
       entries: async <T,>(point: string) => (points[point] ?? []) as PointEntry<T>[],
       watch: () => () => undefined,
