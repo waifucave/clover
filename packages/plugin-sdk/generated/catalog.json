@@ -323,8 +323,10 @@
       "uniqueBy": "id",
       "kind": "code",
       "runsOn": "the computer the user is talking on",
-      "doc": "Push-to-talk's voice mode (§6.6, the listening half until it is re-founded): one is active (Settings › Voice, Clover Voice's `active` setting) and hears push-to-talk; the others don't. A mode that speaks the replies offers itself on Clover Voice's own point (`clover.voice.modes`).",
-      "shipsWith": "Clover Voice"
+      "doc": "The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listening half until it is re-founded); a mode that speaks the replies also offers its `reply` on Clover Voice's own point (`clover.voice.modes`).",
+      "shipsWith": "Clover Voice",
+      "oneAtATime": true,
+      "title": "Voice"
     },
     {
       "name": "turns",

@@ -1,7 +1,6 @@
 import { ReadElements } from "./approvals/browser-words";
 import { pluginToolContained, pluginToolReadOnly, pluginWebTool } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { CLOVER_VOICE } from "./voices/slot";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings, runLaterByName } from "./fence/sandbox-settings";
@@ -4231,12 +4230,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pluginTriggers: {
         arm: async (type, routine, fields) => (pluginHost?.triggers ?? notStartedHost()).arm(type, routine, fields),
         disarm: async (type, routine) => (pluginHost?.triggers ?? notStartedHost()).disarm(type, routine),
-      },
-      // The voice slot (§6.6, push-to-talk): the user's choice is Clover Voice's own `active` setting (their chosen mode
-      // when it has a listening handler, else Clover Voice).
-      voiceChosen: async () => {
-        const v = await pluginHost?.settings.layerView(CLOVER_VOICE, "active").catch(() => undefined);
-        return typeof v === "string" && v !== "" ? v : undefined;
       },
       // The session panels' reads (sessions/panel-reads.ts): a model's context window from the catalog; and the plugin
       // MCP servers a session gets (the driver's own list), with how many belong to a plugin that has sign-ins and none

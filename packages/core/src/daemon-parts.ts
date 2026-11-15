@@ -108,7 +108,6 @@ export interface DaemonBotsInput {
   pluginHost?: BotPluginHost;
   /** Push-to-talk (§6.6, the listening half): with `pluginHost` (or `voiceHost`), the voice slot serves it; this is the
    *  user's choice of voice mode (Clover Voice's `active` setting). */
-  voiceChosen?: NonNullable<BotSideOptions["voices"]>["chosen"];
   /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
    *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
   contextWindowOf?: SessionPanelDeps["contextWindowOf"];
@@ -617,7 +616,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
   return {
     ...(relay ? { relay } : {}),
     routines,
-    ...((host ?? b.voiceHost) ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, ...(b.voiceChosen ? { chosen: b.voiceChosen } : {}) } } : {}),
+    ...((host ?? b.voiceHost) ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, } } : {}),
     ...(b.compaction ? { compaction: b.compaction } : {}),
     ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
   };

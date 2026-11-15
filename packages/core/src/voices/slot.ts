@@ -3,8 +3,9 @@
 // (its background part plays, its host half hears `message.out`, its providers are its own point), and this keeps only
 // what push-to-talk still stands on.
 //
-// * Which voice mode hears push-to-talk: the user's choice (Clover Voice's `active` setting) when that plugin has a
-//   `voiceModes` entry that is on and running here; else Clover Voice; else none, and push-to-talk is refused.
+// * Which voice mode hears push-to-talk: the active entry of `voiceModes`, a point that takes one filler at a time
+//   (P4, registry/active-one.ts): the user's pick in Settings, else the first bundled filler; none, and push-to-talk is
+//   refused.
 // * Push-to-talk goes to that mode: its start (the mode holds its own speech meanwhile), each piece, and the last, whose
 //   answer is what the provider heard. A copy still goes to `audio.onRecording`, never to an inactive voice mode.
 // * The providers' listening (`voices.listen`, `voices.feed`, `voices.providers`): their `voices` entries, called by any
@@ -13,22 +14,18 @@
 import { BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
-import type { PluginRegistry } from "../contracts/plugin-registry";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "../plugin-host/api/router";
+import { activeOne, entryIdOf, type ActiveRegistry } from "../registry/active-one";
 import type { RecordingPiece, VoiceService } from "./service";
 
-/** Clover Voice: the bundled voice mode. */
-export const CLOVER_VOICE = `${BUNDLED_ROOT_PLUGIN}/voice`;
 /** Provider listenings (`voices.listen`) one plugin may have open at once. */
 export const VOICES_CALLS_PER_PLUGIN = 4;
 /** How long a push-to-talk utterance waits for its next piece before it is dropped. */
 export const LISTEN_IDLE_MS = 30_000;
 export interface VoiceSlotOptions {
-  registry: Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "get">>;
+  registry: ActiveRegistry;
   host: Pick<PluginHost, "invoke">;
   service: VoiceService;
-  /** The user's choice of voice mode (Clover Voice's `active` setting), read at each use. */
-  chosen?(): Promise<string | undefined> | string | undefined;
   log?(line: string): void;
   warn?(message: string): void;
   listenIdleMs?: number;
@@ -81,15 +78,8 @@ export class VoiceSlot {
 
   /** The voice mode that hears push-to-talk now, or undefined (none). */
   async active(): Promise<VoiceModeView | undefined> {
-    const modes = this.modes();
-    let chosen: string | undefined;
-    try {
-      chosen = (await this.#o.chosen?.()) ?? undefined;
-    } catch {
-      chosen = undefined;
-    }
-    if (chosen === "") chosen = undefined;
-    const pick = (chosen !== undefined ? modes.find((m) => m.pluginId === chosen) : undefined) ?? modes.find((m) => m.pluginId === CLOVER_VOICE);
+    const one = activeOne(this.#o.registry, "voiceModes")?.active;
+    const pick = one === undefined ? undefined : this.modes().find((m) => m.pluginId === one.pluginId && m.id === entryIdOf(one));
     this.#active = pick;
     return pick;
   }

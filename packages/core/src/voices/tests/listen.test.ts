@@ -18,7 +18,10 @@ import { filePluginSettings } from "../../plugin-host/api/settings";
 import { stageBundledPlugins, stagedBundledDir } from "../../registry/bundled-stage";
 import { openPluginRegistry } from "../../registry/open";
 import { VoiceService, type RecordingPiece } from "../service";
-import { CLOVER_VOICE, VoiceSlot } from "../slot";
+import { VoiceSlot } from "../slot";
+
+/** Clover Voice, the bundled filler of `voiceModes` (the default active one). */
+const CLOVER_VOICE = "clover/voice";
 
 setDefaultTimeout(60_000);
 const temps: string[] = [];
@@ -55,6 +58,7 @@ async function world() {
   for (const part of ["clover.json", "host", "src", "client", "assets"]) cpSync(join(REPO, "plugins", "clover", "plugins", "voice", part), join(root, "clover", "plugins", "voice", part), { recursive: true });
   const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });
   cpSync(join(REPO, "scripts", "acceptance", "fixtures", "acceptance-voice"), join(home, "plugins", "acceptance-voice"), { recursive: true });
+  cpSync(join(REPO, "scripts", "acceptance", "fixtures", "acceptance-voice-mode"), join(home, "plugins", "acceptance-voice-mode"), { recursive: true });
   plugin(join(home, "plugins", "scribe"), { id: "scribe", name: "Scribe", capabilities: ["voices.use"] }, SCRIBE_JS);
   plugin(join(home, "plugins", "nosy"), { id: "nosy", name: "Nosy" }, SCRIBE_JS);
   // Alpha's voice: Clover Voice's own setting for her (bot scope); Beta has none.
@@ -74,17 +78,33 @@ async function world() {
   (service as unknown as { constructor: unknown });
   const live = new VoiceService({ registry: opened.registry, host: ph.host });
   slot = new VoiceSlot({ registry: opened.registry, host: ph.host, service: live, listenIdleMs: 300 });
-  for (const id of ["acceptance-voice", "scribe", "nosy"]) {
+  for (const id of ["acceptance-voice", "scribe", "nosy", "acceptance-voice-mode"]) {
     const { card } = await opened.registry.installed(id, "app");
     const shown = broker.cards().find((c) => c.id === card)!;
     await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
   }
-  for (let i = 0; i < 500 && ["acceptance-voice", "scribe", "nosy", CLOVER_VOICE].some((id) => !["running", "waiting"].includes(opened.registry.get(id)?.state ?? "")); i++) await Bun.sleep(20);
+  for (let i = 0; i < 500 && ["acceptance-voice", "scribe", "nosy", "acceptance-voice-mode", CLOVER_VOICE].some((id) => !["running", "waiting"].includes(opened.registry.get(id)?.state ?? "")); i++) await Bun.sleep(20);
   const run = <T,>(id: string, handler: string) => ph.host.invoke<T>({ pluginId: id, handler, args: {}, caller: { kind: "user", client: "app" } });
-  return { slot, service: live, ph, run, close: async () => { await ph.close(); opened.close(); } };
+  return { slot, service: live, ph, run, registry: opened.registry, close: async () => { await ph.close(); opened.close(); } };
 }
 
 describe("push-to-talk in a real plugin host", () => {
+  test("the voice that hears it is the platform's one at a time: Clover Voice by default; the user's pick moves it, and an inactive mode hears nothing", async () => {
+    const w = await world();
+    try {
+      expect((await w.slot.active())?.pluginId).toBe(CLOVER_VOICE);
+      w.registry.choose("voiceModes", { pluginId: "acceptance-voice-mode", entryId: "acceptance-voice-mode" });
+      expect((await w.slot.active())?.pluginId).toBe("acceptance-voice-mode");
+      expect(w.slot.inactiveMode(CLOVER_VOICE)).toBe(true);
+      // That mode doesn't listen: no button for Alpha.
+      expect(await w.slot.listens("alpha")).toBe(false);
+      w.registry.choose("voiceModes", undefined);
+      expect((await w.slot.active())?.pluginId).toBe(CLOVER_VOICE);
+    } finally {
+      await w.close();
+    }
+  });
+
   test("the slot hands the pieces to Clover Voice, which reads the bot's voice from its own setting; the provider hears them; audio.onRecording gets a copy", async () => {
     const w = await world();
     try {

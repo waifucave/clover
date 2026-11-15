@@ -91,10 +91,7 @@ export interface BotSideOptions {
   updateGate?: UpdateGateLike;
   /** Push-to-talk on this device (§6.6, the listening half until it is re-founded): the `voices` entries and the plugin
    *  host that streams them. The bots' voices are Clover Voice's own settings; it speaks on its own. */
-  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "listenIdleMs"> & {
-    /** The user's choice of voice mode (Clover Voice's `active` setting), read at each use (§6.6). */
-    chosen?(): Promise<string | undefined> | string | undefined;
-  };
+  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "listenIdleMs">;
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
   /** The provider check for bots' plugin-chosen models (provider-consent.ts); by default one over this side's grants,
@@ -227,11 +224,10 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...o.voices,
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
-  // The voice slot (§6.6): the active voice mode (Clover Voice by default) hears push-to-talk; the service carries the
-  // providers' listening.
+  // The voice slot (§6.6): the active voice mode (`voiceModes`' one at a time, the user's pick in Settings) hears
+  // push-to-talk; the service carries the providers' listening.
   const voiceSlot = voices === undefined || o.voices?.host.invoke === undefined ? undefined : new VoiceSlot({
-    registry: o.voices.registry, host: o.voices.host as Pick<PluginHost, "invoke">, service: voices,
-    ...(o.voices.chosen === undefined ? {} : { chosen: o.voices.chosen }),
+    registry: o.registry, host: o.voices.host as Pick<PluginHost, "invoke">, service: voices,
     ...(o.voices.listenIdleMs === undefined ? {} : { listenIdleMs: o.voices.listenIdleMs }),
     ...(o.warn === undefined ? {} : { warn: o.warn, log: o.warn }),
   });

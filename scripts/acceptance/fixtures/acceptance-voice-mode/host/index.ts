@@ -45,6 +45,16 @@ export const chime = async () => {
   return { offered: true, at };
 };
 
+/** Its `voiceModes` handler: picked as the voice, it doesn't listen (push-to-talk shows no button for it). */
+export const listening = {
+  listens: async () => false,
+  listenStart: async () => {
+    throw new Error("the acceptance voice mode doesn't listen");
+  },
+  listenPiece: async () => ({}),
+  listenEnd: async () => undefined,
+};
+
 export const report = async () => ({ ready, replies: [...said.replies], spans: [...said.spans] });
 
 /** Its part's own table: each span it held the device's speech turn. */
