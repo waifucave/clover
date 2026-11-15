@@ -7,18 +7,14 @@ const root = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-/** Spec §5.4's capabilities (plus the two families), and lane B's `terminal` and `devices.read`. */
-const CAPABILITIES = new Set([
-  "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-  "computers.control", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
-  // Lane B's, beyond the spec's list: the terminal (F's request), the devices list, and the Plugins page's events-only
-  // capability (the controller's ruling: the plugin events and card notes, nothing callable).
-  "terminal", "devices.read", "plugins.watch",
-]);
+/** The capability catalog's names (the SDK's generated catalog, so a capability the catalog adds is known here at once). */
+const CAPABILITIES = new Set<string>((JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "..", "..", "..", "packages", "plugin-sdk", "generated", "catalog.json"), "utf8")) as { capabilities: { name: string }[] }).capabilities.map((c) => c.name));
 
 describe("what the Plugins page holds", () => {
-  test("only plugins.watch: no approvals, no plugins.install, nothing that opens a call", () => {
-    expect(manifest.capabilities).toEqual(["plugins.watch"]);
+  // F2: the page's calls at the app's door are its capabilities' (plugins.manage for what the user does to plugins, logs.read
+  // for a plugin's log, computers.read for the computers to tick), never its id; no approvals, no plugins.install.
+  test("plugins.watch for its events, plugins.manage, logs.read and computers.read for its calls; nothing else", () => {
+    expect(manifest.capabilities).toEqual(["plugins.watch", "plugins.manage", "logs.read", "computers.read"]);
   });
 });
 

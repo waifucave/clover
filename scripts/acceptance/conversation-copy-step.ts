@@ -14,7 +14,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { buildPluginModule } from "../../packages/core/src/registry/build";
+import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/index";
 import { fail, layerDocs, sleep, toAlphasTab, until, type ExampleCtx } from "./example-steps";
 
 export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in Alpha's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
@@ -39,8 +39,18 @@ export function copyManifest(): Record<string, unknown> {
   return { ...src, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
 }
 
-/** Writes the copy's folder under `root` and returns its path: the bundled conversation's own source, built the way the
- *  registry builds a client entry, and its stylesheets. */
+/** The part's `./sdk` as a third party's folder ships it: the public SDK (`@waifucave/clover-plugin-sdk/ui`), bound the way
+ *  the app's own build binds the bundled part (`apps/desktop/src/layer/clover/sdk.ts`), and no voice player (a quiet bot). */
+const SDK_SHIM = `import * as Ui from "@waifucave/clover-plugin-sdk/ui";
+export { SEALED_FIELDS } from ${JSON.stringify(join(PLUGINS, "shell", "runtime", "ui.ts"))};
+export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries } = Ui;
+export function UiRuntimeProvider(props) { return props.children ?? null; }
+export function useBotSpeech(_bot) { return { speaking: false }; }
+`;
+
+/** Writes the copy's folder under `root` and returns its path: the bundled conversation's own source, built to one module as
+ *  the registry builds a client entry (everything bundled in but the layers' bare imports), its `./sdk` the public SDK, and
+ *  its stylesheets. */
 export async function buildCopy(root: string): Promise<string> {
   const dir = join(root, COPY_ID);
   rmSync(dir, { recursive: true, force: true });
@@ -48,8 +58,16 @@ export async function buildCopy(root: string): Promise<string> {
   const manifest = copyManifest() as { client: { css?: string[] } };
   writeFileSync(join(dir, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const css of manifest.client.css ?? []) copyFileSync(join(PLUGINS, "conversation", css), join(dir, css));
-  await buildPluginModule({ entry: join(PLUGINS, "conversation", "client", "index.tsx"), outFile: join(dir, "client", "index.js"), side: "client" });
-  if (!existsSync(join(dir, "client", "index.js"))) throw new Error("the conversation copy's client wasn't built");
+  const shim = join(root, `${COPY_ID}-sdk.js`);
+  writeFileSync(shim, SDK_SHIM);
+  const from = join(PLUGINS, "conversation", "client");
+  const result = await Bun.build({
+    entrypoints: [join(from, "index.tsx")], outdir: join(dir, "client"), target: "browser", format: "esm", splitting: false, minify: false,
+    naming: { entry: "index.[ext]" }, external: [...CLIENT_BARE_IMPORTS], define: { "process.env.NODE_ENV": JSON.stringify("production") }, throw: false,
+    plugins: [{ name: "copy-sdk", setup(b) { b.onResolve({ filter: /^\.\.?\/sdk(\.tsx?)?$/ }, (args) => (args.importer.startsWith(from) ? { path: shim } : undefined)); } }],
+  });
+  rmSync(shim, { force: true });
+  if (!result.success || !existsSync(join(dir, "client", "index.js"))) throw new Error(`the conversation copy's client wasn't built: ${result.logs.map((l) => String(l)).join("; ").slice(0, 400)}`);
   return dir;
 }
 
@@ -135,9 +153,12 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     if (again[1]!.text !== again[0]!.text) fail("the message sent again is not the first, byte for byte");
     said.push("a failed turn showed Try again in the copy; a click the page made itself sent nothing; one real click sent the user's message again (session.resend through the door, by the copy's user.send) and the turn completed with its own reply");
 
-    const refused = refusals();
+    // The door's only refusal of the copy is the page's own click (no press of the user's behind it): never a capability or an id.
+    const pressRule = refusals().filter((l) => l.includes("session.resend refused (no key press or click"));
+    const refused = refusals().filter((l) => !pressRule.includes(l));
+    if (pressRule.length === 0) fail("the door logged no refusal for the click the page made itself");
     if (refused.length > 0) fail(`the door refused the copy's calls: ${refused.slice(-3).join(" | ")}`);
-    said.push("the door refused none of the copy's calls");
+    said.push("the door refused the copy only the page's own click (no press of the user's), and nothing for want of a capability");
     return said.join("; ");
   } finally {
     if (switchedOff) await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: true }, 30_000).catch(() => undefined);

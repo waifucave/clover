@@ -7,15 +7,8 @@ const root = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-/** Spec §5.4's capabilities (plus the two families), and lane B's `terminal` and `devices.read`. */
-const CAPABILITIES = new Set([
-  "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-  "computers.control", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
-  // Lane B's, beyond the spec's list: the terminal (F's request) and the devices list.
-  "terminal", "devices.read",
-  // The window's other surfaces: the shell sees every pending card's meta (with approvals) to know when a card needs the window.
-  "approvals.all",
-]);
+/** The capability catalog's names (the SDK's generated catalog, so a capability the catalog adds is known here at once). */
+const CAPABILITIES = new Set<string>((JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "..", "..", "..", "packages", "plugin-sdk", "generated", "catalog.json"), "utf8")) as { capabilities: { name: string }[] }).capabilities.map((c) => c.name));
 
 describe("clover.json (spec §5.9, format 1)", () => {
   test("a child of `clover`: no id of its own, a name, format 1", () => {
