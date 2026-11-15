@@ -22,10 +22,10 @@ const SESSIONS = [
   s("code-3", { kind: "coding", root: "home/Laptop/code/tarot", title: "Spreads" }),
 ];
 
-async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; onWatch?: (listener: (s: SessionView) => void) => void } = {}) {
+async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; onWatch?: (listener: (s: SessionView) => void) => void; onBotRemoved?: (removed: (id: string) => void) => void } = {}) {
   const core = fakeCore({ "account.status": () => ({ signedIn: true, user: { id: "u1", name: "Sam" } }) });
   const api = fakeApi({
-    bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
+    bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: (_l, r) => { opts.onBotRemoved?.(r!); return () => undefined; } },
     conversation: { list: async () => SESSIONS, watch: (l) => { opts.onWatch?.(l); return () => undefined; } },
     computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask", link: "self", isMain: true })] },
   });
@@ -50,6 +50,16 @@ async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" 
 }
 
 describe("the sidebar entry", () => {
+  test("a bot that is removed leaves the list at once, with no reload", async () => {
+    let removed: ((id: string) => void) | undefined;
+    await mount(undefined, { onBotRemoved: (r) => (removed = r) });
+    expect(screen.queryByText("Luna")).not.toBeNull();
+    await act(async () => removed!("luna"));
+    await act(() => settle());
+    expect(screen.queryByText("Luna")).toBeNull();
+    expect(screen.queryByText("Alpha")).not.toBeNull();
+  });
+
   test("routes map both ways", () => {
     const all: ShellRoute[] = [{ route: "bot", params: { bot: "alpha" } }, { route: "agent", params: { session: "a" } }, { route: "settings", params: {} }, { route: "plugins", params: {} }, { route: "archive", params: {} }];
     for (const r of all) {

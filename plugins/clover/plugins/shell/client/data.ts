@@ -22,15 +22,19 @@ export function useLoad<T>(load: (() => Promise<T>) | undefined, deps: readonly 
 /** A list read once, then kept current by a watch that hands over one changed item at a time. */
 export function useLiveList<T>(
   load: (() => Promise<T[]>) | undefined,
-  watch: ((listener: (item: T) => void) => () => void) | undefined,
+  watch: ((listener: (item: T) => void, onRemoved?: (id: string) => void) => () => void) | undefined,
   same: (a: T, b: T) => boolean,
   deps: readonly unknown[] = [],
+  /** The id an item goes by: with it, the watch's removals (`onRemoved`) drop the item from the list. */
+  idOf?: (item: T) => string,
 ): T[] | undefined {
   const [items, setItems] = useState<T[] | undefined>(undefined);
   useEffect(() => {
     let live = true;
     load?.().then((v) => live && setItems(v), () => live && setItems([]));
-    const stop = watch?.((item) => setItems((list) => (list ? (list.some((x) => same(x, item)) ? list.map((x) => (same(x, item) ? item : x)) : [...list, item]) : list)));
+    const stop = watch?.((item) => setItems((list) => (list ? (list.some((x) => same(x, item)) ? list.map((x) => (same(x, item) ? item : x)) : [...list, item]) : list)),
+      idOf === undefined ? undefined : (id) => setItems((list) => list?.filter((x) => idOf(x) !== id)),
+    );
     return () => {
       live = false;
       stop?.();

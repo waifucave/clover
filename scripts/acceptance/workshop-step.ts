@@ -40,8 +40,8 @@
 //    bot editor's, as step 6's peer), one turn there gets the fake's reply, drawn in the window, with her instructions
 //    in its prompt. Her edit of its instructions applies with no card: the plugin reloads, and its very next turn's
 //    prompt has the new words and not the old (an edit reaches the next turn however short the conversation; no
-//    compaction is needed). The user removes the plugin, and the bot leaves bot.list (whether its sidebar row
-//    goes is recorded, not failed: the sidebar doesn't follow `bot_removed` yet).
+//    compaction is needed). The user removes the plugin, and the bot leaves bot.list and its sidebar row goes
+//    within a few seconds (the sidebar follows `bot_removed`).
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
 import { ownTurnCompleted } from "./turn-end";
@@ -616,15 +616,14 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const r = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: BOT_ID });
     if (r.card !== undefined) await ctx.pressCard("its removal card", (c) => c.id === r.card);
     await until("its bot out of bot.list", 30_000, async () => (!(await listed()).some(isMine) ? true : undefined), async () => `bot.list: ${(await listed()).map((b) => b.id).join(", ")}`);
-    // Its sidebar row, recorded and not failed: the sidebar follows `bot_changed` only, and `bot_removed` reaches no
-    // component (sidebar/client/entry.tsx, the SDK's `bots.watch`), so the row stays until the window loads again. A
-    // finding for the sidebar's owner; this becomes a failure once the sidebar follows removals.
+    // Its sidebar row goes with it, within a few seconds and with no reload: the sidebar and the shell follow `bot_removed`
+    // (the SDK's `bots.watch` tells them), and the tab it was showing is left.
     const rowShown = async (): Promise<boolean> => {
       for (const d of await treeDocs(ctx.cdp)) if ((await ctx.cdp.evaluate(d.session, `[...document.querySelectorAll(${JSON.stringify(row)})].some((e) => (e.innerText || '').split('\\n').some((l) => l.trim() === ${JSON.stringify(BOT_NAME)}))`).catch(() => false)) === true) return true;
       return false;
     };
-    const gone = await until("its row out of the sidebar", 10_000, async () => ((await rowShown()) ? undefined : true)).then(() => true, () => false);
-    said.push(gone ? "removed: out of bot.list and the sidebar" : "removed: out of bot.list; its row still in the sidebar 10 s later (the sidebar follows bot_changed only; bot_removed reaches no component)");
+    await until("its row out of the sidebar", 8_000, async () => ((await rowShown()) ? undefined : true), async () => "its row is still under Bots in the sidebar (bot_removed should drop it)");
+    said.push("removed: out of bot.list and, within seconds and with no reload, out of the sidebar");
     // Her tab again, for the rows after this one in the same window.
     await toAlphasTab(ctx);
     done.push(`9 a bot builds a bot: ${said.join("; ")}`);

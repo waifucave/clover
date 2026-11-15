@@ -92,11 +92,11 @@ const ENTRIES: UiEntry[] = [
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}) {
+async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}, onBotWatch?: (listener: (b: BotView) => void, onRemoved?: (id: string) => void) => void) {
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
-    bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
+    bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: (l, r) => { onBotWatch?.(l, r); return () => undefined; } },
     conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)!, watch: (l) => { onWatch?.(l); return () => undefined; } },
   });
   const runtime = runtimeWith({
@@ -144,6 +144,32 @@ describe("the shell's session list", () => {
     const ended = [s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-f", { kind: "coding", startedAt: 5, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })];
     expect(newestCoding(ended)?.id).toBe("code-d");
     expect(newestCoding([s("code-e", { kind: "coding", archived: true })])).toBeUndefined();
+  });
+});
+
+describe("a bot that is removed", () => {
+  const route = () => document.querySelector('[data-stub="sidebar"]')?.textContent ?? "";
+  test("while its tab shows: the window goes to the first bot left, and its kept panels go", async () => {
+    let removed: ((id: string) => void) | undefined;
+    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
+    expect(route()).toContain('"bot":"luna"');
+    await act(async () => removed!("luna"));
+    await act(() => settle(6));
+    expect(route()).toContain('"bot":"alpha"');
+  });
+  test("a bot that isn't showing is just gone from the list; the tab stays", async () => {
+    let removed: ((id: string) => void) | undefined;
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
+    await act(async () => removed!("luna"));
+    await act(() => settle(6));
+    expect(route()).toContain('"bot":"alpha"');
+  });
+  test("the last bot: the window shows its empty state", async () => {
+    let removed: ((id: string) => void) | undefined;
+    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
+    await act(async () => { removed!("alpha"); removed!("luna"); });
+    await act(() => settle(6));
+    expect(document.querySelector(".cl-shell-empty")).not.toBeNull();
   });
 });
 
