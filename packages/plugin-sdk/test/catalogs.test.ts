@@ -496,7 +496,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(29);
+    expect(c.capabilities.length).toBe(30);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
