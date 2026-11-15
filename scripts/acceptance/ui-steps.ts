@@ -395,7 +395,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (area !== "drag") fail(`the sidebar's title row declares no drag region (${String(area)})`);
     const moved = () => ctx.appLog().split("\n").filter((l) => l.includes("window: moved by its title area"));
     const was = moved().length;
-    const at = { x: 160, y: 20 };
+    // Pressed on Clover's mark, which is part of the row and no control: a fixed point in the row can be under one of its
+    // buttons (the Bots/Code pair sits there in the open sidebar's first row; try 14k's packaged run pressed it at 160,20).
+    const at = (await cdp.evaluate(side.session, `(() => { const mark = document.querySelector('.cl-sidebar__top .cl-sidebar__brand'); if (!mark) return { x: 160, y: 20 }; const b = mark.getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`)) as { x: number; y: number };
     const press = (type: string, x: number, y: number, buttons: number) => cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount: 1 }, side.session);
     await press("mouseMoved", at.x, at.y, 0);
     await press("mousePressed", at.x, at.y, 1);
