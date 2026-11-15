@@ -23,6 +23,41 @@ export type AvatarCue =
   | { readonly type: "pace"; readonly calm: boolean }
   | { readonly type: "lookAt"; readonly point: { readonly x: number; readonly y: number } | null };
 
+/** Mouth levels per speech cue at most. A batch is the unit a plugin sends ahead of the clock; the stage keeps it by time. */
+export const SPEECH_FRAMES_MAX = 128;
+/** A stamp may be at most this far ahead of the core's clock (ms): "ahead of the clock", not a whole book at once. */
+export const SPEECH_AHEAD_MAX_MS = 120_000;
+/** Speech cues a plugin may send a second, and the mouth levels in them together: their own window, so a talking bot's
+ *  expressions and motions (`AVATAR_CUES_PER_SECOND` in the core) never wait behind its mouth. */
+export const SPEECH_CUES_PER_SECOND = 20;
+export const SPEECH_FRAMES_PER_SECOND = 2000;
+/** The brightness a level with no `centroid` reads as (Hz): a middle vowel. */
+export const SPEECH_DEFAULT_CENTROID = 1500;
+
+/** One mouth level: when it sounds (epoch milliseconds, the same clock as `Date.now()`), how loud (0 to 1) and, if the
+ *  plugin knows it, how bright (the spectral centroid in Hz: it shapes the vowel; without it the mouth only opens). A level
+ *  is heard until the next one, at most 50 ms. */
+export interface AvatarSpeechFrame {
+  readonly t: number;
+  readonly rms: number;
+  readonly centroid?: number;
+}
+
+/** What a speaking bot's mouth does: levels stamped in epoch milliseconds, in batches sent ahead of the clock (at most
+ *  `SPEECH_FRAMES_MAX` a batch, stamps strictly rising, none more than `SPEECH_AHEAD_MAX_MS` ahead). The stage keeps them
+ *  and hands the renderer each a moment before it is due, so the renderer lip-syncs exactly as it does to any speech;
+ *  `speaking` is true from the first level's stamp to a moment after the last. `cut` first forgets every level not yet due
+ *  (the speech is stopped or replaced), so a batch of only `cut` ends the mouth. Not an `AvatarCue`: a renderer is never
+ *  handed one (it reads the speech through `useAvatarSpeech`). */
+export interface AvatarSpeechCue {
+  readonly type: "speech";
+  readonly frames: readonly AvatarSpeechFrame[];
+  readonly cut?: true;
+}
+
+/** What `avatar.cue` takes: a cue for the renderer, or the speech's mouth levels. */
+export type AvatarAnyCue = AvatarCue | AvatarSpeechCue;
+
 /** The plain answer to a cue. A cue that wasn't played says why, in words a bot plugin can pass on to its model:
  *  `no-renderer` (nothing draws this bot's figure now), `unsupported` (the renderer doesn't do that kind of cue),
  *  `unknown-name` (the loaded model has no such expression, motion or part: the answer lists some it has), `invalid`. */
@@ -76,9 +111,11 @@ export interface AvatarReport {
 
 /** The plugin API's `avatar` area. */
 export interface AvatarApi {
-  /** Asks the figure for one cue. Resolves with the plain answer, never throws for a cue that can't be played. Only
-   *  for the plugin's own bot (the bot whose id is the plugin's top-level id). Needs `avatar.control`. */
-  cue(cue: AvatarCue): Promise<AvatarCueResult>;
+  /** Asks the figure for one cue (or, for `{ type: "speech", frames }`, a batch of the mouth's levels). Resolves with the
+   *  plain answer, never throws for a cue that can't be played. For the plugin's own bot (the bot whose id is the
+   *  plugin's top-level id) with `avatar.control`; `opts.bot` names another bot, which needs `avatar.control.all` (a
+   *  plugin without it is refused, saying why). */
+  cue(cue: AvatarAnyCue, opts?: { readonly bot?: string }): Promise<AvatarCueResult>;
   /** The model's catalogue, or undefined while nothing draws the figure. Needs `avatar.read`. */
   catalogue(): Promise<AvatarCatalogue | undefined>;
   /** The figure's box on the stage (the default when the renderer can't say), or undefined while nothing draws it. */
@@ -120,6 +157,29 @@ export function cleanAvatarCue(raw: unknown): AvatarCue | undefined {
     }
     default: return undefined;
   }
+}
+
+/** A speech cue as it may cross: stamps whole milliseconds, strictly rising; loudness 0 to 1; brightness 0 to 24 kHz;
+ *  at most SPEECH_FRAMES_MAX levels; `cut` only as true. Undefined if it isn't one (`why` says what is wrong). */
+export function cleanSpeechCue(raw: unknown): { cue: AvatarSpeechCue } | { why: string } {
+  if (raw === null || typeof raw !== "object") return { why: "a speech cue is { type: \"speech\", frames: [{ t, rms }] }" };
+  const c = raw as Record<string, unknown>;
+  if (c.type !== "speech" || !Array.isArray(c.frames)) return { why: "a speech cue is { type: \"speech\", frames: [{ t, rms }] }" };
+  if (c.cut !== undefined && c.cut !== true) return { why: "a speech cue's cut is true or absent" };
+  if (c.frames.length > SPEECH_FRAMES_MAX) return { why: `a speech cue carries at most ${SPEECH_FRAMES_MAX} levels; send the rest in the next one` };
+  if (c.frames.length === 0 && c.cut !== true) return { why: "a speech cue needs levels, or cut to end the speech" };
+  const frames: AvatarSpeechFrame[] = [];
+  let last = -1;
+  for (const f of c.frames as unknown[]) {
+    const r = f as Record<string, unknown> | null;
+    if (r === null || typeof r !== "object" || !finite(r.t) || !finite(r.rms) || (r.centroid !== undefined && !finite(r.centroid))) return { why: "each level is { t: epoch milliseconds, rms: 0 to 1, centroid?: Hz }, all numbers" };
+    const t = Math.round(r.t);
+    if (t < 0 || t > Number.MAX_SAFE_INTEGER) return { why: "a level's t is epoch milliseconds" };
+    if (t <= last) return { why: "a speech cue's levels must be stamped strictly rising" };
+    last = t;
+    frames.push({ t, rms: Math.min(1, Math.max(0, r.rms)), ...(r.centroid !== undefined ? { centroid: Math.min(24_000, Math.max(0, r.centroid as number)) } : {}) });
+  }
+  return { cue: { type: "speech", frames, ...(c.cut === true ? { cut: true as const } : {}) } };
 }
 
 const cleanNames = (raw: unknown): string[] | undefined => {
@@ -219,5 +279,13 @@ export function judgeCue(report: Pick<AvatarReport, "renderer" | "capabilities" 
   if (cue.type === "expression") return check("expression", names.expressions, cue.name);
   if (cue.type === "motion") return check("motion", names.motions, cue.name);
   if (cue.type === "outfit") return check("outfit part", names.outfits.map((o) => o.name), cue.part);
+  return undefined;
+}
+
+/** The plain answer to a speech cue for a renderer that reported `report`: undefined when the levels may go on to the
+ *  stage, else why they can't (nothing draws the figure, or its renderer declares no `lipsync`). */
+export function judgeSpeech(report: Pick<AvatarReport, "renderer" | "capabilities"> | undefined): AvatarCueResult | undefined {
+  if (report === undefined) return { ok: false, reason: "no-renderer", message: "nothing is drawing this bot's figure right now" };
+  if (!report.capabilities.includes("lipsync")) return { ok: false, reason: "unsupported", message: `this renderer (${report.renderer}) doesn't do lip-sync` };
   return undefined;
 }

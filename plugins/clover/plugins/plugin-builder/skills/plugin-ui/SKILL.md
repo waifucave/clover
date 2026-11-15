@@ -231,6 +231,13 @@ screen, not the parts around you.
   speaking }` and `framing: { mode?, crop?, headroom? }`, the layout's `--clover-avatar-framing` (`full`, `bust`,
   `waist`), `--clover-avatar-crop` and `--clover-avatar-headroom`, read again as the stage resizes. A renderer frames
   the figure by its own box and that `framing`.
+- **An avatar renderer's mouth**: it declares `lipsync` in its `avatar.formats` `capabilities` and reads the speech with
+  `useAvatarSpeech()`: `{ feed, speaking }`, where `feed.subscribe(listener)` hears frames `{ t, rms, centroid }` (`t` in
+  the feed's seconds, `rms` loudness 0 to 1, `centroid` brightness in Hz) a moment before each is due and `feed.now()` is
+  the feed's clock; the same hook works in the clover layer and in a plugin's frame. The frames are the speech cue
+  (plugin-host, "The plugin API"): the stage builds the feed from what a plugin sends with `api.avatar.cue({ type: "speech",
+  frames })`, so a renderer never plays audio or hears a microphone. A renderer shows the mouth shut when `feed` is
+  undefined.
 
 plugin-examples, "A page that fits its space" (`ex-fit`, `ex-fit-tile`): an editor-shaped page that fills the main
 area, pins its footer, scrolls its middle and folds when the window is narrow, and a tile that hides a secondary line

@@ -15,7 +15,7 @@
 //
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
-import { apiCallAllowed, API_CALLS, type ApiCallInfo, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { apiCallAllowed, API_CALLS, withImplied, type ApiCallInfo, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
@@ -82,6 +82,8 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     let granted = userOrigin !== undefined && userOrigin === originOf(call.args[0]) ? [...record.granted, `network:${hostEntryOf(target!.host!, target!.port)}`] : record.granted;
     // A voice mode holds `voices.use` by being one (§6.6): its OK card says it uses your voice providers.
     if (path.startsWith("voices.") && !granted.includes("voices.use") && isVoiceMode(record)) granted = [...granted, "voices.use"];
+    // A capability that is another's for more things (`avatar.control.all`) carries that other with it.
+    granted = withImplied(granted);
     if (!ownCommand && !apiCallAllowed(path, call.process, granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }

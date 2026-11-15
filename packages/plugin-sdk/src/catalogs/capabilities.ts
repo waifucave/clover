@@ -50,7 +50,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs and every plugin's logs", warns: false },
   { name: "avatar.read", lets: "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change", ok: "sees your bot's figure", warns: false },
-  { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
+  { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
+  /** Any bot's figure, not only the plugin's own: a voice that speaks for every bot sends each its mouth. It holds
+   *  `avatar.control` by holding this (`IMPLIED_CAPABILITIES`). Not display-only (`CONTAINED_TOOL_CAPABILITIES` lacks it). */
+  { name: "avatar.control.all", lets: "Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do", ok: "moves any of your bots' figures", warns: false },
   /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
@@ -66,6 +69,16 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "network:public", lets: "Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, size and time caps, no key, and the audit log; its components reach no host from it", ok: "connects to any public website, through Clover's web safeguards", warns: true, bundledOnly: true },
   { name: "network:<host>", lets: "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host", ok: "connects to {host}", warns: false },
 ];
+
+/** What holding a capability also gives: `avatar.control.all` is `avatar.control` for every bot, so a plugin that
+ *  declares only the first still has `avatar.cue`. The router reads a plugin's grants through `withImplied`. */
+export const IMPLIED_CAPABILITIES: Readonly<Record<string, readonly string[]>> = { "avatar.control.all": ["avatar.control"] };
+
+/** `granted` and the capabilities they imply. */
+export function withImplied(granted: readonly string[]): readonly string[] {
+  const extra = granted.flatMap((c) => IMPLIED_CAPABILITIES[c] ?? []).filter((c) => !granted.includes(c));
+  return extra.length === 0 ? granted : [...granted, ...extra];
+}
 
 /** Whether a plugin may hold a capability at all: a `bundledOnly` one only in the bundled `clover` tree, which the core
  *  decides from the install record (`source: "bundled"`, top-level id `clover`), never from the manifest. */

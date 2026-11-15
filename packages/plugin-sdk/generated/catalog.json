@@ -128,8 +128,14 @@
     },
     {
       "name": "avatar.control",
-      "lets": "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do",
+      "lets": "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says plainly what it doesn't do",
       "ok": "moves your bot's figure",
+      "warns": false
+    },
+    {
+      "name": "avatar.control.all",
+      "lets": "Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do",
+      "ok": "moves any of your bots' figures",
       "warns": false
     },
     {

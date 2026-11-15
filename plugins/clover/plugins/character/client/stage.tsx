@@ -1,9 +1,14 @@
 // The `bot.stage` entry: where the bot's character stands. It asks the `avatar` spot for the bot's file, keyed by its
 // format (`vrm`, `live2d`, or a renderer plugin's own); a bot with no avatar has nothing on its stage, and one whose
-// format no installed renderer draws shows its portrait.
+// format no installed renderer draws shows its portrait. Its mouth takes the speech from the avatar cue API (a plugin's
+// `avatar.cue({ type: "speech", frames })`, kept by time in `cue-speech.ts`), never from the app's own player.
 import { useEffect, useMemo, useState } from "react";
 import type { BotRef, BotView, EntryProps } from "../../shell/runtime/types";
-import { AvatarControlHub, AvatarControlProvider, AvatarSpeechProvider, Spot, cleanAvatarCue, useBotSpeech, usePluginApi, useVoiceControls } from "./sdk";
+import { AvatarControlHub, AvatarControlProvider, AvatarSpeechProvider, Spot, cleanAvatarCue, usePluginApi, useVoiceControls } from "./sdk";
+import { CueSpeech, type CueSpeechStats } from "./cue-speech";
+
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+declare const __CLOVER_ACCEPTANCE_BUILD__: string | false | undefined;
 
 /** The bot as the daemon holds it now: read once, then followed through `bots.watch` (a model pick, a new avatar). */
 function useLiveBot(bot: BotRef): BotView | undefined {
@@ -48,7 +53,8 @@ function useAvatarHub(bot: string, format: string | undefined): AvatarControlHub
     if (hub === undefined) return;
     const off = api.host.on("clover.avatar.cue", (value) => {
       const v = value as { bot?: unknown; cue?: unknown } | null;
-      const cue = v?.bot === bot ? cleanAvatarCue(v.cue) : undefined;
+      // Speech goes to the stage's own feed (`useCueSpeech`), never to the renderer's cue listeners.
+      const cue = v?.bot === bot && (v.cue as { type?: unknown } | null)?.type !== "speech" ? cleanAvatarCue(v.cue) : undefined;
       if (cue !== undefined) hub.cue(cue);
     });
     return () => {
@@ -58,6 +64,36 @@ function useAvatarHub(bot: string, format: string | undefined): AvatarControlHub
     };
   }, [api, bot, hub]);
   return hub;
+}
+
+/** The bot's speech as the cue API gives it: the feed the renderers lip-sync to and whether the bot speaks now. In a
+ *  test or acceptance build the feed's counters show on the document's root (`data-cue-speech`, JSON) for the run. */
+function useCueSpeech(bot: string): { feed: CueSpeech; speaking: boolean } {
+  const api = usePluginApi();
+  const feed = useMemo(() => new CueSpeech(), [bot]);
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(() => {
+    const show = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
+    const publish = (stats: CueSpeechStats): void => {
+      if (typeof document !== "undefined") document.documentElement.dataset.cueSpeech = JSON.stringify({ bot, ...stats, minAheadMs: Number.isFinite(stats.minAheadMs) ? stats.minAheadMs : null, maxAheadMs: Number.isFinite(stats.maxAheadMs) ? stats.maxAheadMs : null });
+    };
+    feed.reopen();
+    const offSpeaking = feed.onSpeaking((now) => { setSpeaking(now); if (show) publish(feed.stats); });
+    const off = api.host.on("clover.avatar.cue", (value) => {
+      const v = value as { bot?: unknown; cue?: unknown } | null;
+      const cue = v?.bot === bot ? (v.cue as { type?: unknown } | null) : undefined;
+      if (cue?.type !== "speech") return;
+      feed.accept(cue);
+      if (show) publish(feed.stats);
+    });
+    return () => {
+      off();
+      offSpeaking();
+      feed.close();
+      setSpeaking(false);
+    };
+  }, [api, bot, feed]);
+  return { feed, speaking };
 }
 
 /** The stage's one small control for a bot that has a voice: pressing while it speaks stops it; otherwise it switches
@@ -111,7 +147,7 @@ function useFraming(el: HTMLElement | null): AvatarFraming | undefined {
 
 export function BotStage({ props }: EntryProps<{ bot: BotRef }>) {
   const bot = useLiveBot(props.bot);
-  const speech = useBotSpeech(props.bot.id);
+  const speech = useCueSpeech(props.bot.id);
   const avatar = bot?.avatar;
   const hub = useAvatarHub(props.bot.id, avatar?.format);
   const [stageEl, setStageEl] = useState<HTMLElement | null>(null);

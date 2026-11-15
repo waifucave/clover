@@ -48,4 +48,10 @@ picture set drawn by code (an inline SVG, so no files) for a few seconds; it say
 then reaches it through `api.avatar.cue({ type: "expression", name: "happy" })` (capability `avatar.control`), and reads what
 the model has with `api.avatar.catalogue()` (`avatar.read`). A cue this renderer doesn't list is answered plainly, never played.
 
+The mouth is not a cue the renderer plays: `useAvatarSpeech()` hands it the speech as a feed of loudness frames (`feed.subscribe`,
+`feed.now()`), and this renderer opens the mouth for the frames louder than a small threshold (it declares `lipsync`). The feed's
+frames come from the cue API: a plugin (a voice) sends `api.avatar.cue({ type: "speech", frames: [{ t, rms }] })` with `t` in epoch
+milliseconds, batches ahead of the clock, for its own bot (`avatar.control`) or for any bot with `{ bot }` (`avatar.control.all`);
+the stage hands each level to the renderer a moment before it is due. The renderer needs nothing else.
+
 Check it with `clover plugin validate`, try it with `clover plugin dev .`.

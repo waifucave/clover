@@ -7,10 +7,13 @@
 // * a bot plugin acts only for its own bot: the bot whose id is the plugin's top-level id (§6.1). A cue is judged here
 //   against what the renderer said it does and the names its model has, and answered plainly when it can't be played
 //   (`no-renderer`, `unsupported`, `unknown-name`), never dropped; one that can goes on to the stage as `plugin_ui_message`
-//   (event `clover.avatar.cue`, for the stage's own layer only), which hands it to the renderer.
+//   (event `clover.avatar.cue`, for the stage's own layer only), which hands it to the renderer. A plugin that holds
+//   `avatar.control.all` may name another bot (`opts.bot`), the one rule; speech is a cue of its own kind (`{ type:
+//   "speech" }`: mouth levels stamped in epoch milliseconds, sent in batches ahead of the clock), which the stage keeps
+//   by time and hands the renderer as the speech feed.
 // * a bot plugin's frames hear the catalogue and the box change as `plugin_ui_message` (`clover.avatar.changed`, for the
 //   plugin's own layer only); its host half through `avatar.watch`.
-import { boxOrDefault, cleanAvatarCue, cleanAvatarReport, judgeCue, type AvatarApi, type AvatarCatalogue, type AvatarChange, type AvatarCueResult, type AvatarReport } from "@waifucave/clover-plugin-sdk";
+import { SPEECH_AHEAD_MAX_MS, SPEECH_CUES_PER_SECOND, SPEECH_FRAMES_PER_SECOND, boxOrDefault, cleanAvatarCue, cleanAvatarReport, cleanSpeechCue, judgeCue, judgeSpeech, type AvatarApi, type AvatarCatalogue, type AvatarChange, type AvatarCueResult, type AvatarReport } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import { listenerArg, type ApiHandlers } from "./router";
@@ -20,6 +23,8 @@ export const AVATAR_CUE_EVENT = "clover.avatar.cue";
 export const AVATAR_CHANGED_EVENT = "clover.avatar.changed";
 /** Cues a plugin may send a second. */
 export const AVATAR_CUES_PER_SECOND = 20;
+/** The capability that lets a plugin cue a bot that is not its own (`avatar.cue`'s `opts.bot`). */
+export const AVATAR_ALL = "avatar.control.all";
 /** Watches a plugin's host half may hold. */
 const WATCHES_MAX = 8;
 
@@ -30,6 +35,8 @@ export class AvatarService {
   readonly #reports = new Map<string, { report: AvatarReport; stage: string }>();
   readonly #changes = new Listeners<{ bot: string; change: AvatarChange }>();
   readonly #windows = new Map<string, { start: number; n: number }>();
+  /** The speech cues' own window per plugin: cues and the mouth levels in them, in the second that began at `start`. */
+  readonly #speechWindows = new Map<string, { start: number; cues: number; frames: number }>();
   readonly #watching = new Map<string, number>();
 
   constructor(private readonly emit: (event: { type: string; [key: string]: unknown }) => void, private readonly now: () => number = Date.now) {}
@@ -64,12 +71,16 @@ export class AvatarService {
     this.emit({ type: "plugin_ui_message", pluginId: bot, event: AVATAR_CHANGED_EVENT, value: change });
   }
 
-  /** Judges a cue for `pluginId`'s own bot and sends it on to the stage when it can be played. */
-  cue(pluginId: string, raw: unknown): AvatarCueResult {
-    const bot = topPluginIdOf(pluginId);
-    const cue = cleanAvatarCue(raw);
-    if (cue === undefined) return { ok: false, reason: "invalid", message: "a cue is an expression, a motion, an outfit part with on or off, the pace, or a point to look at" };
+  /** Judges a cue for `bot` (default: `pluginId`'s own) and sends it on to the stage when it can be played. The rule: a
+   *  plugin cues its own bot with `avatar.control` (the router's gate), and any other bot only when `all` (it holds
+   *  `avatar.control.all`); otherwise it is refused, saying why. Speech (`{ type: "speech" }`) is a cue like the rest, with
+   *  a window of its own. */
+  cue(pluginId: string, raw: unknown, bot: string = topPluginIdOf(pluginId), all = false): AvatarCueResult {
+    if (bot !== topPluginIdOf(pluginId) && !all) throw new ContractError("refused", `${pluginId} may move only its own bot's figure (${topPluginIdOf(pluginId)}); moving another bot's needs the capability ${AVATAR_ALL}`);
     const t = this.now();
+    if ((raw as { type?: unknown } | null)?.type === "speech") return this.#speech(pluginId, bot, raw, t);
+    const cue = cleanAvatarCue(raw);
+    if (cue === undefined) return { ok: false, reason: "invalid", message: "a cue is an expression, a motion, an outfit part with on or off, the pace, a point to look at, or speech's mouth levels" };
     const w = this.#windows.get(pluginId);
     if (w === undefined || t - w.start >= 1000) this.#windows.set(pluginId, { start: t, n: 1 });
     else if (++w.n > AVATAR_CUES_PER_SECOND) throw new ContractError("refused", `${pluginId} sent more than ${AVATAR_CUES_PER_SECOND} cues this second`);
@@ -80,10 +91,36 @@ export class AvatarService {
     return { ok: true };
   }
 
+  #speech(pluginId: string, bot: string, raw: unknown, t: number): AvatarCueResult {
+    const clean = cleanSpeechCue(raw);
+    if ("why" in clean) return { ok: false, reason: "invalid", message: clean.why };
+    const cue = clean.cue;
+    const last = cue.frames.at(-1);
+    if (last !== undefined && last.t - t > SPEECH_AHEAD_MAX_MS) return { ok: false, reason: "invalid", message: `a level is stamped more than ${SPEECH_AHEAD_MAX_MS / 1000} s ahead of the clock; send speech in batches as it comes due` };
+    const w = this.#speechWindows.get(pluginId);
+    if (w === undefined || t - w.start >= 1000) this.#speechWindows.set(pluginId, { start: t, cues: 1, frames: cue.frames.length });
+    else {
+      w.cues += 1;
+      w.frames += cue.frames.length;
+      if (w.cues > SPEECH_CUES_PER_SECOND || w.frames > SPEECH_FRAMES_PER_SECOND) throw new ContractError("refused", `${pluginId} sent more than ${SPEECH_CUES_PER_SECOND} speech cues or ${SPEECH_FRAMES_PER_SECOND} mouth levels this second`);
+    }
+    const held = this.#reports.get(bot);
+    const no = judgeSpeech(held?.report);
+    if (no !== undefined || held === undefined) return no ?? { ok: false, reason: "no-renderer", message: "nothing is drawing this bot's figure right now" };
+    this.emit({ type: "plugin_ui_message", pluginId: held.stage, event: AVATAR_CUE_EVENT, value: { bot, cue } });
+    return { ok: true };
+  }
+
   handlers(): ApiHandlers {
     const own = (pluginId: string) => topPluginIdOf(pluginId);
     return {
-      "avatar.cue": (ctx, args) => this.cue(ctx.pluginId, args[0]),
+      "avatar.cue": (ctx, args) => {
+        const opts = args[1];
+        if (opts !== undefined && opts !== null && (typeof opts !== "object" || Array.isArray(opts))) throw new ContractError("invalid", "avatar.cue's second argument is { bot? }");
+        const bot = (opts as { bot?: unknown } | null | undefined)?.bot;
+        if (bot !== undefined && (typeof bot !== "string" || bot === "" || bot.length > 128)) throw new ContractError("invalid", "avatar.cue's bot is a bot's id");
+        return this.cue(ctx.pluginId, args[0], bot, ctx.record.granted.includes(AVATAR_ALL));
+      },
       "avatar.catalogue": (ctx) => this.catalogue(own(ctx.pluginId)),
       "avatar.box": (ctx) => this.box(own(ctx.pluginId)),
       "avatar.watch": (ctx, args): Unsubscribe => {
