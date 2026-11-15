@@ -730,6 +730,7 @@ function checkCoreContribution(f: Findings, key: CoreContributionKey, value: unk
     const unique = UNIQUE_BY[key];
     const seen = new Map<string, number>();
     const uiIds = new Map<string, number>();
+    let backgrounds = 0;
     value.forEach((entry, i) => {
       const eat = [...at, i];
       const parsed = entrySchema.safeParse(entry);
@@ -763,6 +764,10 @@ function checkCoreContribution(f: Findings, key: CoreContributionKey, value: unk
           return;
         }
         uiIds.set(uid, i);
+        if (spot === "app.background" && e.hide !== true && ++backgrounds > BACKGROUND_PARTS_MAX) {
+          f.error("entry", "ui_background_cap", eat, `a plugin may keep at most ${BACKGROUND_PARTS_MAX} parts running in the background (\`app.background\`)`);
+          return;
+        }
       }
       if (isObject(e)) checkDeclares(f, ctx.topId, e.declares, eat, key === "ui" ? { ui: e } : {}, "entry", ctx.seenDecl, ctx.declared);
       out.push(parsed.data);
@@ -1006,6 +1011,10 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   if (e.hide === true && spot?.shape === "list" && e.target === undefined) f.warn("ui_hide_list", [...at, "hide"], `"${spotName}" is a list: a \`hide\` there names the entry it takes out (\`target\`), and without one it hides nothing`);
   if (e.hide === true && spot !== undefined && spot.shape !== "list" && e.target !== undefined) f.warn("ui_target", [...at, "target"], `"${spotName}" shows one entry${spot.shape === "keyed" ? " per key" : ""}; a \`hide\` there hides it, and \`target\` is ignored`);
+  if (spotName === "app.background" && e.hide !== true && e.component === undefined) {
+    f.error("entry", "ui_background_component", [...at, "component"], "a background part is a `component` of the plugin's client: it has no page of its own to show");
+    return false;
+  }
   if (e.window !== undefined && spotName !== "app.surface") {
     f.error("entry", "ui_window_not_surface", [...at, "window"], "`window` is for `app.surface` entries");
     return false;
@@ -1055,6 +1064,11 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   // whichever plugin's it is.
   if (SAME_ON_EVERY_TAB.has(spotName) && bots.length > 0) {
     f.error("entry", "bot_tied_not_offered", [...at, "when", "bot"], `"${spotName}" looks the same on every tab: nothing tied to a bot's tab dresses it.`);
+    return false;
+  }
+  // A part kept in the background has no place in a tab: nothing ties it to a bot's.
+  if (spotName === "app.background" && bots.length > 0) {
+    f.error("entry", "bot_tied_not_offered", [...at, "when", "bot"], `"${spotName}" has no place in a bot's tab: nothing tied to a bot's tab runs there.`);
     return false;
   }
   if (ctx.isBot && e.app !== true) {
@@ -1250,13 +1264,16 @@ export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to speak or 
 /** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
  *  island, so the user has seen that before it can. */
 export const ISLAND_LINE_OK_LINE = "It puts a line of text on the island, with its name beside it, in the island's own style, when Clover isn't in front.";
+export const BACKGROUND_OK_LINE = "It keeps a part running in the background while Clover is open.";
+/** The most `app.background` parts one plugin may have. */
+export const BACKGROUND_PARTS_MAX = 2;
 
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 /** How the OK card names a part beside a bot (`pluginParts`): a `ui` entry by its spot, the rest by their point. */
 const BESIDE_LABELS: Readonly<Record<string, string>> = {
   "island.tab": "an island tab", "sidebar.app": "a sidebar button", "settings.section": "a Settings section", main: "an app page",
-  status: "the status bar", "app.surface": "a window of its own", "pill.target": "a Dispatch pill target", sidebar: "the sidebar",
+  status: "the status bar", "app.surface": "a window of its own", "app.background": "a part running in the background", "pill.target": "a Dispatch pill target", sidebar: "the sidebar",
   "sidebar.bot": "the bots' sidebar rows", "bot.editor.section": "a section on bots' Edit pages", panel: "a panel", "panel.view": "a panel",
   "bot.tab": "other bots' tabs", locales: "translations", mcpServers: "tools", skills: "skills", hooks: "hooks",
   agents: "agent definitions", commands: "commands", "island.line": "a line on the island",
@@ -1356,6 +1373,7 @@ export function describeOk(
   lines.push(...botPartLines(report.manifest));
   lines.push(...ownPanelLines(report.manifest));
   if (report.contributions.some((c) => c.point === "island.line")) lines.push(ISLAND_LINE_OK_LINE);
+  if ((report.manifest?.contributes?.ui ?? []).some((e) => (e as { spot?: string; hide?: boolean }).spot === "app.background" && (e as { hide?: boolean }).hide !== true)) lines.push(BACKGROUND_OK_LINE);
   if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0) {
     lines.push(VOICE_MODE_OK_LINE);
     if (!report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);

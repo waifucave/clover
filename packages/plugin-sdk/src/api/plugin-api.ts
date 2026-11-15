@@ -792,7 +792,7 @@ export interface NotifyApi {
 }
 
 /** `audio`: the app plays a plugin's audio as a bot's speech (the plugin's own bot's unless `opts.bot` names another live
- *  bot), and hands it the user's push-to-talk audio for every bot as it comes (§6.6). The OK says it "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices".
+ *  bot), and hands it the user's push-to-talk audio for every bot as it comes (§6.6). The OK says it "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices".
  *  `play`'s `done` settles when the last piece is handed to the app, not when the app finishes playing it. */
 /** `speech`: the active voice mode's own door to this device's player, the one sink (§6.6). Any other plugin, an
  *  inactive voice mode included, is refused (`modes` excepted). */

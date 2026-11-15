@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { AVATAR_FILE_CAPS, clampAvatarCap, contributionLabels, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -486,6 +486,26 @@ describe("the OK's text", () => {
       .toContain("It adds a panel, \"Notes\", to Luna's tab, with a button of its own beside the right panels' buttons.");
     // A replacement of a stock panel adds no panel.
     expect(ok("browsy", { ui: [{ spot: "panel", key: "browser", component: "B" }] }).some((l) => l.startsWith("It adds a panel"))).toBe(false);
+  });
+  test("a background part (`app.background`): the OK says it, the label is Background, two at most, a component, no bot tie, a bot's plugin needs app (§5.5)", () => {
+    const withUi = (id: string, contributes: Record<string, unknown>) => validateManifest({ ...min(), id, engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" }, contributes });
+    const ok = withUi("ticker", { ui: [{ spot: "app.background", id: "player", component: "Player" }] });
+    expect(ok.issues).toEqual([]);
+    expect(describeOk(ok, { os: "macos" })).toContain("It keeps a part running in the background while Clover is open.");
+    expect(contributionLabels([ok.manifest])).toEqual(["Background"]);
+    // Two at most.
+    const three = withUi("ticker", { ui: ["a", "b", "c"].map((id) => ({ spot: "app.background", id, component: "P" })) });
+    expect(codes(three)).toEqual(["error:entry:ui_background_cap:/contributes/ui/2"]);
+    expect(withUi("ticker", { ui: ["a", "b"].map((id) => ({ spot: "app.background", id, component: "P" })) }).issues).toEqual([]);
+    // A component only; no bot's tab.
+    expect(has(withUi("ticker", { ui: [{ spot: "app.background", web: { url: "https://example.com/", partition: "p" } }] }), "ui_background_component")).toBe(true);
+    expect(has(withUi("ticker", { ui: [{ spot: "app.background", component: "P", when: { bot: "luna" } }] }), "bot_tied_not_offered")).toBe(true);
+    // In a plugin with a bot it needs `"app": true`.
+    const bot = { name: "Luna", instructions: "bot/instructions.md" };
+    expect(has(withUi("luna", { bot, ui: [{ spot: "app.background", component: "P" }] }), "bot_spot_not_offered")).toBe(true);
+    const beside = withUi("luna", { bot, ui: [{ spot: "app.background", component: "P", app: true }] });
+    expect(beside.issues).toEqual([]);
+    expect(describeOk(beside, { os: "macos" }).join("\n")).toContain("Everywhere, with a switch of its own: a part running in the background.");
   });
   test("says what the plugin is, what it adds, what it reaches and what it warns about", () => {
     const r = validateManifest({

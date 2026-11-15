@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
-import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, FIELDS_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBotParts, writeOfficePanels } from "./manifest-fields-step";
+import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeOfficePanels } from "./manifest-fields-step";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
 export interface UiRow { name: string; status: UiStatus; detail: string }
@@ -46,6 +46,7 @@ export const UI_STEPS = [
   "a third-party plugin fills file.preview for images: a coding session's Files panel shows a picture through the plugin's own component (its name and media type), with no \"no preview\" note",
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
   "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
+  "a plugin keeps a part running in the background (`app.background`, the owner, November 15): it is mounted in a hidden window of its own while the app is open, keeps counting at its real rate while hidden and through the main window being closed and opened again, plays a generated tone with no press when its plugin holds `audio` (made and measured in the page, muted at the app's output), gets no sound without it, and goes when the plugin is turned off",
 ] as const;
 
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
@@ -99,6 +100,8 @@ interface Ctx {
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** Main presses a key chord in the window (`webContents.sendInputEvent`), from a file the build watches. */
   pressKey?(key: string, modifiers: string[]): void;
+  /** Closes the main window, or opens it again, as the user would (a file the test build watches: CLOVER_TEST_WINDOW_FILE). */
+  mainWindow?(what: "close" | "open"): void;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
   /** Only these window steps run (`--only-ui`), by their place in UI_STEPS; the others are skipped, not recorded. */
@@ -3111,6 +3114,85 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await escape().catch(() => undefined);
       await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots").catch(() => undefined);
       await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+    }
+  });
+
+  // 28: a plugin keeps a part running in the background (`app.background`, the owner, November 15: "no infrastructure in the core or the
+  // app that only one plugin uses"). Two ordinary plugins, each with one background part that counts its own 100 ms timer and starts a
+  // generated tone on its own: `acc-background` holds `audio`, `acc-background-quiet` doesn't. Each part is mounted in a hidden window of
+  // its own (the app log says so), keeps counting at about its real rate while hidden (a throttled timer
+  // would count about one a second), and `acc-background`'s tone runs (the audio context is running, the analyser saw a level and its clock
+  // advanced) while the app stays muted at its output (no "played unmuted" line); the quiet one's context never runs. The main window is
+  // closed and opened again (the test build's window file): the part is the same one (same start time), still counting. Turned off
+  // (`plugin.setEnabled`), its document goes and the app log says it stopped.
+  await step(28, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    if (ctx.mainWindow === undefined) fail("this run can't close and open the main window");
+    const parent = mkdtempSync(join(tmpdir(), "clover-background-"));
+    const ids = [BACKGROUND_IDS.sound, BACKGROUND_IDS.quiet];
+    const said: string[] = [];
+    const part = async (id: string): Promise<Record<string, string> | undefined> => {
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
+        const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acc-background]'); return e ? JSON.stringify(Object.fromEntries([...e.attributes].map((a) => [a.name, a.value]))) : ''; })()`).catch(() => "");
+        if (typeof v === "string" && v !== "") return JSON.parse(v) as Record<string, string>;
+      }
+      return undefined;
+    };
+    const waitPart = (id: string, what: string, ok: (a: Record<string, string>) => boolean = () => true, ms = 45_000) =>
+      until(`${id}'s background part ${what}`, ms, async () => { const a = await part(id); return a !== undefined && ok(a) ? a : undefined; }, () => dumpFrames(cdp));
+    const install = async (id: string) => {
+      const folder = writeBackground(parent, id, { audio: id === BACKGROUND_IDS.sound });
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined),
+        async () => `plugin.get: ${JSON.stringify(await rpc.request("plugin.get", { id }).catch((e: unknown) => String(e))).slice(0, 600)}`);
+    };
+    const n = (a: Record<string, string>, k: string) => Number(a[`data-${k}`]);
+    try {
+      for (const id of ids) await install(id);
+      // 1. Each part is mounted, in a hidden window of its own, and counts.
+      const first = await waitPart(BACKGROUND_IDS.sound, "counting", (a) => n(a, "ticks") >= 5);
+      await waitPart(BACKGROUND_IDS.quiet, "counting", (a) => n(a, "ticks") >= 5);
+      for (const id of ids) if (!ctx.appLog().includes(`background: ${id}#ticker started`)) fail(`the app log has no "background: ${id}#ticker started" line`);
+      said.push(`each part was mounted in a window of its own that is never shown (the app log says so; its page reports ${first["data-vis"]}) and counted`);
+      // 2. Its timer keeps its real rate while hidden: 100 ms ticks, about 30 in 3 s (a throttled page would count about 3).
+      const t0 = await waitPart(BACKGROUND_IDS.sound, "read");
+      await sleep(3_000);
+      const t1 = await waitPart(BACKGROUND_IDS.sound, "read again");
+      const ticked = n(t1, "ticks") - n(t0, "ticks");
+      if (ticked < 20) fail(`the hidden part counted ${ticked} ticks in 3 s of a 100 ms timer (a slowed timer counts about 3)`);
+      said.push(`its 100 ms timer counted ${ticked} ticks in 3 s while hidden`);
+      // 3. Sound: the holder's tone runs with no press, and is muted at the output; the other plugin's context never runs.
+      const tone = await waitPart(BACKGROUND_IDS.sound, "making its tone", (a) => a["data-ctx"] === "running" && n(a, "rms") > 0.01 && n(a, "time") > 0.5, 30_000);
+      if (/audio: played unmuted/.test(ctx.appLog())) fail("a page's sound played unmuted in a muted build");
+      if (!/audio: muted/.test(ctx.appLog())) fail("the app never said it was muted");
+      const silent = await part(BACKGROUND_IDS.quiet);
+      if (silent === undefined) fail("the plugin without audio has no background part");
+      if (silent!["data-ctx"] === "running" || n(silent!, "rms") > 0 || n(silent!, "time") > 0) fail(`the plugin without audio got sound: ${JSON.stringify(silent)}`);
+      said.push(`acc-background's tone ran with no press (context ${tone["data-ctx"]}, level ${tone["data-rms"]}, clock ${tone["data-time"]} s), muted at the app's output; acc-background-quiet's context stayed ${silent!["data-ctx"]}`);
+      // 4. The main window closed and opened again: the same part, still counting.
+      const before = await waitPart(BACKGROUND_IDS.sound, "read before the window closes");
+      ctx.mainWindow!("close");
+      await until("the main window closed", 20_000, async () => (/window: the test seam closes the main window/.test(ctx.appLog()) ? true : undefined), () => dumpFrames(cdp));
+      await sleep(2_500);
+      const during = await waitPart(BACKGROUND_IDS.sound, "still there with the main window closed");
+      if (n(during, "ticks") - n(before, "ticks") < 15) fail(`with the main window closed the part counted ${n(during, "ticks") - n(before, "ticks")} ticks in 2.5 s`);
+      ctx.mainWindow!("open");
+      await until("the shell drawn again", 60_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+      const after = await waitPart(BACKGROUND_IDS.sound, "after the window opened again", (a) => n(a, "ticks") > n(during, "ticks"));
+      if (after["data-started"] !== before["data-started"]) fail(`the part started again when the main window opened (${before["data-started"]} then ${after["data-started"]}): it should have outlived it`);
+      said.push("the main window was closed and opened again: the same part (one start time) kept counting through it");
+      // 5. Turned off, it goes.
+      await rpc.request("plugin.setEnabled", { id: BACKGROUND_IDS.sound, enabled: false }, 30_000);
+      await until("its background part gone", 30_000, async () => ((await part(BACKGROUND_IDS.sound)) === undefined && ctx.appLog().includes(`background: ${BACKGROUND_IDS.sound}#ticker stopped`) ? true : undefined), () => dumpFrames(cdp));
+      if ((await part(BACKGROUND_IDS.quiet)) === undefined) fail("turning one plugin off took the other plugin's background part with it");
+      said.push("turned off, its background part was gone and the other plugin's stayed");
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
+      return said.join("; ");
+    } finally {
+      for (const id of ids) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 }

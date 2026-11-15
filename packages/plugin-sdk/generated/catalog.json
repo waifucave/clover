@@ -147,8 +147,8 @@
     },
     {
       "name": "audio",
-      "lets": "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices",
-      "ok": "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
+      "lets": "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices",
+      "ok": "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
       "warns": true
     },
     {
@@ -398,6 +398,15 @@
       "runsOn": "every app instance",
       "doc": "Opens top-level floating windows.",
       "shipsWith": "island, Dispatch pill"
+    },
+    {
+      "name": "app.background",
+      "side": "app",
+      "shape": "list",
+      "kind": "code",
+      "runsOn": "every app instance",
+      "doc": "Runs parts that have no place in the window, in a hidden window of their own.",
+      "shipsWith": "nothing yet; any plugin"
     },
     {
       "name": "bot.tab",
@@ -829,6 +838,26 @@
         "required": [
           "surface"
         ]
+      }
+    },
+    {
+      "name": "app.background",
+      "shape": "list",
+      "declaredBy": "app",
+      "botsOffer": false,
+      "context": [
+        "os"
+      ],
+      "doc": "A part with no place in the window: it runs in a hidden window of its own while Clover is open and the plugin runs, outlives the main window, is never slept or slowed, and may play sound when the plugin holds `audio`. At most two per plugin; in a plugin with a bot it needs \"app\": true.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
       }
     },
     {

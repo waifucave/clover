@@ -60,7 +60,7 @@ let strings: StringTable = EMPTY_STRINGS;
 /** The core's own text, in the app's language (`clover.core.…`, core-strings.ts). */
 const t = (key: string, params?: Record<string, string | number>) => translate(strings, `clover.core.${key}`, params);
 
-function frameFor(item: { mount: string; url: string; ref: string; layer: string; isolated?: true }): HTMLIFrameElement {
+function frameFor(item: { mount: string; url: string; ref: string; layer: string; isolated?: true; autoplay?: true }): HTMLIFrameElement {
   const frame = document.createElement("iframe");
   frame.src = item.url;
   frame.title = item.ref;
@@ -72,7 +72,7 @@ function frameFor(item: { mount: string; url: string; ref: string; layer: string
   // permission down: so the `clover` layer's frames carry it too (the delegation only; they isolate no plugin).
   // The `clover` layer's frame alone may record (push-to-talk: the app's shell records, never a plugin; main's permission handler
   // answers only while the user's press has a recording open).
-  frame.setAttribute("allow", [item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "", item.layer === "clover" ? "microphone" : ""].filter((a) => a !== "").join("; "));
+  frame.setAttribute("allow", [item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "", item.layer === "clover" ? "microphone" : "", item.autoplay === true ? "autoplay" : ""].filter((a) => a !== "").join("; "));
   frame.referrerPolicy = "no-referrer";
   return frame;
 }

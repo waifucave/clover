@@ -983,6 +983,34 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(setup(surface, { safeMode: true }).rt.surfaceEntries().map((e) => e.id).sort()).toEqual(["island", "pill"]);
   });
 
+  test("background parts: app.background components that may run, each in a window of its own whose root shows only it; audio only for a plugin holding it", () => {
+    const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
+    const s = setup(bg);
+    expect(s.rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true }]);
+    // The surface list doesn't take it, and in safe mode only clover's would run.
+    expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
+    expect(setup(bg, { safeMode: true }).rt.backgroundEntries()).toEqual([]);
+    // A plugin without `audio`.
+    const quiet = readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-background")), capabilities: [] }] as never);
+    expect(setup(quiet).rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false }]);
+    // Its window's root declares `app.background` and places just that entry; the frame may autoplay (the plugin holds `audio`), and the
+    // other plugin's would not.
+    s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
+    const rootFrame = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const root = s.rt.describe(rootFrame, 8, undefined);
+    expect(root).toMatchObject({ spot: "app.background" });
+    const view = s.rt.resolve(rootFrame, root.mount, "app.background");
+    expect(view.items).toMatchObject([{ kind: "frame", ref: "fixture-background#ticker", layer: "fixture-background", autoplay: true }]);
+    const q = setup(quiet);
+    q.rt.openWindow(9, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
+    const quietRoot = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const quietView = q.rt.resolve(quietRoot, q.rt.describe(quietRoot, 9, undefined).mount, "app.background");
+    expect((quietView.items[0] as { autoplay?: true }).autoplay).toBeUndefined();
+    // Closing its window drops the mount.
+    s.rt.closeWindow(8);
+    expect(() => s.rt.describe(rootFrame, 8, undefined)).toThrow();
+  });
+
   test("the menu broker learns a frame's place from each document above it", () => {
     const { s, shell, item, child } = withFixtureFrame();
     const place = s.rt.placeOf(child);

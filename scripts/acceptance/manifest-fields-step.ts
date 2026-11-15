@@ -357,4 +357,50 @@ export function writeOfficePanels(root: string, o: { titleless?: boolean } = {})
     "client/index.js": "import { createElement } from \"@waifucave/clover-plugin-sdk/ui\";\nexport const Sheets = () => createElement(\"div\", { \"data-office-sheets\": \"\" }, \"Sheets panel\");\nexport const Slides = () => createElement(\"div\", { \"data-office-slides\": \"\" }, \"Slides panel\");\n",
   });
 }
+/** The background part's plugins (window row 28): `acc-background` holds `audio`, `acc-background-quiet` doesn't. Each keeps one
+ *  `app.background` part, `Ticker`, which counts its own timer's ticks, says how the page sees itself (visibility), and starts a
+ *  short generated tone (a 440 Hz oscillator through an analyser) on its own, with no press: what the run reads from its DOM is how
+ *  many ticks it has counted since it started (and when it started), the audio context's state, the loudest level the analyser
+ *  saw and how far the context's clock has gone. The tone is made and measured in the page; the app is muted at its output. */
+export const BACKGROUND_IDS = { sound: "acc-background", quiet: "acc-background-quiet" } as const;
+export function writeBackground(root: string, id: string, o: { audio: boolean }): string {
+  return writePlugin(join(root, id), {
+    manifest: 1, id, name: o.audio ? "Acceptance background" : "Acceptance background (quiet)", version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    ...(o.audio ? { capabilities: ["audio"] } : {}),
+    contributes: { ui: [{ spot: "app.background", id: "ticker", component: "Ticker" }] },
+  }, undefined, {
+    "client/index.js": [
+      "import { jsx } from \"react/jsx-runtime\";",
+      "import { useEffect, useState } from \"react\";",
+      "const startedAt = Date.now();",
+      "export function Ticker() {",
+      "  const [s, set] = useState({ ticks: 0, ctx: \"none\", rms: 0, time: 0, vis: document.visibilityState });",
+      "  useEffect(() => {",
+      "    let ticks = 0, rms = 0, ctxState = \"none\", analyser = null, ctx = null;",
+      "    try {",
+      "      ctx = new AudioContext();",
+      "      const osc = ctx.createOscillator(); osc.frequency.value = 440;",
+      "      const gain = ctx.createGain(); gain.gain.value = 0.2;",
+      "      analyser = ctx.createAnalyser(); analyser.fftSize = 512;",
+      "      osc.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);",
+      "      osc.start();",
+      "      ctx.resume().catch(() => undefined);",
+      "    } catch { ctxState = \"refused\"; }",
+      "    const buf = new Float32Array(512);",
+      "    const timer = setInterval(() => {",
+      "      ticks++;",
+      "      if (ctx !== null) {",
+      "        ctxState = ctx.state;",
+      "        if (analyser !== null && ctx.state === \"running\") { analyser.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v; rms = Math.max(rms, Math.sqrt(sum / buf.length)); }",
+      "      }",
+      "      set({ ticks, ctx: ctxState, rms, time: ctx === null ? 0 : ctx.currentTime, vis: document.visibilityState });",
+      "    }, 100);",
+      "    return () => { clearInterval(timer); if (ctx !== null) ctx.close().catch(() => undefined); };",
+      "  }, []);",
+      "  return jsx(\"div\", { \"data-acc-background\": \"\", \"data-started\": String(startedAt), \"data-ticks\": String(s.ticks), \"data-ctx\": s.ctx, \"data-rms\": s.rms.toFixed(4), \"data-time\": s.time.toFixed(3), \"data-vis\": s.vis, children: \"background\" });",
+      "}",
+      "",
+    ].join("\n"),
+  });
+}
 export const OFFICE_REFUSAL = "The panel \"slides\" adds a panel of its own: it needs a `title`, which names its button.";

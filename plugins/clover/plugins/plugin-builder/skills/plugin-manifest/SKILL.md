@@ -145,6 +145,10 @@ Every entry above may also carry `declares` (below).
   adds a right-side panel of the plugin's own with a button of its own: `title` is required (the button's name),
   `icon` is optional, the key is `[a-z][a-z0-9-]*` up to 32 characters, and `when.session` (`bot`, `agent`,
   `coding`) names the tabs it is on (plugin-ui, "A panel of your own on the right"). A stock key replaces that panel;
+- an `app.background` entry (a `component`, nothing else) keeps a part running in a hidden window while the app is open
+  and the plugin runs: at most two per plugin, each with its own `id`, no `when.bot`, and `"app": true` in a plugin
+  with a bot (plugin-ui, "A part that keeps running in the background"). It may play sound with no press only with the
+  `audio` capability;
 - the spot's own fields: plugin-catalog lists them (`title` and `icon` for `sidebar.app`, `opens` naming a `main`
   key, `title` for `settings.section`…);
 - `layout` (on `bot.tab` only), `window` (`{ type: "overlay" | "window", alwaysOnTop, transparent }` for a window spot).

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { botPartLines, describeOk, validateManifest } from "../../packages/plugin-sdk/src/manifest/validate";
 import { validatePluginFolder } from "../../packages/core/src/registry/validate";
-import { AGENTS_ONLY_SHORT, BOT_COMMAND_REFUSAL, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, HELPER_REFUSAL, NODE_REFUSAL, oldSidebarTaken, offerWrong, OWN_BOT_ITEMS, ownBotWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeOldSidebarTheme, writeReach, writeRefusals, writeRefused } from "./manifest-fields-step";
+import { AGENTS_ONLY_SHORT, BACKGROUND_IDS, writeBackground, BOT_COMMAND_REFUSAL, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, HELPER_REFUSAL, NODE_REFUSAL, oldSidebarTaken, offerWrong, OWN_BOT_ITEMS, ownBotWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeOldSidebarTheme, writeReach, writeRefusals, writeRefused } from "./manifest-fields-step";
 
 const root = mkdtempSync(join(tmpdir(), "clover-b-fields-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -25,6 +25,16 @@ test("the other fixtures validate", async () => {
   for (const dir of [writeFields(root), writeElsewhere(root, "darwin-arm64"), agents, cc]) expect([dir, await errors(dir)]).toEqual([dir, []]);
   // The Claude Code folder isn't a Clover plugin until wrapped: it has no clover.json.
   expect(writeClaudePlugin(root)).toEndWith("acc-claude-plugin");
+});
+
+test("the background fixtures validate; the OK says it keeps a part running, and only the sound one holds audio", async () => {
+  const sound = writeBackground(root, BACKGROUND_IDS.sound, { audio: true });
+  const quiet = writeBackground(root, BACKGROUND_IDS.quiet, { audio: false });
+  for (const dir of [sound, quiet]) expect([dir, await errors(dir)]).toEqual([dir, []]);
+  const read = (dir: string) => validateManifest(JSON.parse(readFileSync(join(dir, "clover.json"), "utf8")));
+  expect(describeOk(read(sound))).toContain("It keeps a part running in the background while Clover is open.");
+  expect(read(sound).capabilities).toEqual(["audio"]);
+  expect(read(quiet).capabilities).toEqual([]);
 });
 
 test("the plugin with a bot validates and its OK lines are the ones the row looks for; a bot's entry on the sidebar is refused with its words", async () => {

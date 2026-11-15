@@ -10,7 +10,7 @@
 //   setting), running, stopped (after crashes, set by the plugin host) or blocked (revoked), each with a reason.
 // * A child is switched on and off by itself, and switching its parent off switches it off (§5.1).
 // * An entry whose point is missing waits ("waiting for `island.tab`"), and starts when the point appears. A UI spot
-//   exists while the entry that declares it is active (§5.4); `app.root`, `app.surface` and `bot.tab` are the app's.
+//   exists while the entry that declares it is active (§5.4); `app.root`, `app.surface`, `app.background` and `bot.tab` are the app's.
 // * Entry ids other plugins refer to (a model provider, voice, agent backend, trigger type, computer provider) are
 //   unique among enabled plugins: on a clash only that entry is refused, and the plugin enabled first, by the synced
 //   list's order, keeps the id (§5.1 "Entry ids"). Commands are unique within their namespace (§5.4).
@@ -171,4 +171,4 @@ export const UNIQUE_ENTRY_FIELD: Readonly<Partial<Record<keyof CoreEntries, stri
 };
 
 /** The spots the app's own plugin runtime declares (§5.3 "App core points"). Every other spot is a plugin's. */
-export const CORE_SPOTS: readonly string[] = ["app.root", "app.surface", "bot.tab"];
+export const CORE_SPOTS: readonly string[] = ["app.root", "app.surface", "app.background", "bot.tab"];

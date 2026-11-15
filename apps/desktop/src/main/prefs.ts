@@ -8,9 +8,11 @@ export interface AppPrefs {
   pillHidden: boolean;
   /** The four-finger tap that toggles the pill (where the app has the helper for it). On unless turned off. */
   fourFingerTap: boolean;
+  /** The app's one mute over every plugin's sound (the bots' voices and the background parts' alike), from the tray. Off unless turned on. */
+  soundMuted: boolean;
 }
 
-export const DEFAULT_PREFS: AppPrefs = { pillHidden: false, fourFingerTap: true };
+export const DEFAULT_PREFS: AppPrefs = { pillHidden: false, fourFingerTap: true, soundMuted: false };
 
 export function readPrefs(file: string): AppPrefs {
   try {
@@ -18,6 +20,7 @@ export function readPrefs(file: string): AppPrefs {
     return {
       pillHidden: typeof raw.pillHidden === "boolean" ? raw.pillHidden : DEFAULT_PREFS.pillHidden,
       fourFingerTap: typeof raw.fourFingerTap === "boolean" ? raw.fourFingerTap : DEFAULT_PREFS.fourFingerTap,
+      soundMuted: typeof raw.soundMuted === "boolean" ? raw.soundMuted : DEFAULT_PREFS.soundMuted,
     };
   } catch {
     return { ...DEFAULT_PREFS };
