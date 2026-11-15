@@ -23,6 +23,8 @@ export interface UsageSources {
 export interface UsageInjection {
   /** The source names this daemon may call (a test or a fixture); `null` = none; absent = by the user home. */
   sources?: readonly string[] | null;
+  /** TEST SEAM: the port to call instead of the plugin host's (a test's own entries). Every entry it gives may be called. */
+  port?: UsageSourcePort;
   now?: () => number;
   /** The background catch-up: false = off (tests); its timings. */
   catchUp?: boolean;
@@ -50,6 +52,7 @@ export const USAGE_INERT_ENV: Readonly<Record<string, string>> = Object.freeze({
 export function allowedSources(opts: { userHome: string | undefined; injection?: UsageInjection; env?: Readonly<Record<string, string | undefined>> }): Set<string> | "all" | "none" {
   const inj = opts.injection?.sources;
   if (inj === null) return "none";
+  if (inj === undefined && opts.injection?.port !== undefined) return "all";
   if (inj !== undefined) return new Set(inj.filter((s) => SOURCE_ID.test(s)));
   const env = (opts.env ?? process.env).CLOVER_USAGE_SOURCES;
   if (env === "off") return "none";
@@ -96,6 +99,7 @@ export function createUsageService(opts: {
     return undefined;
   }
   const port = new LateUsagePort(() => allowedSources({ userHome: opts.userHome, injection: inj }));
+  if (inj.port !== undefined) port.attach(inj.port);
   let notify: ((notice: { title: string; body: string }) => void) | undefined;
   const pricer = new UsagePricer();
   const service = new UsageService({
@@ -134,7 +138,7 @@ export function createUsageService(opts: {
   return {
     service,
     sources: { entries: () => port.entries().map((e) => ({ id: e.id, pluginId: e.pluginId })) },
-    attach: (host) => { if (host.port !== undefined) port.attach(host.port); if (host.notify !== undefined) notify = host.notify; },
+    attach: (host) => { if (host.port !== undefined && inj.port === undefined) port.attach(host.port); if (host.notify !== undefined) notify = host.notify; },
     close: () => {
       service.stopBackground();
       for (const t of timers) clearTimeout(t);

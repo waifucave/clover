@@ -1,18 +1,19 @@
-// J's macOS audit: a temp-home daemon read the REAL `~/.claude` (the usage readers fell back to the user's home
-// folder). Whose apps usage tracking reads is the daemon's `userHome` (`usage/wiring.ts`): the user's home folder only
-// for the daemon on its default home, none for any other, which then reads no root and runs no executable outside its
-// home (no home folder, `$CODEX_HOME`, `$CLAUDE_CONFIG_DIR`, install place or `$PATH`), unless one is named explicitly.
-//
-// The "real" home here is a stand-in: `HOME`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PATH` point into a temp folder
-// holding every file and executable the readers would look for, and the preload's `CLOVER_USAGE_*` are lifted for
-// the test, so a reader that still fell back would find them.
-import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// J's macOS audit: a temp-home daemon read the REAL `~/.claude` (the usage readers fell back to the user's home folder).
+// Whose apps usage tracking may call is the daemon's `userHome` (`usage/wiring.ts`): the user's home folder only for the
+// daemon on its default home, none for any other. A source is a plugin's, run through `api.outside` with the user's own
+// access, so a temp-home or test daemon calls NO entry unless a test names it (`injection.sources`, `injection.port`, or
+// `$CLOVER_USAGE_SOURCES`).
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
-import { createUsageService } from "../../src/usage/wiring";
+import { UsagePricer } from "../../src/usage/pricing";
+import { createUsageService, type UsageInjection } from "../../src/usage/wiring";
+import { fakeClaude, fakeCodex, tempDir } from "./fixtures";
+import { sourcePort } from "./sources-harness";
+import { UsageDb } from "../../src/usage/db";
 
 const temps: string[] = [];
 const temp = (name: string) => {
@@ -27,6 +28,8 @@ const setEnv = (key: string, value: string | undefined) => {
   else process.env[key] = value;
 };
 let daemon: RunningDaemon | undefined;
+// The preload says `off`; these tests are about what the daemon does when nothing says so.
+beforeEach(() => setEnv("CLOVER_USAGE_SOURCES", undefined));
 afterEach(async () => {
   await daemon?.stop();
   daemon = undefined;
@@ -38,115 +41,77 @@ afterEach(async () => {
   for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-/** A stand-in user home with every app's files and executables, and the environment pointing into it. */
-function standInUser(): string {
-  const user = temp("user");
-  mkdirSync(join(user, ".codex", "sessions", "2026", "11", "09"), { recursive: true });
-  writeFileSync(join(user, ".codex", "sessions", "2026", "11", "09", "rollout-x.jsonl"), "{}\n");
-  mkdirSync(join(user, ".claude", "projects", "p"), { recursive: true });
-  writeFileSync(join(user, ".claude", "projects", "p", "t.jsonl"), "{}\n");
-  writeFileSync(join(user, ".claude", "stats-cache.json"), "{}");
-  writeFileSync(join(user, ".claude.json"), "{}");
-  const bin = join(user, ".local", "bin");
-  mkdirSync(bin, { recursive: true });
-  for (const name of ["codex", "claude", "agy", "opencode"]) {
-    writeFileSync(join(bin, name), "#!/bin/sh\nexit 0\n");
-    chmodSync(join(bin, name), 0o755);
-  }
-  for (const key of ["CLOVER_USAGE_CODEX_HOME", "CLOVER_USAGE_CLAUDE_HOME", "CLOVER_USAGE_CLAUDE_JSON", "CLOVER_USAGE_CODEX_EXECUTABLE",
-    "CLOVER_USAGE_CLAUDE_EXECUTABLE", "CLOVER_USAGE_AGY_EXECUTABLE", "CLOVER_USAGE_OPENCODE_EXECUTABLE"]) setEnv(key, undefined);
-  setEnv("HOME", user);
-  setEnv("CODEX_HOME", join(user, ".codex"));
-  setEnv("CLAUDE_CONFIG_DIR", join(user, ".claude"));
-  setEnv("PATH", `${bin}:${process.env.PATH ?? ""}`);
-  return user;
+/** A usage service whose plugin host is a port over the real source handlers and fake programs; `calls` says what ran. */
+function wired(userHome: string | undefined, injection: UsageInjection = {}) {
+  const codex = fakeCodex(tempDir("bin"), "ok", { primary: 10, secondary: 20, resetsAtSec: Math.floor((Date.now() + 3_600_000) / 1000) });
+  const claude = fakeClaude(tempDir("bin"), "ok");
+  const db = new UsageDb(join(temp("db"), "usage.db"));
+  const port = sourcePort({ db, pricer: new UsagePricer(), tracking: () => ({}), codexExecutable: () => codex.path, claudeExecutable: () => claude.path });
+  const usage = createUsageService({ home: temp("clover"), userHome, settings: () => undefined, injection: { catchUp: false, background: false, ...injection } })!;
+  usage.attach({ port });
+  return { usage, port, db };
 }
 
-describe("usage tracking reads only its daemon's user home", () => {
-  test("no user home: no root, no executable, whatever HOME, CODEX_HOME, CLAUDE_CONFIG_DIR and PATH say", () => {
-    standInUser();
-    const usage = createUsageService({ home: temp("clover"), userHome: undefined, settings: () => undefined, injection: { catchUp: false, background: false } })!;
+describe("usage tracking calls only the sources its daemon's user home allows", () => {
+  test("no user home: no entry is called, whatever the plugin host has", async () => {
+    const { usage, port } = wired(undefined);
     try {
-      expect(usage.sources.codexHome).toBeUndefined();
-      expect(usage.sources.claudeHome).toBeUndefined();
-      expect(usage.sources.claudeJsonPath).toBeUndefined();
-      expect(usage.sources.executables()).toEqual({ codex: undefined, claude: undefined, agy: undefined, opencode: undefined });
-    } finally {
-      usage.close();
-    }
+      expect(usage.sources.entries()).toEqual([]);
+      expect((await usage.service.sourcePlan("codex")).source).toBe("not-installed");
+      await usage.service.ingest(true);
+      expect(port.calls).toEqual([]);
+    } finally { usage.close(); }
   });
 
-  test("with a user home it reads that home's apps (the readers would find the stand-in, so the test above means something)", () => {
-    const user = standInUser();
-    setEnv("CODEX_HOME", undefined);
-    setEnv("CLAUDE_CONFIG_DIR", undefined);
-    const usage = createUsageService({ home: temp("clover"), userHome: user, settings: () => undefined, injection: { catchUp: false, background: false } })!;
+  test("with a user home every entry may be called (the test above means something)", async () => {
+    const { usage, port } = wired(temp("user"));
     try {
-      expect(usage.sources).toMatchObject({ codexHome: join(user, ".codex"), claudeHome: join(user, ".claude"), claudeJsonPath: join(user, ".claude.json") });
-      // Found (the stand-in's own, or a system install place ahead of it): never looked for without a user home.
-      expect(usage.sources.executables().claude).toBeDefined();
-    } finally {
-      usage.close();
-    }
+      expect(usage.sources.entries().map((e) => e.id)).toEqual(["codex", "claude-code", "antigravity", "opencode"]);
+      expect((await usage.service.sourcePlan("codex")).source).toBe("codex-app-server");
+      expect(port.calls.some((c) => c.id === "codex" && c.method === "plan")).toBe(true);
+    } finally { usage.close(); }
   });
 
-  test("an explicit root or executable is still used without a user home (a test's fixtures)", () => {
-    const user = standInUser();
-    setEnv("CLOVER_USAGE_CLAUDE_HOME", join(user, ".claude"));
-    const usage = createUsageService({
-      home: temp("clover"), userHome: undefined, settings: () => undefined,
-      injection: { catchUp: false, background: false, codexExecutable: join(user, ".local", "bin", "codex") },
-    })!;
+  test("a named source is called without a user home; the others are not", async () => {
+    const { usage, port } = wired(undefined, { sources: ["claude-code"] });
     try {
-      expect(usage.sources.claudeHome).toBe(join(user, ".claude"));
-      expect(usage.sources.codexHome).toBeUndefined();
-      expect(usage.sources.executables()).toEqual({ codex: join(user, ".local", "bin", "codex"), claude: undefined, agy: undefined, opencode: undefined });
-    } finally {
-      usage.close();
-    }
+      expect(usage.sources.entries().map((e) => e.id)).toEqual(["claude-code"]);
+      expect((await usage.service.sourcePlan("codex")).source).toBe("not-installed");
+      expect((await usage.service.sourcePlan("claude-code")).source).toBe("claude-cli");
+      expect(port.calls.map((c) => c.id)).not.toContain("codex");
+    } finally { usage.close(); }
   });
 
-  test("a daemon on a temp home reads nothing outside it", async () => {
-    standInUser();
+  test("`sources: null` (the inert daemons) and `CLOVER_USAGE_SOURCES=off` call nothing, even with a user home", async () => {
+    const inert = wired(temp("user"), { sources: null });
+    try {
+      expect(inert.usage.sources.entries()).toEqual([]);
+      await inert.usage.service.ingest(true);
+      expect(inert.port.calls).toEqual([]);
+    } finally { inert.usage.close(); }
+    setEnv("CLOVER_USAGE_SOURCES", "off");
+    const off = wired(temp("user"));
+    try {
+      expect(off.usage.sources.entries()).toEqual([]);
+    } finally { off.usage.close(); }
+  });
+
+  test("`CLOVER_USAGE_SOURCES` names the sources (a comma list) for a daemon spawned as a process", async () => {
+    setEnv("CLOVER_USAGE_SOURCES", "codex, opencode");
+    const { usage } = wired(undefined);
+    try {
+      expect(usage.sources.entries().map((e) => e.id)).toEqual(["codex", "opencode"]);
+    } finally { usage.close(); }
+  });
+
+  test("a daemon on a temp home calls nothing outside it", async () => {
+    setEnv("CLOVER_USAGE_SOURCES", undefined);
     const home = temp("daemon");
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false, links: false,
       parts: { bots: false, node: false },
     });
-    const sources = daemon.usageSources!;
-    expect(sources).toBeDefined();
-    expect(sources.codexHome).toBeUndefined();
-    expect(sources.claudeHome).toBeUndefined();
-    expect(sources.claudeJsonPath).toBeUndefined();
-    expect(sources.executables()).toEqual({ codex: undefined, claude: undefined, agy: undefined, opencode: undefined });
-  });
-
-  test("an explicitly named executable without a user home runs with the daemon's home as HOME and no tool-home variable", async () => {
-    const user = standInUser();
-    setEnv("XDG_CONFIG_HOME", join(user, ".config"));
-    const clover = temp("clover");
-    const out = join(temp("env"), "env.txt");
-    // A stand-in `codex` that writes the environment it was given, and gives no reading.
-    const exe = join(temp("bin"), "codex");
-    writeFileSync(exe, `#!/bin/sh\nenv > '${out}'\n`);
-    chmodSync(exe, 0o755);
-    const run = async (userHome: string | undefined): Promise<Record<string, string>> => {
-      const usage = createUsageService({ home: clover, userHome, settings: () => undefined, injection: { catchUp: false, background: false, codexExecutable: exe } })!;
-      try {
-        await usage.service.codexPlan();
-      } finally {
-        usage.close();
-      }
-      return Object.fromEntries(readFileSync(out, "utf8").trim().split("\n").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
-    };
-    const none = await run(undefined);
-    expect(none.HOME).toBe(clover);
-    for (const k of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) expect(none[k]).toBeUndefined();
-    // Nothing but `PATH` (the process's own, as every probe gets it) names the user's home.
-    expect(Object.entries(none).filter(([k, v]) => k !== "PATH" && v.includes(user))).toEqual([]);
-    // With a user home: that home, and the tool's own home variable.
-    const own = await run(user);
-    expect(own.HOME).toBe(user);
-    expect(own.CODEX_HOME).toBe(join(user, ".codex"));
+    expect(daemon.usageSources).toBeDefined();
+    expect(daemon.usageSources!.entries()).toEqual([]);
   });
 });

@@ -474,7 +474,7 @@ export class UsageService {
       if (a.reading !== undefined && a.keep) this.keep(a.reading);
       this.planCache.set(id, cache);
       // Judged as it lands: a read that stopped waiting (`planWaitMs` — a background beat's) answered the cache before.
-      this.judgeAlarms(a.reading, entry);
+      this.judgeAlarms(a.reading === undefined ? undefined : this.judged(a.reading), entry);
     } catch (err) {
       this.planCache.set(id, cache);
       this.deps.log?.info?.(`[usage] ${id}: plan call failed`, { error: err instanceof Error ? err.name : "error" });

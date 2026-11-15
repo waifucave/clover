@@ -6,11 +6,11 @@ import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService, type UsageServiceDeps } from "../../src/usage/service";
+import { UsageService, type LegacyServiceDeps } from "./sources-harness";
 import { staleness } from "../../src/usage/plan";
-import { CLAUDE_USAGE_ARGS } from "../../src/usage/claude-code";
+import { CLAUDE_USAGE_ARGS } from "../../../../plugins/usage-claude-code/src/claude-code";
 import {
-  SECRETS, claudeJson, codexMeta, codexRateLimits, codexRolloutPath, codexTokenCount, codexTurnContext, fakeClaude, fakeCodex, lines, probeRootIn, tempDir,
+  SECRETS, claudeJson, codexMeta, codexRateLimits, codexRolloutPath, codexTokenCount, codexTurnContext, fakeClaude, fakeCodex, lines, tempDir,
 } from "./fixtures";
 
 const pricer = new UsagePricer();
@@ -19,14 +19,13 @@ const sec = (ms: number) => Math.floor(ms / 1000);
 /** An installed app that answers nothing (exits at once): the fallback rungs' tests. */
 const FAILING = "/usr/bin/false";
 
-function service(over: Partial<UsageServiceDeps> & { logs?: string[] } = {}) {
+function service(over: Partial<LegacyServiceDeps> & { logs?: string[] } = {}) {
   const home = tempDir("home");
   const db = new UsageDb(join(home, "usage", "usage.db"));
   const logs = over.logs ?? [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }),
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
-    probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });
@@ -84,7 +83,7 @@ describe("the Codex plan", () => {
     const fake = fakeCodex(bin, "ok", { primary: 12, secondary: 40, resetsAtSec: sec(NOW + 3_600_000) });
     let now = NOW;
     const { svc, home } = service({ codexExecutable: () => fake.path, now: () => now, codexAppServerEveryMs: 60_000 });
-    const plan = await svc.codexPlan();
+    const plan = await svc.sourcePlan("codex");
     expect(plan.source).toBe("codex-app-server");
     expect(plan.planType).toBe("pro");
     expect(plan.credits).toEqual({ hasCredits: true, unlimited: false, balance: "12" });
@@ -94,15 +93,13 @@ describe("the Codex plan", () => {
     const m = marks(fake.markerPath);
     expect(m).toHaveLength(1);
     expect(m[0]!.argv).toEqual(["app-server"]);
-    expect(m[0]!.cwd).toMatch(/\/usage\/probe-[^/]+$/);
-    expect(existsSync(m[0]!.cwd)).toBe(false); // its own directory, removed after the run
     void home;
     // Cached within the window; asked again after it.
     now += 30_000;
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     expect(marks(fake.markerPath)).toHaveLength(1);
     now += 31_000;
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     expect(marks(fake.markerPath)).toHaveLength(2);
     for (const x of marks(fake.markerPath)) expect(await goneWithin(x.pid)).toBe(true);
   });
@@ -114,7 +111,7 @@ describe("the Codex plan", () => {
     rollouts(codexHome, NOW - 10 * 60_000, 2, 34, { primary: sec(NOW + 3_600_000), secondary: sec(NOW + 86_400_000) });
     const { svc, logs } = service({ codexExecutable: () => fake.path, codexHome, appServerTimeoutMs: 1_200 });
     const started = Date.now();
-    const plan = await svc.codexPlan();
+    const plan = await svc.sourcePlan("codex");
     expect(Date.now() - started).toBeLessThan(4_000);
     expect(plan.source).toBe("codex-rollout");
     expect(plan.at).toBe(NOW - 10 * 60_000);
@@ -127,7 +124,7 @@ describe("the Codex plan", () => {
   test("a banner line before the replies is ignored (the app-server still answers)", async () => {
     const fake = fakeCodex(tempDir("bin"), "banner");
     const { svc } = service({ codexExecutable: () => fake.path });
-    expect((await svc.codexPlan()).source).toBe("codex-app-server");
+    expect((await svc.sourcePlan("codex")).source).toBe("codex-app-server");
   });
 
   test("a malformed or refused reply falls back to the rollout; a missing binary is not installed (no slot)", async () => {
@@ -136,12 +133,12 @@ describe("the Codex plan", () => {
       const codexHome = tempDir("codex");
       rollouts(codexHome, NOW - 60_000, 5, 6, { primary: sec(NOW + 3_600_000), secondary: sec(NOW + 86_400_000) });
       const { svc } = service({ codexExecutable: () => fake.path, codexHome, appServerTimeoutMs: 1_500 });
-      expect((await svc.codexPlan()).source).toBe("codex-rollout");
+      expect((await svc.sourcePlan("codex")).source).toBe("codex-rollout");
     }
     const codexHome = tempDir("codex");
     rollouts(codexHome, NOW - 60_000, 5, 6, { primary: sec(NOW + 3_600_000), secondary: sec(NOW + 86_400_000) });
     const { svc } = service({ codexExecutable: () => undefined, codexHome });
-    expect((await svc.codexPlan()).source).toBe("not-installed");
+    expect((await svc.sourcePlan("codex")).source).toBe("not-installed");
   });
 
   test("the NEWEST rollout's last rate_limits; stale when older than its window or past its reset", async () => {
@@ -149,11 +146,11 @@ describe("the Codex plan", () => {
     const old = rollouts(codexHome, NOW - 6 * 3_600_000, 90, 91, { primary: sec(NOW - 3_600_000), secondary: sec(NOW + 86_400_000) });
     utimesSync(old, new Date(NOW - 6 * 3_600_000), new Date(NOW - 6 * 3_600_000));
     const { svc } = service({ codexHome, codexExecutable: () => FAILING });
-    let plan = await svc.codexPlan();
+    let plan = await svc.sourcePlan("codex");
     // Six hours old: the 5-hour window is past its reset (and older than its window); the weekly one still holds.
     expect(plan.windows.map((w) => [w.kind, w.usedPercent, w.stale, w.staleReason])).toEqual([["five_hour", 90, true, "reset_passed"], ["weekly", 91, false, undefined]]);
     rollouts(codexHome, NOW - 60_000, 3, 4, { primary: sec(NOW + 3_600_000), secondary: sec(NOW + 86_400_000) });
-    plan = await svc.codexPlan();
+    plan = await svc.sourcePlan("codex");
     expect(plan.windows.map((w) => w.usedPercent)).toEqual([3, 4]);
   });
 
@@ -162,28 +159,28 @@ describe("the Codex plan", () => {
     rollouts(codexHome, NOW - 60_000, 5, 6, { primary: sec(NOW + 3_600_000), secondary: sec(NOW + 86_400_000) });
     let now = NOW;
     const { svc } = service({ codexHome, codexExecutable: () => FAILING, now: () => now, fallbackEveryMs: 60_000 });
-    expect((await svc.codexPlan()).windows.map((w) => w.usedPercent)).toEqual([5, 6]);
+    expect((await svc.sourcePlan("codex")).windows.map((w) => w.usedPercent)).toEqual([5, 6]);
     rollouts(codexHome, NOW, 50, 60, { primary: sec(NOW + 3_600_000), secondary: sec(NOW + 86_400_000) });
     now = NOW + 30_000; // within the cache window: the newer rollout is not read yet
-    expect((await svc.codexPlan()).windows.map((w) => w.usedPercent)).toEqual([5, 6]);
+    expect((await svc.sourcePlan("codex")).windows.map((w) => w.usedPercent)).toEqual([5, 6]);
     now = NOW + 2 * 3_600_000;
-    const later = await svc.codexPlan();
+    const later = await svc.sourcePlan("codex");
     expect(later.windows.map((w) => w.usedPercent)).toEqual([50, 60]);
   });
 
   test("Codex that cannot answer: Clover's own codex-oauth report, status only, labelled; none without it; not installed whatever Clover knows", async () => {
     const windows = () => [{ rateLimitType: "five_hour", status: "allowed" as const, at: NOW - 1000, resetsAt: NOW + 1000 }];
-    const plan = await service({ codexExecutable: () => FAILING, cloverCodexWindows: windows }).svc.codexPlan();
+    const plan = await service({ codexExecutable: () => FAILING, cloverCodexWindows: windows }).svc.sourcePlan("codex");
     expect(plan).toMatchObject({ source: "winter-codex-oauth", windows: [], statusOnly: [{ rateLimitType: "five_hour", status: "allowed" }] });
-    expect((await service({ codexExecutable: () => FAILING }).svc.codexPlan()).source).toBe("none");
-    expect((await service({ cloverCodexWindows: windows }).svc.codexPlan()).source).toBe("not-installed");
+    expect((await service({ codexExecutable: () => FAILING }).svc.sourcePlan("codex")).source).toBe("none");
+    expect((await service({ cloverCodexWindows: windows }).svc.sourcePlan("codex")).source).toBe("not-installed");
   });
 
   test("tracking off: nothing is spawned or read", async () => {
     const fake = fakeCodex(tempDir("bin"), "ok");
     const { svc } = service({ codexExecutable: () => fake.path, tracking: () => ({ codex: false, claudeCode: false, antigravity: false, opencode: false }) });
-    expect((await svc.codexPlan()).source).toBe("disabled");
-    expect((await svc.claudeCodePlan()).source).toBe("disabled");
+    expect((await svc.sourcePlan("codex")).source).toBe("disabled");
+    expect((await svc.sourcePlan("claude-code")).source).toBe("disabled");
     expect(marks(fake.markerPath)).toHaveLength(0);
   });
 });
@@ -198,23 +195,22 @@ describe("a plan read never holds a client past its short wait", () => {
     require("node:fs").chmodSync(wrapper, 0o755);
     const { svc } = service({ claudeExecutable: () => wrapper, planWaitMs: 100 });
     const started = Date.now();
-    expect((await svc.claudeCodePlan()).source).toBe("none");
+    expect((await svc.sourcePlan("claude-code")).source).toBe("none");
     expect(Date.now() - started).toBeLessThan(3_000);
     const end = Date.now() + 20_000;
-    let plan = await svc.claudeCodePlan();
-    while (plan.source !== "claude-cli" && Date.now() < end) { await Bun.sleep(100); plan = await svc.claudeCodePlan(); }
+    let plan = await svc.sourcePlan("claude-code");
+    while (plan.source !== "claude-cli" && Date.now() < end) { await Bun.sleep(100); plan = await svc.sourcePlan("claude-code"); }
     expect(plan.source).toBe("claude-cli");
     expect(marks(slow.markerPath)).toHaveLength(1);
   }, 30_000);
 });
 
 describe("the Claude Code plan", () => {
-  test("claude's own /usage, with EXACTLY the verified invocation, in the neutral cwd: session, weekly, weekly per model", async () => {
+  test("claude's own /usage, with EXACTLY the verified invocation: session, weekly, weekly per model", async () => {
     const fake = fakeClaude(tempDir("bin"), "ok");
     let now = NOW;
-    // A daemon started from inside a Claude Code session: its nested-session markers never reach the CLI.
     const { svc, home } = service({ claudeExecutable: () => fake.path, now: () => now });
-    const plan = await withEnv({ CLAUDECODE: "1", CLAUDE_CODE_ENTRYPOINT: "cli" }, () => svc.claudeCodePlan());
+    const plan = await svc.sourcePlan("claude-code");
     expect(plan.source).toBe("claude-cli");
     expect(plan.windows.map((w) => [w.kind, w.usedPercent, w.scope, w.stale])).toEqual([
       ["five_hour", 23, undefined, false], ["weekly", 61, undefined, false], ["weekly_scoped", 80, "Fable", false],
@@ -226,16 +222,13 @@ describe("the Claude Code plan", () => {
     expect(JSON.stringify(plan).includes("SECRET")).toBe(false);
     const m = marks(fake.markerPath);
     expect(m[0]!.argv).toEqual([...CLAUDE_USAGE_ARGS]);
-    expect((m[0] as unknown as { env: string[] }).env.filter((k) => k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_"))).toEqual([]);
-    expect(m[0]!.cwd).toMatch(/\/usage\/probe-[^/]+$/);
-    expect(existsSync(m[0]!.cwd)).toBe(false); // its own directory, removed after the run
     void home;
     // Throttled to once per five minutes.
     now += 4 * 60_000;
-    await svc.claudeCodePlan();
+    await svc.sourcePlan("claude-code");
     expect(marks(fake.markerPath)).toHaveLength(1);
     now += 2 * 60_000;
-    await svc.claudeCodePlan();
+    await svc.sourcePlan("claude-code");
     expect(marks(fake.markerPath)).toHaveLength(2);
   });
 
@@ -244,58 +237,44 @@ describe("the Claude Code plan", () => {
       const fake = fakeClaude(tempDir("bin"), mode);
       let now = NOW;
       const { svc, logs } = service({ claudeExecutable: () => fake.path, now: () => now });
-      expect((await svc.claudeCodePlan()).source).toBe("none");
+      expect((await svc.sourcePlan("claude-code")).source).toBe("none");
       expect(logs.some((l) => l.includes("not asked again until Claude Code changes"))).toBe(true);
       expect(logs.join("\n").includes("SECRET")).toBe(false);
       now += 3_600_000;
-      await svc.claudeCodePlan();
+      await svc.sourcePlan("claude-code");
       expect(marks(fake.markerPath)).toHaveLength(1);
     });
   }
 
-  test("no usage_report, malformed output and a hang (killed) all fall through to ~/.claude.json — only its one key", async () => {
+  test("no usage_report, malformed output and a hang (killed) answer nothing: the program is the only rung, ~/.claude.json is never read", async () => {
     for (const mode of ["no-report", "malformed", "hang"] as const) {
       const fake = fakeClaude(tempDir("bin"), mode);
-      const jsonPath = join(tempDir("claude-json"), ".claude.json");
-      claudeJson(jsonPath, NOW - 120_000, {
-        five_hour: { utilization: 42, resets_at: new Date(NOW + 3_600_000).toISOString() },
-        seven_day: { utilization: 70, resets_at: new Date(NOW + 3 * 86_400_000).toISOString() },
-        seven_day_opus: { utilization: 15, resets_at: new Date(NOW - 1000).toISOString() },
-      });
+      const claudeHome = tempDir("claude");
+      writeFileSync(join(claudeHome, ".claude.json"), JSON.stringify({ cachedUsageUtilization: { five_hour: { utilization: 42 } }, oauthAccount: { token: "DECOY_TOKEN_VALUE" } }));
       const logs: string[] = [];
-      const { svc, db } = service({ claudeExecutable: () => fake.path, claudeJsonPath: jsonPath, claudeCliTimeoutMs: 1_200, logs });
-      const plan = await svc.claudeCodePlan();
-      expect(plan.source).toBe("claude-cache");
-      expect(plan.at).toBe(NOW - 120_000);
-      expect(plan.windows.map((w) => [w.kind, w.usedPercent, w.scope, w.stale])).toEqual([
-        ["five_hour", 42, undefined, false], ["weekly", 70, undefined, false], ["weekly_scoped", 15, "opus", true],
-      ]);
+      const { svc, db } = service({ claudeExecutable: () => fake.path, claudeHome, claudeCliTimeoutMs: 1_200, logs });
+      const plan = await svc.sourcePlan("claude-code");
+      expect(plan.source).toBe("none");
       const everything = JSON.stringify(plan) + logs.join("\n") + readFileSync(db.path).toString("latin1");
       for (const s of SECRETS) expect(everything.includes(s)).toBe(false);
-      expect(everything.includes("someone@example.com")).toBe(false);
       if (mode === "hang") for (const m of marks(fake.markerPath)) expect(await goneWithin(m.pid)).toBe(true);
     }
   });
 
-  test("the plan's size from ~/.claude.json's account tier only: max + default_claude_max_20x → max_20x", async () => {
+  test("the plan's name is Claude Code's own `auth status` subscriptionType, and nothing else of that answer", async () => {
     const fake = fakeClaude(tempDir("bin"), "ok");
-    const jsonPath = join(tempDir("claude-json"), ".claude.json");
-    claudeJson(jsonPath, NOW - 60_000, {}, "default_claude_max_20x");
-    const { svc } = service({ claudeExecutable: () => fake.path, claudeJsonPath: jsonPath });
-    const plan = await svc.claudeCodePlan();
-    expect(plan.planType).toBe("max_20x");
-    // Nothing else of the account crosses.
+    const { svc } = service({ claudeExecutable: () => fake.path });
+    const plan = await svc.sourcePlan("claude-code");
+    expect(plan.planType).toBe("max");
     expect(JSON.stringify(plan)).not.toContain("someone@example.com");
     expect(JSON.stringify(plan)).not.toContain("sk-decoy");
-    const { claudeTierMultiple } = await import("../../src/usage/claude-code");
-    expect([claudeTierMultiple("default_claude_max_5x"), claudeTierMultiple("default_claude_ai"), claudeTierMultiple(7)]).toEqual(["5x", undefined, undefined]);
   });
 
-  test("not installed: no slot, whatever the cache holds; installed with no report and no cache: none", async () => {
-    const { svc } = service({ claudeJsonPath: join(tempDir("x"), "absent.json") });
-    expect((await svc.claudeCodePlan()).source).toBe("not-installed");
-    const installed = service({ claudeExecutable: () => FAILING, claudeJsonPath: join(tempDir("x"), "absent.json") });
-    expect((await installed.svc.claudeCodePlan()).source).toBe("none");
+  test("not installed: no slot; installed with no report: none", async () => {
+    const { svc } = service();
+    expect((await svc.sourcePlan("claude-code")).source).toBe("not-installed");
+    const installed = service({ claudeExecutable: () => FAILING });
+    expect((await installed.svc.sourcePlan("claude-code")).source).toBe("none");
   });
 });
 
@@ -310,23 +289,24 @@ describe("a plan's last good reading is shown until a fresh one lands (user 2026
     let now = NOW;
     const codexHome = tempDir("codex-home");
     const { svc } = service({ codexExecutable: () => exe, codexHome, now: () => now, codexAppServerEveryMs: 60_000 });
-    expect((await svc.codexPlan()).source).toBe("codex-app-server");
+    expect((await svc.sourcePlan("codex")).source).toBe("codex-app-server");
     // The next probe fails: the kept reading answers, measured when it was — not "none", not a guess.
     exe = broken.path;
     now += 61_000;
-    let plan = await svc.codexPlan();
+    let plan = await svc.sourcePlan("codex");
     expect([plan.source, plan.at]).toEqual(["codex-app-server", NOW]);
     expect(plan.windows.map((w) => [w.kind, w.usedPercent, w.stale])).toEqual([["five_hour", 12, false], ["weekly", 40, false]]);
     // Six hours on (still failing): the five-hour window is older than itself — stale; the weekly one is not.
     now = NOW + 6 * 3_600_000;
-    plan = await svc.codexPlan();
+    plan = await svc.sourcePlan("codex");
     expect(plan.windows.map((w) => [w.kind, w.stale])).toEqual([["five_hour", true], ["weekly", false]]);
     // A Codex session writes newer limits: the newer reading wins.
     const file = codexRolloutPath(codexHome, ROLLOUT_AT, "rnew");
     writeFileSync(file, lines(codexMeta(ROLLOUT_AT, "snew"), codexTurnContext(ROLLOUT_AT, "gpt-5.1"),
       codexTokenCount(ROLLOUT_AT, { input: 1, cached: 0, output: 1, reasoning: 0 }, { input: 1, cached: 0, output: 1, reasoning: 0 },
         codexRateLimits(55, 66, { primary: sec(NOW + 8 * 3_600_000), secondary: sec(NOW + 7 * 86_400_000) }))));
-    plan = await svc.codexPlan();
+    now += 61_000; // its next call (the rollout rung is part of the source's ladder, asked at the source's own pace)
+    plan = await svc.sourcePlan("codex");
     expect(plan.source).toBe("codex-rollout");
     expect(plan.windows.map((w) => w.usedPercent)).toEqual([55, 66]);
   });
@@ -334,49 +314,40 @@ describe("a plan's last good reading is shown until a fresh one lands (user 2026
   test("a restart answers the kept reading (usage.db) while the probe fails; off or not installed never shows it", async () => {
     const ok = fakeCodex(tempDir("bin"), "ok", { primary: 21, secondary: 31, resetsAtSec: sec(NOW + 7 * 86_400_000) });
     const env = service({ codexExecutable: () => ok.path, now: () => NOW });
-    await env.svc.codexPlan();
+    await env.svc.sourcePlan("codex");
     let tracking = { codex: true, claudeCode: true, antigravity: true, opencode: true };
     let exe: string | undefined = FAILING;
+    let clock = NOW + 120_000;
     const restarted = new UsageService({
-      db: env.db, pricer, tracking: () => tracking, codexExecutable: () => exe, claudeExecutable: () => undefined,
-      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), planWaitMs: 20_000, now: () => NOW + 120_000,
+      db: env.db, pricer, tracking: () => tracking, codexExecutable: () => exe, planWaitMs: 20_000, now: () => clock,
     });
-    const plan = await restarted.codexPlan();
+    const plan = await restarted.sourcePlan("codex");
     expect([plan.source, plan.at, plan.windows.map((w) => w.usedPercent)]).toEqual(["codex-app-server", NOW, [21, 31]]);
     tracking = { ...tracking, codex: false };
-    expect((await restarted.codexPlan()).source).toBe("disabled");
+    expect((await restarted.sourcePlan("codex")).source).toBe("disabled");
     tracking = { ...tracking, codex: true };
     exe = undefined;
-    expect((await restarted.codexPlan()).source).toBe("not-installed");
+    clock += 61_000; // the next call (its throttle) finds it gone
+    expect((await restarted.sourcePlan("codex")).source).toBe("not-installed");
   });
 
-  test("Claude Code: the kept /usage beats an older ~/.claude.json, a newer one beats it; the plan's name survives a restart", async () => {
+  test("Claude Code: the kept /usage answers through a failed run, with the plan's name, across a restart", async () => {
     const ok = fakeClaude(tempDir("bin"), "ok");
     const broken = fakeClaude(tempDir("bin2"), "no-report");
-    const jsonPath = join(tempDir("claude-json"), ".claude.json");
-    claudeJson(jsonPath, NOW - 3_600_000, { five_hour: { utilization: 5, resets_at: new Date(NOW + 3_600_000).toISOString() } }, "default_claude_max_20x");
     let exe = ok.path;
     let now = NOW;
-    const env = service({ claudeExecutable: () => exe, claudeJsonPath: jsonPath, now: () => now, claudeCliEveryMs: 60_000 });
-    const fresh = await env.svc.claudeCodePlan();
-    expect([fresh.source, fresh.planType]).toEqual(["claude-cli", "max_20x"]);
+    const env = service({ claudeExecutable: () => exe, now: () => now, claudeCliEveryMs: 60_000 });
+    const fresh = await env.svc.sourcePlan("claude-code");
+    expect([fresh.source, fresh.planType]).toEqual(["claude-cli", "max"]);
     exe = broken.path;
     now += 61_000;
-    let plan = await env.svc.claudeCodePlan();
-    expect([plan.source, plan.at, plan.planType]).toEqual(["claude-cli", fresh.at, "max_20x"]);
+    let plan = await env.svc.sourcePlan("claude-code");
+    expect([plan.source, plan.at, plan.planType]).toEqual(["claude-cli", fresh.at, "max"]);
     expect(plan.windows.map((w) => w.usedPercent)).toEqual(fresh.windows.map((w) => w.usedPercent));
     // A restart (Claude Code still not answering): the same kept reading, its name included.
-    const restarted = new UsageService({
-      db: env.db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-      claudeExecutable: () => broken.path, claudeJsonPath: jsonPath, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home),
-      planWaitMs: 20_000, now: () => now,
-    });
-    plan = await restarted.claudeCodePlan();
-    expect([plan.source, plan.at, plan.planType]).toEqual(["claude-cli", fresh.at, "max_20x"]);
-    // Claude Code refreshes its own cache later: the newer reading wins.
-    claudeJson(jsonPath, now, { five_hour: { utilization: 77, resets_at: new Date(now + 3_600_000).toISOString() } }, "default_claude_max_20x");
-    plan = await restarted.claudeCodePlan();
-    expect([plan.source, plan.windows[0]!.usedPercent]).toEqual(["claude-cache", 77]);
+    const restarted = new UsageService({ db: env.db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), claudeExecutable: () => broken.path, planWaitMs: 20_000, now: () => now });
+    plan = await restarted.sourcePlan("claude-code");
+    expect([plan.source, plan.at, plan.planType]).toEqual(["claude-cli", fresh.at, "max"]);
   });
 
   test("a malformed kept reading is dropped, never trusted", async () => {
@@ -384,10 +355,12 @@ describe("a plan's last good reading is shown until a fresh one lands (user 2026
     const { svc, db } = service({ codexExecutable: () => FAILING, now: () => NOW });
     db.setSourceState(PLAN_READINGS_KEY, "winter", {
       codex: { provider: "codex", source: "codex-app-server", at: "yesterday", windows: [{ id: "p", kind: "five_hour", usedPercent: 10 }] },
-      "claude-code": { provider: "claude-code", source: "claude-cache", at: NOW, windows: [{ id: "p", kind: "five_hour", usedPercent: 10 }] },
+      "claude-code": { provider: "claude-code", source: "claude-cli", at: NOW, windows: [{ id: "p", kind: "five_hour", usedPercent: 10 }] },
       antigravity: { provider: "antigravity", source: "agy-cli", at: NOW, windows: [{ id: "p", kind: "hourly", usedPercent: 300 }] },
+      "Not A Source": { source: "x", at: NOW, windows: [{ id: "p", kind: "five_hour", usedPercent: 10 }] },
     }, NOW);
-    expect(parseKeptReadings(db.sourceState(PLAN_READINGS_KEY)).size).toBe(0);
-    expect((await svc.codexPlan()).source).toBe("none");
+    // Only the one well-formed reading survives (the claude-code one); the rest is dropped.
+    expect([...parseKeptReadings(db.sourceState(PLAN_READINGS_KEY)).keys()]).toEqual(["claude-code"]);
+    expect((await svc.sourcePlan("codex")).source).toBe("none");
   });
 });

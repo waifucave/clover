@@ -55,20 +55,12 @@ delete process.env.CLOVER_TMPDIR;
 // agents) — this turns that off for every in-process boot AND every daemon subprocess a test spawns
 // (they inherit `process.env`). A test that exercises the resolution injects a fake runner instead.
 process.env.CLOVER_LOGIN_SHELL_PATH = "off";
-// Usage tracking (`src/usage/wiring.ts`, docs/claude/usage.md): no test may read the developer's REAL Codex sessions,
-// Claude Code transcripts or `~/.claude.json`, nor spawn their real `codex` / `claude` / `agy` / `opencode`. Every root
-// points at an empty throwaway directory and every executable is "off" (authoritative: never a fall-through to $PATH).
-// A test that exercises them injects fixture roots and a fake executable through `startDaemon({ usage })` or the
-// service itself.
+// Usage tracking (`src/usage/wiring.ts`, docs/claude/usage.md): no test may read the developer's REAL Codex sessions or
+// Claude Code transcripts, nor run their real `codex` / `claude` / `agy` / `opencode`. The sources are bundled plugins
+// the daemon calls through `api.outside`; `off` calls none of them (authoritative: never a fall-through to the user's
+// installs). A test that exercises a source injects a port and fake programs through `startDaemon({ usage })`.
 {
-  const none = mkdtempSync(join(tmpdir(), "clover-test-usage-none-"));
-  process.env.CLOVER_USAGE_CODEX_HOME = join(none, "codex");
-  process.env.CLOVER_USAGE_CLAUDE_HOME = join(none, "claude");
-  process.env.CLOVER_USAGE_CLAUDE_JSON = join(none, "claude.json");
-  process.env.CLOVER_USAGE_CODEX_EXECUTABLE = "off";
-  process.env.CLOVER_USAGE_CLAUDE_EXECUTABLE = "off";
-  process.env.CLOVER_USAGE_AGY_EXECUTABLE = "off";
-  process.env.CLOVER_USAGE_OPENCODE_EXECUTABLE = "off";
+  process.env.CLOVER_USAGE_SOURCES = "off";
   // No background plan checks either (the 30-min beat, the alarms' fast beats): a test that wants them starts them.
   process.env.CLOVER_USAGE_BACKGROUND = "off";
 }

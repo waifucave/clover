@@ -162,6 +162,10 @@ class RealTotals {
   }
 }
 
+/** A line said once per process (per folder): the same unreadable file is not told again every call. */
+const told = new Set<string>();
+const once = (log: string[], key: string, line: string): void => { if (!told.has(key)) { told.add(key); log.push(line); } };
+
 export async function ingest(args: UsageIngestArgs, o: ClaudeSourceOptions = {}): Promise<UsageIngestReply> {
   const home = (o.home ?? claudeHomeOf)();
   const loaded = loadState(args);
@@ -209,14 +213,14 @@ export async function ingest(args: UsageIngestArgs, o: ClaudeSourceOptions = {})
       const cap = o.statsMaxBytes ?? CLAUDE_STATS_MAX_BYTES;
       const text = size > cap ? "over-cap" : await readCapped(path, cap);
       const stats = text === undefined || text === "over-cap" ? undefined : parseClaudeStats(text);
-      if (text === "over-cap") log.push("Claude Code's stats cache is over the size cap; its history is not read");
-      else if (text !== undefined && stats === undefined) log.push("Claude Code's stats cache could not be read; its history is not imported");
+      if (text === "over-cap") once(log, `${home}|over-cap`, "Claude Code's stats cache is over the size cap; its history is not read");
+      else if (text !== undefined && stats === undefined) once(log, `${home}|corrupt`, "Claude Code's stats cache could not be read; its history is not imported");
       if (stats !== undefined) {
         const from = overlapFrom(passAt);
         const r = refreshEstimates(h.estimates, { stats, coverage: cov, today: utcDay(passAt), real: real.since(from), overlapFromDay: from });
         if (r.changed || !h.planned) { h.estimates = r.estimates; h.planned = true; dirty = true; rowsSig = undefined; }
-        sig = `${stamp}|${coverageKey}`;
       }
+      sig = `${stamp}|${coverageKey}`; // read, or judged unreadable: not tried again until the file or the coverage changes
     }
   }
   let estimates: UsageRecord[] | undefined;

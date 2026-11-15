@@ -74,7 +74,7 @@ export async function ingest(args: UsageIngestArgs, ctx: Pick<HandlerContext, "a
     budget -= 1;
     const r = await runOpencodeStats(outside, a, o.timeoutMs === undefined ? {} : { timeoutMs: o.timeoutMs });
     if (r.failure === "not-installed") missing = true;
-    if (r.stats === undefined) log.push(`opencode stats gave no reading: ${r.failure ?? "no-json"}`);
+    if (r.stats === undefined && r.failure !== "not-installed") log.push(`opencode stats gave no reading: ${r.failure ?? "no-json"}`);
     return r.stats;
   };
   const all = async (): Promise<OpencodeStats | undefined> => (allRun ??= await run(OPENCODE_ALL_ARGS));

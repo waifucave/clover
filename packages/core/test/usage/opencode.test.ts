@@ -7,24 +7,24 @@ import { join } from "node:path";
 import { UsageDb } from "../../src/usage/db";
 import {
   dayMinus, daysBefore, localDay, localDayStart, localNoon, opencodeDaysArgs, opencodeDifference, parseOpencodeStats, OPENCODE_ALL_ARGS,
-} from "../../src/usage/opencode";
+} from "../../../../plugins/usage-opencode/src/opencode";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService, type UsageServiceDeps } from "../../src/usage/service";
-import { SECRETS, fakeOpencode, probeRootIn, tempDir, type OpencodeDayModel } from "./fixtures";
+import { UsageService, type LegacyServiceDeps } from "./sources-harness";
+import { SECRETS, fakeOpencode, tempDir, type OpencodeDayModel } from "./fixtures";
 
 const pricer = new UsagePricer();
 /** Mid-afternoon local time today: today's row sits at noon. */
 const TODAY = localDay(Date.now());
 const AFTERNOON = localNoon(TODAY) + 3 * 3_600_000;
 
-function service(over: Partial<UsageServiceDeps> & { clock: { now: number } }) {
+function service(over: Partial<LegacyServiceDeps> & { clock: { now: number } }) {
   const home = tempDir("home");
   const db = new UsageDb(join(home, "usage", "usage.db"));
   const logs: string[] = [];
   const { clock, ...rest } = over;
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-    claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0, now: () => clock.now,
+    claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, now: () => clock.now,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...rest,
   });
@@ -261,12 +261,11 @@ describe("OpenCode in the usage DB", () => {
     expect(svc.series("30d", ["opencode"]).totals.input).toBe(180);
   }, 30_000);
 
-  test("every run gets TZ: the zone Clover counts its days in", async () => {
+  test("days are counted in the zone the program itself uses (the process's, which `outside.run` does not change)", async () => {
     const fake = fakeOpencode(tempDir("bin"), { daily: { 0: [m("a", 1)] } });
     const { svc } = service({ opencodeExecutable: () => fake.path, clock: { now: AFTERNOON } });
     await svc.ingest(true);
-    const marks = readFileSync(fake.markerPath, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { env: string[] });
-    for (const mk of marks) expect(mk.env).toContain("TZ");
+    expect(runs(fake.markerPath)[0]).toContain("--days 1");
     expect(localDay(Date.parse("2026-03-08T07:30:00Z"), "America/Los_Angeles")).toBe("2026-03-07");
     expect(localDay(Date.parse("2026-03-08T07:30:00Z"), "Asia/Tokyo")).toBe("2026-03-08");
     // The DST day in Los Angeles is 23 hours; its noon is 19:00 UTC.
@@ -296,7 +295,7 @@ describe("OpenCode in the usage DB", () => {
       const db = new UsageDb(join(home, "usage", "usage.db"));
       return { db, svc: new UsageService({
         db, pricer, tracking: () => ({ codex: false, claudeCode: false, antigravity: false, opencode: true }), codexExecutable: () => undefined,
-        claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), ingestEveryMs: 0,
+        claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0,
         now: () => clock.now, opencodeExecutable: () => fake.path, opencodeSpawnBudget: 5,
       }) };
     };

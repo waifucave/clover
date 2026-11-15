@@ -679,8 +679,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  engine's backends; the rest replace this profile's extension ids, the host's designated requirement and the
    *  Security.framework check of the host's pid (the opt-in extension e2e runs a test-build host). Production sets none. */
   browserHost?: BrowserHostInjection;
-  /** Usage tracking TEST SEAM (`docs/claude/usage.md`): the Codex / Claude Code roots and executables. Absent: the env
-   *  overrides (`CLOVER_USAGE_*`, which both test preloads point at nothing), else the user's real installs. */
+  /** Usage tracking TEST SEAM (`docs/claude/usage.md`): which `usage.sources` entries may be called, or a port to call
+   *  instead. Absent: `$CLOVER_USAGE_SOURCES` (both test preloads set `off`), else every entry on the user's own home. */
   usage?: UsageInjection;
   /** TEST ONLY: the user's home the other-install guard below measures against (default `homedir()`), so a test
    *  proves the refusal on a stand-in home and never names the real one. */
