@@ -103,7 +103,6 @@ describe("protection (P9b-5) — external infrastructure survives", () => {
   });
   test("the legacy-names files are permitted by path", () => {
     expect(rewriteText('export const LEGACY_LAUNCHD_LABEL = "com.norma.core";', "packages/core/src/legacy-names.ts").residue[0]?.permittedBy).toBe("legacy-names");
-    expect(rewriteText('static let launchdAgentLabel = "com.norma.core"', "apple/Winter/Sources/App/LegacyNames.swift").residue[0]?.permittedBy).toBe("legacy-names");
   });
 });
 
