@@ -533,7 +533,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     logs.handlers,
     keysApi({ secrets: o.secrets }),
     // P5: the programs a plugin's manifest names, run by the daemon outside its sandbox with the user's own access.
-    outsideApi({ userHome: o.userHome ?? homedir(), log }),
+    outsideApi({ userHome: o.userHome ?? homedir(), cloverHome: o.home, log, writable: (id) => o.picked?.(id)?.write ?? [] }),
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),

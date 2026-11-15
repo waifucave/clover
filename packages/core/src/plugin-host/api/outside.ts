@@ -8,6 +8,9 @@
 //   `args` go to it as given. Its output comes back as text, each stream cut at `OUTSIDE_OUTPUT_MAX` bytes; its time is
 //   60 s unless asked, at most 10 minutes, and it is killed when that runs out. Every run is one line in the daemon's
 //   log (the plugin, the program and how it ended; never its arguments or its output).
+// * "Of yours" holds (the reviewer's read 44): a program inside the Clover home, the plugin's own folder or a folder
+//   it can write (its picks with write access) is refused, whether named by its path or found on the PATH (a PATH
+//   folder in one of those is skipped); the folder it runs in is the user's home unless asked, never in the Clover home.
 // * The folders (`host.outside.read`): `outsideReadFolders` turns them into real paths for the plugin's host process's
 //   fence, read only, never inside the Clover home (the fence's last denies, the Keychain's files and the tools'
 //   credential files, still hold).
@@ -50,18 +53,23 @@ export function outsideReadFolders(record: Pick<PluginRecord, "manifest"> | unde
   for (const p of outsideOf(record).read) {
     const at = expandUserPath(p, o.userHome);
     const r = real(at);
-    if (r === home || r === "/" || inside(r, clover) || inside(clover, r)) continue;
+    // Never the whole home or a folder that holds it (`/Users`), never Clover's home, in it or holding it.
+    if (r === "/" || inside(home, r) || inside(r, clover) || inside(clover, r)) continue;
     out.push(r);
     if (r !== at) out.push(at);
   }
   return [...new Set(out)];
 }
 
-/** Where a named program is: an absolute path as it is; a bare name, the first executable file of that name on `PATH`. */
-export function findProgram(name: string, path: string | undefined): string | undefined {
+/** Where a named program is: an absolute path as it is; a bare name, the first executable file of that name on `PATH`,
+ *  skipping any PATH folder inside one of `skip` (the Clover home, the plugin's own folder and what it can write). */
+export function findProgram(name: string, path: string | undefined, skip: readonly string[] = []): string | undefined {
   if (isAbsolute(name)) return name;
+  const roots = skip.map(real);
   for (const dir of (path ?? "").split(":")) {
-    if (dir === "") continue;
+    if (dir === "" || !isAbsolute(dir)) continue;
+    const d = real(dir);
+    if (roots.some((r) => inside(d, r))) continue;
     const at = join(dir, name);
     try {
       const st = statSync(at);
@@ -95,8 +103,15 @@ function userEnv(): Record<string, string> {
   return env;
 }
 
-export function outsideApi(o: { userHome?: string; log?: (line: string) => void; path?: () => string | undefined }): ApiHandlers {
+/** The folders a plugin's program may never be in, for "of yours" to hold: the Clover home, the plugin's own folder,
+ *  and the folders it can write (its picks with write access), as real paths. */
+export function notTheUsers(o: { cloverHome: string; folder?: string; writable?: readonly string[] }): string[] {
+  return [...new Set([o.cloverHome, ...(o.folder !== undefined ? [o.folder] : []), ...(o.writable ?? [])].map(real))];
+}
+
+export function outsideApi(o: { userHome?: string; cloverHome: string; log?: (line: string) => void; path?: () => string | undefined; writable?: (pluginId: string) => readonly string[] }): ApiHandlers {
   const userHome = o.userHome ?? homedir();
+  const clover = real(o.cloverHome);
   return {
     "outside.run": async (ctx, args) => {
       const program = args[0];
@@ -110,10 +125,16 @@ export function outsideApi(o: { userHome?: string; log?: (line: string) => void;
       const opts = (args[2] ?? {}) as { cwd?: unknown; input?: unknown; timeoutMs?: unknown };
       const cwd = typeof opts.cwd === "string" && opts.cwd !== "" ? expandUserPath(opts.cwd, userHome) : userHome;
       if (!existsSync(cwd)) throw new ContractError("invalid", `outside.run's folder ${opts.cwd as string} isn't there`);
+      if (inside(real(cwd), clover)) throw new ContractError("refused", `outside.run doesn't run a program in Clover's own folder (${opts.cwd as string})`);
       const timeoutMs = typeof opts.timeoutMs === "number" && Number.isFinite(opts.timeoutMs) ? Math.min(OUTSIDE_TIMEOUT_MAX_MS, Math.max(1_000, Math.floor(opts.timeoutMs))) : OUTSIDE_TIMEOUT_MS;
       const env = userEnv();
-      const at = findProgram(program, o.path?.() ?? env.PATH);
+      const roots = notTheUsers({ cloverHome: o.cloverHome, ...(ctx.record?.folder !== undefined ? { folder: ctx.record.folder } : {}), writable: o.writable?.(ctx.pluginId) ?? [] });
+      const at = findProgram(program, o.path?.() ?? env.PATH, roots);
       if (at === undefined) throw new ContractError("failed", `${program} isn't on your PATH`);
+      // "Of yours": never a program in Clover's folder, the plugin's own or one it can write, however it is reached.
+      if (roots.some((r) => inside(real(at), r))) {
+        throw new ContractError("refused", `${program} is in Clover's folder, ${ctx.pluginId}'s own or one it can write, so it isn't a program of yours; it doesn't run`);
+      }
       let timedOut = false;
       const child = Bun.spawn([at, ...(argv as string[])], {
         cwd, env, stdin: typeof opts.input === "string" ? new TextEncoder().encode(opts.input) : "ignore", stdout: "pipe", stderr: "pipe",

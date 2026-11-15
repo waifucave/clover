@@ -14,7 +14,8 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
-import { expandUserPath, findProgram, outsideReadFolders } from "../api/outside";
+import { expandUserPath, findProgram, outsideApi, outsideReadFolders } from "../api/outside";
+import { pluginToolContained, pluginToolReadOnly, pluginWebTool, treeRunsOutside } from "../../registry/read-only-tools";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
 const USER: Caller = { kind: "user", client: "app" };
@@ -64,6 +65,8 @@ test("the folders it names: in the user's home, never the whole home or the Clov
   expect(outsideReadFolders(rec(["~/Notes"]), { userHome, cloverHome })).toEqual([join(userHome, "Notes")]);
   expect(outsideReadFolders(rec(["~/.clover", "~/.clover/secrets", "~"]), { userHome, cloverHome })).toEqual([]);
   expect(outsideReadFolders(rec([userHome]), { userHome, cloverHome })).toEqual([]);
+  // A folder that holds the home (the reviewer's read 44: `/Users` opened the whole home) is never opened.
+  expect(outsideReadFolders(rec([join(userHome, ".."), "/"]), { userHome, cloverHome })).toEqual([]);
   expect(expandUserPath("~/a/b", "/Users/x")).toBe("/Users/x/a/b");
   const bin = temp("cf-out-bin-");
   writeFileSync(join(bin, "probe"), "#!/bin/sh\necho hi\n");
@@ -74,7 +77,88 @@ test("the folders it names: in the user's home, never the whole home or the Clov
   expect(findProgram("/bin/cat", undefined)).toBe("/bin/cat");
 });
 
+test("\"of yours\": a program in Clover's folder, the plugin's own or one it can write is refused, by its path or on the PATH; never run in Clover's folder", async () => {
+  const userHome = temp("cf-out-user-");
+  const cloverHome = join(userHome, ".clover");
+  const own = join(cloverHome, "plugins", "gitter");
+  const picked = temp("cf-out-picked-");
+  const bin = temp("cf-out-bin-");
+  const cloverBin = join(cloverHome, "bin");
+  for (const d of [own, cloverBin, picked, bin]) mkdirSync(d, { recursive: true });
+  const exe = (dir: string, name: string) => {
+    writeFileSync(join(dir, name), "#!/bin/sh\necho ran\n");
+    chmodSync(join(dir, name), 0o755);
+    return join(dir, name);
+  };
+  const inClover = exe(cloverBin, "tool");
+  const inOwn = exe(own, "tool");
+  const inPick = exe(picked, "tool");
+  exe(bin, "tool");
+  const programs = [inClover, inOwn, inPick, "tool"];
+  const api = outsideApi({ userHome, cloverHome, path: () => `${cloverBin}:${bin}`, writable: () => [picked] });
+  const ctx = { pluginId: "gitter", record: { manifest: { host: { outside: { programs } } }, folder: own } } as never;
+  const run = (args: unknown[]) => (api["outside.run"] as (c: unknown, a: unknown[]) => Promise<{ code: number; stdout: string }>)(ctx, args);
+  const refused = async (args: unknown[]) => { try { await run(args); return "ran"; } catch (e) { return (e as Error).message; } };
+  for (const p of [inClover, inOwn, inPick]) expect(await refused([p])).toContain("isn't a program of yours");
+  // A bare name skips the PATH folder inside Clover's home and finds the user's own.
+  expect(findProgram("tool", `${cloverBin}:${bin}`, [cloverHome])).toBe(join(bin, "tool"));
+  expect(await run(["tool"])).toMatchObject({ code: 0, stdout: "ran\n" });
+  // Run in the user's home by default; never in Clover's folder.
+  expect(await refused(["tool", [], { cwd: cloverBin }])).toContain("Clover's own folder");
+  expect(await run(["tool", [], { cwd: bin }])).toMatchObject({ code: 0 });
+});
+
+test("a tree that names programs outside its sandbox has no card-free tool: read-only, display-only and web lists, the build's copy's too", () => {
+  const server = { type: "host", tools: { status: "preload", show: "preload", find: "preload", page: "preload" }, readOnly: ["status"], contained: ["show"], webSearch: ["find"], webFetch: ["page"] };
+  const record = (id: string, outside: boolean) => ({
+    id, state: "running", enabled: true, dev: false, okHash: "sha256:a", treeHash: "sha256:a", capabilities: [], provenance: {}, source: "bundled",
+    manifest: { host: { entry: "host/index.js", process: "own", ...(outside ? { outside: { programs: ["git"] } } : {}) }, contributes: { mcpServers: { tools: server } } },
+  });
+  const records = [record("plain", false), record("gitter", true)];
+  const reg = { get: (id: string) => records.find((r) => r.id === id), list: () => records } as never;
+  expect([treeRunsOutside(reg, "plain"), treeRunsOutside(reg, "gitter")]).toEqual([false, true]);
+  const lists = (id: string, built?: () => boolean) => [
+    pluginToolReadOnly(reg, id, "tools", "status", { fenced: true, ...(built ? { built } : {}) }),
+    pluginToolContained(reg, id, "tools", "show", { fenced: true }),
+    pluginWebTool(reg, id, "tools", "find", built ? { built } : {}) ?? false,
+    pluginWebTool(reg, id, "tools", "page", built ? { built } : {}) ?? false,
+  ];
+  expect(lists("plain")).toEqual([true, true, "web-search", "web-fetch"]);
+  expect(lists("gitter")).toEqual([false, false, false, false]);
+  expect(lists("gitter", () => true)).toEqual([false, false, false, false]);
+});
+
 darwinDescribe("programs and folders outside the sandbox (P5)", () => {
+  test("a named coding agent's folder: its other files read, its sign-in never (the plugin fence's last deny)", async () => {
+    const home = temp("cf-out-");
+    const userHome = temp("cf-out-user-");
+    const files = { usage: join(userHome, ".codex", "sessions", "usage.jsonl"), auth: join(userHome, ".codex", "auth.json"), claudeUsage: join(userHome, ".claude", "stats.json"), claudeAuth: join(userHome, ".claude", ".credentials.json") };
+    for (const f of Object.values(files)) {
+      mkdirSync(join(f, ".."), { recursive: true });
+      writeFileSync(f, `contents of ${f.slice(userHome.length)}`);
+    }
+    plugin(home, "usage", { outside: { read: ["~/.codex", "~/.claude"] } });
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome, log: () => undefined });
+    try {
+      const { card } = await opened.registry.installed("usage", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+      await until(() => opened.registry.get("usage")?.state !== "found", "usage OK'd");
+      type Read = { ok: boolean; text?: string; err?: string };
+      const read = (path: string) => ph.host.invoke<Read>({ pluginId: "usage", handler: "read", args: { path }, caller: USER });
+      expect(await read(files.usage)).toEqual({ ok: true, text: "contents of /.codex/sessions/usage.jsonl" });
+      expect(await read(files.claudeUsage)).toEqual({ ok: true, text: "contents of /.claude/stats.json" });
+      expect(await read(files.auth)).toEqual({ ok: false, err: "EPERM" });
+      expect(await read(files.claudeAuth)).toEqual({ ok: false, err: "EPERM" });
+    } finally {
+      await ph.close();
+      opened.close();
+    }
+  }, 120_000);
+
   test("named: its folder read and its program run outside the fence; not named: refused; the folder dropped, out of its fence", async () => {
     const home = temp("cf-out-");
     const userHome = temp("cf-out-user-");
@@ -106,7 +190,7 @@ darwinDescribe("programs and folders outside the sandbox (P5)", () => {
       };
       for (const id of ["reader", "plain"]) await approve(id);
       // Its OK card names each, with its warning; the plain one's names neither.
-      expect(cards.reader).toContain(`It runs this program of yours outside Clover's sandbox, with your own access (your sign-ins, your Keychain, your files and your network): ${probe}.`);
+      expect(cards.reader).toContain(`It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network): ${probe}.`);
       expect(cards.reader).toContain("It reads this folder of yours outside its sandbox: ~/Notes.");
       expect(cards.plain).not.toContain("outside");
       type Read = { ok: boolean; text?: string; err?: string };

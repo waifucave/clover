@@ -46,7 +46,7 @@ function served(): Set<string> {
     confirmApi(f),
     logsApi({ home: "/nonexistent" }).handlers,
     keysApi(f),
-    outsideApi({}),
+    outsideApi({ cloverHome: "/nonexistent" }),
     new AvatarService(() => undefined).handlers(),
     new NotifyService({ registry: { entries: () => [] }, home: "/nonexistent" } as never).apiHandlers(),
     modelPluginApiHandlers(f),

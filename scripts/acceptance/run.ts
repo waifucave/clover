@@ -123,7 +123,7 @@ import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnit
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
-import { OUTSIDE_FOLDER, outsideWrong, writeOutside, type ProbeAnswer } from "./outside-step";
+import { OUTSIDE_FOLDER, OUTSIDE_TOOL, outsideWrong, writeOutside, type ProbeAnswer } from "./outside-step";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -2120,9 +2120,13 @@ async function main(): Promise<void> {
         const plain = await install({ from: "folder", path: o.plain });
         const probe = async (pid: string) => (await c.request<{ result: ProbeAnswer }>("command.run", { name: `${pid}.probe`, args: { program: o.program, private: o.privateFile, note: o.noteFile } }, 60_000)).result;
         const answers = { named: await probe(named.id), plain: await probe(plain.id) };
-        const p5 = outsideWrong({ card: named.text, plainCard: plain.text, program: o.program, ...answers });
+        // Its read-only tool still asks (read 44): a bot's call at the default level raises a tool card, approved, then it answers.
+        const toolSeen = fake!.requests.length;
+        const toolTurn = await turn(c, session, `ACCEPTANCE-CALL ${OUTSIDE_TOOL} {}`, 150_000).catch((err: unknown) => { wrong.push(`P5 the bot's call to ${OUTSIDE_TOOL}: ${why(err)}`); return undefined; });
+        const tool = { cards: toolTurn?.cards ?? [], answered: fake!.requests.slice(toolSeen).some((r) => r.toolResult?.text.includes(`${OUTSIDE_TOOL}-pong`) === true) };
+        const p5 = outsideWrong({ card: named.text, plainCard: plain.text, program: o.program, ...answers, tool });
         if (p5.length > 0) wrong.push(`P5 ${p5.join("; ")}`);
-        else done.push(`P5 ${named.id} named ${o.program} and ${OUTSIDE_FOLDER} (its OK card named each with its warning): its program ran outside the sandbox (${answers.named.ran!.slice(0, 40)}), its folder read, the private file refused to its own process (${answers.named.direct}); ${plain.id}, naming neither, was refused the program (${answers.plain.ran!.slice(9, 80)}) and the folder (${answers.plain.folder})`);
+        else done.push(`P5 ${named.id} named ${o.program} and ${OUTSIDE_FOLDER} (its OK card named each with its warning): its program ran outside the sandbox (${answers.named.ran!.slice(0, 40)}), its folder read, the private file refused to its own process (${answers.named.direct}); its ${OUTSIDE_TOOL}, listed read-only, still asks (its card says so; the bot's call raised ${tool.cards.join(", ")} and it answered); ${plain.id}, naming neither, was refused the program (${answers.plain.ran!.slice(9, 80)}) and the folder (${answers.plain.folder})`);
       }
 
       // The main fixture: settings by scope, a custom sign-in, a child off by default, servers by placement.

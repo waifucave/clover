@@ -232,13 +232,21 @@ folders of the user's it reads, in its manifest (a top-level plugin, with `proce
   hands back its output: `const r = await api.outside!.run("codex", ["--version"], { timeoutMs: 30_000 })` gives
   `{ code, stdout, stderr }` (each output cut at 1 MB, `truncated` then; 60 s by default, 10 minutes at most,
   `timedOut` when it ran out; `cwd` is the user's home unless given; `input` goes to its standard input). No shell:
-  the arguments go to it as they are. A program it doesn't name is refused.
-- `read`: each `~/…` or an absolute path, never the whole home or the whole disk, and never inside Clover's home. Its
-  host process reads them (read only); the keychain's files and the tools' credential files stay out of reach inside
-  them.
-- The OK card names every program and every folder with a warning: "It runs these programs of yours outside Clover's
-  sandbox, with your own access (…): codex." and "It reads these folders of yours outside its sandbox: ~/.codex.". A
-  change to either list asks for the OK again, a narrowing too, and your process starts again with the new fence.
+  the arguments go to it as they are. A program it doesn't name is refused, and so is one inside Clover's folder,
+  your plugin's own folder or a folder it can write (a PATH folder in one of those is skipped); it never runs in
+  Clover's folder.
+- `read`: each `~/…` or an absolute path below the disk's top folders (not `/Users` or `/Volumes` themselves, nothing
+  under `/System`), never the whole home or a folder that holds it, and never inside Clover's home. Its host process
+  reads them (read only); the keychain's files, the tools' credential files and the coding agents' sign-ins
+  (`~/.codex/auth.json`, `~/.claude/.credentials.json` …) stay out of reach inside them: read a tool's usage through
+  the tool, never its token.
+- The OK card names every program, one line each, and every folder, with a warning: "It runs this program of yours
+  outside Clover's sandbox, with whatever arguments it chooses and your own access (…): codex." and "It reads these
+  folders of yours outside its sandbox: ~/.codex.". A change to either list asks for the OK again, a narrowing too,
+  and your process starts again with the new fence.
+- A plugin that names a program has no tool that skips the card: its `readOnly`, `contained`, `webSearch` and
+  `webFetch` lists don't hold, and its card says its tools still ask (a tool is your code, which could run the
+  program with what a bot hands it).
 - Everything else the plugin does stays fenced. Name the fewest programs and the narrowest folders that do the job.
 
 ## The fence
