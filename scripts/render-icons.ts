@@ -1,7 +1,6 @@
-/** One-shot brand-asset renderer: assets/brand/*.svg -> app icns (dist solid / dev hollow) +
- *  menu-bar template PNG sets (idle + 12 pulse frames each for thinking [whole-mark breathing] and
- *  working [rotating comet-tail], 1x/2x, black-on-transparent). Outputs are COMMITTED; this script
- *  re-runs only when the mark or the pulse math changes.
+/** One-shot brand-asset renderer: assets/brand/*.svg -> app icns (dist solid / dev hollow) in apple/Winter/Support, which the
+ *  helpers use. (The menu-bar PNG sets of the old Mac app left with it; the pulse-frame helpers below are no longer called.)
+ *  Outputs are COMMITTED; this script re-runs only when the mark changes.
  *  Usage: bun run icons:render */
 import { Resvg } from "@resvg/resvg-js";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,7 +10,6 @@ import { join } from "node:path";
 const ROOT = join(import.meta.dir, "..");
 const BRAND = join(ROOT, "assets", "brand");
 const SUPPORT = join(ROOT, "apple", "Winter", "Support");
-const MENUBAR = join(ROOT, "apple", "Winter", "Resources", "MenuBar");
 
 const idleSvg = readFileSync(join(BRAND, "scale-burst.svg"), "utf8");
 const FRAMES = 12; // pulse frames per cycle (also the ray count — see rayPaths())
@@ -104,20 +102,7 @@ function writeIcns(markSvg: string, outIcns: string, tmpName: string) {
   rmSync(iconset, { recursive: true, force: true });
 }
 
-mkdirSync(MENUBAR, { recursive: true });
 writeIcns(idleSvg, join(SUPPORT, "AppIcon.icns"), "AppIcon");
 writeIcns(hollow(idleSvg), join(SUPPORT, "AppIconDev.icns"), "AppIconDev");
 
-for (const [prefix, mark] of [["mb", idleSvg], ["mb-dev", hollow(idleSvg)]] as const) {
-  writeFileSync(join(MENUBAR, `${prefix}-idle.png`), renderPng(mark, 18));
-  writeFileSync(join(MENUBAR, `${prefix}-idle@2x.png`), renderPng(mark, 36));
-  for (const state of ["thinking", "working"] as const) {
-    for (let k = 0; k < FRAMES; k++) {
-      const opacities = state === "thinking" ? thinkingOpacities(k) : workingOpacities(k);
-      const f = frameSvg(mark, opacities);
-      writeFileSync(join(MENUBAR, `${prefix}-${state}-${k}.png`), renderPng(f, 18));
-      writeFileSync(join(MENUBAR, `${prefix}-${state}-${k}@2x.png`), renderPng(f, 36));
-    }
-  }
-}
 console.log("icons rendered");

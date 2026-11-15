@@ -216,9 +216,7 @@ describe("ComputerV2: release.ts signs, verifies and scans the Winter Computer U
   const projectYml = readFileSync(join(REPO_ROOT, "apple", "Winter", "project.yml"), "utf8");
   const embedScript = readFileSync(join(REPO_ROOT, "scripts", "embed-computer-helper.sh"), "utf8");
 
-  test("project.yml embeds it through embed-computer-helper.sh, Release only, after the WinterComputerUse target builds", () => {
-    expect(projectYml).toContain('"${SRCROOT}/../../scripts/embed-computer-helper.sh"');
-    expect(projectYml).toMatch(/- target: WinterComputerUse\n\s+embed: false/);
+  test("embed-computer-helper.sh embeds it in Release only (the old app's project that ran it left the repo)", () => {
     expect(embedScript).toMatch(/if \[ "\$\{CONFIGURATION:-\}" != "Release" \]; then/);
   });
 

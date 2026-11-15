@@ -80,7 +80,7 @@ The EXTENSION enforces the allowlist and world rules (`guard.ts` bundles `cdp-al
 
 **Features/permissions.** Since 1.1.0 the extension names its additions in `hello.features` (12 at 1.2.0, `cdp3` and `watch` among them; see the daemon's `EXTENSION_FEATURES`, `extension/protocol.ts`, parity-tested to it); a member is offered only when its feature is named — one needing more answers "update Winter for Chrome"; without `cdp3` (1.0.0) only Phase 2's events are subscribed. `browsers.list()` names a family by its channel and counts only a REAL install (`families.ts`'s `isRealInstallPath`: not Trash, cache, translocated or temp). Optional permissions `history`/`bookmarks`/`downloads` are toggled in the popup on the user's click, never at install; a request needing an ungranted one is `not_allowed` + `data.permission` (`library.ts`).
 
-**Manifests.** Release Winter.app writes `com.winter.browser.json` at every launch from its own bundle path (`apple/Winter/Sources/BrowserExtension/BrowserHostManifest.swift`); `bun run dev:helper` writes `com.winter.browser.dev.json` into existing browsers' `NativeMessagingHosts/` (`--out <dir>` writes nothing; never point a test at the real directories).
+**Manifests.** The old Winter.app's launch-time writer of `com.winter.browser.json` (its `BrowserHostManifest.swift`) left this repo with the app, and the daemon-side writer (`computer-use/browser/extension/manifest.ts`) is the one left; `bun run dev:helper` writes `com.winter.browser.dev.json` into existing browsers' `NativeMessagingHosts/` (`--out <dir>` writes nothing; never point a test at the real directories).
 
 ## Phase 3: readers, downloads, the sign-in hand-off
 

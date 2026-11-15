@@ -32,8 +32,8 @@ test("project.yml carries the canonical version (both keys)", () => {
   expect(yml).toContain(`CFBundleVersion: "${canonical}"`);
 });
 
-test("Support/Info.plist carries the canonical version (both keys)", () => {
-  const plist = readFileSync(join(ROOT, "apple", "Winter", "Support", "Info.plist"), "utf8");
+test("Support/WinterHeadless-Info.plist carries the canonical version (both keys)", () => {
+  const plist = readFileSync(join(ROOT, "apple", "Winter", "Support", "WinterHeadless-Info.plist"), "utf8");
   const count = plist.split(`<string>${canonical}</string>`).length - 1;
   expect(count).toBeGreaterThanOrEqual(2); // ShortVersionString + BundleVersion
 });

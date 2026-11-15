@@ -41,16 +41,13 @@
     "typecheck:plugin-sdk": "tsc --noEmit -p packages/plugin-sdk",
     "typecheck:scripts": "tsc --noEmit -p scripts",
     "typecheck": "bun run typecheck:page-runtime && bun run typecheck:scripts && bun scripts/workspaces.ts run typecheck",
-    "verify:office-agent": "bun run scripts/office-agent-gate.ts",
     "dev:daemon": "bun run scripts/dev-daemon.ts",
     "dev:app": "bun run scripts/dev-app.ts",
     "dev:helper": "bun run scripts/dev-helper.ts",
     "dev:cowork-native": "bun run scripts/dev-cowork-native.ts",
     "dev:headless": "bun run scripts/dev-headless.ts",
     "icons:render": "bun run scripts/render-icons.ts",
-    "cef:fetch": "bun run scripts/fetch-cef.ts",
-    "monaco:fetch": "bun run scripts/fetch-monaco.ts",
-    "libreoffice:fetch": "bun run scripts/fetch-libreoffice.ts"
+    "cef:fetch": "bun run scripts/fetch-cef.ts"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",

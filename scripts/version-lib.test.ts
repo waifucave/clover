@@ -93,11 +93,11 @@ describe("stamping the apple sources", () => {
   test("project.yml: EVERY Clover target is stamped, not just the first — but never the helper's marked lines (its own version)", () => {
     const yml = readFileSync(join(ROOT, "apple", "Winter", "project.yml"), "utf8");
     const count = (text: string, re: RegExp) => [...text.matchAll(re)].length;
-    // Clover, Winter Headless (Clover's version too) and the Computer Use helper (its own, marked).
-    expect(count(yml, /CFBundleShortVersionString: "[^"]*"/g)).toBe(3);
+    // Winter Headless (Clover's version) and the Computer Use helper (its own, marked).
+    expect(count(yml, /CFBundleShortVersionString: "[^"]*"/g)).toBe(2);
     const stamped = stampProjectYml(yml, "9.999.9");
-    expect(count(stamped, /CFBundleShortVersionString: "9\.999\.9"/g)).toBe(2);
-    expect(count(stamped, /CFBundleVersion: "9\.999\.9"/g)).toBe(2);
+    expect(count(stamped, /CFBundleShortVersionString: "9\.999\.9"/g)).toBe(1);
+    expect(count(stamped, /CFBundleVersion: "9\.999\.9"/g)).toBe(1);
     const helper = readHelperVersion();
     expect(stamped).toContain(`CFBundleShortVersionString: "${helper}" ${HELPER_VERSION_MARKER}`);
     expect(stamped).toContain(`CFBundleVersion: "${helper}" ${HELPER_VERSION_MARKER}`);

@@ -261,7 +261,6 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
         `\\bapple/Winter[A-Za-z0-9_]*`, // paths into the Swift tree
         `\\b${SWIFT_MODULES}\\b`, // Swift packages, targets and types the TypeScript mirrors or mentions
         `\\bWinter\\.xcodeproj\\b`,
-        `(?<=\\bAppProfile\\.)winterHome\\b`, // the retired app's own Swift property
         `WinterClient\\.swift|WinterClient(?<=Swift's (?:own )?\`?WinterClient)|WinterClient(?<=WinterKit's \`?WinterClient)|\`WinterClient\\.(?:route|request|listSessions)`,
         `\\bwinter-(?:fake-phone|probe|browser-host)\\b`, // WinterKit and WinterBrowserHost executables
         `\\bWinter(?= Xcode build)`, // the retired app's own build

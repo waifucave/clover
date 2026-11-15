@@ -1,0 +1,478 @@
+import Foundation
+
+/// **What the browser link lets through to one tab's browser, and back out of it.** One per tab the
+/// daemon holds; pure bookkeeping, no CEF — so every rule below runs under `swift test`.
+///
+/// Three jobs, each the app's half of a rule the daemon also keeps (a transport never trusts its
+/// sender to have checked):
+///
+///  1. **The allowlist** (`CDPAllowlist`, equal to the daemon's `cdp-allowlist.ts`): a method or a
+///     subscribed event outside it is refused `not_allowed` before anything reaches CEF.
+///  2. **The world rules** — code runs only in an isolated world named `"winter"` THAT THIS LINK MADE,
+///     never in the page's own and never in someone else's world that happens to share the name. A
+///     context counts as winter only when the gate saw it returned by its own successful
+///     `Page.createIsolatedWorld`, or saw the browser report a `"winter"` context in a frame it made
+///     that world in — never by the name alone. The gate watches those contexts and the objects
+///     minted in them, and refuses:
+///       * `Runtime.evaluate` without a `contextId` (or a `uniqueContextId`) of such a world;
+///       * `Runtime.callFunctionOn` without such a context or an `objectId` it saw minted in one —
+///         and with an argument naming any other object;
+///       * `DOM.resolveNode` without such an `executionContextId`;
+///       * `Page.createIsolatedWorld` naming another world, or asking for universal access.
+///       * `Page.reload` carrying `scriptToEvaluateOnLoad` (it runs in the page's main world);
+///       * `Page.navigate` to anything but `http:`, `https:` or exactly `about:blank` (a `javascript:`
+///         URL runs in the page's main world).
+///     Contexts and objects are scoped to the CDP session they belong to (the tab's own, or a flattened
+///     child target's), because their ids are. And within a session a context is matched by the
+///     browser's `uniqueId` wherever it reported one: a process-local `contextId` can be handed out
+///     again after a cross-process navigation, so an id the gate once saw as "winter" is "winter" only
+///     while the LATEST context the browser reported under that id is the winter one. A command naming a
+///     winter world that has ENDED (its document went, its id now names another context, or every
+///     context was cleared) is refused with a message beginning with the browser's own words,
+///     `contextGone` — what the daemon retries on — and one naming a context that never was winter gets
+///     the plain refusal.
+///  3. **The events** — only subscribed, allowlisted ones leave, and an event `CDPAllowlist.eventParams`
+///     lists leaves reduced by `CDPEventReducer` (the twin of the daemon's `cdp-reduce.ts`): no header,
+///     cookie, post data or page object.
+///  4. **Phase 3's rules** — `Network.enable` keeps no post data and capped buffers; a response body is
+///     cut (`filterResult`); `Emulation.setDeviceMetricsOverride` takes a screen size only; and the link
+///     refuses `Fetch.*` and `IO.*` outright — the built-in browser saves downloads through Winter.app's
+///     own handler, never by reading a response here.
+public final class CDPTabGate {
+    /// Why a send was refused — the message of a `not_allowed` answer.
+    public struct Refusal: Error, Equatable, Sendable {
+        public let message: String
+        public init(_ message: String) { self.message = message }
+    }
+
+    public enum EventDisposition: Equatable, Sendable {
+        case drop
+        case forward
+        /// Forward, with params reduced by `CDPEventReducer` (`CDPAllowlist.eventParams`).
+        case forwardStripped
+    }
+
+    /// The events the daemon asked for (`cdp.subscribe`), replaced wholesale by each subscribe.
+    public private(set) var subscribed: Set<String> = []
+
+    /// Objects remembered per session past this many lose their oldest tenth. A page that is navigated
+    /// clears its contexts and so its objects long before this; the cap only bounds a pathological run.
+    static let objectCap = 50_000
+
+    /// Ended winter worlds remembered per session (`World.ended`).
+    static let endedCap = 256
+
+    /// The browser's own words for a context that is gone. A command naming a winter world that has
+    /// ENDED is refused with a message beginning with them: the daemon may send one before it sees the
+    /// ending, and it reads exactly this sentence as "make a fresh world and try again" — as it would
+    /// the browser's own answer (Winter for Chrome's guard and the daemon's test transport say the same).
+    /// A context that never was winter gets the plain refusal.
+    public static let contextGone = "Cannot find context with specified id"
+
+    private static func gone(_ method: String) -> Refusal {
+        Refusal("\(contextGone) (\(method): that \"\(CDPAllowlist.worldName)\" world ended with its document)")
+    }
+
+    private struct ObjectOrigin {
+        var context: Int?
+        var group: String?
+    }
+
+    private struct World {
+        /// Frames this link made a winter world in (`Page.createIsolatedWorld`'s `frameId`, on success).
+        /// A later winter-named context in one of them is that world again (a new document).
+        var madeFrames: Set<String> = []
+        /// Winter-NAMED contexts the browser reported in a frame not (yet) known to be one of
+        /// `madeFrames` — the browser announces a world's context before it answers the call that made
+        /// it, so the answer confirms one of these; anything never confirmed never counts.
+        var candidates: [Int: (unique: String?, frame: String?)] = [:]
+        /// Context ids of winter worlds this link made.
+        var contexts: Set<Int> = []
+        /// A winter world's `uniqueId` → its context id.
+        var uniqueIds: [String: Int] = [:]
+        /// Any context id → the `uniqueId` of the LATEST context the browser reported under it.
+        var latestUnique: [Int: String] = [:]
+        var objects: [String: ObjectOrigin] = [:]
+        var objectOrder: [String] = []
+        /// Winter worlds that ENDED lately, as `i:<contextId>` and `u:<uniqueId>` (oldest first, at most
+        /// `CDPTabGate.endedCap`): naming one again is answered in the browser's own words
+        /// (`CDPTabGate.contextGone`), never as a world that was not winter.
+        var ended: Set<String> = []
+        var endedOrder: [String] = []
+
+        /// A context id names a winter world — and, where the browser said which context the id
+        /// belongs to now, that context is still the winter one.
+        func isWinter(_ id: Int) -> Bool {
+            guard contexts.contains(id) else { return false }
+            guard let latest = latestUnique[id] else { return true }
+            return uniqueIds[latest] == id
+        }
+
+        /// The id named a winter world that has ended — its document went, or the id now belongs to
+        /// another context.
+        func hasEnded(id: Int) -> Bool {
+            ended.contains("i:\(id)") || (contexts.contains(id) && !isWinter(id))
+        }
+
+        func hasEnded(unique: String) -> Bool { ended.contains("u:\(unique)") }
+
+        mutating func markEnded(_ key: String) {
+            if ended.contains(key) { endedOrder.removeAll { $0 == key } }
+            ended.insert(key)
+            endedOrder.append(key)
+            while endedOrder.count > CDPTabGate.endedCap { ended.remove(endedOrder.removeFirst()) }
+        }
+
+        /// The id (and its unique id) is a winter world again: this link made it anew.
+        mutating func unmarkEnded(id: Int, unique: String?) {
+            for key in ["i:\(id)"] + (unique.map { ["u:\($0)"] } ?? []) where ended.remove(key) != nil {
+                endedOrder.removeAll { $0 == key }
+            }
+        }
+
+        /// The id no longer names a winter world: forget it, its unique id and every object minted in it.
+        /// A winter world it named has ENDED.
+        mutating func invalidate(_ id: Int) {
+            if contexts.contains(id) {
+                markEnded("i:\(id)")
+                for (unique, context) in uniqueIds where context == id { markEnded("u:\(unique)") }
+            }
+            contexts.remove(id)
+            uniqueIds = uniqueIds.filter { $0.value != id }
+            objects = objects.filter { $0.value.context != id }
+        }
+
+        /// Every context is gone (`Runtime.executionContextsCleared`): every winter world has ended. The
+        /// frames this link made worlds in have not.
+        mutating func clearContexts() {
+            var next = World()
+            next.madeFrames = madeFrames
+            next.ended = ended
+            next.endedOrder = endedOrder
+            for id in contexts.sorted() { next.markEnded("i:\(id)") }
+            for unique in uniqueIds.keys.sorted() { next.markEnded("u:\(unique)") }
+            self = next
+        }
+    }
+
+    /// `""` is the tab's own session; anything else is a flattened child target's `sessionId`.
+    private var worlds: [String: World] = [:]
+
+    public init() {}
+
+    private static func key(_ cdpSessionId: String?) -> String { cdpSessionId ?? "" }
+
+    // MARK: - Subscriptions
+
+    /// Replace the tab's subscription. Refused whole if any event is outside the allowlist.
+    public func subscribe(_ events: [String]) -> Refusal? {
+        let outside = events.filter { !CDPAllowlist.eventSet.contains($0) }
+        if !outside.isEmpty {
+            return Refusal("not on the CDP event allowlist: \(outside.sorted().joined(separator: ", "))")
+        }
+        subscribed = Set(events)
+        return nil
+    }
+
+    /// What happens to one event the browser reported for this tab.
+    public func disposition(forEvent method: String) -> EventDisposition {
+        guard CDPAllowlist.eventSet.contains(method), subscribed.contains(method) else { return .drop }
+        return CDPEventReducer.reduces(method) ? .forwardStripped : .forward
+    }
+
+    /// An event's params as they may leave the app (`CDPEventReducer`). For a reduced event anything that
+    /// is not an object becomes an empty one.
+    public static func reducedParams(method: String, params: JSONValue) -> JSONValue {
+        CDPEventReducer.reduce(method: method, params: params)
+    }
+
+    /// An answer as it may leave the app: `Network.getResponseBody`'s `body` is cut at
+    /// `CDPAllowlist.responseBodyMaxChars` (UTF-16 units, as the daemon counts) with `truncated: true`.
+    public static func filterResult(method: String, result: JSONValue) -> JSONValue {
+        guard method == "Network.getResponseBody", case .object(var o) = result, case .string(let body)? = o["body"] else { return result }
+        let units = Array(body.utf16)
+        guard units.count > CDPAllowlist.responseBodyMaxChars else { return result }
+        o["body"] = .string(String(decoding: units.prefix(CDPAllowlist.responseBodyMaxChars), as: UTF16.self))
+        o["truncated"] = .bool(true)
+        return .object(o)
+    }
+
+    /// Whether `noteEvent` needs this event's params — the host parses only these, whatever is subscribed.
+    public static func tracksEvent(_ method: String) -> Bool {
+        switch method {
+        case "Runtime.executionContextCreated", "Runtime.executionContextDestroyed",
+             "Runtime.executionContextsCleared", "Target.detachedFromTarget", "Page.frameDetached":
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - Sends
+
+    /// `nil` when `method` may be sent to this tab with `params`, else why not.
+    public func check(method: String, params: JSONValue, cdpSessionId: String?) -> Refusal? {
+        guard CDPAllowlist.methodSet.contains(method) else {
+            return Refusal("\(method) is not on the CDP method allowlist")
+        }
+        let world = worlds[Self.key(cdpSessionId)] ?? World()
+        // A context that WAS a winter world and has ended gets the browser's own words; any other, `plain`.
+        func notWinter(id raw: JSONValue, _ plain: String) -> Refusal {
+            if let id = raw.intValue, world.hasEnded(id: id) { return Self.gone(method) }
+            return Refusal(plain)
+        }
+        func notWinter(unique raw: JSONValue, _ plain: String) -> Refusal {
+            if let unique = raw.stringValue, world.hasEnded(unique: unique) { return Self.gone(method) }
+            return Refusal(plain)
+        }
+        switch method {
+        case "Runtime.evaluate":
+            if case .some(let raw) = params["contextId"] {
+                guard let context = raw.intValue, world.isWinter(context) else {
+                    return notWinter(id: raw, "Runtime.evaluate: contextId is not a \"winter\" world")
+                }
+                if let unique = params["uniqueContextId"], world.uniqueIds[unique.stringValue ?? ""] == nil {
+                    return notWinter(unique: unique, "Runtime.evaluate: uniqueContextId is not a \"winter\" world")
+                }
+                return nil
+            }
+            if let unique = params["uniqueContextId"] {
+                if let u = unique.stringValue, world.uniqueIds[u] != nil { return nil }
+                return notWinter(unique: unique, "Runtime.evaluate runs only in a \"winter\" world — name its contextId")
+            }
+            return Refusal("Runtime.evaluate runs only in a \"winter\" world — name its contextId")
+        case "Runtime.callFunctionOn":
+            var anchored = false
+            if let raw = params["objectId"] {
+                guard let objectId = raw.stringValue, world.objects[objectId] != nil else {
+                    return Refusal("Runtime.callFunctionOn: objectId was not minted in a \"winter\" world")
+                }
+                anchored = true
+            }
+            if let raw = params["executionContextId"] {
+                guard let context = raw.intValue, world.isWinter(context) else {
+                    return notWinter(id: raw, "Runtime.callFunctionOn: executionContextId is not a \"winter\" world")
+                }
+                anchored = true
+            }
+            if let raw = params["uniqueContextId"] {
+                guard let unique = raw.stringValue, world.uniqueIds[unique] != nil else {
+                    return notWinter(unique: raw, "Runtime.callFunctionOn: uniqueContextId is not a \"winter\" world")
+                }
+                anchored = true
+            }
+            guard anchored else {
+                return Refusal("Runtime.callFunctionOn runs only in a \"winter\" world — name its context or an object from it")
+            }
+            for argument in params["arguments"]?.arrayValue ?? [] {
+                if let raw = argument["objectId"] {
+                    guard let objectId = raw.stringValue, world.objects[objectId] != nil else {
+                        return Refusal("Runtime.callFunctionOn: an argument's objectId was not minted in a \"winter\" world")
+                    }
+                }
+            }
+            return nil
+        case "DOM.resolveNode":
+            guard let context = params["executionContextId"]?.intValue, world.isWinter(context) else {
+                return notWinter(id: params["executionContextId"] ?? .null,
+                                 "DOM.resolveNode resolves only into a \"winter\" world — name its executionContextId")
+            }
+            return nil
+        case "Page.createIsolatedWorld":
+            guard params["worldName"]?.stringValue == CDPAllowlist.worldName else {
+                return Refusal("Page.createIsolatedWorld: the only world is \"\(CDPAllowlist.worldName)\"")
+            }
+            // CDP's own spelling of the flag is `grantUniveralAccess`; the correct spelling is refused too.
+            if params["grantUniveralAccess"]?.boolValue == true || params["grantUniversalAccess"]?.boolValue == true {
+                return Refusal("Page.createIsolatedWorld: universal access is never granted")
+            }
+            return nil
+        case "Page.navigate":
+            guard let url = params["url"]?.stringValue, Self.isNavigableURL(url) else {
+                return Refusal("Page.navigate goes only to http:, https: or about:blank")
+            }
+            return nil
+        case "Page.reload":
+            if params["scriptToEvaluateOnLoad"] != nil {
+                return Refusal("Page.reload: scriptToEvaluateOnLoad would run in the page's own world")
+            }
+            return nil
+        case "Network.enable":
+            // Every cap STATED: left out, the browser's own defaults keep request bodies and buffer far more.
+            guard params["maxPostDataSize"]?.intValue == 0 else {
+                return Refusal("Network.enable never keeps request bodies (maxPostDataSize: 0 is required)")
+            }
+            for (key, max) in [("maxResourceBufferSize", CDPAllowlist.networkBufferMaxResource),
+                               ("maxTotalBufferSize", CDPAllowlist.networkBufferMaxTotal)] {
+                guard let value = params[key]?.intValue, value >= 0, value <= max else {
+                    return Refusal("Network.enable needs \(key), at most \(max)")
+                }
+            }
+            return nil
+        case "Emulation.setDeviceMetricsOverride":
+            guard case .object(let o) = params else { return Refusal("Emulation.setDeviceMetricsOverride takes a screen size") }
+            let extra = o.keys.filter { !["width", "height", "deviceScaleFactor", "mobile"].contains($0) }
+            if !extra.isEmpty {
+                return Refusal("Emulation.setDeviceMetricsOverride takes a screen size only (not \(extra.sorted().joined(separator: ", ")))")
+            }
+            for key in ["width", "height"] {
+                guard let v = o[key]?.intValue, v >= 0, v <= 4096 else {
+                    return Refusal("the emulated width and height are whole numbers up to 4096")
+                }
+            }
+            if let dsf = o["deviceScaleFactor"] {
+                guard case .number(let n) = dsf, n.isFinite, n >= 0, n <= 4 else { return Refusal("the emulated scale is 0–4") }
+            }
+            if let mobile = o["mobile"], mobile.boolValue == nil { return Refusal("mobile is true or false") }
+            return nil
+        default:
+            if method.hasPrefix("Fetch.") || method.hasPrefix("IO.") {
+                return Refusal("\(method): Winter's built-in browser saves downloads itself — nothing reads a response here")
+            }
+            return nil
+        }
+    }
+
+    /// `http(s):` or exactly `about:blank` — never `javascript:` (main-world code), `data:`, `file:`, or
+    /// a browser-internal page.
+    static func isNavigableURL(_ url: String) -> Bool {
+        if url.caseInsensitiveCompare("about:blank") == .orderedSame { return true }
+        guard let colon = url.firstIndex(of: ":") else { return false }
+        let scheme = url[..<colon].lowercased()
+        return scheme == "http" || scheme == "https"
+    }
+
+    /// A send that `check` allowed has answered successfully: remember the contexts and objects it
+    /// created, and forget the ones it released.
+    public func noteResult(method: String, params: JSONValue, cdpSessionId: String?, result: JSONValue) {
+        let key = Self.key(cdpSessionId)
+        switch method {
+        case "Page.createIsolatedWorld":
+            // The one way a context BECOMES winter: this link's own call answered it.
+            if let context = result["executionContextId"]?.intValue {
+                var world = worlds[key] ?? World()
+                let frame = params["frameId"]?.stringValue
+                if let frame { world.madeFrames.insert(frame) }
+                world.contexts.insert(context)
+                world.unmarkEnded(id: context, unique: nil)
+                if let candidate = world.candidates.removeValue(forKey: context),
+                   frame == nil || candidate.frame == nil || candidate.frame == frame {
+                    // Its context was announced before the answer: that announcement is this world.
+                    if let unique = candidate.unique {
+                        world.uniqueIds[unique] = context
+                        world.unmarkEnded(id: context, unique: unique)
+                    }
+                } else if let latest = world.latestUnique[context], world.uniqueIds[latest] != context {
+                    // The id is the winter world's NOW; which unique context it is arrives with its event.
+                    world.latestUnique[context] = nil
+                }
+                worlds[key] = world
+            }
+        case "Runtime.evaluate":
+            let context = params["contextId"]?.intValue
+                ?? params["uniqueContextId"]?.stringValue.flatMap { worlds[key]?.uniqueIds[$0] }
+            mint(result["result"]?["objectId"], context: context, params: params, key: key)
+            mint(result["exceptionDetails"]?["exception"]?["objectId"], context: context, params: params, key: key)
+        case "Runtime.callFunctionOn":
+            var context = params["executionContextId"]?.intValue
+                ?? params["uniqueContextId"]?.stringValue.flatMap { worlds[key]?.uniqueIds[$0] }
+            if context == nil, let objectId = params["objectId"]?.stringValue {
+                context = worlds[key]?.objects[objectId]?.context
+            }
+            mint(result["result"]?["objectId"], context: context, params: params, key: key)
+            mint(result["exceptionDetails"]?["exception"]?["objectId"], context: context, params: params, key: key)
+        case "DOM.resolveNode":
+            mint(result["object"]?["objectId"], context: params["executionContextId"]?.intValue, params: params, key: key)
+        case "Runtime.releaseObject":
+            if let objectId = params["objectId"]?.stringValue { worlds[key]?.objects[objectId] = nil }
+        case "Runtime.releaseObjectGroup":
+            if let group = params["objectGroup"]?.stringValue, var world = worlds[key] {
+                world.objects = world.objects.filter { $0.value.group != group }
+                worlds[key] = world
+            }
+        default:
+            break
+        }
+    }
+
+    private func mint(_ objectId: JSONValue?, context: Int?, params: JSONValue, key: String) {
+        guard let objectId = objectId?.stringValue, !objectId.isEmpty else { return }
+        var world = worlds[key] ?? World()
+        if world.objects[objectId] == nil { world.objectOrder.append(objectId) }
+        world.objects[objectId] = ObjectOrigin(context: context, group: params["objectGroup"]?.stringValue)
+        if world.objects.count > Self.objectCap {
+            let drop = max(1, Self.objectCap / 10)
+            for old in world.objectOrder.prefix(drop) { world.objects[old] = nil }
+            world.objectOrder.removeFirst(min(drop, world.objectOrder.count))
+        }
+        if world.objectOrder.count > world.objects.count * 2 + 64 {
+            world.objectOrder = world.objectOrder.filter { world.objects[$0] != nil }
+        }
+        worlds[key] = world
+    }
+
+    // MARK: - Events
+
+    /// Track the contexts the browser reports, whatever is subscribed. Only the methods `tracksEvent`
+    /// names change anything.
+    public func noteEvent(method: String, params: JSONValue, cdpSessionId: String?) {
+        let key = Self.key(cdpSessionId)
+        switch method {
+        case "Runtime.executionContextCreated":
+            guard let context = params["context"], let id = context["id"]?.intValue else { return }
+            var world = worlds[key] ?? World()
+            let unique = context["uniqueId"]?.stringValue
+            let frame = context["auxData"]?["frameId"]?.stringValue
+            let winterNamed = context["name"]?.stringValue == CDPAllowlist.worldName
+            if winterNamed, let frame, world.madeFrames.contains(frame) {
+                // A winter world in a frame this link made one in.
+                world.candidates[id] = nil
+                world.contexts.insert(id)
+                if let unique { world.uniqueIds[unique] = id }
+                world.unmarkEnded(id: id, unique: unique)
+            } else {
+                // The page's own world, someone else's, or a winter-named world in a frame this link
+                // never made one in. If the id was a winter world's, it is not any more (a cross-process
+                // navigation hands process-local ids out again).
+                if world.contexts.contains(id) { world.invalidate(id) }
+                world.candidates[id] = winterNamed ? (unique, frame) : nil
+            }
+            world.latestUnique[id] = unique
+            worlds[key] = world
+        case "Runtime.executionContextDestroyed":
+            guard var world = worlds[key] else { return }
+            if let unique = params["executionContextUniqueId"]?.stringValue {
+                // By unique id: only the context that really went. A late "destroyed" for an older
+                // context that once had this id must not take a newer winter world with it.
+                let winterId = world.uniqueIds.removeValue(forKey: unique)
+                if winterId != nil { world.markEnded("u:\(unique)") }
+                let id = winterId ?? params["executionContextId"]?.intValue
+                if let id, world.latestUnique[id] == unique {
+                    world.latestUnique[id] = nil
+                    world.candidates[id] = nil
+                    if world.contexts.contains(id) { world.invalidate(id) }
+                }
+            } else if let id = params["executionContextId"]?.intValue {
+                world.latestUnique[id] = nil
+                world.candidates[id] = nil
+                world.invalidate(id)
+            }
+            worlds[key] = world
+        case "Runtime.executionContextsCleared":
+            worlds[key]?.clearContexts()
+        case "Page.frameDetached":
+            if let frame = params["frameId"]?.stringValue { worlds[key]?.madeFrames.remove(frame) }
+        case "Target.detachedFromTarget":
+            if let child = params["sessionId"]?.stringValue { worlds[child] = nil }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Test seams
+
+    /// The `"winter"` contexts the gate knows for a session — for tests.
+    func knownContexts(cdpSessionId: String? = nil) -> Set<Int> { worlds[Self.key(cdpSessionId)]?.contexts ?? [] }
+    /// How many objects the gate remembers for a session — for tests.
+    func knownObjectCount(cdpSessionId: String? = nil) -> Int { worlds[Self.key(cdpSessionId)]?.objects.count ?? 0 }
+}

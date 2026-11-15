@@ -14,12 +14,6 @@ test("the host's wait for a guest stop is 65 s at the default budget", () => {
   expect(HOST_WAIT_MS).toBe(65_000);
 });
 
-test("the app gives the daemon 5 s between SIGTERM and SIGKILL, far below the drain bound", () => {
-  const source = read("apple/Winter/Sources/App/DaemonSupervisor.swift");
-  expect(/static let gracefulExitTimeout: TimeInterval = 5\.0/.test(source)).toBe(true);
-  expect(5_000).toBeLessThan(HOST_WAIT_MS);
-});
-
 test("the launchd job states no ExitTimeOut (launchd's own default applies, 20 s), so it also ends the daemon before the drain bound", () => {
   const source = read("packages/cli/src/launchd.ts");
   expect(source.includes("ExitTimeOut")).toBe(false);
