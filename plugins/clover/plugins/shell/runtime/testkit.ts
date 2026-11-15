@@ -57,10 +57,12 @@ export function fakeApi(
     routines: { list: none("routines.list"), runs: none("routines.runs"), fire: none("routines.fire") },
     logs: { read: none("logs.read"), follow: () => () => undefined },
     turns: { take: none("turns.take"), done: none("turns.done"), extend: none("turns.extend"), state: none("turns.state"), watch: () => () => undefined },
+    streams: { open: none("streams.open"), accept: () => Object.assign(() => undefined, { opened: Promise.resolve() }), write: none("streams.write"), end: none("streams.end"), cancel: none("streams.cancel"), ack: none("streams.ack") },
     points: {
       entries: async <T,>(point: string) => (points[point] ?? []) as PointEntry<T>[],
       watch: () => () => undefined,
       call: none("point handlers"),
+      stream: none("point handlers' streams"),
     },
     host: { call: none("host half"), on: () => () => undefined },
     ui: { send: () => undefined },

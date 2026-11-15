@@ -59,6 +59,11 @@ export const LISTENER_ARGS = {
   // whose `Turn` the SDK's own `take` makes in both halves.
   "turns.take": { at: 2 },
   "turns.watch": { at: 1 },
+  // A stream's ends are watches (their events are the listener's; ending the watch ends the stream), whose Web streams
+  // the SDK's own `open`, `accept` and `points.stream` make in both halves.
+  "streams.open": { at: 2 },
+  "streams.accept": { at: 1 },
+  "points.stream": { at: 5 },
 } as const satisfies Partial<Record<ApiCallPath, ListenerArg>>;
 
 /** The members whose arguments include a function, by the API's own signatures. */
@@ -68,8 +73,11 @@ type ListenerPaths = { [P in ApiCallPath]: TakesListener<P> }[ApiCallPath];
 /** The members `PluginApi` types as absent (`NotYet`: `browser.watch` and `browser.onCdpEvent`, the person's panel's):
  *  their listener place is the table's word alone. */
 type Untyped = { [P in ApiCallPath]: unknown[] extends ApiCallArgs<P> ? P : never }[ApiCallPath];
+/** The members with an `unknown` argument (`points.stream`'s `args`): the argument types collapse to `unknown`, so no
+ *  function can be read among them, and the table's word is all there is. */
+type Open = { [P in ApiCallPath]: unknown extends ApiCallArgs<P>[number] ? P : never }[ApiCallPath];
 type Missing = Exclude<ListenerPaths, keyof typeof LISTENER_ARGS>;
-type Extra = Exclude<keyof typeof LISTENER_ARGS, ListenerPaths | Untyped>;
+type Extra = Exclude<keyof typeof LISTENER_ARGS, ListenerPaths | Untyped | Open>;
 const _listenersInStep: [Missing, Extra] extends [never, never] ? true : { missing: Missing; extra: Extra } = true;
 void _listenersInStep;
 

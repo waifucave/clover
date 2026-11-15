@@ -4425,6 +4425,27 @@
     },
     "turns.watch": {
       "where": "both"
+    },
+    "points.stream": {
+      "where": "both"
+    },
+    "streams.open": {
+      "where": "both"
+    },
+    "streams.accept": {
+      "where": "both"
+    },
+    "streams.write": {
+      "where": "both"
+    },
+    "streams.end": {
+      "where": "both"
+    },
+    "streams.cancel": {
+      "where": "both"
+    },
+    "streams.ack": {
+      "where": "both"
     }
   },
   "deviceTurns": [

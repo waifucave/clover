@@ -335,6 +335,12 @@ export interface PointsApi {
   /** Calls the handler an entry names in `field` (a field whose format is `handler`); `method` picks one handler of a
    *  handler object, and the call fails `not_installed` when the export has no such function. */
   call<R = unknown>(point: string, entry: { pluginId: string; entryId: string }, field: string, args?: unknown, opts?: CallOptions & { method?: string }): Promise<R>;
+  /** `call` for a handler that answers with a stream (§5.4 "Streams"): the handler returns bytes (a `Uint8Array`), an
+   *  async iterable of them or a `ReadableStream` of them, and the caller reads them as they come. Resolves with the
+   *  stream once the call is under way; a refusal (the same checks as `call`) rejects. A handler that fails, or returns
+   *  anything else, errors the stream with why. `timeoutMs` (default and most 10 minutes) bounds the whole stream;
+   *  `signal` aborted, or the stream cancelled, stops the handler's pump. */
+  stream(point: string, entry: { pluginId: string; entryId: string }, field: string, args?: unknown, opts?: CallOptions & { method?: string }, onEvent?: (event: StreamReadEvent) => void): Promise<ReadableStream<Uint8Array>>;
 }
 
 /** Commands (§5.4): another plugin's run only with `call:<plugin-id>`, which the OK lists. A call to a plugin that
@@ -874,6 +880,63 @@ export interface AudioApi {
 }
 
 // -------------------------------------------------------------------------------------------------
+// Streams (§5.4 "Streams"): a byte stream between a plugin's two halves, and a handler's answer as a stream
+// -------------------------------------------------------------------------------------------------
+
+/** What a stream's opener may say about it to its acceptor: plain JSON, at most 4 KiB serialized. */
+export type StreamMeta = Record<string, unknown>;
+
+export interface StreamOpenOptions {
+  /** Plain data the acceptor's `accept` callback is given with the stream. */
+  meta?: StreamMeta;
+  /** Aborted: a stream not yet accepted rejects, an open one is cancelled. */
+  signal?: AbortSignal;
+}
+
+/** What the writing end hears of its stream: the other half accepted it, or the stream was aborted (its reason). */
+export type StreamOpenEvent = { type: "open"; id: string } | { type: "aborted"; reason: string };
+
+/** What the reading end hears: a stream opened to it, its pieces in order, its end, or its abort (its reason). */
+export type StreamReadEvent =
+  | { type: "opened"; id: string; meta: StreamMeta }
+  | { type: "chunk"; id: string; data: Uint8Array }
+  | { type: "end"; id: string }
+  | { type: "aborted"; id: string; reason: string };
+
+/** `accept`'s answer: its `Unsubscribe` (stop accepting, abort the streams being read), and `opened`, which settles once
+ *  the daemon registered this half as an acceptor of the name (a half that opens at once waits for it) or rejects with
+ *  why it couldn't. */
+export type StreamsAcceptHandle = Unsubscribe & { readonly opened: Promise<void> };
+
+/** A byte stream between a plugin's own two halves (a host half and one of its components), in order, with
+ *  back-pressure, ended by either side or when either side goes; for media and files, where `ui.send`'s 64 KB messages
+ *  don't fit. No capability: a stream connects only one plugin's own halves (and, through `points.stream`, a caller to a
+ *  handler it may already call). `open` and `accept` are what to use; the rest are what they stand on.
+ *
+ *  A half `accept`s a name; the other half `open`s it (a component to its host half, a host half to one of its
+ *  components: the newest acceptor of the name there is picked, and none is a refusal naming why). The opener writes, the
+ *  acceptor reads. At most 8 streams open at once per plugin; a write waits while the reader hasn't consumed what it was
+ *  sent (the daemon buffers 256 KiB and has 192 KiB unacknowledged at most, in pieces of at most 32 KiB). */
+export interface StreamsApi {
+  /** Opens `name` to the other half. Resolves once an acceptor took it, with the writable end: `write` any number of
+   *  `Uint8Array`s (cut into pieces of at most 32 KiB, each awaited), `close()` ends it, `abort()` cancels it. A stream
+   *  aborted by the other side (cancelled, gone, its plugin stopped) errors the writable with why. */
+  open(name: string, options?: StreamOpenOptions, onEvent?: (event: StreamOpenEvent) => void): Promise<WritableStream<Uint8Array>>;
+  /** Accepts the streams other halves of this plugin open to `name`: `onStream` is given each one's readable end and its
+   *  `meta`. The readable acknowledges the bytes as they are read, so a slow reader slows the writer; `cancel()` cancels
+   *  the stream. The returned function stops accepting and aborts the streams still being read. */
+  accept(name: string, onStream: (stream: ReadableStream<Uint8Array>, meta: StreamMeta) => void): StreamsAcceptHandle;
+  /** What `open`'s writable stands on: one piece (at most 32 KiB) of stream `id`, resolving once the daemon has room. Only the writing end's half. */
+  write(id: string, bytes: Uint8Array): Promise<void>;
+  /** What `close()` stands on: no more pieces; the reader's stream ends once it has them all. */
+  end(id: string): Promise<void>;
+  /** What `abort()` and the reader's `cancel()` stand on: either end cancels, and the other is told `reason`. Ending an already ended stream is a no-op. */
+  cancel(id: string, reason?: string): Promise<void>;
+  /** What the readable stands on: the reading end says it consumed `bytes` of what it was sent. */
+  ack(id: string, bytes: number): Promise<void>;
+}
+
+// -------------------------------------------------------------------------------------------------
 // Turns (§5.4 "Turns"): a one-at-a-time queue the platform runs
 // -------------------------------------------------------------------------------------------------
 
@@ -1012,4 +1075,6 @@ export interface PluginApi {
   readonly desktop?: DesktopNotifications;
   /** One-at-a-time queues the platform runs (§5.4 "Turns"): its own turns, another plugin's it offers, the device's. */
   readonly turns: TurnsApi;
+  /** Byte streams between its own two halves (§5.4 "Streams"). */
+  readonly streams: StreamsApi;
 }

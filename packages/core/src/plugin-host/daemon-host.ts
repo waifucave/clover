@@ -33,6 +33,8 @@ import { guardApiRouter, hostProcessFor, isCrashStop, type ApiRouter, type Insta
 import { grantsInForce, RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../contracts/plugin-registry";
 import { TurnQueues } from "../turns/queue";
 import { turnsApi } from "../turns/api";
+import { StreamHub } from "../streams/hub";
+import { streamsApi } from "../streams/api";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
 import { AvatarService } from "./api/avatar";
@@ -502,8 +504,20 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const offTurnsHost = host.watch((s) => {
     if (s.state === "stopped" || s.state === "restarting" || s.state === "idle") turns.endPlugin(s.pluginId, `its host half is ${s.state}`, (side) => side !== "ui");
   });
+  // Streams (§5.4): the byte streams between a plugin's halves, one hub for every plugin. A plugin that stops loses its
+  // streams and its acceptors; a host half that stops or restarts loses those its process wrote or read.
+  const streams = new StreamHub({ log });
+  const offStreamsRegistry = o.registry.watch((c) => {
+    if (c.type === "removed") return streams.endPlugin(c.id, "its plugin was removed");
+    if (c.type !== "plugin") return;
+    const r = o.registry.get(c.id);
+    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) streams.endPlugin(c.id, `its plugin is ${r === undefined ? "gone" : r.enabled ? r.state : "off"}`);
+  });
+  const offStreamsHost = host.watch((s) => {
+    if (s.state === "stopped" || s.state === "restarting" || s.state === "idle") streams.endPlugin(s.pluginId, `its host half is ${s.state}`, (side) => side !== "ui");
+  });
   const handlers: ApiHandlers[] = [
-    pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
+    pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl, streams }),
     storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),
     settingsApi(settings),
     commandsApi(o.registry, host),
@@ -512,6 +526,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
+    streamsApi({ hub: streams }),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     ...(o.handlers ?? []),
     {
@@ -807,6 +822,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       offTurnsRegistry();
       offTurnsHost();
       turns.close();
+      offStreamsRegistry();
+      offStreamsHost();
+      streams.close();
       const running = o.registry.list().map((p) => p.id);
       await Promise.allSettled(running.map((id) => host.stop(id, "Clover is stopping")));
       for (const p of processes.values()) p.kill();

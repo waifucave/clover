@@ -96,6 +96,7 @@ import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from 
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { turnsClause } from "./turns-step";
+import { streamsClause } from "./streams-step";
 import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
@@ -2551,11 +2552,25 @@ async function main(): Promise<void> {
         daemonLog: () => readLog(join(logs, `daemon-${daemonRun}.log`)),
         fail,
       });
+      // Streams (§5.4): a host half streams megabytes to its own page and the page streams back; a second plugin's point
+      // handler answers with a stream (streams-step.ts).
+      const streamsDone = await streamsClause({
+        request: (method, params, timeoutMs) => c.request(method, params, timeoutMs),
+        install: async (folder, sid) => {
+          const r = await c.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+          if (r.id !== sid) fail(`${sid} installed as ${r.id}`);
+          await approve(c, await until(`${sid}'s OK card`, 30_000, async () => (await cards(c)).find((k) => (r.card !== undefined && k.id === r.card) || k.pluginId === sid)));
+          await until(`${sid} to run after its OK`, 60_000, async () => ((await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: sid }).catch(() => undefined))?.plugin?.state === "running" ? true : undefined));
+        },
+        srcDir: join(stateDir !== undefined ? userHome : root, "plugin-src"),
+        daemonLog: () => readLog(join(logs, `daemon-${daemonRun}.log`)),
+        fail,
+      });
       // Removed with its data (the user's choice): its data folder goes with it.
       await c.request("plugin.remove", { id, deleteData: true });
       await until(`${id} to be gone`, 30_000, async () => ((await c.request<{ plugin?: unknown }>("plugin.get", { id }).catch(() => ({ plugin: undefined }))).plugin === undefined ? true : undefined));
       if (existsSync(join(home, "plugin-data", id))) fail(`${id} was removed with deleteData, but its data folder is still there`);
-      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); ${pageSaid}; removed with deleteData, its data folder gone; ${turnsDone}` };
+      pointsOutcome = { status: "PASS", detail: `${id}: points.entries ${JSON.stringify(probe.entries)}, points.call "${String(probe.called)}"; store keys ${JSON.stringify(probe.keys)} then ${JSON.stringify(probe.keysAfter)}, watch heard ${heard.store.length}; settings.watch heard mood; points.watch heard the child switched off; its note and message reached Alpha's conversation and the message's turn was answered; its child's hooks noted all eight events (compaction by session.compact); ${pageSaid}; removed with deleteData, its data folder gone; ${turnsDone}; ${streamsDone}` };
     } catch (err) {
       pointsOutcome = { status: statusOf(err), detail: why(err) };
       // Its hooks would run on every later turn: it goes, whatever failed.

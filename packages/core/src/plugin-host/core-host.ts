@@ -253,6 +253,7 @@ export class CorePluginHost implements PluginHost {
             args: req.args, caller: req.caller, ...(req.session === undefined ? {} : { session: req.session }),
             timeoutMs: Math.min(limit, PLUGIN_CALL_MAX_TIMEOUT_MS), deadline: clock.now() + limit,
             ...(stream ? { stream: true } : {}), ...(input === undefined ? {} : { input: true }),
+            ...(req.streamId === undefined ? {} : { streamId: req.streamId }),
           });
           if (input !== undefined) void this.#feed(peer, callId, input, () => settled);
           const { result } = (await answer) as { result: unknown };

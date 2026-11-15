@@ -148,6 +148,9 @@ export interface PluginUiOptions {
 /** `plugin.layer.call`'s limits: its args serialized, and calls per plugin per second (a watch opened counts as one). */
 export const LAYER_CALL_MAX_BYTES = 64 * 1024;
 export const LAYER_CALLS_PER_SECOND = 20;
+/** A stream's flow calls (§5.4 "Streams") are not counted in that rate: the daemon's credit is their rate (a write waits
+ *  for room, one at a time per stream; an acknowledgement is for bytes already sent), and a piece is at most 32 KiB. */
+export const LAYER_UNRATED_CALLS: ReadonlySet<string> = new Set(["streams.write", "streams.ack"]);
 /** The members whose args carry bytes (a clip, a file), and how many serialized bytes they may take: under the app's
  *  own cap on a layer's call (`LAYER_CALL_MAX` in the app's layer-links.ts, 2,000,000 characters). */
 const BIG_ARGS: ReadonlySet<string> = new Set(["audio.play", "files.write"]);
@@ -430,7 +433,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
         if (ctx.caller.kind !== "plugin") throw new ContractError("refused", "only a plugin's UI layer calls its plugin this way");
         const pluginId = ctx.caller.pluginId;
         sized("plugin.layer.call", p.call, p.args);
-        rated(pluginId);
+        if (!LAYER_UNRATED_CALLS.has(p.call)) rated(pluginId);
         if (p.call === "settings.get" || p.call === "settings.set") return { result: await ownSettings(pluginId, p.call, p.args) };
         try {
           return { result: await componentCall(pluginId, p.call, p.args) };

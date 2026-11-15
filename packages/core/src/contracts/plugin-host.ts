@@ -163,6 +163,9 @@ export interface InvokeRequest {
   /** Tool calls, hooks, `confirm` and the keyed fetch keep their own limits (§5.4): `timeoutMs` is used as given. */
   ownLimit?: boolean;
   signal?: AbortSignal;
+  /** A points stream (`points.stream`): the handler's answer is bytes for this stream, which the host half pumps into it
+   *  through `streams.write` and `streams.end` instead of giving it back as the call's result. */
+  streamId?: string;
 }
 
 /** A streamed call: `invoke`'s request, with the handler's input stream when it takes one. */
