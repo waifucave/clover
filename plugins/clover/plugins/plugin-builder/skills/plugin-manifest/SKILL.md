@@ -138,8 +138,13 @@ Every entry above may also carry `declares` (below).
   `order`: position in a list spot (default 500);
 - `when`: `{ bot, surface, os, setting: { "<key>": <value> }, session }`: show only there or then;
 - `app: true` (in a plugin with a bot only): the entry is beside the bot, not in its tab. Without it a bot's entry
-  fills only what Bots offers on its own tab (inside the tab, its top bar `bar`, the `browser` and `agent` panels);
-  with it, the entry follows the app's rules, the OK card says so, and the user gets one switch for every such part;
+  fills only what Bots offers on its own tab (inside the tab, its top bar `bar`, the `browser` and `agent` panels, and
+  panels of its own); with it, the entry follows the app's rules, the OK card says so, and the user gets one switch
+  for every such part;
+- a `panel` entry whose `key` is not a stock panel's (`session`, `terminal`, `diff`, `files`, `browser`, `agent`)
+  adds a right-side panel of the plugin's own with a button of its own: `title` is required (the button's name),
+  `icon` is optional, the key is `[a-z][a-z0-9-]*` up to 32 characters, and `when.session` (`bot`, `agent`,
+  `coding`) names the tabs it is on (plugin-ui, "A panel of your own on the right"). A stock key replaces that panel;
 - the spot's own fields: plugin-catalog lists them (`title` and `icon` for `sidebar.app`, `opens` naming a `main`
   key, `title` for `settings.section`…);
 - `layout` (on `bot.tab` only), `window` (`{ type: "overlay" | "window", alwaysOnTop, transparent }` for a window spot).

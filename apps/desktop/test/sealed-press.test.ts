@@ -2,9 +2,15 @@
 // page is ready to take it, the card says to press again; the page says when it is ready (body[data-ready]); and the
 // press then answers. Both card pages: the island's button frame and the app's own fallback card. The page's script runs
 // here in happy-dom with an IntersectionObserver stub that reports the button whole and visible.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
+// The document is this file's own: left registered, the next file that registers one fails at its import ("Happy DOM has
+// already been globally registered": ui-api, voice-hooks, pill-bots and key-dialog on the systems whose file order runs
+// this one first).
+afterAll(async () => {
+  await GlobalRegistrator.unregister();
+});
 import { PRESS_AGAIN_TEXT, buttonPage, ownCardPage } from "../src/main/sealed-pages";
 
 function load(html: string, answers: string[]) {

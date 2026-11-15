@@ -66,8 +66,12 @@ beforeAll(async () => {
 });
 
 // Every test file shares one document: take the gallery out of it, so no other file finds it.
-afterAll(() => {
+afterAll(async () => {
   Date.now = realNow;
+  // Unmount the gallery's React tree (its effects, among them the document's Escape listener of every dialog story, are removed with it), then let
+  // React run the cleanups it schedules; removing the node alone leaves them live for the next file (window.test.tsx's Escape test saw one).
+  (globalThis as { __galleryUnmount?: () => void }).__galleryUnmount?.();
+  await new Promise((r) => setTimeout(r, 50));
   root?.remove();
   document.documentElement.removeAttribute("data-theme");
   rmSync(outdir, { recursive: true, force: true });

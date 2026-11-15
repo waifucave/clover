@@ -106,7 +106,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default"; grants?: Record<string, string[]>; records?: Record<string, { enabled: boolean; state: PluginState; granted: string[] }> } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number; now?: () => number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default"; grants?: Record<string, string[]>; records?: Record<string, { enabled: boolean; state: PluginState; granted: string[] }> } = {}) {
     // A plugin's record as the registry holds it (on and running unless a test says otherwise), read on every call.
     const records = opts.records ?? Object.fromEntries(Object.entries(opts.grants ?? {}).map(([id, granted]) => [id, { enabled: true, state: "running" as PluginState, granted }]));
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
@@ -569,6 +569,36 @@ describe("Clover connections (C-M1)", () => {
     for (let i = 0; i < 100 && b.killed.length === 0; i++) await Bun.sleep(10);
     expect(b.killed).toEqual([4242]); // the peer's pid, from the caller check
     hung.close(); // what the kill does
+    for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
+    expect(b.pair.status().safeMode).toBe(true);
+  });
+
+  test("the heartbeat after a sleep: the time the computer slept is not the app's silence; a real hang after the wake still ends it", async () => {
+    // The daemon's clock, which a sleep moves on while no timer runs.
+    let slept = 0;
+    const b = await boot({ heartbeat: { intervalMs: 20, timeoutMs: 150, now: () => Date.now() + slept } });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    await Bun.sleep(100);
+    const before = app.fromDaemon.filter((m) => m.method === "app.ping").length;
+    expect(before).toBeGreaterThan(1);
+    // A night's sleep: the next tick comes a minute "later", far past the timeout, with no ping sent in between.
+    slept += 60_000;
+    await Bun.sleep(200);
+    expect(b.killed).toEqual([]);
+    expect(b.pair.status().safeMode).toBe(false);
+    expect(app.fromDaemon.filter((m) => m.method === "app.ping").length).toBeGreaterThan(before); // pinged again after the wake
+    // And twice in a row (a Mac wakes every few minutes through a night).
+    slept += 60_000;
+    await Bun.sleep(100);
+    slept += 60_000;
+    await Bun.sleep(100);
+    expect(b.killed).toEqual([]);
+    // An app that really stops answering after the wake is still ended.
+    app.answerPings = false;
+    for (let i = 0; i < 100 && b.killed.length === 0; i++) await Bun.sleep(10);
+    expect(b.killed).toEqual([4242]);
+    app.close();
     for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
     expect(b.pair.status().safeMode).toBe(true);
   });

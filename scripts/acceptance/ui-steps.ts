@@ -1493,6 +1493,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     }, () => dumpFrames(cdp));
     await cdp.click(at.session, at.c.x, at.c.y);
   };
+  // A tab just switched to is held invisible while its parts draw (the shell's KeptTab: `data-held`, up to 1.2 s), and a
+  // press made in one of its frames meanwhile lands nowhere (try 14j's packaged run: Edit Alpha pressed, no editor in
+  // 30 s). A person can only press what they see: wait for the hold to lift before pressing anything in the tab.
+  const tabShown = async (what: string) => {
+    await until(`${what}: the tab shown (its hold lifted)`, 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window') && !document.querySelector('.cl-shell-kept[data-held]')").then((r) => (r?.value === true ? true : undefined), () => undefined), () => dumpFrames(cdp));
+  };
   const escape = async () => {
     const shell = await until("the shell's document", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window')"));
     for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, shell.session).catch(() => undefined);
@@ -1533,6 +1539,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await escape();
     // Route 1: Alpha in the sidebar, then the pencil in her header.
     await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+    await tabShown("Alpha's tab");
     await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
     const one = await editorDrawn("Alpha's Edit button");
     await clickIn("Back to the bot", "button", "Back to the bot");
@@ -1559,6 +1566,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     try {
       await escape();
       await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      await tabShown("Alpha's tab");
       await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
       await avatarSectionDrawn("Alpha's Edit button");
       await waitText("the bot editor's avatar row", "Choose avatar");

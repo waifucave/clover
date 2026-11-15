@@ -29,7 +29,9 @@ export function notDrawn(root: ParentNode): string[] {
 
 export function KeptTab({ shown, children, holdMaxMs = HOLD_MAX_MS }: { shown: boolean; children: ReactNode; holdMaxMs?: number }) {
   const box = useRef<HTMLDivElement>(null);
-  // Held from the moment it shows until it is ready (or the cap): checked at each frame.
+  // Held from the moment it shows until it is ready (or the cap): checked at each frame. The cap has a timer of its
+  // own: a window that gets no animation frames (hidden, covered, its display asleep) would otherwise keep the tab
+  // invisible for as long as the frames stay away, and nothing in it could be pressed.
   const [held, setHeld] = useState(shown);
   useLayoutEffect(() => {
     if (!shown) return setHeld(false);
@@ -38,11 +40,12 @@ export function KeptTab({ shown, children, holdMaxMs = HOLD_MAX_MS }: { shown: b
     if (notDrawn(el).length === 0) return setHeld(false);
     setHeld(true);
     const start = performance.now();
+    const cap = setTimeout(() => setHeld(false), holdMaxMs);
     let frame = requestAnimationFrame(function check() {
-      if (notDrawn(el).length === 0 || performance.now() - start >= holdMaxMs) return setHeld(false);
+      if (notDrawn(el).length === 0 || performance.now() - start >= holdMaxMs) { clearTimeout(cap); return setHeld(false); }
       frame = requestAnimationFrame(check);
     });
-    return () => cancelAnimationFrame(frame);
+    return () => { cancelAnimationFrame(frame); clearTimeout(cap); };
   }, [shown, holdMaxMs]);
   return (
     <div
