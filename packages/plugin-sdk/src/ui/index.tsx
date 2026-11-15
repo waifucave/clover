@@ -1305,7 +1305,7 @@ export function usePluginApi(): PluginApi {
       // The plugin's own bot's figure (`avatar.read`, `avatar.control`), through the core, which judges each cue; the stage's
       // own `report` (bundled `clover` tree only). The watch hears the core's `clover.avatar.changed` message for this plugin.
       avatar: {
-        cue: (cue: unknown) => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.cue", args: [cue] }).then((r) => r.result),
+        cue: (cue: unknown, opts?: unknown) => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.cue", args: opts === undefined ? [cue] : [cue, opts] }).then((r) => r.result),
         catalogue: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.catalogue", args: [] }).then((r) => r.result),
         box: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.box", args: [] }).then((r) => r.result),
         report: (bot: string, report: unknown) => call<unknown>("plugin.layer.call", { call: "avatar.report", args: [bot, report ?? null] }).then(() => undefined),

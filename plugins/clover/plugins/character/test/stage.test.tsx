@@ -1,6 +1,7 @@
 // The character plugin's stage: it asks the `avatar` spot, keyed by the avatar file's format, for the bot's file; a bot with
 // no avatar has nothing on its stage; a format nothing draws shows the portrait.
 import * as React from "react";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
 import type { UiEntry } from "../../shell/runtime/resolve";
@@ -9,6 +10,7 @@ import type { BotView, EntryComponent } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { SPOT_DECLS } from "../../shell/runtime/catalog";
 import { UiRuntimeProvider } from "../../shell/client/sdk";
+import { useAvatarSpeech } from "../client/sdk";
 import { BotStage } from "../client";
 import { readFraming } from "../client/stage";
 
@@ -49,11 +51,14 @@ describe("the character stage's figure calls", () => {
     const view = render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
     await act(() => settle(6));
     expect(reports.at(-1)).toEqual(["luna", { format: "vrm", renderer: "clover/vrm", capabilities: ["expressions", "lookat"] }]);
-    // The stage listens for the core's cue message for its own bot; one for another bot, or not a cue, is nothing.
-    expect(onCue).toHaveLength(1);
-    onCue[0]!({ bot: "luna", cue: { type: "expression", name: "happy" } });
-    onCue[0]!({ bot: "someone-else", cue: { type: "expression", name: "sad" } });
-    onCue[0]!({ bot: "luna", cue: { type: "dance" } });
+    // The stage listens for the core's cue message for its own bot, once for the renderer's cues and once for its speech
+    // (`useCueSpeech`); one for another bot, or not a cue, is nothing.
+    expect(onCue).toHaveLength(2);
+    for (const listen of onCue) {
+      listen({ bot: "luna", cue: { type: "expression", name: "happy" } });
+      listen({ bot: "someone-else", cue: { type: "expression", name: "sad" } });
+      listen({ bot: "luna", cue: { type: "dance" } });
+    }
     view.unmount();
     await act(() => settle(2));
     expect(reports.at(-1)).toEqual(["luna", undefined]);
@@ -92,6 +97,72 @@ describe("the character stage", () => {
     cleanup();
     await mount(luna, [renderer("vrm")]);
     expect(document.querySelector(".cl-bot-stage__chip")).toBeNull();
+  });
+});
+
+describe("the stage's mouth: speech from the avatar cue API", () => {
+  /** A stage whose renderer notes what the speech feed hands it, with the core's cue message under the test's hand. */
+  async function stageWithMouth() {
+    const heard: { at: number; frames: { t: number; rms: number; centroid: number }[]; clock: number }[] = [];
+    const speaking: boolean[] = [];
+    const onCue: ((v: unknown) => void)[] = [];
+    const api = fakeApi({
+      bots: { list: async () => [luna], get: async () => luna, watch: () => () => undefined },
+      points: { "avatar.formats": [{ pluginId: "clover/vrm", entryId: "vrm", value: { format: "vrm", capabilities: ["lipsync"] } }] },
+      avatar: { report: async () => undefined },
+    } as never);
+    (api as { host: object }).host = { ...(api.host as object), on: (event: string, l: (v: unknown) => void) => { if (event === "clover.avatar.cue") onCue.push(l); return () => undefined; } } as never;
+    const Mouth: EntryComponent = () => {
+      const { feed, speaking: now } = useAvatarSpeech();
+      React.useEffect(() => feed?.subscribe((frames) => heard.push({ at: Date.now(), frames: [...frames], clock: feed.now() })), [feed]);
+      React.useEffect(() => { speaking.push(now); }, [now]);
+      return <i data-mouth />;
+    };
+    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name], entries: [{ pluginId: "x/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "Draw" } as UiEntry], component: (_p, name) => (name === "Draw" ? Mouth : undefined) });
+    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+    // The core's message reaches every listener the stage holds, as it does in the app.
+    return { heard, speaking, send: (cue: unknown, bot = "luna") => { for (const l of onCue) l({ bot, cue }); } };
+  }
+  const sleep = (ms: number) => act(() => new Promise<void>((r) => setTimeout(r, ms)));
+
+  test("a speech cue's levels reach the renderer as the speech feed at their stamped times, and the stage says it is speaking from the first stamp to the last", async () => {
+    const m = await stageWithMouth();
+    const t0 = Date.now() + 400;
+    const frames = Array.from({ length: 10 }, (_, i) => ({ t: t0 + i * 20, rms: 0.4 + i / 100, centroid: 1200 }));
+    m.send({ type: "speech", frames });
+    await sleep(100);
+    expect(m.heard).toEqual([]); // sent 400 ms ahead: not yet due, so not yet handed over
+    expect(document.querySelector(".cl-bot-stage")!.getAttribute("data-speaking")).toBeNull();
+    await sleep(500);
+    const got = m.heard.flatMap((h) => h.frames);
+    expect(got).toHaveLength(10);
+    expect(got.map((f) => f.rms)).toEqual(frames.map((f) => f.rms));
+    // Every level was handed over before its stamp, on the feed's clock (seconds, the stamps' differences kept).
+    for (const h of m.heard) for (const f of h.frames) expect(f.t).toBeGreaterThanOrEqual(h.clock - 0.001);
+    expect(got[9]!.t - got[0]!.t).toBeCloseTo(0.18, 3);
+    expect(m.speaking).toEqual([false, true]);
+    await sleep(400);
+    expect(m.speaking).toEqual([false, true, false]);
+  });
+
+  test("a cue for another bot, a cut, and a malformed one change nothing; a cut ends the mouth", async () => {
+    const m = await stageWithMouth();
+    const t0 = Date.now() + 600;
+    m.send({ type: "speech", frames: [{ t: t0, rms: 0.5 }] }, "someone-else");
+    m.send({ type: "speech", frames: "nope" });
+    m.send({ type: "speech", frames: [{ t: t0, rms: 0.5 }, { t: t0 + 20, rms: 0.5 }] });
+    m.send({ type: "speech", frames: [], cut: true });
+    await sleep(900);
+    expect(m.heard).toEqual([]);
+    expect(m.speaking).toEqual([false]);
+  });
+
+  test("the stage no longer reads the app's player: its source takes speech from the cue API only", () => {
+    const source = readFileSync(new URL("../client/stage.tsx", import.meta.url), "utf8");
+    expect(source).not.toMatch(/useBotSpeech/);
+    expect(source).toMatch(/useCueSpeech/);
+    expect(source).toMatch(/"clover\.avatar\.cue"/);
   });
 });
 

@@ -68,6 +68,13 @@ export interface SpeechState {
   speaking: boolean;
 }
 
+/** What the player tells the speech cue path (`voice-cues.ts`): the frames of each piece it schedules, with its audio
+ *  clock at that moment (to stamp them in epoch milliseconds), and each utterance it stops or replaces (a cut). */
+export interface SpeechTap {
+  frames(bot: string, frames: readonly SpeechFrame[], clock: number): void;
+  cut(bot: string): void;
+}
+
 class Utterance {
   readonly sources = new Set<AudioSourceLike>();
   /** The pieces that came out of order, by seq. */
@@ -139,6 +146,7 @@ export class VoiceStage {
    *  its turn instead of cutting a reply). */
   private cutCount = 0;
   private ended: ((bot: string, utterance: string) => void) | undefined;
+  private tapped: SpeechTap | undefined;
   private readonly timeout: (fn: () => void, ms: number) => unknown;
   private readonly untimeout: (h: unknown) => void;
 
@@ -150,6 +158,12 @@ export class VoiceStage {
   /** The player's counts, for the acceptance run (test builds only show them). */
   counters(): { pieces: number; frames: number; speaking: string[]; overlap: number; cut: number } {
     return { pieces: this.pieces, frames: this.framesMade, speaking: [...this.states].filter(([, s]) => s).map(([b]) => b), overlap: this.overlapMost, cut: this.cutCount };
+  }
+
+  /** The speech cue path hears the frames the player makes and the utterances it cuts (the stage takes its mouth from the
+   *  avatar cue API, not from this player). One tap at a time; undefined removes it. */
+  tap(tap: SpeechTap | undefined): void {
+    this.tapped = tap;
   }
 
   /** Hears each utterance that ends here, once: played out, stopped, cut by a newer one of its bot, or dropped muted. */
@@ -304,6 +318,7 @@ export class VoiceStage {
     u.sources.clear();
     u.held.length = 0;
     this.feeds.get(bot)?.clear();
+    this.tapped?.cut(bot);
   }
 
   private schedule(bot: string, u: Utterance, p: VoicePiece): void {
@@ -340,6 +355,7 @@ export class VoiceStage {
     this.framesMade += frames.length;
     this.changed?.();
     (this.feeds.get(bot) ?? this.feedOf(bot) as BotFeed).push(frames);
+    this.tapped?.frames(bot, frames, ctx.currentTime);
     this.setSpeaking(bot, true);
   }
 

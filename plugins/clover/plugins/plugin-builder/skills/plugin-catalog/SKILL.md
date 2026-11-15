@@ -119,7 +119,8 @@ How to read it:
 | `usage.read` | Read usage rows and plan readings | sees your usage and plan readings |  |
 | `logs.read` | Read Clover's logs and every plugin's | reads Clover's logs and every plugin's logs |  |
 | `avatar.read` | Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change | sees your bot's figure |  |
-| `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do | moves your bot's figure |  |
+| `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says pl… | moves your bot's figure |  |
+| `avatar.control.all` | Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do | moves any of your bots' figures |  |
 | `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | reports your bots' figures | Clover's own plugins only |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
 | `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one… | hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices | a warning |
