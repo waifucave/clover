@@ -346,10 +346,10 @@ export const COMPUTERS_METHODS = {
   }),
 
   // Terminals (lane F's request; lane J's PTY): the user's own terminals in the panel. A layer needs `terminal`, which
-  // only the bundled `clover` tree holds (review T1; the SDK's `mayHoldCapability`), and whose OK says it runs commands
-  // on the user's computers. What a `write` carries is what lane E's runtime derived from trusted input events in the
+  // any plugin may ask for (the owner, 2026-11-15), and whose OK warns that it runs commands as the user outside
+  // Clover's sandbox. What a `write` carries is what lane E's runtime derived from trusted input events in the
   // terminal panel (a key press's bytes; a paste through the paste door, which brackets it and asks before one of more
-  // than one line): the daemon can't check that, which is why no other plugin may hold `terminal`.
+  // than one line) for the bundled panel; the daemon can't check that, which is why the card's line says it plainly.
   terminalOpen: defineMethod({
     name: "terminal.open", owner: "J", roles: ["app", "layer", "peer"], capability: "terminal",
     params: z.union([

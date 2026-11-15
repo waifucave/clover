@@ -33,6 +33,15 @@
           "WebSearch": "preload",
           "WebFetch": "preload"
         },
+        "webSearch": [
+          "WebSearch"
+        ],
+        "webFetch": [
+          "WebFetch"
+        ],
+        "needs": {
+          "WebFetch": "network:public"
+        },
         "instructions": "instructions.md"
       }
     }

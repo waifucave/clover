@@ -97,7 +97,7 @@ import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
 import { API_AREAS_STEP, apiProbePairs, apiProbeWrong } from "./api-areas-step";
 import { turnsClause } from "./turns-step";
 import { streamsClause } from "./streams-step";
-import { AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
+import { ASKS_ALL_PAGE, asksAllWrong, ONCE_CLOVERS_OWN, writeAsksAll, AGENTS_ONLY_REAL, AGENTS_ONLY_SHORT, BOT_COMMAND, BOT_PARTS_BOT, BOT_PARTS_CHECKBOX, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, CLAUDE_SKILL, oldSidebarTaken, OWN_BOT_ITEMS, OWN_BOT_MARK, ownBotWrong, writeOldSidebarTheme, writeRefusals, HELPER_REFUSAL, MANIFEST_FIELDS_STEP, NODE_REFUSAL, offerWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeReach, writeRefused } from "./manifest-fields-step";
 import { pluginOnce } from "./plugin-once";
 import { BROWSER_STEP, browserStep, type PanelLink, startBrowserFixture, type BrowserFixture } from "./browser-step";
 import { parseOnlyUi, UI_FIRST_ROW, uiRowNumbers } from "./steps";
@@ -122,6 +122,7 @@ import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
+import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -2288,6 +2289,47 @@ async function main(): Promise<void> {
             done.push(`§5.5 a plugin with a bot: its OK card says "${BOT_PARTS_LINES.join(" ")}" with the checkbox "${BOT_PARTS_CHECKBOX.label}"; JuniperStage (own-bot) offered to ${BOT_PARTS_BOT}, not to Alpha, JuniperNotes to both; its app parts (${after.parts?.app?.has.join(", ")}) switched off: still running, ${BOT_PARTS_BOT} offered JuniperStage and not JuniperNotes; a bot's entry on the sidebar refused ("${BOT_SIDEBAR_REFUSAL.slice(0, 60)}…")`);
           }
         }
+      }
+
+      // R1 (the owner, 2026-11-15: "Yes, all with a warning"): a folder plugin that asks for the six capabilities that were
+      // Clover's own gets its OK card with each one's warning line; OK'd, each is granted, and the calls they gate answer:
+      // a terminal opened (and closed) on this computer and a figure's report, as its component would make them (the
+      // app's own `plugin.layer.api`); an install from npm that lands found behind its own OK card; a public page read
+      // keyless through `network:public` by its host half.
+      {
+        const asks = await install({ from: "folder", path: writeAsksAll(src) });
+        const granted = (await c.request<{ plugin?: { capabilities?: string[] } }>("plugin.get", { id: asks.id })).plugin?.capabilities ?? [];
+        const layer = (call: string, args: unknown[]) => c.request<{ result: unknown }>("plugin.layer.api", { pluginId: asks.id, call, args }, 60_000).then((r) => r.result);
+        const asApp = target === "source";
+        const world = target === "source" || outsideWorld !== undefined;
+        let terminal: string | undefined;
+        let avatar: string | undefined;
+        let asked: string | undefined;
+        let fetched: string | undefined;
+        if (asApp) {
+          const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
+          terminal = await layer("terminal.open", [{ computer, cols: 80, rows: 24 }]).then(async (r) => {
+            const tid = (r as { terminalId?: unknown } | undefined)?.terminalId;
+            if (typeof tid !== "string") return `no terminal id (${JSON.stringify(r)?.slice(0, 120)})`;
+            await layer("terminal.close", [tid]).catch(() => undefined);
+            return `opened ${tid}`;
+          }, (err: unknown) => why(err));
+          avatar = await layer("avatar.report", [`${asks.id}-figure`, null]).then(() => "answered", (err: unknown) => why(err));
+        }
+        if (asApp && world) {
+          const npmName = "acceptance-asked-npm";
+          await publishNpm(pluginWorld, npmName, "1.0.0", { "clover.json": JSON.stringify({ manifest: 1, id: "acc-asked-npm", name: "Asked from npm", version: "1.0.0", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" } }, null, 2), "host/index.ts": "export const asked = true;\n" });
+          asked = await layer("plugins.install", [{ from: "npm", name: npmName }]).then((r) => {
+            const x = r as { id?: string; state?: string } | undefined;
+            if (typeof x?.id === "string") installed.push(x.id);
+            return `${x?.state ?? "no state"} ${x?.id ?? "no id"}`;
+          }, (err: unknown) => why(err));
+        }
+        if (world) fetched = await c.request<{ result: unknown }>("command.run", { name: `${asks.id}.fetch-public`, args: {} }, 60_000).then((r) => JSON.stringify(r.result), (err: unknown) => why(err));
+        const okLines = Object.fromEntries(ONCE_CLOVERS_OWN.map((cap) => [cap, CAPABILITIES.find((x) => x.name === cap)!.ok]));
+        const r1 = asksAllWrong({ card: asks.text, granted, okLines, ...(terminal === undefined ? {} : { terminal }), ...(avatar === undefined ? {} : { avatar }), ...(asked === undefined ? {} : { install: asked }), ...(fetched === undefined ? {} : { fetched }) });
+        if (r1.length > 0) wrong.push(`R1 ${r1.join("; ")}`);
+        else done.push(`R1 ${asks.id} asked for ${ONCE_CLOVERS_OWN.join(", ")}: its OK card carried each one's warning line and, OK'd, each was granted; ${asApp ? `terminal.open ${terminal} on this computer and closed, avatar.report answered (as its component, through plugin.layer.api)` : "its component's calls not made (a packaged core's CLI-role run can't make plugin.layer.api)"}; ${asked !== undefined ? `plugins.install from npm: ${asked} behind its own OK card` : "no npm install (no outside world or no app role)"}; ${fetched !== undefined ? `its host's net.fetch of ${ASKS_ALL_PAGE} answered keyless` : "no public page (no outside world)"}; browser.* stays served by id until F5, plugins.watch is events only`);
       }
 
       if (wrong.length > 0) fail(`${wrong.join(" | ")} (passed: ${done.map((d) => d.split(" ")[0]).join(", ") || "none"})`);

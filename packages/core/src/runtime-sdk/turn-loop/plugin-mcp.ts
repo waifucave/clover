@@ -303,13 +303,6 @@ function isLocal(entry: HostServerEntry): boolean {
   return entry.perComputer === true || entry.type === "stdio";
 }
 
-/** A bundled tool offered only while its plugin holds a capability: one that could only refuse without it isn't
- *  listed (the web plugin's WebFetch reads any public page through `network:public`; without it, it could reach only
- *  the plugin's own `network:` hosts). */
-export const BUNDLED_TOOL_NEEDS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  "clover/web": { WebFetch: "network:public" },
-};
-
 /** How long a bot's turn waits, at its start, for the first listing of a server just installed or enabled. */
 export const MCP_FIRST_LISTING_WAIT_MS = 5_000;
 
@@ -515,7 +508,9 @@ export class PluginMcp {
     });
     try {
       const r = await Promise.race([client.request("tools/list", {}, { timeoutMs }), timeout]);
-      const needs = BUNDLED_TOOL_NEEDS[c.pluginId];
+      // A tool offered only while its plugin holds a capability (its server's `needs`, any plugin's): one that could only
+      // refuse without it isn't listed (the web plugin's WebFetch reads any public page through `network:public`).
+      const needs = (c.value as { needs?: Readonly<Record<string, string>> }).needs;
       const granted = needs === undefined ? [] : (this.#o.registry.get(c.pluginId)?.granted ?? []);
       const tools = (isObject(r) && Array.isArray(r.tools) ? r.tools : []).filter((t): t is Record<string, unknown> => isObject(t) && typeof t.name === "string").filter((t) => {
         const need = needs?.[t.name as string];

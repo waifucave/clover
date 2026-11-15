@@ -161,7 +161,10 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   const readOnly = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.readOnly ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.readOnly)].sort() }));
   // The same for the display-only tools (`contained`), which run without a card too.
   const contained = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.contained ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.contained)].sort() }));
-  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}), ...(contained.length > 0 ? { contained } : {}) });
+  // The same for the web tools (`webSearch`, `webFetch`), which the approvals judge as a search or a page fetch.
+  const web = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.webSearch ?? []).length > 0 || (s.webFetch ?? []).length > 0)
+    .map(([name, s]) => ({ name, search: [...new Set(s.webSearch ?? [])].sort(), fetch: [...new Set(s.webFetch ?? [])].sort() }));
+  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}), ...(contained.length > 0 ? { contained } : {}), ...(web.length > 0 ? { web } : {}) });
 }
 
 function defaultsOf(m: Manifest | undefined): string {
@@ -448,10 +451,12 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   return "applies";
 }
 
-/** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON. */
+/** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON, with its web tools when it
+ *  has any (they run without a card too). */
 function readOnlyOf(fp: PluginFingerprint): string {
   try {
-    return canonicalJson((JSON.parse(fp.runs) as { readOnly?: unknown }).readOnly ?? null);
+    const r = JSON.parse(fp.runs) as { readOnly?: unknown; web?: unknown };
+    return canonicalJson(r.web === undefined ? r.readOnly ?? null : { readOnly: r.readOnly ?? null, web: r.web });
   } catch {
     return fp.runs;
   }

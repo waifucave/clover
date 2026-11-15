@@ -29,7 +29,7 @@ export function catalogReference(): string {
   for (const p of DATA_POINTS) out.push(`- \`${p.name}\` (${p.shape}, ${p.kind}, declared by ${p.declaredBy}): ${one(p.doc)}`);
   out.push("", "## Capabilities (`capabilities` in the manifest; each is a line on the OK card)", "");
   out.push("| capability | what it lets | the OK card says | |", "| :- | :- | :- | :- |");
-  for (const c of CAPABILITIES) out.push(`| \`${c.name}\` | ${one(c.lets, 180)} | ${c.ok} | ${c.bundledOnly ? "Clover's own plugins only" : c.warns ? "a warning" : ""} |`);
+  for (const c of CAPABILITIES) out.push(`| \`${c.name}\` | ${one(c.lets, 180)} | ${c.ok} | ${c.warns ? "a warning" : ""} |`);
   out.push("", "## The plugin API's calls (`api.<path>`), by capability", "");
   out.push("`where`: `host` a host half, `ui` a component, `both` either, `own` a host half in a process of its own (`host.process: \"own\"`), `clover` Clover's own process only.", "");
   const calls = Object.entries(API_CALLS as Record<string, ApiCallInfo>);

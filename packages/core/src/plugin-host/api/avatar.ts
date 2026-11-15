@@ -1,7 +1,7 @@
 // A bot plugin's figure (`avatar.cue`, `avatar.catalogue`, `avatar.box`, `avatar.watch`) and the stage's side of it
 // (`avatar.report`). The renderer lives in the app; the core is where the two meet, so the one rule set is here:
 //
-// * the stage (the bundled `clover` tree's character part, components only: `avatar.report`) tells the core which
+// * the stage (the plugin that holds `avatar.report`, the bundled character part or another; components only) tells the core which
 //   renderer drew a bot's figure, what its model has and where the figure stands. What it says is read through the SDK's
 //   `clean*` functions and capped; `undefined` says nothing is drawn.
 // * a bot plugin acts only for its own bot: the bot whose id is the plugin's top-level id (§6.1). A cue is judged here

@@ -540,7 +540,9 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   const seen = new SeenUrls();
   seen.input("s1", { from: "user", text: "https://given.example/a", device: "d", sentAt: 1, clientMessageId: "m" } as TurnInput);
   const bundled = (_: BotSessionContext, tool: string): BundledToolKind | undefined =>
-    tool === "mcp__web__WebSearch" ? "web-search" : tool === "mcp__web__WebFetch" ? "web-fetch" : tool === "mcp__builder__PluginNew" ? "read" : undefined;
+    tool === "mcp__web__WebSearch" ? "web-search" : tool === "mcp__web__WebFetch" ? "web-fetch" : undefined;
+  // The builder's PluginNew is its manifest's `readOnly`, held for the build's copy (the daemon's `pluginToolReadOnly`).
+  const readOnly = (_: BotSessionContext, tool: string) => tool === "mcp__builder__PluginNew";
   // Where a message goes: the bot's own agent, another bot's conversation on a computer at a wider level, one at the
   // same level, and nowhere (a session the tool refuses).
   const targets: Record<string, MessageTarget> = {
@@ -551,7 +553,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
   };
   const levels: Record<string, Level> = { Studio: "ask-risky", Laptop: "automatic" };
   const check = botApprovalCheck(recorder, {
-    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, seenUrl: (c, u) => seen.seen(c.sessionId, u),
+    hostTools: () => ["SendMessage", "ListAgents", "TaskStop", "Agent", "Glossary", "PluginValidate", "PluginStatus", "PluginInstall"], bundledTool: bundled, readOnlyTool: readOnly, seenUrl: (c, u) => seen.seen(c.sessionId, u),
     fetchBudget: (c, u) => seen.take(c.sessionId, u), messageTarget: (_c, to) => targets[to], levelOf: (c) => levels[c],
   });
   const call = async (tool: string, input: Record<string, unknown>) => {
@@ -591,7 +593,7 @@ describe("a bot's calls: what Clover knows beyond a tool's name", () => {
     expect((requests[0] as CloverApprovalRequest).cardAlways).toBe(true);
   });
 
-  test("a bundled read tool (the plugin builder's PluginNew) is a read; a same-named tool of another plugin is a tool", async () => {
+  test("a declared read-only tool (the plugin builder's PluginNew) is a read; a same-named tool of another plugin is a tool", async () => {
     expect(await call("mcp__builder__PluginNew", { template: "tool", id: "x", name: "X" })).toMatchObject({ effect: "read" });
     const other = await call("mcp__builder2__PluginNew", {});
     expect(other).toMatchObject({ effect: "other" });

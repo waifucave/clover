@@ -110,23 +110,23 @@ How to read it:
 | `approvals` | Hear which cards are pending, never their text, and place their sealed frames | restyles approval cards | a warning |
 | `files` | Read and write files through the folder tree, inside the fence | reads and writes files on your computers |  |
 | `project.write` | Let its hooks and stdio MCP servers change files in the session's project folders (never `.git/hooks`, `.git/config` or a credential file); without it, those folders are read-only… | changes files in your project folders | a warning |
-| `browser` | Drive the Clover Browser through its API | drives the Clover Browser | Clover's own plugins only |
-| `terminal` | Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only | runs commands on your computers | Clover's own plugins only |
+| `browser` | Drive the Clover Browser through its API | drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there | a warning |
+| `terminal` | Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only | runs commands in a terminal on your computers, as you, outside Clover's sandbox | a warning |
 | `shell.read` | Read where the window is: the tab showing, the sidebar's and panels' state, the sidebar's app buttons and how far the native window controls reach | sees which tab and panels are showing |  |
 | `shell.control` | Move the window's own parts when the user presses its controls: show a tab, a panel or the settings, fold the sidebar, open the bot's editor, drag the window; never a conversation… | lets its own buttons move around Clover's window |  |
-| `plugins.install` | Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK | installs plugins for you to OK | Clover's own plugins only |
-| `plugins.watch` | Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing | sees which plugins you have and whether they're on | Clover's own plugins only |
+| `plugins.install` | Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK | downloads other plugins from the indexes and npm onto your computer, each waiting for your OK on its own card | a warning |
+| `plugins.watch` | Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing | sees every plugin you have, whether it's on, and when you add or remove one | a warning |
 | `usage.read` | Read usage rows and plan readings | sees your usage and plan readings |  |
 | `logs.read` | Read Clover's logs and every plugin's | reads Clover's logs and every plugin's logs |  |
 | `avatar.read` | Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change | sees your bot's figure |  |
 | `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says pl… | moves your bot's figure |  |
 | `avatar.control.all` | Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do | moves any of your bots' figures |  |
-| `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | reports your bots' figures | Clover's own plugins only |
+| `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see | a warning |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
 | `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one… | hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices | a warning |
 | `voices.use` | Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back | can ask your voice providers to speak or transcribe, which may use your accounts with them | a warning |
 | `call:<plugin-id>` | Run that plugin's commands | runs commands of {plugin} |  |
-| `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards | Clover's own plugins only |
+| `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer | a warning |
 | `network:<host>` | Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host | connects to {host} |  |
 
 ## The plugin API's calls (`api.<path>`), by capability

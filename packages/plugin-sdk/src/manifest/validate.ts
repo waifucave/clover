@@ -11,7 +11,7 @@ import type { z } from "zod";
 import {
   BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, isPluginId, type ValidationIssue,
 } from "@waifucave/clover-protocol";
-import { CAPABILITIES, capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
+import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
@@ -71,6 +71,9 @@ export interface ManifestReport {
   readOnlyTools: { server: string; tools: string[]; network: boolean }[];
   /** Each server's tools it declares display-only (`contained`), which the OK names. */
   containedTools: { server: string; tools: string[]; network: boolean }[];
+  /** Each server's tools it declares as a web search (`webSearch`) or a page fetch (`webFetch`), which the OK names with a
+   *  warning (R1: no door checks a plugin's id). */
+  webTools: { server: string; search: string[]; fetch: string[] }[];
   /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
    *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
    *  to hide it (the controller's ruling on #377). */
@@ -325,7 +328,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], envSecrets: [], ownPrograms: false, hostPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], webTools: [], envSecrets: [], ownPrograms: false, hostPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -409,9 +412,6 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   capabilities.forEach((c, i) => {
     if (!isCapability(c)) f.error("plugin", "capability_unknown", ["capabilities", i], `"${c}" is not a capability (see the catalog)`);
     else if (capabilities.indexOf(c) !== i) f.warn("capability_duplicate", ["capabilities", i], `"${c}" is listed twice`);
-    else if (CAPABILITIES.find((x) => x.name === c)?.bundledOnly && topId !== BUNDLED_ROOT_PLUGIN) {
-      f.error("plugin", "capability_bundled_only", ["capabilities", i], `"${c}" is only for the plugins Clover ships`);
-    }
   });
 
   if (isObject(top.settings)) for (const [k, s] of Object.entries(top.settings)) if (isObject(s)) checkSetting(f, k, s);
@@ -601,6 +601,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
 
   const readOnlyTools: { server: string; tools: string[]; network: boolean }[] = [];
   const containedTools: { server: string; tools: string[]; network: boolean }[] = [];
+  const webTools: { server: string; search: string[]; fetch: string[] }[] = [];
   if (isObject(contributes.mcpServers)) {
     for (const [name, s] of Object.entries(contributes.mcpServers)) {
       if (Array.isArray(s.readOnly) && s.readOnly.length > 0) readOnlyTools.push({ server: name, tools: [...new Set(s.readOnly as string[])].sort(), network: serverReachesNetwork(s) });
@@ -608,6 +609,24 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
       // One tool, one class: a tool both lists name is neither.
       const both = Array.isArray(s.readOnly) && Array.isArray(s.contained) ? (s.contained as string[]).filter((t) => (s.readOnly as string[]).includes(t)) : [];
       if (both.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name, "contained"], `${[...new Set(both)].sort().join(", ")} can't be both read-only and display-only: list each tool in one of them`);
+      // The web lists (R1): how the approvals judge a call, named on the card. One tool, one class; a search needs a
+      // `network:` capability, a page fetch `network:public` (the core's fetch with its web floors).
+      const search = Array.isArray(s.webSearch) ? [...new Set(s.webSearch as string[])].sort() : [];
+      const fetch = Array.isArray(s.webFetch) ? [...new Set(s.webFetch as string[])].sort() : [];
+      if (search.length > 0 || fetch.length > 0) {
+        webTools.push({ server: name, search, fetch });
+        const lists = [s.readOnly, s.contained, s.webSearch, s.webFetch].map((l) => (Array.isArray(l) ? new Set(l as string[]) : new Set<string>()));
+        const twice = [...new Set([...search, ...fetch])].filter((t) => lists.filter((l) => l.has(t)).length > 1);
+        if (twice.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name], `${twice.join(", ")} can't be on two of readOnly, contained, webSearch and webFetch: list each tool in one of them`);
+        if (search.length > 0 && !capabilities.some((c) => c.startsWith("network:"))) f.error("plugin", "web_tool_no_network", ["contributes", "mcpServers", name, "webSearch"], `a web search tool needs a network: capability to reach its search service`);
+        if (fetch.length > 0 && !capabilities.includes("network:public")) f.error("plugin", "web_tool_no_network", ["contributes", "mcpServers", name, "webFetch"], `a page-fetch tool needs network:public, the core's fetch with its web safeguards`);
+      }
+      // A tool offered only while the plugin holds a capability: one it declares.
+      if (isObject(s.needs)) {
+        for (const [tool, cap] of Object.entries(s.needs)) {
+          if (typeof cap !== "string" || !capabilities.includes(cap)) f.error("plugin", "tool_needs_undeclared", ["contributes", "mcpServers", name, "needs", tool], `${tool} needs "${String(cap)}", which this plugin doesn't declare in its capabilities`);
+        }
+      }
     }
   }
   // A list the OK card can't show can't be OK'd: the lines naming both lists' tools fit in READ_ONLY_OK_MAX_LINES card
@@ -646,6 +665,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     fetchesCode,
     readOnlyTools,
     containedTools,
+    webTools,
     envSecrets,
     ownPrograms,
     hostPrograms,
@@ -1417,6 +1437,7 @@ export function describeOk(
   const treeNet = { capabilities: opts.treeCapabilities ?? report.capabilities, wrappedNetwork: opts.wrappedNetwork === true || opts.networkOpen === true, fenced: opts.sandboxed !== false };
   for (const r of report.readOnlyTools ?? []) lines.push(...readOnlyOkLines(r, readOnlyReachesNetwork(r, treeNet)));
   for (const r of report.containedTools ?? []) lines.push(...containedOkLines(r, containedToolsHold(r, treeNet)));
+  for (const w of report.webTools ?? []) lines.push(...webToolOkLines(w));
   if (report.envSecrets.length > 0) {
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
@@ -1474,7 +1495,7 @@ export function readOnlyReachesNetwork(
  *  - `logs.read`: every plugin's logs, other plugins' data;
  *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`).
  *  The two `avatar.*` capabilities stay allowed: the plugin's own bot's figure is its display (`avatar.report`, which
- *  tells the core what the stage drew, is bundled-only and not here). */
+ *  tells the core what the stage drew for every bot, is not here). */
 export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
   "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
   // The window's own parts (`shell.*`): display only, acts count only by the user's own press in a plugin's frame.
@@ -1513,6 +1534,16 @@ export function containedOkLines(r: { server: string; tools: readonly string[] }
     first = false;
   }
   lines.push(`${line}.`);
+  return lines;
+}
+
+/** The OK card's lines for a server's web tools (`webSearch`, `webFetch`), each a warning: what runs without asking at
+ *  the default level, and that what a bot searches or fetches goes through this plugin. */
+export function webToolOkLines(w: { server: string; search: readonly string[]; fetch: readonly string[] }): string[] {
+  const lines: string[] = [];
+  const names = (t: readonly string[]) => t.join(", ").slice(0, 300);
+  if (w.search.length > 0) lines.push(`Its server ${w.server} says ${names(w.search)} search${w.search.length === 1 ? "es" : ""} the web: at the default approval level a search runs without asking, and what a bot searches goes to this plugin.`);
+  if (w.fetch.length > 0) lines.push(`Its server ${w.server} says ${names(w.fetch)} read${w.fetch.length === 1 ? "s" : ""} web pages: at the default approval level a page whose link a bot already has is read without asking (a few a turn), any other page asks, site by site, and what is read goes through this plugin.`);
   return lines;
 }
 

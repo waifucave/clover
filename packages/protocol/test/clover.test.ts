@@ -188,7 +188,7 @@ describe("the allow lists", () => {
         expect(["layer.token", "plugin.dev.add", "card.answer", "card.list"]).not.toContain(name);
       }
     }
-    // A layer installs only with the bundled-only `plugins.install` (the plugin index browser), and what it installs
+    // A layer installs only with `plugins.install` (the plugin index browser's, or any plugin's OK'd with it), and what it installs
     // lands found with its sealed OK card (F-M2's review, S1); the plugin host never installs.
     expect(calls("plugin-host")).not.toContain("plugin.install");
     expect(CLOVER_METHODS.get("plugin.install")!.capability).toBe("plugins.install");

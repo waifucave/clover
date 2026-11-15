@@ -9,7 +9,6 @@ import {
   API_CALLS, BotSchema, CommandSchema, CORE_CONTRIBUTION_KEYS, HookSchema, ManifestSchema, McpServerSchema, ModelSchema, PointDeclSchema,
   SettingSchema, TOKENS, TriggerSchema, UiSchema, VoiceSchema, cssProperty, validateManifest, type ApiCallInfo,
 } from "@waifucave/clover-plugin-sdk";
-import { BUNDLED_READ_TOOLS } from "../../../../../packages/core/src/approvals/bot-check";
 import { mcpToolName } from "../../../../../packages/core/src/computers/mcp";
 import { pluginMcpServerKey } from "../../../../../packages/core/src/runtime-sdk/turn-loop/plugin-mcp";
 import { TOOLS } from "../src/tools";
@@ -110,12 +109,13 @@ describe("plugin pages: drops and cross-origin isolation", () => {
 });
 
 test("the scaffold tool's name, as a bot's session sees it, and it runs without a card", () => {
-  const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { contributes: { mcpServers: Record<string, { tools: Record<string, string> }> } };
+  const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { contributes: { mcpServers: Record<string, { tools: Record<string, string>; readOnly?: string[] }> } };
   const [server] = Object.keys(manifest.contributes.mcpServers);
   const key = pluginMcpServerKey("clover/plugin-builder", server!, true);
   expect(key).toBe("builder");
   for (const tool of TOOLS) expect(text(ENTRY)).toContain(`\`${mcpToolName(key!, tool.name)}\``);
-  expect([...BUNDLED_READ_TOOLS["clover/plugin-builder"]!]).toEqual(TOOLS.map((x) => x.name));
+  // Its own manifest says each only reads (R1: never a plugin id the core names), which the build's copy holds.
+  expect(manifest.contributes.mcpServers[server!]!.readOnly).toEqual(TOOLS.map((x) => x.name));
   expect(Object.keys(manifest.contributes.mcpServers[server!]!.tools)).toEqual(TOOLS.map((x) => x.name));
 });
 

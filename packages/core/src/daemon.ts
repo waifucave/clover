@@ -1,5 +1,5 @@
 import { ReadElements } from "./approvals/browser-words";
-import { pluginToolContained, pluginToolReadOnly } from "./registry/read-only-tools";
+import { pluginToolContained, pluginToolReadOnly, pluginWebTool } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { CLOVER_VOICE } from "./voices/slot";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
@@ -70,7 +70,7 @@ import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { botApprovalCheck, runsLaterPlace, type BundledToolKind } from "./approvals/bot-check";
-import { bundledToolKind } from "./approvals/bundled-tools";
+import { builtCopy, bundledToolKind } from "./approvals/bundled-tools";
 import { sendMessageTarget } from "./bots/tools";
 import type { BotSessionContext } from "./bots/service";
 import { answerKeyMethods, brokerCardOpener } from "./devices/rpc";
@@ -4299,13 +4299,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // tools its host serves itself (the core tools and Glossary, under their plain names) are never taken for the
         // built-ins they may be named after. With no broker (no node), such a call is refused, never run unasked. A
         // bot's `AskUserQuestion` is asked of the user around it (lane D's questions; `session.answer` answers it).
-        // The bundled web plugin's own tools, as the approvals know them (the controller's ruling on fetch): only the
-        // staged, digest-checked `clover/web`'s server, as this computer lists it. Any other plugin's tool of that name
-        // is judged as a tool.
-        // The same for the bundled tools that only read (`BUNDLED_READ_TOOLS`: the plugin builder's `PluginNew`).
-        const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => bundledToolKind({
-          servers: mcp.servers(ctx.kind, undefined, ctx.botId), record: (id) => registry.get(id), staged: bundledStaged,
-        }, tool);
+        // The tools whose class the approvals hold to: the bundled Browser tool (only the staged, digest-checked copy's
+        // server, as this computer lists it; F5 makes it a capability), and a plugin's declared web search and page
+        // fetch (`webSearch`, `webFetch`: the routed plugin, server and tool, on the tree the user OK'd or the build's
+        // copy, R1). Any other plugin's tool of those names is judged as a tool.
+        const built = builtCopy({ record: (id) => registry.get(id), staged: bundledStaged });
+        const bundledTool = (ctx: BotSessionContext, tool: string): BundledToolKind | undefined => {
+          const browser = bundledToolKind({ servers: mcp.servers(ctx.kind, undefined, ctx.botId), record: (id) => registry.get(id), staged: bundledStaged }, tool);
+          if (browser !== undefined) return browser;
+          const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
+          return routed === undefined ? undefined : pluginWebTool(registry, routed.plugin, routed.server, routed.tool, { built });
+        };
         // Stage 2: what `RequestAccess` granted each conversation's shell commands (a folder, hosts), and R1's class of a
         // folder on this computer, as the broker judges an edit's.
         const userHome = opts.parts?.userHome ?? homedir();
@@ -4377,10 +4381,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             return routed !== undefined && pluginToolContained(registry, routed.plugin, routed.server, routed.tool);
           },
           // A plugin's read-only tool (lane B's `pluginToolReadOnly`: `readOnly` on the tree the user OK'd, never a dev
-          // folder, a networked server or one with no plugin fence here): bound the same way, judged at each call, a read.
+          // folder, a networked server or one with no plugin fence here; or the build's copy's, such as the builder's
+          // PluginNew): bound the same way, judged at each call, a read.
           readOnlyTool: (ctx, tool) => {
             const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
-            return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool);
+            return routed !== undefined && pluginToolReadOnly(registry, routed.plugin, routed.server, routed.tool, { built });
           },
           // What the user set for this tool in Settings (Tools), read live from the connector store at each call.
           toolSetting: (_ctx, tool) => toolSettingFor(connectorPermissions, pluginMcp?.toolListing() ?? [], tool),

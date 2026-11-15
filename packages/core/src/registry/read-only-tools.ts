@@ -8,12 +8,38 @@
 // calls read-only at run time never is. The display-only ones (`contained`) hold to every one of those conditions, and
 // besides, the tree holds no capability beyond reading Clover's own state (`CONTAINED_TOOL_CAPABILITIES`); a hit is a
 // contained call (effect `other`), never a read. One tool is on one list at most.
+//
+// The build's own copy (R1, the owner's "no door checks a plugin's id", 2026-11-15): a plugin of the staged,
+// digest-checked bundled copy holds what its manifest declares as the user's OK would (`built`), with no card: the only
+// thing "bundled" means. So the builder's `readOnly` PluginNew and the web plugin's `webSearch`/`webFetch` hold from their
+// manifests, never from a plugin id the core names.
+//
+// The web tools (`webSearch`, `webFetch`): a call is judged as a web search or a page fetch, as Clover's own web plugin's
+// are. They hold for a top-level plugin on the tree the user OK'd (the card names them, with a warning), or for the
+// build's copy; never a dev folder.
 import { containedToolsHold, readOnlyReachesNetwork } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { pluginFenceAvailable } from "./plugin-fence";
 
-type DeclaredList = "readOnly" | "contained";
+type DeclaredList = "readOnly" | "contained" | "webSearch" | "webFetch";
+
+/** Whether a plugin is of the build's staged, digest-checked copy (the daemon's `stagedManifest` check on the record's
+ *  folder, its source `bundled`): its manifest's claims hold as an OK's would. Absent: none is. */
+export type BuiltCopy = (pluginId: string) => boolean;
+
+/** A tool of a plugin of the build's copy on `list` of its server (any plugin of the copy, a child too): the build
+ *  granted it, with no card and no network condition. */
+function builtTool(registry: Pick<PluginRegistry, "get">, pluginId: string, server: string, tool: string, list: DeclaredList, built: BuiltCopy | undefined): boolean {
+  if (built === undefined || !built(pluginId)) return false;
+  const r = registry.get(pluginId);
+  if (r === undefined || r.dev || r.state !== "running") return false;
+  const s = (r.manifest?.contributes as { mcpServers?: Record<string, Partial<Record<DeclaredList, readonly string[]>>> } | undefined)?.mcpServers?.[server];
+  const names = s?.[list];
+  if (!Array.isArray(names) || !names.includes(tool)) return false;
+  // One tool, one class.
+  return (["readOnly", "contained", "webSearch", "webFetch"] as const).filter((l) => l !== list && Array.isArray(s?.[l]) && s![l]!.includes(tool)).length === 0;
+}
 
 /** The conditions both lists share (one place to get them wrong): a running top-level plugin (a child's list isn't on
  *  its tree's card), not a dev folder, its tree now the one OK'd, and `tool` on that server's `list` there. The server
@@ -23,12 +49,11 @@ function declaredTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: 
   if (topPluginIdOf(pluginId) !== pluginId) return undefined;
   const r = registry.get(pluginId);
   if (r === undefined || r.dev || r.state !== "running" || r.okHash === undefined || r.okHash !== r.treeHash) return undefined;
-  const s = (r.manifest?.contributes as { mcpServers?: Record<string, { type?: unknown; url?: unknown; readOnly?: readonly string[]; contained?: readonly string[] }> } | undefined)?.mcpServers?.[server];
+  const s = (r.manifest?.contributes as { mcpServers?: Record<string, { type?: unknown; url?: unknown } & Partial<Record<DeclaredList, readonly string[]>>> } | undefined)?.mcpServers?.[server];
   const names = s?.[list];
   if (s === undefined || !Array.isArray(names) || !names.includes(tool)) return undefined;
-  // One tool, one class (the validator refuses a tool on both lists): a tool both name is neither.
-  const other = s[list === "readOnly" ? "contained" : "readOnly"];
-  if (Array.isArray(other) && other.includes(tool)) return undefined;
+  // One tool, one class (the validator refuses a tool on two lists): a tool two name is none.
+  if ((["readOnly", "contained", "webSearch", "webFetch"] as const).some((l) => l !== list && Array.isArray(s[l]) && s[l]!.includes(tool))) return undefined;
   const tree = registry.list().filter((x) => topPluginIdOf(x.id) === pluginId);
   const capabilities = tree.flatMap((x) => [...x.capabilities, ...(Array.isArray(x.manifest?.capabilities) ? (x.manifest.capabilities as string[]) : [])]);
   return { server: s, capabilities, wrappedNetwork: r.provenance.wrapped?.network !== undefined };
@@ -44,7 +69,8 @@ function declaredTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: 
  *   standing over the plugin changes it at any moment).
  * - A hit is effect `read` under the computer's approval level, nothing more: a level that asks for reads still asks.
  */
-export function pluginToolReadOnly(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { fenced?: boolean } = {}): boolean {
+export function pluginToolReadOnly(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { fenced?: boolean; built?: BuiltCopy } = {}): boolean {
+  if (builtTool(registry, pluginId, server, tool, "readOnly", o.built)) return true;
   const d = declaredTool(registry, pluginId, server, tool, "readOnly");
   return d !== undefined && !readOnlyReachesNetwork(d.server, { capabilities: d.capabilities, wrappedNetwork: d.wrappedNetwork, fenced: o.fenced ?? pluginFenceAvailable() });
 }
@@ -76,4 +102,21 @@ export function pluginToolReadOnly(registry: Pick<PluginRegistry, "get" | "list"
 export function pluginToolContained(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { fenced?: boolean } = {}): boolean {
   const d = declaredTool(registry, pluginId, server, tool, "contained");
   return d !== undefined && containedToolsHold(d.server, { capabilities: d.capabilities, wrappedNetwork: d.wrappedNetwork, fenced: o.fenced ?? pluginFenceAvailable() });
+}
+
+/**
+ * How the approvals judge a call to `tool` on `server` of `pluginId` that its manifest declares a web tool: `web-search`
+ * (`webSearch`: effect `search`) or `web-fetch` (`webFetch`: a page fetch of `input.url`, contained when the session
+ * already saw the address and the turn's budget holds, its "Always allow" kept for the site). Undefined for any other.
+ *
+ * It holds for a running top-level plugin on the tree the user OK'd, whose card named the tool with its warning
+ * (`webToolOkLines`), never a dev folder; or for a plugin of the build's copy (`built`). The caller holds to what
+ * `pluginToolReadOnly` asks: the routed plugin, server and tool, decided at each call, never cached.
+ */
+export function pluginWebTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { built?: BuiltCopy } = {}): "web-search" | "web-fetch" | undefined {
+  for (const [list, kind] of [["webSearch", "web-search"], ["webFetch", "web-fetch"]] as const) {
+    if (builtTool(registry, pluginId, server, tool, list, o.built)) return kind;
+    if (declaredTool(registry, pluginId, server, tool, list) !== undefined) return kind;
+  }
+  return undefined;
 }
