@@ -71,8 +71,8 @@ const PKGS = ["cli", "core", "protocol", "plugin-sdk"];
 /** M-M0: other stamped package.jsons, by repo path — the desktop app, whose version electron-builder reads. */
 const OTHER_PKG_DIRS = ["apps/desktop"];
 
-/** The generated Info.plists (in apple/Winter/Support) that carry CLOVER's version: the app's and Winter Headless's. */
-export const CLOVER_INFO_PLISTS = ["Info.plist", "WinterHeadless-Info.plist"] as const;
+/** The generated Info.plists (in apple/Winter/Support) that carry CLOVER's version: Winter Headless's (the old Mac app's left the repo). */
+export const CLOVER_INFO_PLISTS = ["WinterHeadless-Info.plist"] as const;
 
 /** Stamp the canonical version into every source. Returns the files written. */
 export function stampAll(v: string): string[] {

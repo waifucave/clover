@@ -49,16 +49,6 @@ export const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
   "odt", "ods", "odp", "docx", "xlsx", "pptx", "xls", "doc", "ppt",
 ]);
 
-/** The app-test files that read the binary Office fixtures (P9b-29); the only files the fixture-content entry covers. */
-const FILES_OFFICE_FIXTURE_TESTS = [
-  "apple/Winter/Tests/WinterAppTests/OfficeDocsCommandTests.swift",
-  "apple/Winter/Tests/WinterAppTests/OfficeSheetsCommandTests.swift",
-  "apple/Winter/Tests/WinterAppTests/OfficeSlidesCommandTests.swift",
-  "apple/Winter/Tests/WinterAppTests/OfficeHelperLiveTests.swift",
-  "apple/Winter/Tests/WinterAppTests/OfficeRuntimeLiveTests.swift",
-  "apple/Winter/Tests/WinterAppTests/OfficePlaceAtomicallyTests.swift",
-];
-
 export const RENAME_ALLOWLIST: readonly AllowlistEntry[] = [
   {
     id: "gh-repo",
@@ -158,20 +148,9 @@ export const RENAME_ALLOWLIST: readonly AllowlistEntry[] = [
     why: "the dev-guide trap naming the stale `norma-dev` wrapper/env names, and the hard rule naming the live Norma install until 9c (P9b-13; whole-branch review)",
   },
   {
-    id: "office-fixture-content",
-    // Test DATA, not a product surface (P9b-29): the Office fixtures under Tests/…/Fixtures/office are
-    // binary documents whose paragraphs/slide titles say NORMA GATE / NORMA PAGE TWO / Norma T6 Slide
-    // One|Two|Three; the tests that read, type into, save and re-open them assert those bytes (and a
-    // case-insensitive `find: "norma"` against them). The expectations mirror the fixtures verbatim.
-    regex: /NORMA(?![A-Za-z])( INC)*( GATE(WAY)?| PAGE TWO)?|Norma T6 Slide|"norma"/g, // bare NORMA + "NORMA INC…" = the replace drill's find/replaceWith/asserted results
-    // Scoped to the files that read the fixtures (whole-branch review): a leak elsewhere in the app tests still fails.
-    files: FILES_OFFICE_FIXTURE_TESTS,
-    why: "expectations that mirror binary Office fixture content byte-for-byte (P9b-29)",
-  },
-  {
     id: "legacy-names",
     regex: /norma|Norma|NORMA/g,
-    files: ["packages/core/src/legacy-names.ts", "apple/Winter/Sources/App/LegacyNames.swift"],
+    files: ["packages/core/src/legacy-names.ts"],
     why: "P9b-6 — the one module per language that spells the OLD names for 9c's migrator and the two legacy launchd/wrapper teardowns",
   },
   {

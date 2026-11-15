@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { CLOVER_TEAM_ID } from "../../../src/auth/app-token-acl";
 import { BROWSER_HOST_IDENTIFIER, EXTENSION_IDS, extensionIdFromKey, NATIVE_HOST_NAME } from "../../../src/computer-use/browser/extension/extension-ids";
 import { BROWSER_FAMILIES } from "../../../src/computer-use/browser/families";
-import { NATIVE_MESSAGING_BROWSER_DIRS } from "../../../src/computer-use/browser/extension/manifest";
 import { BROWSER_HOST_PROTOCOL, EXTENSION_FEATURES, EXTENSION_PROTOCOL } from "../../../src/computer-use/browser/extension/protocol";
 
 const REPO = join(import.meta.dir, "..", "..", "..", "..", "..");
@@ -54,10 +53,8 @@ describe("the extension ids", () => {
     expect(swiftStrings(hostSwift("ExtensionIds.swift"), "dev")).toEqual([derived]);
   });
 
-  test("dist: the store ids, the same in the daemon, the host and Clover.app's manifest writer, and never the dev id", () => {
-    const app = read("apple", "Winter", "Sources", "BrowserExtension", "BrowserHostManifest.swift");
+  test("dist: the store ids, the same in the daemon and the host, and never the dev id", () => {
     expect(swiftStrings(hostSwift("ExtensionIds.swift"), "dist")).toEqual([...EXTENSION_IDS.dist]);
-    expect(swiftStrings(app, "storeExtensionIds")).toEqual([...EXTENSION_IDS.dist]);
     for (const id of [...EXTENSION_IDS.dist, ...EXTENSION_IDS.dev]) expect(id).toMatch(/^[a-p]{32}$/);
     expect(EXTENSION_IDS.dist.length).toBeGreaterThan(0);
     expect(new Set(EXTENSION_IDS.dist).size).toBe(EXTENSION_IDS.dist.length);
@@ -72,13 +69,12 @@ describe("the extension ids", () => {
 });
 
 describe("names and identities", () => {
-  test("the native-host names: daemon, host, extension builds and Clover.app's writer", async () => {
+  test("the native-host names: daemon, host and extension builds", async () => {
     const identity = hostSwift("HostIdentity.swift");
     const ext = await import(join(REPO, ...EXT, "src", "manifest.ts")) as { HOST_NAME: { dev: string; store: string; edge: string } };
     expect(swiftString(identity, "distNativeHostName")).toBe(NATIVE_HOST_NAME.dist);
     expect(swiftString(identity, "devNativeHostName")).toBe(NATIVE_HOST_NAME.dev);
     expect(ext.HOST_NAME).toEqual({ store: NATIVE_HOST_NAME.dist, edge: NATIVE_HOST_NAME.dist, dev: NATIVE_HOST_NAME.dev });
-    expect(swiftString(read("apple", "Winter", "Sources", "BrowserExtension", "BrowserHostManifest.swift"), "hostName")).toBe(NATIVE_HOST_NAME.dist);
   });
 
   test("the host's codesign identities and the daemon identities it accepts", async () => {
@@ -92,11 +88,6 @@ describe("names and identities", () => {
     expect(swiftString(identity, "distDaemonIdentifier")).toBe(lib.DAEMON_IDENTIFIER.dist);
     expect(swiftString(identity, "devDaemonIdentifier")).toBe(lib.DAEMON_IDENTIFIER.dev);
     expect(swiftString(identity, "teamID")).toBe(CLOVER_TEAM_ID);
-  });
-
-  test("the browsers' manifest directories: the daemon-side writer and Clover.app's", () => {
-    const app = read("apple", "Winter", "Sources", "BrowserExtension", "BrowserHostManifest.swift");
-    expect(swiftStrings(app, "browserDirectories")).toEqual([...NATIVE_MESSAGING_BROWSER_DIRS]);
   });
 
   test("PROTOCOL.md names every browser family's bundle ids", () => {

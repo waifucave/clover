@@ -304,7 +304,7 @@ describe("script and probe daemons are usage-inert", () => {
     const stale = Object.keys(NO_DAEMON_OF_ITS_OWN).filter((rel) => !named.has(rel) || CARRIES_INERT.test(codeOf(join(REPO, rel))));
     expect(stale).toEqual([]);
     // The daemons the switch is for are among the subjects.
-    for (const rel of ["scripts/check-idle-wakeups.ts", "scripts/cu-live/run.ts", "scripts/cu-live/daemon-entry.ts", "scripts/office-agent-gate.ts",
+    for (const rel of ["scripts/check-idle-wakeups.ts", "scripts/cu-live/run.ts", "scripts/cu-live/daemon-entry.ts",
       "scripts/verify-embedded-compiled.ts", "scripts/verify-runtime-state-compiled.ts", "scripts/browser-e2e/extension/run.ts"]) {
       expect(named.has(rel)).toBe(true);
     }
@@ -335,6 +335,6 @@ describe("script and probe daemons are usage-inert", () => {
     expect(missing).toEqual([]);
     // Not looking at nothing: the probes, cu-live, the browser e2e and the idle gate; and the gates' daemon spawns.
     expect(calls).toBeGreaterThanOrEqual(5);
-    expect(spawns).toBeGreaterThanOrEqual(5);
+    expect(spawns).toBeGreaterThanOrEqual(4);
   });
 });

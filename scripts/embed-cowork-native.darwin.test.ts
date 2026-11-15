@@ -305,19 +305,18 @@ describe("the pair is wired only where S7B says, and agrees with the Swift launc
     expect(statSync(SCRIPT).mode & 0o111).not.toBe(0);
   });
 
-  test("only the app project, the release gate and the daemon's host-env refer to the pair; the daemon has no other reference and the feature stays off", () => {
+  test("only the release gate and the daemon's host-env refer to the pair; the daemon has no other reference and the feature stays off", () => {
     const needles = ["embed-cowork-native", "cowork-native-lib", "winter-cowork-launcher", "winter-cowork-worker", "WinterCoworkLauncher"];
     const files = [
-      join("apple", "Winter", "project.yml"), join("scripts", "release.ts"), join("scripts", "release-lib.ts"), join("package.json"),
+      join("scripts", "release.ts"), join("scripts", "release-lib.ts"), join("package.json"),
       ...walk(join(REPO, "packages", "core", "src")).map((p) => p.slice(REPO.length + 1)),
       ...walk(join(REPO, "packages", "cli", "src")).map((p) => p.slice(REPO.length + 1)),
     ];
     const hits = files.filter((file) => existsSync(join(REPO, file)) && needles.some((needle) => read(file).includes(needle)));
     expect(hits.sort()).toEqual([
-      join("apple", "Winter", "project.yml"), join("packages", "core", "src", "cowork", "host-env", "environment.ts"), join("packages", "core", "src", "cowork", "host-env", "launcher-port.ts"), join("scripts", "release.ts"),
+      join("packages", "core", "src", "cowork", "host-env", "environment.ts"), join("packages", "core", "src", "cowork", "host-env", "launcher-port.ts"), join("scripts", "release.ts"),
     ]);
-    // The phase runs the script, and the release gate runs the same checks the verify gate does.
-    expect(read("apple", "Winter", "project.yml")).toContain('"${SRCROOT}/../../scripts/embed-cowork-native.sh"');
+    // The release gate runs the same checks the verify gate does (the old app's project phase that ran the script left the repo).
     const release = read("scripts", "release.ts");
     for (const call of ["checkCoworkNativeBundle(readCoworkBundleFacts(", "checkSignedNative(role, TEAM_ID,", "buildCoworkNative({ out: join(ROOT", "coworkNativeReleasePlan(process.env)", "if (nativePlan.mode === \"refuse\") fail(nativePlan.message)", "checkCoworkNativeOmitted({", "if (omitted.length > 0) fail(`the release omits the Cowork native pair but the bundle carries it", "nativePlan.mode === \"omit\""]) expect(release).toContain(call);
     // Every other script that runs a Release xcodebuild says what it does about the pair (the sparkle feed rig omits it explicitly).
