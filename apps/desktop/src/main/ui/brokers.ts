@@ -317,7 +317,10 @@ export class SendGate {
   take(windowId: number): boolean {
     const at = this.lastInput.get(windowId);
     this.lastInput.delete(windowId);
-    return at !== undefined && this.now() - at <= SEND_INPUT_WINDOW_MS;
+    const ok = at !== undefined && this.now() - at <= SEND_INPUT_WINDOW_MS;
+    // A press that already sent (a key's send comes on its key down) is spent: its release gives no second send after a hold.
+    if (ok) this.pressed.delete(windowId);
+    return ok;
   }
 
   forget(windowId: number): void {

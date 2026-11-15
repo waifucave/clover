@@ -385,6 +385,20 @@ describe("a send after a hold (hold-to-talk): the release the main process saw g
     expect(bg.takeRelease(9, "20:1")).toBe(false);
   });
 
+  test("a press that already sent (a key's send on its key down) gives no allowance on its release", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    g.press(1, A);
+    expect(g.take(1)).toBe(true);
+    g.release(1, A);
+    expect(g.takeRelease(1, A)).toBe(false);
+    // A click sends after its release: the release's allowance is the send's, and nothing is left over.
+    g.press(1);
+    g.release(1, A);
+    expect(g.takeRelease(1, A)).toBe(true);
+    expect(g.takeRelease(1, A)).toBe(false);
+  });
+
   test("the one-second rule stays for a send with no release behind it", () => {
     const now = { t: 0 };
     const g = new SendGate(() => now.t);
