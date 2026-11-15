@@ -22,10 +22,10 @@
 // the build's copy's included (`treeRunsOutside`): every tool of it asks as any tool does.
 import { containedToolsHold, readOnlyReachesNetwork } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
-import type { PluginRegistry } from "../contracts/plugin-registry";
+import { grantsInForce, type PluginRegistry } from "../contracts/plugin-registry";
 import { pluginFenceAvailable } from "./plugin-fence";
 
-type DeclaredList = "readOnly" | "contained" | "webSearch" | "webFetch";
+type DeclaredList = "readOnly" | "contained" | "webSearch" | "webFetch" | "browserTools";
 
 /** Whether a plugin is of the build's staged, digest-checked copy (the daemon's `stagedManifest` check on the record's
  *  folder, its source `bundled`): its manifest's claims hold as an OK's would. Absent: none is. */
@@ -54,7 +54,7 @@ function builtTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: str
   const names = s?.[list];
   if (!Array.isArray(names) || !names.includes(tool)) return false;
   // One tool, one class.
-  return (["readOnly", "contained", "webSearch", "webFetch"] as const).filter((l) => l !== list && Array.isArray(s?.[l]) && s![l]!.includes(tool)).length === 0;
+  return (["readOnly", "contained", "webSearch", "webFetch", "browserTools"] as const).filter((l) => l !== list && Array.isArray(s?.[l]) && s![l]!.includes(tool)).length === 0;
 }
 
 /** The conditions both lists share (one place to get them wrong): a running top-level plugin (a child's list isn't on
@@ -71,7 +71,7 @@ function declaredTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: 
   const names = s?.[list];
   if (s === undefined || !Array.isArray(names) || !names.includes(tool)) return undefined;
   // One tool, one class (the validator refuses a tool on two lists): a tool two name is none.
-  if ((["readOnly", "contained", "webSearch", "webFetch"] as const).some((l) => l !== list && Array.isArray(s[l]) && s[l]!.includes(tool))) return undefined;
+  if ((["readOnly", "contained", "webSearch", "webFetch", "browserTools"] as const).some((l) => l !== list && Array.isArray(s[l]) && s[l]!.includes(tool))) return undefined;
   const tree = registry.list().filter((x) => topPluginIdOf(x.id) === pluginId);
   const capabilities = tree.flatMap((x) => [...x.capabilities, ...(Array.isArray(x.manifest?.capabilities) ? (x.manifest.capabilities as string[]) : [])]);
   return { server: s, capabilities, wrappedNetwork: r.provenance.wrapped?.network !== undefined };
@@ -131,8 +131,10 @@ export function pluginToolContained(registry: Pick<PluginRegistry, "get" | "list
  * (`webToolOkLines`), never a dev folder; or for a plugin of the build's copy (`built`). The caller holds to what
  * `pluginToolReadOnly` asks: the routed plugin, server and tool, decided at each call, never cached.
  */
-export function pluginWebTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { built?: BuiltCopy } = {}): "web-search" | "web-fetch" | undefined {
-  for (const [list, kind] of [["webSearch", "web-search"], ["webFetch", "web-fetch"]] as const) {
+export function pluginWebTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, o: { built?: BuiltCopy } = {}): "web-search" | "web-fetch" | "browser" | undefined {
+  for (const [list, kind] of [["webSearch", "web-search"], ["webFetch", "web-fetch"], ["browserTools", "browser"]] as const) {
+    // A Browser tool (F5) only while its plugin holds `browser` now: the class is the browser's, so is the grant.
+    if (list === "browserTools" && !grantsInForce(registry.get(pluginId)).includes("browser")) continue;
     if (builtTool(registry, pluginId, server, tool, list, o.built)) return kind;
     if (declaredTool(registry, pluginId, server, tool, list) !== undefined) return kind;
   }

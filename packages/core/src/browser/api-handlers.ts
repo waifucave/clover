@@ -1,6 +1,14 @@
-// The plugin API's `browser.*` for the bundled `clover` tree's Browser tool (spec §12.1, ruling R7): the session whose
-// tool call the tool is serving drives the Clover Browser, under the browser's own rules. The router has already checked
-// that the call came from the `clover` host process and that the plugin holds `browser` (API_CALLS); this door adds:
+// The plugin API's `browser.*` (spec §12.1, ruling R7; F5: served by capability, never by a plugin's id): any plugin
+// holding `browser` (its OK card's warning line), bundled or not. The router has already checked that it holds it
+// (API_CALLS); this door adds, by where the call comes from:
+//
+// * a host half: it acts only for the session whose tool call it is serving (a Browser tool), on that session's own
+//   tab, as below. It never acts for the person.
+// * a component: it acts for the person, as a live view does: it lists the tabs of every owner on this computer (the
+//   bots', the sessions' and the person's own in the Clover Browser), opens one for an owner it names, navigates, shows
+//   one in a view, reads a picture of it and hears its page events. The Clover Browser's tabs are signed in wherever the
+//   person signed in there, so one OK on `browser` gives a component that. The person's other browsers (Chrome, Safari)
+//   are never reached from here.
 //
 // * a caller. Only the session the core bound to the tool call (`caller.kind === "session"`) gets anything: a plugin
 //   acting as itself, the core, a peer or the user get a refusal here, never a guess.
@@ -44,12 +52,8 @@ export interface ToolCaller {
 
 type SessionCaller = Extract<Caller, { kind: "session" }>;
 
-/** The bundled tool's plugin (session callers, in the `clover` host process) and the bundled panel's (the person, in the
- *  panel's own component): the only two plugins `browser.*` is served to. */
-export const TOOL_PLUGIN = "clover/browser";
 /** The DevTools events a component hears of a tab: the page's own domain. */
 export const PANEL_CDP_EVENT_DOMAIN = "Page.";
-export const PANEL_PLUGIN = "clover/browser-view";
 
 /** Who a call acts for. The tool acts for the session whose tool call it serves, on that session's own tabs. The panel
  *  acts for the person, who sees any owner's tabs here and chooses which owner a tab opens for. */
@@ -61,17 +65,13 @@ interface Actor {
 }
 
 function actorOf(ctx: ApiCallContext): Actor {
-  const bundled = ctx.record?.source === "bundled";
   if (ctx.process === "ui") {
     // A component's call reaches the router from `plugin.layer.api`/`plugin.layer.call` as its plugin
-    // (`caller: { kind: "plugin", pluginId }`: a component never acts as the user on its own word). The bundled panel is
-    // the one component that drives the browser for the person, so its call, from its own mount, acts as the person to
-    // the service; any other component, bundled or not, has no tabs here.
-    if (ctx.pluginId !== PANEL_PLUGIN || !bundled) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser panel only`);
-    if (ctx.caller.kind !== "plugin" || ctx.caller.pluginId !== ctx.pluginId) throw new ContractError("refused", `${ctx.path} from the panel is the panel's own call; a call made as ${ctx.caller.kind} has no tabs here`);
+    // (`caller: { kind: "plugin", pluginId }`). A component of a plugin holding `browser` is a live view: from its own
+    // mount it acts as the person to the service, the user's OK on `browser` being the grant.
+    if (ctx.caller.kind !== "plugin" || ctx.caller.pluginId !== ctx.pluginId) throw new ContractError("refused", `${ctx.path} from a component is its own plugin's call; a call made as ${ctx.caller.kind} has no tabs here`);
     return { caller: { kind: "user" } };
   }
-  if (ctx.pluginId !== TOOL_PLUGIN || !bundled) throw new ContractError("refused", `${ctx.path} is served to the Clover Browser tool only`);
   const c = sessionOf(ctx);
   return { caller: browserCallerOf(c as ProtocolCaller), own: ownerOfSession(c), session: c };
 }
@@ -143,7 +143,7 @@ export function browserApiHandlers(getService: () => BrowserService | undefined)
   return {
     "browser.toolCaller": (ctx) => {
       const c = sessionOf(ctx);
-      if (ctx.pluginId !== TOOL_PLUGIN || ctx.process === "ui" || ctx.record?.source !== "bundled") throw new ContractError("refused", "browser.toolCaller is served to the Clover Browser tool only");
+      if (ctx.process === "ui") throw new ContractError("refused", "browser.toolCaller is a host half's: it tells a Browser tool whose tool call it serves");
       const checkedHost = takeCheckedHost(c.sessionId);
       const out: ToolCaller = { kind: "session", sessionId: c.sessionId, sessionKind: c.sessionKind, ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(checkedHost !== undefined ? { checkedHost } : {}) };
       return out;

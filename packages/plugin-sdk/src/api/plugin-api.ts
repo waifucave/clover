@@ -786,7 +786,7 @@ export interface TerminalInputEvent {
  *  (L's question). A layer's calls carry `{ kind: "plugin", pluginId }`, never the user. `computer` is a computer's
  *  name, as `api.plugin.computer` gives this one. */
 export interface BrowserApi {
-  /** Whose tool call this is (the bundled `clover` tree's host halves): the session the core bound to it, its kind and
+  /** Whose tool call this is (a host half holding `browser`, F5): the session the core bound to it, its kind and
    *  its bot. A call made outside a tool call is refused. */
   toolCaller(): Promise<{ kind: "session"; sessionId: string; sessionKind: string; bot?: string }>;
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;

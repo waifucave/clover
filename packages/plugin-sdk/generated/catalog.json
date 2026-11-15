@@ -94,14 +94,14 @@
     },
     {
       "name": "browser",
-      "lets": "Drive the Clover Browser through its API",
-      "ok": "drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there",
+      "lets": "Drive the Clover Browser on this computer: a host half only for the session whose tool call it serves, on that session's own tab (out of sight, the Browser tool's nine DevTools methods); a component for the person, as a live view: every owner's tab here (the bots', the sessions' and the person's own in the Clover Browser, signed in wherever the person signed in there), which it can list, open, navigate, show in a view, picture and hear the page events of. Never the person's other browsers",
+      "ok": "drives the Clover Browser: a bot's own tab as its tool, and in its own page every tab of the Clover Browser on this computer, which it can open, read and act on, signed in wherever you signed in there",
       "warns": true
     },
     {
       "name": "terminal",
-      "lets": "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only",
-      "ok": "runs commands in a terminal on your computers, as you, outside Clover's sandbox",
+      "lets": "Open terminals on the user's computers from a component (never on one at read-only), and resize, read and close its own: what a terminal runs is only what the user types or pastes into it, which the app hands over itself; no call of the plugin's writes to one",
+      "ok": "opens terminals on your computers that run what you type in them, as you, outside Clover's sandbox, and sees what they show",
       "warns": true
     },
     {

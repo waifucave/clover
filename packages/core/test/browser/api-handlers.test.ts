@@ -96,7 +96,7 @@ describe("the Browser tool's browser.* calls", () => {
   });
 });
 
-describe("the Clover Browser panel's browser.* calls (the person, in the panel's component)", () => {
+describe("a live view's browser.* calls (the person, in a component of a plugin holding browser)", () => {
   test("the panel lists any owner's tabs, places one in its view and takes it back, and opens one for the owner it shows", async () => {
     const { call, panel } = setup();
     const botTab = await call("browser.open", alpha, { url: "https://example.com/" });
@@ -109,7 +109,7 @@ describe("the Clover Browser panel's browser.* calls (the person, in the panel's
     expect(opened).toMatchObject({ owner: { kind: "bot", bot: "alpha" }, place: "shown" });
   });
 
-  test("browser.onCdpEvent: the panel hears a followed tab's page events (Page.*) and nothing else, until it stops; the tool and every other plugin are refused", async () => {
+  test("browser.onCdpEvent: the panel hears a followed tab's page events (Page.*) and nothing else, until it stops; a host half is refused, any component holding browser hears", async () => {
     const { app, service, call, panel } = setup();
     const botTab = await call("browser.open", alpha, { url: "https://example.com/" });
     const other = await call("browser.open", luna, { url: "https://example.org/" });
@@ -128,29 +128,35 @@ describe("the Clover Browser panel's browser.* calls (the person, in the panel's
     service.report([{ kind: "cdp", id: botTab.id, method: "Page.frameNavigated", params: {} }]);
     expect(heard).toHaveLength(1);
     void app;
-    // Only the panel: the tool, another plugin, a host half, another caller; and a missing listener or tab.
-    await expect(call("browser.onCdpEvent", alpha, botTab.id, () => undefined)).rejects.toThrow(/the person's|panel only/);
-    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { pluginId: "acme/panel" })).rejects.toThrow(/panel only/);
-    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { process: "clover" })).rejects.toThrow(/Browser tool only/);
-    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { record: { source: "user" } })).rejects.toThrow(/panel only/);
+    // Only a component (F5: any plugin's that holds browser, which the router checks): never a host half's call; and a
+    // missing listener or tab.
+    await expect(call("browser.onCdpEvent", alpha, botTab.id, () => undefined)).rejects.toThrow(/the person's/);
+    let third = 0;
+    await panel("browser.onCdpEvent", [botTab.id, () => { third++; }], { pluginId: "acme/panel", caller: { kind: "plugin", pluginId: "acme/panel" }, record: { source: "user" } });
+    service.report([{ kind: "cdp", id: botTab.id, method: "Page.frameNavigated", params: {} }]);
+    expect(third).toBe(1);
+    await expect(panel("browser.onCdpEvent", [botTab.id, () => undefined], { process: "clover" })).rejects.toThrow(/has no tabs here/);
     await expect(panel("browser.onCdpEvent", [botTab.id, "not a function"])).rejects.toThrow(/takes a listener/);
     await expect(panel("browser.onCdpEvent", ["tab_none", () => undefined])).rejects.toThrow();
   });
 
-  test("only the bundled panel's component, for the person: not the tool, another plugin, a host half or another caller", async () => {
+  test("F5: any component of a plugin holding browser acts for the person (a live view); a host half acts only for the session it serves", async () => {
     const { call, panel } = setup();
     const tab = await call("browser.open", alpha, {});
     // The tool draws out of sight: where a tab shows is the person's.
     await expect(call("browser.show", alpha, tab.id, "browser", { width: 800, height: 600 })).rejects.toThrow(/the person's/);
-    await expect(panel("browser.show", [tab.id, "browser", { width: 800, height: 600 }], { pluginId: "acme/panel" })).rejects.toThrow(/panel only/);
-    await expect(panel("browser.tabs", [{}], { pluginId: "acme/panel" })).rejects.toThrow(/panel only/);
-    await expect(panel("browser.tabs", [{}], { process: "clover" })).rejects.toThrow(/Browser tool only/);
-    // A third-party component that claims the panel's id, a core caller, a session: refused. So is the panel's id from a non-bundled record.
-    await expect(panel("browser.tabs", [{}], { record: { source: "user" } })).rejects.toThrow(/panel only/);
-    for (const caller of [alpha, { kind: "plugin", pluginId: "acme/panel" }, { kind: "core" }, { kind: "user", client: "app" }] as Caller[]) await expect(panel("browser.tabs", [{}], { caller })).rejects.toThrow(/panel's own call/);
-    // The tool's own call from a plugin that isn't the tool is refused too.
-    const ctx = { pluginId: "acme/tool", process: "clover", caller: alpha, record: { source: "bundled" }, path: "browser.tabs" } as unknown as ApiCallContext;
-    await expect(Promise.resolve().then(() => (browserApiHandlers(() => undefined)["browser.tabs"] as ApiHandler)(ctx, [{}]))).rejects.toThrow(/Browser tool only/);
+    // A third party's component: the person's tabs, every owner's, and it may show one.
+    const acme = { pluginId: "acme/panel", caller: { kind: "plugin", pluginId: "acme/panel" } as Caller, record: { source: "user" } };
+    expect((await panel("browser.tabs", [{}], acme)).map((t: { id: string }) => t.id)).toEqual([tab.id]);
+    expect(await panel("browser.show", [tab.id, "browser", { width: 800, height: 600 }], acme)).toMatchObject({ place: "shown" });
+    // A host half's call made as anything but the session it serves has no tabs.
+    await expect(panel("browser.tabs", [{}], { process: "clover" })).rejects.toThrow(/has no tabs here/);
+    // A component's call made as another caller (a session, another plugin, the core, the user) is refused.
+    for (const caller of [alpha, { kind: "plugin", pluginId: "acme/panel" }, { kind: "core" }, { kind: "user", client: "app" }] as Caller[]) await expect(panel("browser.tabs", [{}], { caller })).rejects.toThrow(/its own plugin's call/);
+    // A third party's host half serving a session: that session's own tab, as the bundled tool's.
+    const ctx = { pluginId: "acme/tool", process: "clover", caller: alpha, record: { source: "user" }, path: "browser.tabs" } as unknown as ApiCallContext;
+    const svc = new BrowserService({ computer: "Studio", app: () => new FakeApp() });
+    expect(await Promise.resolve().then(() => (browserApiHandlers(() => svc)["browser.tabs"] as ApiHandler)(ctx, [{}]))).toEqual([]);
   });
 
   test("DevTools from the panel passes the same nine methods", async () => {
@@ -164,6 +170,7 @@ describe("through the plugin API's router (the component's `plugin.layer.api` en
   const records: Record<string, unknown> = {
     "clover/browser-view": { id: "clover/browser-view", enabled: true, state: "running", source: "bundled", granted: ["browser"] },
     "acme/panel": { id: "acme/panel", enabled: true, state: "running", source: "user", granted: ["browser"] },
+    "acme/bare": { id: "acme/bare", enabled: true, state: "running", source: "user", granted: [] },
   };
   const route = () => {
     const app = new FakeApp();
@@ -171,11 +178,12 @@ describe("through the plugin API's router (the component's `plugin.layer.api` en
     return createApiRouter({ registry: { get: (id: string) => records[id] as never }, handlers: [browserApiHandlers(() => service)] });
   };
 
-  test("the bundled panel's component, which arrives as its plugin's caller, lists and shows; a third-party component with the same grant does not", async () => {
+  test("F5: a component holding browser, bundled or third-party, lists; one without the grant is refused by the router", async () => {
     const router = route();
     const ask = (pluginId: string, path: string, args: unknown[]) => router({ pluginId, process: "ui", caller: { kind: "plugin", pluginId }, path, args } as never) as Promise<any>;
     expect(await ask("clover/browser-view", "browser.tabs", [{}])).toEqual([]);
-    await expect(ask("acme/panel", "browser.tabs", [{}])).rejects.toThrow(/panel only/);
+    expect(await ask("acme/panel", "browser.tabs", [{}])).toEqual([]);
+    await expect(ask("acme/bare", "browser.tabs", [{}])).rejects.toThrow();
     await expect(ask("clover/browser-view", "browser.watch", [() => {}])).rejects.toThrow(/events|isn't available|not served/);
   });
 });

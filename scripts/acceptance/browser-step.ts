@@ -9,9 +9,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTurn, sleep, until, type ExampleCtx } from "./example-steps";
+import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
-export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw";
+export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw; F5: a folder plugin's own Browser tool drives the bot's tab, a folder live view lists, shows and hides it, and a folder terminal opens and speaks, its own write refused";
 
 export const FIXTURE_NAME = "browser-fixture.test";
 /** A second name for the same server: another site, as the browser and the approval judge it. */
@@ -52,6 +53,8 @@ export function startBrowserFixture(): BrowserFixture {
   });
   return { names: `${FIXTURE_NAME}=${server.port};${OTHER_NAME}=${server.port}`, url: `http://${FIXTURE_NAME}:${server.port}/`, otherUrl: `http://${OTHER_NAME}:${server.port}/`, seen, loopbackUrl: `http://127.0.0.1:${server.port}/`, stop: () => server.stop(true) };
 }
+
+interface Card { id: string; kind: string; pluginId?: string }
 
 class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
@@ -365,7 +368,72 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       await ctx.pressCard("the third-party tab's removal card", (c) => c.id === gone.card);
     }
   }
+  // 11. F5: `browser.*` and the terminal by capability, never by a plugin's id (f5-step.ts). Three folder plugins: a Browser
+  // tool of its own (`browserTools`), a live view and a terminal.
+  if (openLayer === undefined) fail("F5: this run has no layer token door");
+  else lines.push(`F5: ${await f5Clause(ctx, session, fixture, openLayer)}`);
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);
   return lines.join("; ");
+}
+
+async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer: (pluginId: string) => Promise<PanelLink>): Promise<string> {
+  const folders = writeF5(join(ctx.root, "f5-plugins"));
+  const installed: string[] = [];
+  const install = async (id: string, folder: string): Promise<string> => {
+    const r = await ctx.rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+    if (r.id !== id) fail(`F5: ${folder} installed as ${r.id}`);
+    installed.push(id);
+    const card = await until(`${id}'s OK card`, 30_000, async () => (await ctx.rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id));
+    const text = JSON.stringify((await ctx.rpc.request<{ card: Card }>("card.get", { id: card.id })).card);
+    await ctx.pressCard(`${id}'s OK card`, (c) => c.id === card.id);
+    await until(`${id} running`, 60_000, async () => (((await ctx.rpc.request<{ plugin?: { state?: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin?.state === "running") ? true : undefined));
+    return text;
+  };
+  try {
+    const surfCard = await install(F5_IDS.surf, folders.surf);
+    await install(F5_IDS.view, folders.view);
+    await install(F5_IDS.term, folders.term);
+    const surf = async (input: Record<string, unknown>) => {
+      const r = await callTurn(ctx, session, SURF_TOOL, input);
+      return { text: r.result.text.replace(/\s+/g, " ").trim(), cards: r.cards };
+    };
+    const open = await surf({ verb: "open", url: fixture.url });
+    const read = await surf({ verb: "read" });
+    const click = await surf({ verb: "click" });
+    // The live view: a third party's layer, holding `browser`, acting for the person.
+    const view = await openLayer(F5_IDS.view);
+    let seenView: F5Seen["view"];
+    try {
+      await view.request("events.subscribe", { areas: ["browser"] });
+      const listed = (await view.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string }[] };
+      const id = listed.tabs[0]?.id ?? fail(`F5: acc-view listed no tab of Alpha's (${JSON.stringify(listed).slice(0, 200)})`);
+      const shown = (await view.request("browser.show", { id, view: "browser", viewport: { width: 800, height: 600 } })) as { tab: { place: string } };
+      const heard = await until("acc-view hears its tab shown", 10_000, async () => (view.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown") ? true : undefined)).catch(() => false);
+      const hidden = (await view.request("browser.hide", { id })) as { tab: { place: string } };
+      seenView = { listed: listed.tabs.length, shown: shown.tab.place, heard, hidden: hidden.tab.place };
+    } finally {
+      view.close();
+    }
+    // The terminal: a third party's layer, holding `terminal`, opens one and hears its shell; its own write is refused.
+    const term = await openLayer(F5_IDS.term);
+    let seenTerm: F5Seen["term"];
+    try {
+      await term.request("events.subscribe", { areas: ["computers"] });
+      const computer = (await ctx.rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? fail("computer.list lists no computer");
+      const opened = (await term.request("terminal.open", { computer, cols: 80, rows: 24 })) as { terminalId: string };
+      const output = await until("acc-term's shell to speak", 15_000, async () => (term.heard("terminal_output").some((e) => (e as unknown as { terminalId: string }).terminalId === opened.terminalId) ? true : undefined)).catch(() => false);
+      const inputRefused = await term.request("plugin.layer.call", { call: "terminal.input", args: [opened.terminalId, { data: "echo from-the-plugin\r" }] }).then(() => "written", (e: unknown) => (e instanceof Error ? e.message : String(e)));
+      await term.request("terminal.close", { terminalId: opened.terminalId }).catch(() => undefined);
+      seenTerm = { output, inputRefused };
+    } finally {
+      term.close();
+    }
+    const seen: F5Seen = { surfCard, open, read, click, view: seenView, term: seenTerm };
+    const wrong = f5Wrong(seen);
+    if (wrong.length > 0) fail(`F5: ${wrong.join("; ")}`);
+    return `acc-surf's card named Surf as a Browser tool; Alpha's Surf opened her tab and read it with no card (${read.text.slice(0, 60)}), its click raised ${click.cards.join(", ")} and acted; acc-view's layer listed her tab, showed it (heard), hid it; acc-term's layer opened a terminal that spoke, and its own write was refused`;
+  } finally {
+    for (const id of installed.reverse()) await ctx.rpc.request("plugin.remove", { id }).catch(() => undefined);
+  }
 }

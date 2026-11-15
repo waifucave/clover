@@ -61,6 +61,11 @@ plugin: a child plugin's lists don't count):
 - `webFetch`: tools that read the web page at their `url` input (the plugin needs `network:public`). A page whose
   address the session already saw runs without a card, a few a turn; any other asks, and "Always allow" holds for its
   site. The card warns that what is read goes through the plugin.
+- `browserTools`: tools that take the Browser tool's verbs (`verb`: tabs, open, navigate, read, screenshot, scroll,
+  wait, back, forward, reload, close; click, type, key, select) and drive the calling bot's own tab with `api.browser`
+  (the plugin needs `browser`; `api.browser.toolCaller()` says whose tool call it serves). Looking runs without a card;
+  clicking, typing, a key or a select asks for the site, "Always allow" kept per bot and site. The card warns that what
+  the tab shows goes through the plugin.
 
 Never put a tool that changes anything outside the plugin's display on any of these lists. A tool can be on one only.
 `needs` (`{ "<tool>": "<capability>" }`) lists a tool only while the plugin holds that capability, for a tool that

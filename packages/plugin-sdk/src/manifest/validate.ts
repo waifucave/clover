@@ -73,7 +73,7 @@ export interface ManifestReport {
   containedTools: { server: string; tools: string[]; network: boolean }[];
   /** Each server's tools it declares as a web search (`webSearch`) or a page fetch (`webFetch`), which the OK names with a
    *  warning (R1: no door checks a plugin's id). */
-  webTools: { server: string; search: string[]; fetch: string[] }[];
+  webTools: { server: string; search: string[]; fetch: string[]; browser?: string[] }[];
   /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
    *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
    *  to hide it (the controller's ruling on #377). */
@@ -646,7 +646,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
 
   const readOnlyTools: { server: string; tools: string[]; network: boolean }[] = [];
   const containedTools: { server: string; tools: string[]; network: boolean }[] = [];
-  const webTools: { server: string; search: string[]; fetch: string[] }[] = [];
+  const webTools: { server: string; search: string[]; fetch: string[]; browser?: string[] }[] = [];
   if (isObject(contributes.mcpServers)) {
     for (const [name, s] of Object.entries(contributes.mcpServers)) {
       if (Array.isArray(s.readOnly) && s.readOnly.length > 0) readOnlyTools.push({ server: name, tools: [...new Set(s.readOnly as string[])].sort(), network: serverReachesNetwork(s) });
@@ -658,11 +658,14 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
       // `network:` capability, a page fetch `network:public` (the core's fetch with its web floors).
       const search = Array.isArray(s.webSearch) ? [...new Set(s.webSearch as string[])].sort() : [];
       const fetch = Array.isArray(s.webFetch) ? [...new Set(s.webFetch as string[])].sort() : [];
-      if (search.length > 0 || fetch.length > 0) {
-        webTools.push({ server: name, search, fetch });
-        const lists = [s.readOnly, s.contained, s.webSearch, s.webFetch].map((l) => (Array.isArray(l) ? new Set(l as string[]) : new Set<string>()));
-        const twice = [...new Set([...search, ...fetch])].filter((t) => lists.filter((l) => l.has(t)).length > 1);
-        if (twice.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name], `${twice.join(", ")} can't be on two of readOnly, contained, webSearch and webFetch: list each tool in one of them`);
+      // F5: the Browser tool's class, any plugin's that holds `browser`.
+      const browserList = Array.isArray(s.browserTools) ? [...new Set(s.browserTools as string[])].sort() : [];
+      if (search.length > 0 || fetch.length > 0 || browserList.length > 0) {
+        webTools.push({ server: name, search, fetch, ...(browserList.length > 0 ? { browser: browserList } : {}) });
+        const lists = [s.readOnly, s.contained, s.webSearch, s.webFetch, s.browserTools].map((l) => (Array.isArray(l) ? new Set(l as string[]) : new Set<string>()));
+        const twice = [...new Set([...search, ...fetch, ...browserList])].filter((t) => lists.filter((l) => l.has(t)).length > 1);
+        if (twice.length > 0) f.error("plugin", "tool_in_both_lists", ["contributes", "mcpServers", name], `${twice.join(", ")} can't be on two of readOnly, contained, webSearch, webFetch and browserTools: list each tool in one of them`);
+        if (browserList.length > 0 && !capabilities.includes("browser")) f.error("plugin", "browser_tool_no_capability", ["contributes", "mcpServers", name, "browserTools"], `a Browser tool drives the Clover Browser: the plugin needs the browser capability`);
         if (search.length > 0 && !capabilities.some((c) => c.startsWith("network:"))) f.error("plugin", "web_tool_no_network", ["contributes", "mcpServers", name, "webSearch"], `a web search tool needs a network: capability to reach its search service`);
         if (fetch.length > 0 && !capabilities.includes("network:public")) f.error("plugin", "web_tool_no_network", ["contributes", "mcpServers", name, "webFetch"], `a page-fetch tool needs network:public, the core's fetch with its web safeguards`);
       }
@@ -1624,7 +1627,7 @@ export const OUTSIDE_PROGRAM_LINE = "It runs this program of yours outside Clove
 export function outsideToolsOkLines(report: Pick<ManifestReport, "readOnlyTools" | "containedTools" | "webTools">): string[] {
   const servers = new Map<string, number>();
   for (const r of [...(report.readOnlyTools ?? []), ...(report.containedTools ?? [])]) servers.set(r.server, (servers.get(r.server) ?? 0) + r.tools.length);
-  for (const w of report.webTools ?? []) servers.set(w.server, (servers.get(w.server) ?? 0) + w.search.length + w.fetch.length);
+  for (const w of report.webTools ?? []) servers.set(w.server, (servers.get(w.server) ?? 0) + w.search.length + w.fetch.length + (w.browser?.length ?? 0));
   return [...servers].map(([server, n]) => `Its server ${server} says ${n === 1 ? "one tool needs" : `${n} tools need`} no asking, but this plugin runs programs of yours outside its sandbox, so ${n === 1 ? "it still asks" : "they still ask"} before running.`);
 }
 
@@ -1718,11 +1721,12 @@ export function containedOkLines(r: { server: string; tools: readonly string[] }
 
 /** The OK card's lines for a server's web tools (`webSearch`, `webFetch`), each a warning: what runs without asking at
  *  the default level, and that what a bot searches or fetches goes through this plugin. */
-export function webToolOkLines(w: { server: string; search: readonly string[]; fetch: readonly string[] }): string[] {
+export function webToolOkLines(w: { server: string; search: readonly string[]; fetch: readonly string[]; browser?: readonly string[] }): string[] {
   const lines: string[] = [];
   const names = (t: readonly string[]) => t.join(", ").slice(0, 300);
   if (w.search.length > 0) lines.push(`Its server ${w.server} says ${names(w.search)} search${w.search.length === 1 ? "es" : ""} the web: at the default approval level a search runs without asking, and what a bot searches goes to this plugin.`);
   if (w.fetch.length > 0) lines.push(`Its server ${w.server} says ${names(w.fetch)} read${w.fetch.length === 1 ? "s" : ""} web pages: at the default approval level a page whose link a bot already has is read without asking (a few a turn), any other page asks, site by site, and what is read goes through this plugin.`);
+  if ((w.browser ?? []).length > 0) lines.push(`Its server ${w.server} says ${names(w.browser!)} drive${w.browser!.length === 1 ? "s" : ""} the calling bot's own tab of the Clover Browser: at the default approval level opening, reading and a picture of a page run without asking, clicking and typing ask for the site, and what the tab shows goes through this plugin.`);
   return lines;
 }
 

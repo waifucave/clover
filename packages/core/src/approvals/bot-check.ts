@@ -89,11 +89,9 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
 ]);
 
 /** What a declared tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): a web search or a page fetch (a
- *  plugin's `webSearch`/`webFetch`, on the tree the user OK'd or the build's copy), or the bundled Browser tool. */
+ *  plugin's `webSearch`/`webFetch`, on the tree the user OK'd or the build's copy), or a Browser tool (its `browserTools`,
+ *  while its plugin holds `browser`). */
 export type BundledToolKind = "web-search" | "web-fetch" | "browser";
-
-/** The bundled Browser tool (`plugins/clover/plugins/browser`): a bot's hands on its own tab of the Clover Browser. */
-export const BROWSER_PLUGIN_ID = "clover/browser";
 
 /** The Browser tool's verbs that only look (or move the bot's own tab by address, which the network filter judges): a read,
  *  no card at any level. `click`, `type`, `key` and `select` act on a page and are the other class. */
