@@ -341,6 +341,18 @@ export interface PointsApi {
    *  anything else, errors the stream with why. `timeoutMs` (default and most 10 minutes) bounds the whole stream;
    *  `signal` aborted, or the stream cancelled, stops the handler's pump. */
   stream(point: string, entry: { pluginId: string; entryId: string }, field: string, args?: unknown, opts?: CallOptions & { method?: string }, onEvent?: (event: StreamReadEvent) => void): Promise<ReadableStream<Uint8Array>>;
+  /** A one-at-a-time point's active entry (§5.4 "One at a time"): the user's choice in Settings, else the default (the
+   *  first bundled filler, else the first installed); undefined when it has no filler running. Its declarer's tree reads
+   *  it, and so does a plugin with an entry in it (a filler learns whether it is the one). Only the user changes it. */
+  active(point: string): Promise<ActiveFiller | undefined>;
+  /** Hears the active entry change: the user's choice, or the default taking over when the active one stops. */
+  onActive(point: string, listener: (active: ActiveFiller | undefined) => void): Unsubscribe;
+}
+
+/** Which entry of a one-at-a-time point is active: its plugin and entry id, never its value. */
+export interface ActiveFiller {
+  readonly pluginId: string;
+  readonly entryId: string;
 }
 
 /** Commands (§5.4): another plugin's run only with `call:<plugin-id>`, which the OK lists. A call to a plugin that

@@ -58,6 +58,9 @@ export interface RegistryStateFile {
   order: string[];
   plugins: Record<string, PluginState>;
   dev: DevFolderState[];
+  /** The user's choice for each one-at-a-time point (§5.4 "One at a time"): the entry they picked in Settings. Kept
+   *  while its plugin has a record here; absent, the point's default is the active one. */
+  active?: Record<string, { pluginId: string; entryId: string }>;
 }
 
 /** An index the user added (§5.1): its https URL. */
@@ -138,6 +141,7 @@ const StateSchema = z.object({
   order: z.array(z.string()),
   plugins: z.record(z.string(), StoredPlugin),
   dev: z.array(z.object({ path: z.string().min(1), by: z.enum(["cli", "app"]), addedAt: z.number(), expiresAt: z.number() })),
+  active: z.record(z.string().max(256), z.object({ pluginId: z.string().min(1).max(200), entryId: z.string().min(1).max(256) })).optional(),
 });
 const Fingerprint = z.object({
   class: z.enum(["data", "web", "code"]), capabilities: z.array(z.string()), networkHosts: z.array(z.string()), helperPermissions: z.array(z.string()),

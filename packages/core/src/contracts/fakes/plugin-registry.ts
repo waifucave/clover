@@ -66,6 +66,8 @@ export class FakePluginRegistry implements PluginRegistry {
   readonly #catalog: (name: string) => PointDecl | undefined;
   /** The OK cards raised, by top-level plugin: the card and the tree it shows. */
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
+  /** The user's one-at-a-time choices, by point. */
+  readonly #chosen = new Map<string, { pluginId: string; entryId: string }>();
   #okSeq = 0;
   #adultConfirmed: boolean;
   #snap: RegistrySnapshot = EMPTY_SNAPSHOT;
@@ -180,6 +182,18 @@ export class FakePluginRegistry implements PluginRegistry {
     return this.#treeListeners.add(fn);
   }
 
+  /** The user's choice for a one-at-a-time point (§5.4 "One at a time"); a removed plugin's go with it. */
+  chosen(point: string): { pluginId: string; entryId: string } | undefined {
+    const r = this.#chosen.get(point);
+    return r === undefined ? undefined : { ...r };
+  }
+
+  choose(point: string, ref: { pluginId: string; entryId: string } | undefined): void {
+    if (ref === undefined) this.#chosen.delete(point);
+    else this.#chosen.set(point, { pluginId: ref.pluginId, entryId: ref.entryId });
+    this.#listeners.emit({ type: "entries", point });
+  }
+
   /** A folder appeared or changed. A refused plugin is asked about again once its folder changes (§5.1). */
   put(input: FakePluginInput): void {
     this.#hold(input);
@@ -189,6 +203,7 @@ export class FakePluginRegistry implements PluginRegistry {
   /** A folder went away; its children go with it. */
   remove(id: string): void {
     for (const key of [...this.#plugins.keys()]) if (key === id || parentOf(key) === id) this.#plugins.delete(key);
+    for (const [point, r] of [...this.#chosen]) if (!this.#plugins.has(r.pluginId)) this.#chosen.delete(point);
     this.#update();
   }
 

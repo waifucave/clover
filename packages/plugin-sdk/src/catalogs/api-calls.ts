@@ -57,6 +57,8 @@ export const API_CALLS = {
   // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
   t: { where: "ui" },
   "points.entries": both(), "points.watch": both(), "points.call": both(),
+  /** A one-at-a-time point's active entry (§5.4): its declarer's tree and its fillers read it. */
+  "points.active": both(), "points.onActive": both(),
   /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },

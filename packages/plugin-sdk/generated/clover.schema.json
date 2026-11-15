@@ -931,6 +931,12 @@
           },
           "doc": {
             "$ref": "#/$defs/__schema0"
+          },
+          "oneAtATime": {
+            "type": "boolean"
+          },
+          "title": {
+            "$ref": "#/$defs/__schema0"
           }
         },
         "required": [

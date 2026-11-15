@@ -34,6 +34,7 @@ export interface ListenerArg {
 /** Every member that takes a listener (a function argument), where it is. */
 export const LISTENER_ARGS = {
   "points.watch": { at: 1 },
+  "points.onActive": { at: 1 },
   "host.on": { at: 1 },
   "storage.synced.watch": { at: 0 },
   "settings.watch": { at: 1 },

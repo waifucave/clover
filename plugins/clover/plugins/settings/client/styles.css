@@ -522,6 +522,12 @@
   letter-spacing: 0.04em;
 }
 
+/* One at a time (spec §5.4): a point's picker, its fillers in the three-way control's look, wrapping when there are many. */
+.cl-settings__one-options {
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+}
+
 /* Tools: a plugin's group, each tool with its three-way control and, under it, a card's saved rule for one bot. */
 .cl-settings__tool-group {
   margin-block-end: var(--clover-space-l);

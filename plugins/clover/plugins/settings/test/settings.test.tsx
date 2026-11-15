@@ -213,3 +213,27 @@ describe("the Tools tab", () => {
     expect(onTakeBackRule).toHaveBeenCalledWith("reel-reel", "Export", "alpha");
   });
 });
+
+describe("one at a time (spec §5.4)", () => {
+  const point = (over: Partial<NonNullable<SettingsModalProps["oneAtATime"]>[number]> = {}) => ({
+    point: "deck.mode", title: "Deck mode",
+    fillers: [{ pluginId: "one", entryId: "one", name: "First" }, { pluginId: "two", entryId: "two", name: "Second" }],
+    active: { pluginId: "one", entryId: "one" }, ...over,
+  });
+
+  test("a picker per point with two or more fillers on the Plugins page, titled by its title; a press picks one", () => {
+    const onPickActive = mock((_p: string, _e: { pluginId: string; entryId: string }) => undefined);
+    setup({ section: "plugins", oneAtATime: [point(), point({ point: "deck.lone", title: "Lone", fillers: [{ pluginId: "one", entryId: "lone", name: "Only" }] })], onPickActive });
+    const group = screen.getByRole("radiogroup", { name: "Deck mode" });
+    expect(within(group).getAllByRole("radio").map((r) => [r.textContent, r.getAttribute("aria-checked")])).toEqual([["First", "true"], ["Second", "false"]]);
+    expect(screen.queryByRole("radiogroup", { name: "Lone" })).toBeNull();
+    expect(screen.getByText("Only one of these is used at a time.")).toBeTruthy();
+    fireEvent.click(within(group).getByRole("radio", { name: "Second" }));
+    expect(onPickActive).toHaveBeenCalledWith("deck.mode", { pluginId: "two", entryId: "two" });
+  });
+
+  test("a pick that isn't running: the one standing in is pressed, and the row says so", () => {
+    setup({ section: "plugins", oneAtATime: [point({ chosen: { pluginId: "three", entryId: "three" } })] });
+    expect(screen.getByText("The one you picked isn't running, so First is used for now.")).toBeTruthy();
+  });
+});

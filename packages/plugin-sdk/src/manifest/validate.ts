@@ -305,6 +305,23 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
       f.error(refuses, "spot_declarer", at, "a UI spot (a declaration with `props`) is declared only by a `ui` entry with a `component`");
       continue;
     }
+    // One at a time (§5.4): Settings' picker is titled by the point's own title, and a single point takes one filler
+    // already. A well-known name's comes from the catalog, whatever the declarer wrote.
+    if (!wellKnown && d.oneAtATime === true) {
+      if (d.shape === "single") {
+        f.error(refuses, "point_one_single", [...at, "oneAtATime"], `"${name}" is a single point, which takes one filler already; oneAtATime is for a list or keyed point`);
+        continue;
+      }
+      // A UI spot draws every filler (\`Spot\`): one drawn at a time isn't the app's yet, so a spot can't say it.
+      if (spot) {
+        f.error(refuses, "point_one_spot", [...at, "oneAtATime"], `"${name}" is a UI spot, which draws every filler; oneAtATime is for a data point (your component reads \`points.active\` and draws the one)`);
+        continue;
+      }
+      if (d.title === undefined) {
+        f.error(refuses, "point_one_title", [...at, "title"], `"${name}" takes one filler at a time: give it a title, which Settings' picker shows ("Voice", "Stage")`);
+        continue;
+      }
+    }
     const where = jsonPointer(at);
     // A UI spot may be declared on several of a plugin's entries (lane F: its panel and its Files view both declare
     // `file.preview`), each a place the spot shows, all with the same declaration; any other point is declared once.

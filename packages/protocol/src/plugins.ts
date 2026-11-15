@@ -184,6 +184,21 @@ export const PointView = z.object({
 });
 export type PointView = z.infer<typeof PointView>;
 
+/** An entry of a one-at-a-time point by its plugin and entry id (§5.4 "One at a time"). */
+export const ActiveFillerRef = z.object({ pluginId: AnyPluginId, entryId: utf16(256, 1) });
+/** A one-at-a-time point as Settings' picker shows it: its title, its fillers (the entries of plugins on and running,
+ *  in the registry's order), the one active, and the user's choice when they made one (when it isn't the active one,
+ *  it isn't running and the default stands in). */
+export const OneAtATimeView = z.object({
+  point: utf16(128, 1),
+  title: Text,
+  declaredBy: z.union([z.literal("core"), AnyPluginId]),
+  fillers: z.array(z.object({ pluginId: AnyPluginId, entryId: utf16(256, 1), name: utf16(200) })).max(1000),
+  active: ActiveFillerRef.optional(),
+  chosen: ActiveFillerRef.optional(),
+});
+export type OneAtATimeView = z.infer<typeof OneAtATimeView>;
+
 /** One of a plugin's settings as Settings shows it (§5.4 "Settings", review S16): the manifest's field and its value.
  *  A `secret` field never carries its value over the wire, only whether one is stored. */
 export const PluginSettingView = z.object({
@@ -727,6 +742,17 @@ export const PLUGINS_METHODS = {
     name: "point.list", owner: "B", roles: ["app", "cli"],
     params: Empty, result: z.object({ points: z.array(PointView) }),
     doc: "Every extension point, the core's and those plugins declare, with occupants and waiting entries.",
+  }),
+  pointActiveList: defineMethod({
+    name: "point.active.list", owner: "B", roles: ["app", "cli"], userOnly: true,
+    params: Empty, result: z.object({ points: z.array(OneAtATimeView).max(256) }),
+    doc: "Every point that takes one filler at a time (§5.4 \"One at a time\"), with its fillers, the active one and the user's choice: Settings draws a picker for each with two or more fillers, titled by the point's own title. The user's own view.",
+  }),
+  pointActiveSet: defineMethod({
+    name: "point.active.set", owner: "B", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ point: utf16(128, 1), entry: ActiveFillerRef }),
+    result: Ok,
+    doc: "The user picks which filler of a one-at-a-time point is active (Settings' picker): one of its fillers running now. Kept with the registry's records; when it stops, the default stands in until it runs again. Only the user sets it: no plugin's call or setting does.",
   }),
   commandList: defineMethod({
     name: "command.list", owner: "B", roles: ["app", "cli", "remote"],

@@ -167,6 +167,11 @@ point): `"declares": { "<your-id>.<name>": { "shape": "single" | "list" | "keyed
 - `fields` (a JSON Schema): what each entry carries (a data point's entries are its fields);
 - `doc`: one sentence for the plugins that fill it; `needs`: capabilities a filler must hold; `context`: the keys it
   offers to `when`; `private: true`: only your own tree may fill it; `deprecated`: a note that it is going;
+- `oneAtATime: true` with a `title` (a list or keyed data point, not a UI spot): only one filler is used at a time. Clover keeps which one is
+  active: the user's pick in Settings (one picker per such point with two or more fillers, titled by your `title`),
+  else the first bundled filler, else the first installed; when it stops, the next takes over and the user is told.
+  Read it with `api.points.active(point)` and hear it change with `api.points.onActive(point, listener)` (your tree and
+  the fillers may); no plugin call or setting changes it;
 - rarely: `gates` (props that reach only a filler holding a capability, by dotted path) and `keep` (keys that can't be
   hidden).
 
