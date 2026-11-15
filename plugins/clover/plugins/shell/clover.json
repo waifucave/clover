@@ -13,7 +13,6 @@
   },
   "capabilities": [
     "approvals",
-    "avatar.control.all",
     "bots.read",
     "computers.read",
     "conversation.read"

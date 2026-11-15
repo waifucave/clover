@@ -129,8 +129,20 @@ function stopBot(bot: string): void {
   api?.ui.send("stop", { bot });
 }
 
-/** The plugin's ui table (`host.call`): the speak button's `speak`, the chip's `stop`. */
+/** The plugin's ui table (`host.call`): the speak button's `speak`, the chip's `stop`, and a bot's voice for its
+ *  parts (`voiceOf`, `forget`): a page reads and changes only its plugin's plain settings, a bot's value is the host
+ *  half's. */
 export const ui = {
+  async voiceOf(args: unknown): Promise<BotVoice | null> {
+    const bot = (args as { bot?: unknown } | null)?.bot;
+    return typeof bot === "string" ? (await voiceOf(bot)) ?? null : null;
+  },
+  /** The user's reset in a bot's editor: the bot goes text-only. */
+  async forget(args: unknown): Promise<{ ok: true }> {
+    const bot = (args as { bot?: unknown } | null)?.bot;
+    if (typeof bot === "string") for (const key of ["provider", "voice", "model"]) await need().settings.set(key, null, { bot });
+    return { ok: true };
+  },
   /** One past reply, the user's press (`conversation.message.action`: `{ session, seq }`). */
   async speak(args: unknown): Promise<{ ok: true } | { note: string }> {
     const a = need();

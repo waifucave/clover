@@ -32,7 +32,19 @@ function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn
       watch: () => () => undefined,
     },
     turns: { ...a.turns, state: async () => o.turn ?? { name: "device/speech", waiting: 0 }, watch: (_n: string, l: (s: TurnState) => void) => { watchers.add(l); return () => watchers.delete(l); } },
-    host: { call: async (name: string, args: unknown) => { o.calls?.push({ name, args }); return { ok: true }; }, on: () => () => undefined },
+    host: {
+      call: async (name: string, args: unknown) => {
+        const bot = (args as { bot?: string }).bot;
+        if (name === "voiceOf") {
+          const p = stored.get(`provider@${bot}`), v = stored.get(`voice@${bot}`);
+          return typeof p === "string" && p !== "" && typeof v === "string" ? { provider: p, voice: v } : null;
+        }
+        if (name === "forget") { stored.set(`provider@${bot}`, null); stored.set(`voice@${bot}`, null); return { ok: true }; }
+        o.calls?.push({ name, args });
+        return { ok: true };
+      },
+      on: () => () => undefined,
+    },
     turnWatchers: watchers,
   }) as PluginApi & { stored: Map<string, unknown>; turnWatchers: Set<(s: TurnState) => void> };
 }

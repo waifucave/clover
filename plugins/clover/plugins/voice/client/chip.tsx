@@ -17,9 +17,8 @@ export function VoiceChip({ props }: EntryProps<{ bot: BotRef }>) {
   useEffect(() => {
     let live = true;
     const read = (): void => {
-      void Promise.all([api.settings.get<string>("provider", { bot }), api.settings.get<string>("voice", { bot })]).then(([p, v]) => {
-        if (live) setVoiced(typeof p === "string" && p !== "" && typeof v === "string" && v !== "");
-      }, () => undefined);
+      // A bot's voice is the host half's to read (a page reads only its plugin's plain settings).
+      void Promise.resolve(api.host.call<unknown>("voiceOf", { bot })).then((v) => { if (live) setVoiced(v !== null && typeof v === "object"); }, () => undefined);
       void api.settings.get<boolean>("speakReplies").then((x) => { if (live) setOn(x !== false); }, () => undefined);
     };
     read();

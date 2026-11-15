@@ -653,16 +653,16 @@ describe("each document's strings (§5.5's translations)", () => {
   });
 });
 
-describe("a bot's speech to the main window's shell", () => {
-  test("a voice piece goes to the window's clover shell document only (not the core root, not another window's)", () => {
+describe("a message to the main window's shell", () => {
+  test("a shell message goes to the window's clover shell document only (not the core root, not another window's)", () => {
     const s = setup([]);
     const shell = mountShell(s);
-    const piece = { bot: "luna", utterance: "u1", seq: 0, audio: "AAAA", format: "pcm16-24k" as const, final: false };
+    const m = { type: "listen" as const, op: "stop" as const, utterance: "u1" };
     s.sent.length = 0;
-    s.rt.shellMessage(WIN, { type: "voice", piece });
-    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m: { type: "voice", piece } }]);
+    s.rt.shellMessage(WIN, m);
+    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m }]);
     s.sent.length = 0;
-    s.rt.shellMessage(WIN + 1, { type: "voice", piece });
+    s.rt.shellMessage(WIN + 1, m);
     expect(s.sent).toEqual([]);
   });
 
@@ -783,7 +783,8 @@ describe("lane B's #179 hooks in the runtime", () => {
     s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["pinner#pin", "pinReply", "Pin"]]);
+    // Clover Voice's speak button is the bundled tree's own entry beside it.
+    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["clover/voice#speak", "speak", "Speak"], ["pinner#pin", "pinReply", "Pin"]]);
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation.message.action").items).toEqual([]);
   });
 
@@ -986,13 +987,15 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   test("background parts: app.background components that may run, each in a window of its own whose root shows only it; audio only for a plugin holding it", () => {
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
-    expect(s.rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true }]);
+    // Clover Voice's player is the bundled tree's own background part.
+    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true };
+    expect(s.rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true }]);
     // The surface list doesn't take it, and in safe mode only clover's would run.
     expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
-    expect(setup(bg, { safeMode: true }).rt.backgroundEntries()).toEqual([]);
+    expect(setup(bg, { safeMode: true }).rt.backgroundEntries().filter((e) => e.pluginId !== VOICE.pluginId)).toEqual([]);
     // A plugin without `audio`.
     const quiet = readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-background")), capabilities: [] }] as never);
-    expect(setup(quiet).rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false }]);
+    expect(setup(quiet).rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false }]);
     // Its window's root declares `app.background` and places just that entry; the frame may autoplay (the plugin holds `audio`), and the
     // other plugin's would not.
     s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });

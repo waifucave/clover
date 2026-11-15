@@ -75,23 +75,13 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "ui.settings": { disposition: READ },
   // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
   // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
-  // The character stage's mute is the one other write: `voice.speakReplies` only (`voiceMuteParams`), by the user's click;
-  // Settings › Voice's "Speak replies" switch (Clover Voice's part) writes the same one key the same way.
   // The bot editor's one write: which plugins' layout patches the user switched off in that bot's tab (`tabPatchParams`),
   // merged by main into the stored lists, the rest kept.
-  "ui.set": { disposition: "settings", part: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART, VOICE_PART], gesture: ["clover/settings", CHARACTER_PART, BOT_EDITOR_PART, VOICE_PART] },
-  // The character stage's stop button: the user's click ends that bot's speech (the core ends the utterance).
-  "voice.stop": { disposition: "gesture", part: CHARACTER_PART },
+  "ui.set": { disposition: "settings", part: ["clover/settings", BOT_EDITOR_PART], gesture: ["clover/settings", BOT_EDITOR_PART] },
   // The shell's pieces of a recording the user is holding (push-to-talk): audio and whether it is the last, nothing else. Main
   // names the bot and the utterance, numbers the pieces and refuses any with no hold open (`ListenHolds.piece`); the hold
   // itself began with the composer's `listenStart`, inside the user's press.
   "voice.listen": { disposition: "held", part: SHELL_PART },
-  // The shell's player saying an utterance it was sent ended here (`voicePlayedParams`: the bot and the utterance, nothing
-  // else): the core lets the voice mode's queue go on, ignoring one it isn't waiting on; it never starts a sound.
-  "voice.played": { disposition: READ, part: SHELL_PART },
-  // The speak button under a bot's reply (the conversation view): the user's click asks to hear that one reply. The page
-  // names the session and the reply's seq; the core reads the text from the log.
-  "voice.speak": { disposition: "gesture", part: CONVERSATION_PART },
   // Settings › Voice (Clover Voice's part) reads and writes its own settings too (which voice is active here), the
   // write by the user's choice in its list.
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
@@ -271,23 +261,6 @@ export function settingsParams(params: unknown): { params: { patch: Record<strin
     out[k] = v;
   }
   return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
-}
-
-/** The shell's `voice.played`: a bot and an utterance, short strings, nothing else. */
-export function voicePlayedParams(params: unknown): { params: { bot: string; utterance: string } } | { why: string } {
-  const p = (params ?? {}) as { bot?: unknown; utterance?: unknown };
-  if (typeof p.bot !== "string" || p.bot === "" || p.bot.length > 128) return { why: "which bot?" };
-  if (typeof p.utterance !== "string" || p.utterance === "" || p.utterance.length > 128) return { why: "which utterance?" };
-  return { params: { bot: p.bot, utterance: p.utterance } };
-}
-
-/** The stage's `ui.set`: `voice.speakReplies` as a boolean and nothing else. */
-export function voiceMuteParams(params: unknown): { params: { patch: { voice: { speakReplies: boolean } } } } | { why: string } {
-  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
-  const voice = patch !== null && typeof patch === "object" ? (patch as { voice?: unknown }).voice : undefined;
-  const on = voice !== null && typeof voice === "object" ? (voice as { speakReplies?: unknown }).speakReplies : undefined;
-  if (typeof on !== "boolean" || Object.keys(patch as object).length !== 1 || Object.keys(voice as object).length !== 1) return { why: "the stage sets only whether replies are spoken" };
-  return { params: { patch: { voice: { speakReplies: on } } } };
 }
 
 const BOT_ID = /^[a-z][a-z0-9-]{0,80}$/;
@@ -556,27 +529,9 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
-  if (r.method === "voice.played") {
-    const shaped = voicePlayedParams(r.params);
-    if ("why" in shaped) throw r.refuse(shaped.why);
-    return r.request("voice.played", shaped.params);
-  }
-  if (r.method === "ui.set" && (part === CHARACTER_PART || part === VOICE_PART)) {
-    const shaped = voiceMuteParams(r.params);
-    if ("why" in shaped) {
-      r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
-      throw r.refuse(shaped.why);
-    }
-    return r.request("ui.set", shaped.params);
-  }
   if (r.method === "voice.listen") {
     if (r.listens === undefined) throw r.refuse("this app can't record");
     return r.listens.piece(r.tree.windowId, r.params);
-  }
-  if (r.method === "voice.stop") {
-    const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;
-    if (typeof bot !== "string" || bot === "" || bot.length > 128) throw r.refuse("which bot?");
-    return r.request("voice.stop", { bot });
   }
   if (r.method === "ui.set" && part === BOT_EDITOR_PART) {
     const shaped = editorListParams(r.params);
@@ -594,11 +549,6 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
       r.log(`tree: ${part}: bot.setUserLayer refused (${why})`);
       throw r.refuse(why);
     }
-  }
-  if (r.method === "voice.speak") {
-    const p = r.params as { session?: unknown; seq?: unknown } | null | undefined;
-    if (typeof p?.session !== "string" || p.session === "" || p.session.length > 128 || !Number.isSafeInteger(p.seq) || (p.seq as number) < 0) throw r.refuse("which reply?");
-    return r.request("voice.speak", { session: p.session, seq: p.seq });
   }
   if (r.method === "ui.set" && part === SETTINGS_PART) {
     const shaped = settingsParams(r.params);

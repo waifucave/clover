@@ -15,9 +15,8 @@ export function BotVoiceSection({ props }: EntryProps<{ bot: BotRef }>) {
   useEffect(() => {
     let live = true;
     const read = (): void => {
-      void Promise.all([api.settings.get<string>("provider", { bot }), api.settings.get<string>("voice", { bot })]).then(([p, v]) => {
-        if (live) setVoice(typeof p === "string" && p !== "" && typeof v === "string" && v !== "" ? { provider: p, voice: v } : undefined);
-      }, () => undefined);
+      // A bot's voice is the host half's to read (a page reads only its plugin's plain settings).
+      void Promise.resolve(api.host.call<{ provider: string; voice: string } | null>("voiceOf", { bot })).then((v) => { if (live) setVoice(v ?? undefined); }, () => undefined);
     };
     read();
     const off = api.settings.watch(null, read);
@@ -29,7 +28,7 @@ export function BotVoiceSection({ props }: EntryProps<{ bot: BotRef }>) {
 
   const reset = async (): Promise<void> => {
     setVoice(undefined);
-    for (const key of ["provider", "voice", "model"]) await Promise.resolve(api.settings.set(key, null, { bot })).catch(() => undefined);
+    await Promise.resolve(api.host.call("forget", { bot })).catch(() => undefined);
   };
 
   return (
