@@ -3968,9 +3968,6 @@
     "points.call": {
       "where": "both"
     },
-    "points.stream": {
-      "where": "both"
-    },
     "commands.run": {
       "capability": "call:*",
       "where": "both"
@@ -4427,6 +4424,9 @@
       "where": "both"
     },
     "turns.watch": {
+      "where": "both"
+    },
+    "points.stream": {
       "where": "both"
     },
     "streams.open": {

@@ -56,7 +56,7 @@ export const API_CALLS = {
   // A component's own keys in the user's language (§5.5: components read them through `t`). A host half has none: its
   // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
   t: { where: "ui" },
-  "points.entries": both(), "points.watch": both(), "points.call": both(), "points.stream": both(),
+  "points.entries": both(), "points.watch": both(), "points.call": both(),
   /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
@@ -154,6 +154,7 @@ export const API_CALLS = {
   "turns.take": both(), "turns.done": both(), "turns.extend": both(), "turns.state": both(), "turns.watch": both(),
   /** Byte streams between a plugin's own two halves (§5.4 "Streams"), in both halves, with no capability: a stream
    *  connects only one plugin's own halves, or (`points.stream`) a caller to a handler it may already `points.call`. */
+  "points.stream": both(),
   "streams.open": both(), "streams.accept": both(), "streams.write": both(), "streams.end": both(), "streams.cancel": both(), "streams.ack": both(),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 

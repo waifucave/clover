@@ -17,6 +17,13 @@ type Api = {
 let api: Api | undefined;
 const page: Record<string, unknown> = {};
 let upRead: Counted | undefined;
+/** What each command's work counted, or why it failed: a command answers at once (its call has 10 seconds), the work runs on. */
+const results: Record<string, unknown> = {};
+const background = (what: string, work: () => Promise<Counted>): { started: string } => {
+  delete results[what];
+  void work().then((r) => (results[what] = r), (e: unknown) => (results[what] = { error: e instanceof Error ? e.message : String(e) }));
+  return { started: what };
+};
 let ready = false;
 
 const need = (): Api => {
@@ -67,7 +74,11 @@ const waitFor = async <T>(what: string, get: () => T | undefined, ms = 120_000):
   }
 };
 
-export async function down(args: { bytes?: number } | null): Promise<Counted> {
+export function down(args: { bytes?: number } | null): { started: string } {
+  return background("down", () => downWork(args));
+}
+
+async function downWork(args: { bytes?: number } | null): Promise<Counted> {
   const bytes = typeof args?.bytes === "number" ? args.bytes : 4_000_000;
   await waitFor("its page to be ready", () => (ready ? true : undefined));
   const w = (await need().streams.open("down", { meta: { bytes } })).getWriter();
@@ -81,7 +92,11 @@ export async function down(args: { bytes?: number } | null): Promise<Counted> {
   return { count: bytes, sum };
 }
 
-export async function up(args: { bytes?: number } | null): Promise<Counted> {
+export function up(args: { bytes?: number } | null): { started: string } {
+  return background("up", () => upWork(args));
+}
+
+async function upWork(args: { bytes?: number } | null): Promise<Counted> {
   const bytes = typeof args?.bytes === "number" ? args.bytes : 3_000_000;
   await waitFor("its page to be ready", () => (ready ? true : undefined));
   upRead = undefined;
@@ -89,14 +104,18 @@ export async function up(args: { bytes?: number } | null): Promise<Counted> {
   return await waitFor("the stream its page opens", () => upRead);
 }
 
-export async function point(args: { bytes?: number } | null): Promise<Counted> {
+export function point(args: { bytes?: number } | null): { started: string } {
+  return background("point", () => pointWork(args));
+}
+
+async function pointWork(args: { bytes?: number } | null): Promise<Counted> {
   const bytes = typeof args?.bytes === "number" ? args.bytes : 2_000_000;
   const stream = await need().points.stream("acceptance-stream-a.sounds", { pluginId: "acceptance-stream-b", entryId: "tone" }, "make", { bytes });
   return await readAll(stream);
 }
 
 export function report(): Record<string, unknown> {
-  return { ready, page, ...(upRead !== undefined ? { up: upRead } : {}) };
+  return { ready, page, results };
 }
 
 /** What its page may call (`host.call`). */

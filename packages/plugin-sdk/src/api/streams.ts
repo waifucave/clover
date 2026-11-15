@@ -124,7 +124,8 @@ export function openStream(t: StreamsTransport, name: string, options?: StreamOp
       if (id === undefined) reject(over);
       else controller?.error(over);
     });
-    void watch.ended.then((why) => fail(`the stream's watch ended: ${why}`));
+    // After the open settled: a watch refused ends too, and the refusal is the reason, not that.
+    void watch.opened.then(() => watch!.ended.then((why) => fail(`the stream's watch ended: ${why}`)), () => undefined);
   });
 }
 
@@ -242,10 +243,10 @@ export function acceptStreams(t: StreamsTransport, name: string, onStream: (stre
   const closeAll = (why: string) => {
     for (const s of [...open.values()]) s.abort(why);
   };
-  void watch.ended.then((why) => {
+  void watch.opened.then(() => watch.ended.then((why) => {
     stopped = true;
     closeAll(`the acceptor's watch ended: ${why}`);
-  });
+  }), () => undefined);
   return Object.assign(() => {
     if (stopped) return;
     stopped = true;
@@ -319,12 +320,12 @@ export function pointStream(
       if (incoming === undefined) reject(err);
       else incoming.abort(reasonText(err, "the stream's watch failed"));
     });
-    void watch.ended.then((why) => {
+    void watch.opened.then(() => watch!.ended.then((why) => {
       if (over) return;
       over = true;
       release();
       if (incoming === undefined) reject(new Error(`the stream's watch ended: ${why}`));
       else incoming.abort(`the stream's watch ended: ${why}`);
-    });
+    }), () => undefined);
   });
 }

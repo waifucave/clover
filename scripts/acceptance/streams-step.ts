@@ -84,33 +84,28 @@ export async function streamsClause(d: StreamsClauseDeps): Promise<string> {
       await Bun.sleep(500);
     }
     const wrong: string[] = [];
+    type Report = { page: Record<string, unknown>; results: Record<string, unknown> };
+    // A command answers at once (a command call has 10 seconds); its work runs on and its result is in `report`.
+    const result = async (name: string, bytes: number, pageKey?: string): Promise<Report> => {
+      const started = await run<{ started?: string }>(`${A}.${name}`, { bytes });
+      if (started.started !== name) d.fail(`${A}.${name} didn't start: ${JSON.stringify(started)}`);
+      for (let i = 0; i < 240; i++) {
+        const r = await run<Report>(`${A}.report`);
+        if (r.results[name] !== undefined && (pageKey === undefined || r.page[pageKey] !== undefined)) return r;
+        await Bun.sleep(500);
+      }
+      return d.fail(`${A}.${name} gave no result in 120 s: ${JSON.stringify(await run(`${A}.report`))}`);
+    };
     // Host half to its page.
-    const wroteDown = await run<Counted>(`${A}.down`, { bytes: DOWN });
     const wantDown = expected(1, DOWN);
-    const w1 = countedWrong("the host half's write to its page", wroteDown, wantDown);
-    if (w1 !== undefined) wrong.push(w1);
-    let report = await run<{ page: Record<string, unknown> }>(`${A}.report`);
-    for (let i = 0; i < 120 && report.page.down === undefined; i++) {
-      await Bun.sleep(500);
-      report = await run<{ page: Record<string, unknown> }>(`${A}.report`);
-    }
-    const w2 = countedWrong("the page's read of its host half's stream", report.page.down, wantDown);
-    if (w2 !== undefined) wrong.push(w2);
+    const down = await result("down", DOWN, "down");
+    for (const w of [countedWrong("the host half's write to its page", down.results.down, wantDown), countedWrong("the page's read of its host half's stream", down.page.down, wantDown)]) if (w !== undefined) wrong.push(w);
     // The page to its host half.
-    const readUp = await run<Counted>(`${A}.up`, { bytes: UP });
     const wantUp = expected(2, UP);
-    const w3 = countedWrong("the host half's read of its page's stream", readUp, wantUp);
-    if (w3 !== undefined) wrong.push(w3);
-    report = await run<{ page: Record<string, unknown> }>(`${A}.report`);
-    for (let i = 0; i < 60 && report.page.upSent === undefined; i++) {
-      await Bun.sleep(500);
-      report = await run<{ page: Record<string, unknown> }>(`${A}.report`);
-    }
-    const w4 = countedWrong("the page's write to its host half", report.page.upSent, wantUp);
-    if (w4 !== undefined) wrong.push(w4);
+    const up = await result("up", UP, "upSent");
+    for (const w of [countedWrong("the host half's read of its page's stream", up.results.up, wantUp), countedWrong("the page's write to its host half", up.page.upSent, wantUp)]) if (w !== undefined) wrong.push(w);
     // Another plugin's point handler answers with a stream.
-    const pointed = await run<Counted>(`${A}.point`, { bytes: POINT });
-    const w5 = countedWrong("the point handler's stream, read by its caller", pointed, expected(3, POINT));
+    const w5 = countedWrong("the point handler's stream, read by its caller", (await result("point", POINT)).results.point, expected(3, POINT));
     if (w5 !== undefined) wrong.push(w5);
     // A stream connects only a plugin's own halves.
     const nosy = await run<{ opened: string; wrote: string }>(`${B}.nosy`);
