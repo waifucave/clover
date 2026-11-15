@@ -109,6 +109,7 @@ export function askedByPluginText(asker: string, name: string): string {
 }
 import { TreeProblem, folderReader, treeEntries } from "./tree";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
+import { homesOf, outsideHomeIssues } from "./outside-homes";
 
 /** How long a folder must be unchanged before it is read (§5.1). */
 export const SETTLE_MS = 2_000;
@@ -153,7 +154,7 @@ const firstError = (issues: readonly ValidationIssue[]) => issues.find((i) => i.
 /** Reads a top-level plugin folder. */
 export async function readPluginFolder(
   folder: string,
-  opts: { source: PluginSource; dev?: boolean; bundled?: boolean; apiVersion?: string; codeFieldsOf?: CodeFieldsOf; provenance?: PluginProvenance },
+  opts: { source: PluginSource; dev?: boolean; bundled?: boolean; apiVersion?: string; codeFieldsOf?: CodeFieldsOf; provenance?: PluginProvenance; homes?: { userHome: string; cloverHome: string } },
 ): Promise<ReadFolder> {
   const name = basename(folder);
   const base = { source: opts.source, folder, ...(opts.dev ? { dev: true } : {}), ...(opts.provenance ? { provenance: opts.provenance } : {}) };
@@ -184,8 +185,10 @@ export async function readPluginFolder(
   // folder's code runs in plugin processes too (#234's check 5, K3).
   const judged = opts.bundled !== true;
   const loaderIssues = judged ? loaderOutsideIssues(loader) : [];
-  const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/")), ...loaderIssues];
-  const treeOk = tree.ok && loaderIssues.length === 0;
+  // P5: a folder it names outside its sandbox that holds a home makes it invalid here (read 44).
+  const homeIssues = opts.homes !== undefined ? outsideHomeIssues(tree.top.manifest, opts.homes) : [];
+  const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/")), ...loaderIssues, ...homeIssues];
+  const treeOk = tree.ok && loaderIssues.length === 0 && homeIssues.length === 0;
   const topInvalid = treeOk ? undefined : (firstError(topIssues) ?? "the plugin doesn't validate");
   const top: RegistryInput = {
     ...base, id, manifest: tree.top.manifest ?? placeholder(), treeHash: hash, class: tree.top.class, issues: topIssues,
@@ -481,6 +484,7 @@ export class PluginFolders {
     if (ok === undefined) return "it has no OK on this computer yet";
     const r = await readPluginFolder(folder, {
       source: "local", bundled: false, provenance,
+      homes: homesOf(this.#o.pluginsDir),
       ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
       ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
     });
@@ -507,6 +511,7 @@ export class PluginFolders {
     if (ok === undefined) return "it has no OK on this computer";
     const r = await readPluginFolder(folder, {
       source: provenance.npm !== undefined ? "npm" : "index", bundled: false, provenance,
+      homes: homesOf(this.#o.pluginsDir),
       ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
       ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
     });
@@ -744,6 +749,7 @@ export class PluginFolders {
       ?? (drop !== undefined ? { by: "bot", at: this.#now(), bot: drop } : { by: s.bundled ? "bundled" : "found", at: this.#now() });
     const r = await readPluginFolder(s.folder, {
       source: s.source, bundled: s.bundled ?? false, provenance,
+      homes: homesOf(this.#o.pluginsDir),
       ...(s.dev ? { dev: true } : {}),
       ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
       ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),

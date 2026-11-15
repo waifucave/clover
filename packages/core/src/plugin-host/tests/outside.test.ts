@@ -128,6 +128,37 @@ test("a tree that names programs outside its sandbox has no card-free tool: read
   expect(lists("gitter", () => true)).toEqual([false, false, false, false]);
 });
 
+test("a named folder that holds the user's home or Clover's, or lies in Clover's, is refused with why: at install and when its folder is read", async () => {
+  const { validatePluginFolder } = await import("../../registry/validate");
+  const { readPluginFolder } = await import("../../registry/folders");
+  const { installStaged } = await import("../../registry/install-folder");
+  const top = temp("cf-out-homes-");
+  const userHome = join(top, "user");
+  const cloverHome = join(userHome, ".clover");
+  mkdirSync(join(cloverHome, "plugins"), { recursive: true });
+  mkdirSync(join(userHome, "Notes"), { recursive: true });
+  const homes = { userHome, cloverHome };
+  const write = (name: string, read: string[]) => {
+    const dir = join(top, "src", name);
+    mkdirSync(join(dir, "host"), { recursive: true });
+    writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id: name, name, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js", process: "own", outside: { read } } }));
+    writeFileSync(join(dir, "package.json"), "{\"type\":\"module\"}");
+    writeFileSync(join(dir, "host", "index.js"), "export async function start() {}\n");
+    return dir;
+  };
+  const codes = async (dir: string) => (await validatePluginFolder(dir, { os: "macos", homes })).issues.filter((i) => i.severity === "error").map((i) => `${i.code}: ${i.message}`);
+  expect(await codes(write("fine", ["~/Notes"]))).toEqual([]);
+  expect(await codes(write("holder", [top]))).toEqual([`outside_folder_home: "${top}" holds your whole home folder, so it isn't a folder it may read outside its sandbox: name the folder inside your home that it needs`]);
+  expect((await codes(write("cloverish", ["~/.clover/plugins"])))[0]).toContain("is inside Clover's own folder");
+  // The registry reads it as invalid, with why.
+  const read = await readPluginFolder(write("holder2", [userHome]), { source: "local", homes });
+  expect(read.inputs[0]!.invalid).toContain("holds your whole home folder");
+  // And an install is refused with the words.
+  const refused = await installStaged(write("holder3", [top]), { pluginsDir: join(cloverHome, "plugins"), stagingDir: join(top, "staging"), os: "macos", taken: () => false }).then(() => "installed", (e: Error) => e.message);
+  expect(refused).toContain("isn't valid");
+  expect(refused).toMatch(/holds (your whole home folder|Clover's own folder)/);
+});
+
 darwinDescribe("programs and folders outside the sandbox (P5)", () => {
   test("a named coding agent's folder: its other files read, its sign-in never (the plugin fence's last deny)", async () => {
     const home = temp("cf-out-");
