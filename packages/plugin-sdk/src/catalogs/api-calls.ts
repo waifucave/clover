@@ -4,7 +4,7 @@
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
   ApprovalsApi, AudioApi, SpeechApi, VoicesApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
-  LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
+  LogsApi, MemoryApi, NetApi, NotifyApi, OutsideApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
   TurnsApi, StreamsApi,
 } from "../api/plugin-api";
@@ -18,7 +18,7 @@ type FnKeys<T> = { [K in keyof T & string]-?: NonNullable<T[K]> extends Fn ? K :
 export type ApiCallPath =
   | FnKeys<PluginApi>
   | `points.${FnKeys<PointsApi>}` | `commands.${FnKeys<CommandsApi>}` | `host.${FnKeys<HostApi>}` | `ui.${FnKeys<UiSendApi>}`
-  | `storage.synced.${FnKeys<SyncedStore>}` | `net.${FnKeys<NetApi>}` | `secrets.${FnKeys<SecretsApi>}` | `keys.${FnKeys<KeysApi>}`
+  | `storage.synced.${FnKeys<SyncedStore>}` | `net.${FnKeys<NetApi>}` | `outside.${FnKeys<OutsideApi>}` | `secrets.${FnKeys<SecretsApi>}` | `keys.${FnKeys<KeysApi>}`
   | `settings.${FnKeys<SettingsApi>}` | `conversation.${FnKeys<ConversationApi>}` | `memory.${FnKeys<MemoryApi>}`
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
@@ -30,6 +30,11 @@ export type ApiCallPath =
 /** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
  *  together). */
 export const NOTIFY_PER_MINUTE = 3;
+/** `outside.run` (P5): each of a program's outputs is cut at this many bytes; its time is 60 s unless asked, at most
+ *  10 minutes. */
+export const OUTSIDE_OUTPUT_MAX = 1_048_576;
+export const OUTSIDE_TIMEOUT_MS = 60_000;
+export const OUTSIDE_TIMEOUT_MAX_MS = 600_000;
 export const NOTIFY_PER_HOUR = 20;
 
 export interface ApiCallInfo {
@@ -62,6 +67,9 @@ export const API_CALLS = {
   /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
+  /** P5: the programs its manifest names (`host.outside.programs`, each on its OK card with a warning), run outside the
+   *  sandbox with the user's own access; the list is the grant, so no capability. Host halves only. */
+  "outside.run": { where: "host" },
   "ui.send": { where: "host" },
   /** A layer reads its own store (`plugin.layer.call`) and hears its changes (`plugin_store_changed`); only its host half
    *  writes it, so what a component hands over is checked by the plugin's own code first. */

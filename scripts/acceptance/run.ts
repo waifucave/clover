@@ -123,6 +123,7 @@ import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnit
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
+import { OUTSIDE_FOLDER, outsideWrong, writeOutside, type ProbeAnswer } from "./outside-step";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -2110,6 +2111,19 @@ async function main(): Promise<void> {
       const helper = await refusedWith(refused.helper, HELPER_REFUSAL);
       if (helper !== undefined) wrong.push(`the helper plugin: ${helper.slice(0, 300)}`);
       if (node === undefined && helper === undefined) done.push("1.2/1.10 node and helper refused with their instead-messages");
+
+      // P5 (the owner, 2026-11-15: "Yes, named on the card"): programs and folders of the user's outside the sandbox
+      // (outside-step.ts).
+      {
+        const o = writeOutside(src, join(root, "outside-bin"), userHome);
+        const named = await install({ from: "folder", path: o.named });
+        const plain = await install({ from: "folder", path: o.plain });
+        const probe = async (pid: string) => (await c.request<{ result: ProbeAnswer }>("command.run", { name: `${pid}.probe`, args: { program: o.program, private: o.privateFile, note: o.noteFile } }, 60_000)).result;
+        const answers = { named: await probe(named.id), plain: await probe(plain.id) };
+        const p5 = outsideWrong({ card: named.text, plainCard: plain.text, program: o.program, ...answers });
+        if (p5.length > 0) wrong.push(`P5 ${p5.join("; ")}`);
+        else done.push(`P5 ${named.id} named ${o.program} and ${OUTSIDE_FOLDER} (its OK card named each with its warning): its program ran outside the sandbox (${answers.named.ran!.slice(0, 40)}), its folder read, the private file refused to its own process (${answers.named.direct}); ${plain.id}, naming neither, was refused the program (${answers.plain.ran!.slice(9, 80)}) and the folder (${answers.plain.folder})`);
+      }
 
       // The main fixture: settings by scope, a custom sign-in, a child off by default, servers by placement.
       const fields = await install({ from: "folder", path: writeFields(src) });

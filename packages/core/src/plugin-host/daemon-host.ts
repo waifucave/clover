@@ -41,6 +41,7 @@ import { AvatarService } from "./api/avatar";
 import { confirmApi } from "./api/confirm";
 import { keysApi } from "./api/keys";
 import { logsApi } from "./api/logs";
+import { outsideApi, outsideReadFolders } from "./api/outside";
 import { pointChanges, pointsApi } from "./api/points";
 import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
@@ -348,14 +349,17 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   };
   // What an own process's fence holds of programs now: undefined for none, else its picks.
   const programsNow = (pluginId: string) => (runsPrograms(pluginId) ? o.picked?.(pluginId) ?? { read: [], write: [] } : undefined);
-  const fenceKey = (programs: { read: readonly string[]; write: readonly string[] } | undefined) => (programs === undefined ? "no programs" : picksKey(programs));
+  /** P5: the folders its manifest names to read outside its sandbox, as its own process's fence takes them. */
+  const outsideReadsNow = (pluginId: string): string[] => outsideReadFolders(o.registry.get(pluginId), { userHome: o.userHome ?? homedir(), cloverHome: o.home });
+  const fenceKey = (programs: { read: readonly string[]; write: readonly string[] } | undefined, pluginId?: string) =>
+    `${programs === undefined ? "no programs" : picksKey(programs)}|${pluginId === undefined ? "" : outsideReadsNow(pluginId).join("\u0000")}`;
   // A live own process whose fence no longer says what its plugin's OK'd tree and picks say (it gained or lost
   // `programs`, or its picks changed): it must not serve the plugin again.
   const staleOwn = (pluginId: string): { key: string; live: { peer: RpcPeer; kill(): void } } | undefined => {
     const key = `own:${pluginId}`;
     const live = processes.get(key);
     if (live === undefined || live.peer.closed) return undefined;
-    return startedFence.get(key)?.key === fenceKey(programsNow(pluginId)) ? undefined : { key, live };
+    return startedFence.get(key)?.key === fenceKey(programsNow(pluginId), pluginId) ? undefined : { key, live };
   };
   const endOwn = (s: { key: string; live: { peer: RpcPeer; kill(): void } }) => () => {
     if (processes.get(s.key) === s.live) {
@@ -405,15 +409,20 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // program and forks, the package managers' installs read-only, within the same walls: its tree, its data and temp
     // folders, the files the user picked for it (an open pick read, a save pick or an export folder read and written),
     // its tree's proxy. Every other host runs only its Bun and starts no process.
+    // P5: the folders of the user's its manifest names to read outside its sandbox (`host.outside.read`), read only, for
+    // the process of its own the manifest then has (`host.process: "own"`). The fence's last denies (the Keychain's
+    // files, the tools' credential files) still hold inside them.
+    const userHome = o.userHome ?? homedir();
+    const outsideReads = key.startsWith("own:") ? outsideReadsNow(dataOf) : [];
     const fence: PluginFenceInput = programs !== undefined
       ? {
-        cloverHome: o.home, userHome: o.userHome ?? homedir(),
-        read: [tree, ...(l.reads ?? [])], write: [data, tmp, ...programs.write], exec: "any", tools: true, network,
+        cloverHome: o.home, userHome,
+        read: [tree, ...(l.reads ?? []), ...outsideReads], write: [data, tmp, ...programs.write], exec: "any", tools: true, network,
         ...(programs.read.length > 0 ? { picked: programs.read } : {}),
       }
       : {
-        cloverHome: o.home, userHome: o.userHome ?? homedir(),
-        read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false, network,
+        cloverHome: o.home, userHome,
+        read: [tree, ...(l.reads ?? []), ...outsideReads], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false, network,
         ...(key === "clover" ? { noNativeCode: true } : {}),
       };
     const env = { ...l.env, ...(proxy?.env ?? {}), ...(programs !== undefined ? toolCacheEnv(tmp) : {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };
@@ -459,7 +468,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top, process === "own" ? pluginId : top, programs);
       const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
-      if (process === "own") startedFence.set(key, { key: fenceKey(programs), programs });
+      if (process === "own") startedFence.set(key, { key: fenceKey(programs, pluginId), programs });
       started.peer.onClose(() => {
         if (processes.get(key) === started) {
           processes.delete(key);
@@ -523,6 +532,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     commandsApi(o.registry, host),
     logs.handlers,
     keysApi({ secrets: o.secrets }),
+    // P5: the programs a plugin's manifest names, run by the daemon outside its sandbox with the user's own access.
+    outsideApi({ userHome: o.userHome ?? homedir(), log }),
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
