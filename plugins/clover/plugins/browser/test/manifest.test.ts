@@ -12,7 +12,9 @@ const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 /** The keys lane B's `McpServerSchema` allows (a strict object, `plugin-sdk/src/manifest/schema.ts` on lane/b-m0). */
-const MCP_SERVER_KEYS = new Set(["type", "command", "args", "env", "url", "headers", "tools", "instructions", "perComputer", "scope", "when", "declares"]);
+// With the lists a server may carry since R1 and F5: its read-only and web tools, what each tool needs, and the tools judged
+// as the Browser tool (`browserTools`, which this plugin's own server declares).
+const MCP_SERVER_KEYS = new Set(["type", "command", "args", "env", "url", "headers", "tools", "instructions", "perComputer", "scope", "when", "declares", "readOnly", "webSearch", "webFetch", "needs", "browserTools"]);
 
 const inside = (path: string): boolean => {
   const rel = relative(root, resolve(root, path));
