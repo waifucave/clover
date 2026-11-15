@@ -37,8 +37,10 @@ function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn
         const bot = (args as { bot?: string }).bot;
         if (name === "voiceOf") {
           const p = stored.get(`provider@${bot}`), v = stored.get(`voice@${bot}`);
-          return typeof p === "string" && p !== "" && typeof v === "string" ? { provider: p, voice: v, from: "user" } : (o.byBot?.[bot!] ?? null);
+          const off = stored.get(`silent@${bot}`) === true ? { off: true } : {};
+          return typeof p === "string" && p !== "" && typeof v === "string" ? { provider: p, voice: v, from: "user", ...off } : (o.byBot?.[bot!] ?? (off.off ? off : null));
         }
+        if (name === "setOff") { stored.set(`silent@${bot}`, (args as { off: boolean }).off ? true : null); return { ok: true }; }
         if (name === "forget") { stored.set(`provider@${bot}`, null); stored.set(`voice@${bot}`, null); return { ok: true }; }
         o.calls?.push({ name, args });
         return { ok: true };
@@ -77,6 +79,19 @@ describe("a bot's editor: its voice", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Reset" })); await settle(4); });
     expect(screen.getByText("None")).toBeTruthy();
     expect(a.stored.get("provider@alpha")).toBeNull();
+  });
+
+  test("its switch turns this one bot's voice off, as the user's own setting, and back on", async () => {
+    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" } });
+    mount(a, <BotVoiceSection {...alpha} />);
+    await act(() => settle(6));
+    const sw = () => screen.getByRole("switch", { name: "Speaks its replies" });
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    await act(async () => { fireEvent.click(sw()); await settle(4); });
+    expect(a.stored.get("silent@alpha")).toBe(true);
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    await act(async () => { fireEvent.click(sw()); await settle(4); });
+    expect(a.stored.get("silent@alpha")).toBeNull();
   });
 
   test("the default from the plugin that brings the bot shows as such, with no reset, and says why it can't speak when its provider isn't set up", async () => {

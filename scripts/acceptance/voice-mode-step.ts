@@ -10,15 +10,27 @@
 // never on sound (the test build is muted).
 import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { BACKGROUND_OK_LINE } from "../../packages/plugin-sdk/src/manifest/validate";
+import { readFileSync } from "node:fs";
+import { BACKGROUND_OK_LINE, fillsLine } from "../../packages/plugin-sdk/src/manifest/validate";
 import { clickTree, fail, leave, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
-export const VOICE_MODE_CLAUSE = "a second speaking plugin from a folder speaks through its own background part in the device's speech turn: its OK says it keeps a part running in the background; its chime, asked for while Alpha's reply sounds, begins only after Clover Voice's turn ended (the spans never overlap); picked in Settings' Voice picker (the platform's one at a time) it says Alpha's reply its own way while Clover Voice's player stays quiet, and Clover Voice takes back over when chosen again; a plugin with voices.use gets a provider's transcription as its own data, one without is refused";
+export const VOICE_MODE_CLAUSE = "a second speaking plugin from a folder speaks through its own background part in the device's speech turn: its OK says it keeps a part running in the background and, in Clover Voice's words, what it is given as a voice mode; a bot that brings a default voice says Clover Voice's caution for it on its OK card; its chime, asked for while Alpha's reply sounds, begins only after Clover Voice's turn ended (the spans never overlap); picked in Settings' Voice picker (the platform's one at a time) it says Alpha's reply its own way while Clover Voice's player stays quiet, and Clover Voice takes back over when chosen again; a plugin with voices.use gets a provider's transcription as its own data, one without is refused";
 
 const MODE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice-mode");
 const MODE_ID = "acceptance-voice-mode";
 const NARRATOR_DIR = resolve(import.meta.dir, "fixtures", "acceptance-narrator");
 const NARRATOR_ID = "acceptance-narrator";
+const VOICE_BOT_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice-bot");
+const VOICE_BOT_ID = "acceptance-voice-bot";
+
+/** The line Clover Voice's point puts on its fillers' OK cards (its declaration's `fills`), as the card says it. */
+function voiceFills(point: string): string {
+  const voice = JSON.parse(readFileSync(resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins", "voice", "clover.json"), "utf8")) as { name: string; host: { declares: Record<string, { title: string; fills: { ok: string; warns?: boolean } }> } };
+  const d = voice.host.declares[point]!;
+  return fillsLine({ by: voice.name, title: d.title, ok: d.fills.ok, ...(d.fills.warns === true ? { warns: true } : {}) });
+}
+/** Whether a card's text (its JSON) shows `line`. */
+const shows = (cardJson: string, line: string): boolean => cardJson.includes(JSON.stringify(line).slice(1, -1));
 /** What the run's tone voice hears of the narrator's 3,200 bytes. */
 const NARRATED = "heard 1 pieces, 3200 bytes of pcm16-16k";
 
@@ -104,7 +116,22 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     // The second speaking plugin, its OK card saying it keeps a part running in the background.
     const ok = await install(MODE_DIR, MODE_ID);
     if (!ok.includes(BACKGROUND_OK_LINE)) fail(`${MODE_ID}'s OK card lacks "${BACKGROUND_OK_LINE}": ${ok.slice(0, 400)}`);
-    done.push(`${MODE_ID}, from its folder, says on its OK card "${BACKGROUND_OK_LINE}"`);
+    // What it is given as a voice mode: Clover Voice's words for its modes point, by Clover Voice's name.
+    const modesLine = voiceFills("clover.voice.modes");
+    if (!shows(ok, modesLine)) fail(`${MODE_ID}'s OK card lacks Clover Voice's line "${modesLine}": ${ok.slice(0, 600)}`);
+    done.push(`${MODE_ID}, from its folder, says on its OK card "${BACKGROUND_OK_LINE}" and "${modesLine}"`);
+
+    // A bot that brings a default voice: its OK card carries Clover Voice's caution for that point. Read, then removed.
+    {
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: VOICE_BOT_DIR } }, 60_000);
+      if (r.id !== VOICE_BOT_ID) fail(`${VOICE_BOT_ID} installed as ${r.id}`);
+      const card = await until(`${VOICE_BOT_ID}'s OK card`, 60_000, async () => (await rpc.request<{ cards: CardView[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === VOICE_BOT_ID));
+      const text = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
+      const defaultsLine = voiceFills("clover.voice.defaults");
+      if (!shows(text, defaultsLine)) fail(`${VOICE_BOT_ID}'s OK card lacks Clover Voice's line "${defaultsLine}": ${text.slice(0, 600)}`);
+      await leave(ctx, VOICE_BOT_ID);
+      done.push(`a bot that brings a default voice says on its OK card "${defaultsLine}"`);
+    }
 
     // Its chime asked for while Alpha's reply sounds (her `long` voice: 2.5 s): it waits for the device's speech turn.
     await setVoice("long");
@@ -168,6 +195,7 @@ export async function voiceModeClause(ctx: ExampleCtx): Promise<string[]> {
     if (chosen) await rpc.request("point.active.set", { point: "voiceModes", entry: { pluginId: "clover/voice", entryId: "clover-voice" } }).catch(() => undefined);
     if (long) await setVoice("tone").catch(() => undefined);
     await leave(ctx, NARRATOR_ID);
+    await leave(ctx, VOICE_BOT_ID);
     await leave(ctx, MODE_ID);
   }
 }

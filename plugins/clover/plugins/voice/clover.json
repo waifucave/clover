@@ -35,7 +35,11 @@
             }
           }
         },
-        "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream); the optional `ready` answers `{ ready, why? }`, whether the user set it up (its key or sign-in). A bot's voice names the entry's id."
+        "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream); the optional `ready` answers `{ ready, why? }`, whether the user set it up (its key or sign-in). A bot's voice names the entry's id.",
+        "title": "Voice providers",
+        "fills": {
+          "ok": "is sent what your bots say, to speak it, when you or a bot's default picks one of its voices"
+        }
       },
       "clover.voice.modes": {
         "shape": "list",
@@ -59,7 +63,11 @@
             }
           }
         },
-        "doc": "Another way to speak the bots' replies, used while its plugin is the active voice (the platform's `voiceModes`, one at a time, the user's pick in Settings): `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech)."
+        "doc": "Another way to speak the bots' replies, used while its plugin is the active voice (the platform's `voiceModes`, one at a time, the user's pick in Settings): `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech).",
+        "title": "Voice modes",
+        "fills": {
+          "ok": "when you choose it, it is given what your bots say, to speak, and hears what you say with push-to-talk"
+        }
       },
       "clover.voice.defaults": {
         "shape": "list",
@@ -78,10 +86,18 @@
             },
             "model": {
               "type": "string"
+            },
+            "plugin": {
+              "type": "string"
             }
           }
         },
-        "doc": "The default voice a plugin gives the bot it brings (the bot of its own tree; any other bot's is ignored): `provider` (an entry of clover.voice.providers), `voice`, `model?`. The user's own choice in the bot's Voice section always wins, and a default speaks only when its provider is set up."
+        "doc": "The default voice a plugin gives the bot it brings (the bot of its own tree; any other bot's is ignored): `provider` (an entry of clover.voice.providers) and `plugin` (the plugin that fills it, when another plugin's entry has the same id), `voice`, `model?`. The user's own choice in the bot's Voice section always wins, and a default speaks only when its provider says it is set up (its `ready`).",
+        "title": "Default voices",
+        "fills": {
+          "ok": "sets the voice its bot speaks with; if you have set up that voice's provider, its bot's replies are sent to that provider on your account",
+          "warns": true
+        }
       }
     }
   },
@@ -111,6 +127,13 @@
       "default": "",
       "scope": "bot"
     },
+    "providerPlugin": {
+      "type": "string",
+      "title": "Voice provider's plugin",
+      "description": "The plugin whose provider entry this bot's voice uses (when two plugins name an entry alike). Empty: the one plugin with that entry.",
+      "default": "",
+      "scope": "bot"
+    },
     "voice": {
       "type": "string",
       "title": "Voice",
@@ -123,6 +146,13 @@
       "title": "Voice model",
       "description": "The provider's voice model for this bot; empty is the provider's default.",
       "default": "",
+      "scope": "bot"
+    },
+    "silent": {
+      "type": "boolean",
+      "title": "No voice",
+      "description": "This bot stays text-only: none of its replies are spoken, whatever its voice or its default.",
+      "default": false,
       "scope": "bot"
     }
   },

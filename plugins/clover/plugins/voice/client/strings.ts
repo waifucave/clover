@@ -10,6 +10,8 @@ export const S = {
   noVoice: "None",
   voiceOf: (provider: string, voice: string) => `${voice} · ${provider}`,
   byBot: "The bot's own default. A voice you choose takes its place.",
+  speaks: "Speaks its replies",
+  speaksDetail: "Off, this bot stays text-only, whatever its voice.",
   reset: "Reset",
   stopSpeaking: "Stop speaking",
   mute: "Mute spoken replies",

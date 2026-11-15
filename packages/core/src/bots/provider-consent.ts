@@ -19,7 +19,10 @@
 //   (the shared `SessionGrants`, lane C's card path): its side threads and its next turns use it, and a plugin that
 //   moves its tag to a new provider asks again. Only the user's answer on the card counts (`SessionGrants`, review B1).
 // * **The same rule for what else a bot picks:** an agent it starts with a model on another provider than the bot's own
-//   user-chosen (or bundled) one (#311 S1). (A bot's voice is Clover Voice's own setting, which the user chooses.)
+//   user-chosen (or bundled) one (#311 S1). (A bot's voice isn't checked here: it is Clover Voice's, the user's choice
+//   in the bot's Voice section, else a default the plugin bringing the bot gives on Clover Voice's point
+//   `clover.voice.defaults`, which that plugin's OK card says (the point's `fills` line) and which speaks only through a
+//   provider the user set up.)
 // * **A no holds** until the user's next message of their own: until then nothing asks again, not a wake, a routine or
 //   an agent's report (#311 S2); the turn fails with a clear reason, and nothing reaches the provider. The hold is kept
 //   with the grants (`SessionGrants.hold`), in the bot's main conversation's log, so it survives a restart. Only the

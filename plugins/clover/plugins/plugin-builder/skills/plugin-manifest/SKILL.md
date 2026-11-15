@@ -181,6 +181,9 @@ point): `"declares": { "<your-id>.<name>": { "shape": "single" | "list" | "keyed
   else the first bundled filler, else the first installed; when it stops, the next takes over and the user is told.
   Read it with `api.points.active(point)` and hear it change with `api.points.onActive(point, listener)` (your tree and
   the fillers may); no plugin call or setting changes it;
+- `fills: { ok, warns? }`: the line your fillers' OK cards show, in your words and named as yours (`Fills <your name>'s
+  "<title>": <ok>.`), plain text up to 300 characters: say what a filler is given or what it makes happen (`warns`:
+  shown as a caution). A filler whose card gains it asks the user again, and so do your fillers when you change it;
 - rarely: `gates` (props that reach only a filler holding a capability, by dotted path) and `keep` (keys that can't be
   hidden).
 

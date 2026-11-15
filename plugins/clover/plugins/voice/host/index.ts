@@ -5,8 +5,10 @@
 //   end, the last reply).
 // * A bot's voice is the user's choice, this plugin's own setting for that bot (`provider`, `voice`, `model`, bot
 //   scope); else the default the plugin that brings the bot gives on this plugin's point `clover.voice.defaults` (only for its own
-//   bot; the user's choice always wins). A default voice speaks only when its provider is set up (the provider's
-//   `ready`); the bot's Voice section says why not.
+//   bot; the user's choice always wins). A default voice speaks only when its provider says it is set up (its
+//   `ready`; a provider with none doesn't count), and the bot's Voice section says why not. The user may also say "no
+//   voice" for one bot (its `silent` setting): nothing of it is spoken or heard. A provider is found by its plugin and
+//   its entry id, so another plugin's entry of the same name never gets the text.
 // * The provider is an entry of its own point, `clover.voice.providers` (Fish Audio fills it from its own folder): its
 //   `speak` handler answers with the audio as it is made (`points.stream`), and this streams it to the plugin's
 //   background part, the player (`streams.open("speech")`), which takes the device's speech turn, plays it and moves
@@ -33,8 +35,9 @@ export const SPEECH = "speech";
 /** How long a provider's `ready` answer is kept. */
 export const READY_TTL_MS = 60_000;
 
-/** A bot's voice: the user's choice (`user`), or the default from the plugin that brings it (`bot`). */
-export interface BotVoice { provider: string; voice: string; model?: string; from: "user" | "bot" }
+/** A bot's voice: the user's choice (`user`), or the default from the plugin that brings it (`bot`). `plugin`: the
+ *  provider entry's plugin, when it was named. */
+export interface BotVoice { provider: string; plugin?: string; voice: string; model?: string; from: "user" | "bot" }
 
 let api: HostPluginApi | undefined;
 let count = 0;
@@ -47,7 +50,7 @@ const hearing = new Map<string, { id: string; close: () => void; heard: Promise<
 /** The player's state: the utterances push-to-talk holds, and each bot's stop count (only goes up). */
 const holds = new Set<string>();
 const stops: Record<string, number> = {};
-/** Each provider's last `ready` answer. */
+/** Each provider's last `ready` answer, by its plugin and entry id. */
 const readiness = new Map<string, { at: number; ready: boolean; why?: string }>();
 /** The player said it accepts speech. */
 let playerReady: Promise<void> = Promise.resolve();
@@ -72,27 +75,52 @@ export function start(given: HostPluginApi): void {
   playerReady = new Promise<void>((r) => { readied = r; });
 }
 
-/** A bot's voice now, or undefined (text-only): the user's choice, else the default from the plugin that brings it. */
-export async function voiceOf(bot: string): Promise<BotVoice | undefined> {
+const named = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined);
+
+/** A bot's voice as chosen, whether or not the user turned the bot's voice off: the user's choice, else the default
+ *  from the plugin that brings it. */
+export async function voiceChoice(bot: string): Promise<BotVoice | undefined> {
   const a = need();
-  const [provider, voice, model] = await Promise.all([
-    a.settings.get<string>("provider", { bot }), a.settings.get<string>("voice", { bot }), a.settings.get<string>("model", { bot }),
+  const [provider, plugin, voice, model] = await Promise.all([
+    a.settings.get<string>("provider", { bot }), a.settings.get<string>("providerPlugin", { bot }), a.settings.get<string>("voice", { bot }), a.settings.get<string>("model", { bot }),
   ]);
-  if (typeof provider === "string" && provider !== "" && typeof voice === "string" && voice !== "") {
-    return { provider, voice, ...(typeof model === "string" && model !== "" ? { model } : {}), from: "user" };
+  if (named(provider) !== undefined && named(voice) !== undefined) {
+    return { provider: provider!, ...(named(plugin) ? { plugin: plugin! } : {}), voice: voice!, ...(named(model) ? { model: model! } : {}), from: "user" };
   }
   // Only the bot's own plugin (its tree) speaks for its default.
-  const own = (await a.points.entries<{ provider?: unknown; voice?: unknown; model?: unknown }>(DEFAULTS).catch(() => [])).find((e) => topOf(e.pluginId) === topOf(bot));
+  const own = (await a.points.entries<{ provider?: unknown; plugin?: unknown; voice?: unknown; model?: unknown }>(DEFAULTS).catch(() => [])).find((e) => topOf(e.pluginId) === topOf(bot));
   const v = own?.value;
-  if (v === undefined || typeof v.provider !== "string" || v.provider === "" || typeof v.voice !== "string" || v.voice === "") return undefined;
-  return { provider: v.provider, voice: v.voice, ...(typeof v.model === "string" && v.model !== "" ? { model: v.model } : {}), from: "bot" };
+  if (v === undefined || named(v.provider) === undefined || named(v.voice) === undefined) return undefined;
+  return { provider: v.provider as string, ...(named(v.plugin) ? { plugin: v.plugin as string } : {}), voice: v.voice as string, ...(named(v.model) ? { model: v.model as string } : {}), from: "bot" };
 }
+
+/** Whether the user said "no voice" for this bot. */
+export async function silent(bot: string): Promise<boolean> {
+  return (await need().settings.get<boolean>("silent", { bot }).catch(() => false)) === true;
+}
+
+/** A bot's voice now, or undefined (text-only: none chosen, or the user turned it off for this bot). */
+export async function voiceOf(bot: string): Promise<BotVoice | undefined> {
+  return (await silent(bot)) ? undefined : voiceChoice(bot);
+}
+
+/** The provider entry a voice names: by its plugin when named, else the one entry with that id (two plugins' entries of
+ *  the same id and no plugin named: none, so the text never goes to the wrong one). */
+export async function providerOf(v: BotVoice): Promise<{ entry?: PointEntry<{ name?: string; ready?: unknown }>; note?: string }> {
+  const all = (await need().points.entries<{ name?: string; ready?: unknown }>(PROVIDERS).catch(() => [])).filter((e) => e.entryId === v.provider && (v.plugin === undefined || e.pluginId === v.plugin));
+  if (all.length === 1) return { entry: all[0]! };
+  if (all.length === 0) return { note: "Its voice plugin isn't installed or is turned off." };
+  return { note: `More than one plugin offers a voice provider "${v.provider}"; choose which in the bot's voice.` };
+}
+
+const readyKey = (e: PointEntry): string => `${e.pluginId}\u0000${e.entryId}`;
 
 /** Whether a provider is set up (its key or sign-in in its own settings), by its optional `ready` handler; one without
  *  it says nothing, and is taken as set up. */
 export async function providerReady(entry: PointEntry<{ ready?: unknown }>): Promise<{ ready: boolean; why?: string }> {
-  if (typeof entry.value.ready !== "string") return { ready: true };
-  const kept = readiness.get(entry.entryId);
+  // A provider that doesn't say: not set up, for a default (a bot's plugin may not spend the user's account on a guess).
+  if (typeof entry.value.ready !== "string") return { ready: false, why: "it doesn't say whether you set it up, so a bot's default voice doesn't use it; choose the voice yourself to use it" };
+  const kept = readiness.get(readyKey(entry));
   if (kept !== undefined && Date.now() - kept.at < READY_TTL_MS) return kept;
   let got: { ready: boolean; why?: string };
   try {
@@ -101,7 +129,7 @@ export async function providerReady(entry: PointEntry<{ ready?: unknown }>): Pro
   } catch (err) {
     got = { ready: false, why: reason(err) };
   }
-  readiness.set(entry.entryId, { at: Date.now(), ...got });
+  readiness.set(readyKey(entry), { at: Date.now(), ...got });
   return got;
 }
 
@@ -139,8 +167,9 @@ export async function say(o: { bot: string; session: string; text: string; asked
   }
   const voice = await voiceOf(o.bot);
   if (voice === undefined) return { speaking: false, note: "This bot has no voice. Choose one in its settings to hear its replies." };
-  const provider = (await a.points.entries<{ name?: string; ready?: unknown }>(PROVIDERS)).find((e) => e.entryId === voice.provider);
-  if (provider === undefined) return { speaking: false, note: "Its voice plugin isn't installed or is turned off, so this reply can't be spoken." };
+  const found = await providerOf(voice);
+  const provider = found.entry;
+  if (provider === undefined) return { speaking: false, note: `${found.note ?? "Its voice plugin isn't installed or is turned off."} This reply can't be spoken.` };
   // A default voice speaks only with a provider the user set up.
   if (voice.from === "bot") {
     const r = await providerReady(provider);
@@ -242,16 +271,25 @@ function stopBot(bot: string): void {
  *  parts (`voiceOf`, `forget`): a page reads and changes only its plugin's plain settings, a bot's value is the host
  *  half's. */
 export const ui = {
-  /** A bot's voice, where it comes from, and why it can't speak when its provider isn't set up. */
-  async voiceOf(args: unknown): Promise<(BotVoice & { why?: string }) | null> {
+  /** A bot's voice, where it comes from, whether the user turned it off for this bot, and why a default can't speak
+   *  when its provider isn't set up (or the provider can't be told apart). */
+  async voiceOf(args: unknown): Promise<(Partial<BotVoice> & { why?: string; off?: true }) | null> {
     const bot = (args as { bot?: unknown } | null)?.bot;
     if (typeof bot !== "string") return null;
-    const v = await voiceOf(bot);
-    if (v === undefined) return null;
-    const provider = (await need().points.entries<{ name?: string; ready?: unknown }>(PROVIDERS).catch(() => [])).find((e) => e.entryId === v.provider);
-    if (provider === undefined) return { ...v, why: "Its voice plugin isn't installed or is turned off." };
-    const r = await providerReady(provider);
-    return r.ready ? v : { ...v, why: `${provider.value.name ?? v.provider} isn't set up: ${r.why ?? ""}` };
+    const off = await silent(bot);
+    const v = await voiceChoice(bot);
+    if (v === undefined) return off ? { off: true } : null;
+    const found = await providerOf(v);
+    const why = found.entry === undefined ? found.note
+      : v.from === "bot" ? await providerReady(found.entry).then((r) => (r.ready ? undefined : `${found.entry!.value.name ?? v.provider} isn't set up: ${r.why ?? ""}`))
+        : undefined;
+    return { ...v, ...(why === undefined ? {} : { why }), ...(off ? { off: true as const } : {}) };
+  },
+  /** The user's "no voice" for one bot (its Voice section's switch), kept as the user's own bot setting. */
+  async setOff(args: unknown): Promise<{ ok: true }> {
+    const p = args as { bot?: unknown; off?: unknown } | null;
+    if (typeof p?.bot === "string" && typeof p.off === "boolean") await need().settings.set("silent", p.off ? true : null, { bot: p.bot });
+    return { ok: true };
   },
   /** The player, mounted: it accepts speech now; what it should hold and each bot's stop count so far. */
   async ready(): Promise<{ holds: string[]; stops: Record<string, number> }> {
@@ -261,7 +299,7 @@ export const ui = {
   /** The user's reset in a bot's editor: the bot goes text-only. */
   async forget(args: unknown): Promise<{ ok: true }> {
     const bot = (args as { bot?: unknown } | null)?.bot;
-    if (typeof bot === "string") for (const key of ["provider", "voice", "model"]) await need().settings.set(key, null, { bot });
+    if (typeof bot === "string") for (const key of ["provider", "providerPlugin", "voice", "model"]) await need().settings.set(key, null, { bot });
     return { ok: true };
   },
   /** One past reply, the user's press (`conversation.message.action`: `{ session, seq }`). */

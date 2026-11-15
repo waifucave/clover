@@ -10,11 +10,13 @@ import type { HookInput } from "@waifucave/clover-plugin-sdk";
 type Fake = {
   settings?: Record<string, unknown>; modes?: unknown[]; defaults?: unknown[]; history?: Record<string, unknown>[];
   active?: { pluginId: string; entryId: string }; ready?: { ready: boolean; why?: string }; refuseFirstOpen?: boolean;
+  /** Extra provider entries, besides the run's tone voice. */
+  providers?: { pluginId: string; entryId: string; value: Record<string, unknown> }[];
 };
 function fake(o: Fake = {}) {
   const settings = new Map<string, unknown>(Object.entries(o.settings ?? {}));
   const opened: { name: string; meta: Record<string, unknown>; bytes: number; closed: boolean }[] = [];
-  const asked: { point: string; args: unknown }[] = [];
+  const asked: { point: string; args: unknown; plugin?: string }[] = [];
   const sent: [string, unknown][] = [];
   let refuse = o.refuseFirstOpen === true;
   const provider = { pluginId: "acceptance-voice", entryId: "acceptance-voice", value: { name: "Tone", ...(o.ready ? { ready: "ready" } : {}) } };
@@ -25,10 +27,10 @@ function fake(o: Fake = {}) {
       set: async (key: string, value: unknown, opts?: { bot?: string }) => void settings.set(opts?.bot ? `${key}@${opts.bot}` : key, value),
     },
     points: {
-      entries: async (point: string) => (point === host.PROVIDERS ? [provider] : point === host.DEFAULTS ? (o.defaults ?? []) : (o.modes ?? [])),
+      entries: async (point: string) => (point === host.PROVIDERS ? [provider, ...(o.providers ?? [])] : point === host.DEFAULTS ? (o.defaults ?? []) : (o.modes ?? [])),
       active: async (point: string) => (point === host.VOICE_MODES ? (o.active ?? { pluginId: "clover/voice", entryId: "clover-voice" }) : undefined),
-      stream: async (point: string, _e: unknown, field: string, args: unknown) => {
-        asked.push({ point: `${point}#${field}`, args });
+      stream: async (point: string, e: { pluginId: string }, field: string, args: unknown) => {
+        asked.push({ point: `${point}#${field}`, args, ...(e.pluginId !== "acceptance-voice" ? { plugin: e.pluginId } : {}) });
         // Plain stand-ins for the Web streams (this suite's document stands in for the browser's globals).
         const queue = [new Uint8Array(4800), new Uint8Array(4800)];
         return { getReader: () => ({ read: async () => (queue.length > 0 ? { done: false, value: queue.shift()! } : { done: true, value: undefined }), cancel: async () => undefined }) };
@@ -133,7 +135,7 @@ describe("Clover Voice's host half", () => {
       { pluginId: "beta", entryId: "0", value: { provider: "acceptance-voice", voice: "not-hers" } },
       { pluginId: "alpha/extras", entryId: "0", value: { provider: "acceptance-voice", voice: "hers", model: "m1" } },
     ];
-    let f = fake({ defaults });
+    let f = fake({ defaults, ready: { ready: true } });
     expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", voice: "hers", model: "m1", from: "bot" });
     await host.replies(at("message.out", { text: "Hi." }));
     await host.replies(at("turn.end", { outcome: "completed" }));
@@ -143,6 +145,50 @@ describe("Clover Voice's host half", () => {
     expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", voice: "tone", from: "user" });
     f = fake({ defaults: [defaults[0]] });
     expect(await host.voiceOf("alpha")).toBeUndefined();
+  });
+
+  test("a provider that doesn't say whether it is set up doesn't count for a default; the user's own pick may use it", async () => {
+    const defaults = [{ pluginId: "alpha", entryId: "0", value: { provider: "acceptance-voice", voice: "hers" } }];
+    const f = fake({ defaults });
+    await host.replies(at("message.out", { text: "Hi." }));
+    await host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(f.opened).toEqual([]);
+    expect((await host.ui.voiceOf({ bot: "alpha" }))?.why).toContain("doesn't say whether you set it up");
+    const g = fake({ settings: VOICED });
+    await host.replies(at("message.out", { text: "Hi." }));
+    await host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(g.opened.map((s) => s.name)).toEqual(["speech"]);
+  });
+
+  test("a provider is found by its plugin and its entry: another plugin's entry of the same id never gets the text", async () => {
+    const twin = { pluginId: "mimic", entryId: "acceptance-voice", value: { name: "Mimic", ready: "ready" } };
+    let f = fake({ settings: VOICED, providers: [twin] });
+    expect(await host.say({ bot: "alpha", session: "b_alpha", text: "Hi.", asked: true })).toEqual({ speaking: false, note: 'More than one plugin offers a voice provider "acceptance-voice"; choose which in the bot\'s voice. This reply can\'t be spoken.' });
+    expect(f.asked).toEqual([]);
+    f = fake({ settings: { ...VOICED, "providerPlugin@alpha": "acceptance-voice" }, providers: [twin] });
+    await host.say({ bot: "alpha", session: "b_alpha", text: "Hi.", asked: true });
+    await settle();
+    expect(f.asked.map((a) => [a.point, a.plugin])).toEqual([[`${host.PROVIDERS}#speak`, undefined]]);
+    // The readiness of one isn't the other's: a default naming the twin's plugin asks the twin.
+    f = fake({ defaults: [{ pluginId: "alpha", entryId: "0", value: { provider: "acceptance-voice", plugin: "mimic", voice: "hers" } }], providers: [twin], ready: { ready: false, why: "no key" } });
+    expect((await host.ui.voiceOf({ bot: "alpha" }))?.why).toBe("Mimic isn't set up: no key");
+  });
+
+  test("no voice for one bot: none of its replies are spoken or heard, kept as the user's own bot setting", async () => {
+    const f = fake({ settings: VOICED });
+    expect(await host.ui.setOff({ bot: "alpha", off: true })).toEqual({ ok: true });
+    expect(f.settings.get("silent@alpha")).toBe(true);
+    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "tone", from: "user", off: true });
+    expect(await host.voice.listens({ bot: "alpha" })).toBe(false);
+    await host.replies(at("message.out", { text: "Hi." }));
+    await host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(f.opened).toEqual([]);
+    await host.ui.setOff({ bot: "alpha", off: false });
+    expect(f.settings.get("silent@alpha")).toBeNull();
+    expect((await host.ui.voiceOf({ bot: "alpha" }))?.off).toBeUndefined();
   });
 
   test("a default voice from a provider the user hasn't set up doesn't speak, and its Voice section says why", async () => {
