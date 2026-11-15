@@ -130,8 +130,9 @@ describe("lane G's surface host: a whole place on the screen, and places the app
     expect(openTarget({ kind: "settings", section: "Devices!" })).toBeUndefined();
     expect(openTarget({ kind: "bot", bot: "alpha" })).toEqual({ kind: "bot", bot: "alpha" });
     expect(openTarget({ kind: "url", url: "https://example.com" })).toBeUndefined();
-    expect(mayOpen("clover/island")).toBe(true);
-    expect(mayOpen("fixture-surface")).toBe(false);
+    // By capability, never by id (F2).
+    expect(mayOpen(new Set(["shell.control"]))).toBe(true);
+    expect(mayOpen(new Set(["approvals", "overlay"]))).toBe(false);
   });
 });
 

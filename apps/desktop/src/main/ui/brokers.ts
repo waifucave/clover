@@ -471,10 +471,11 @@ export function openTarget(v: unknown): OpenTarget | undefined {
 }
 
 
-/** Who may ask the app to open a place: in 1.111.1, the `clover` tree's parts only (the island's Usage and Devices
- *  tabs); a third party's would bring the main window up over whatever the person is doing. */
-export function mayOpen(pluginId: string): boolean {
-  return pluginId.split("/")[0] === "clover";
+/** Who may ask the app to open a place (Settings at a section, a bot's editor) in the main window: a part whose plugin
+ *  holds `shell.control` (its OK card says it moves Clover's window's own parts), whichever plugin it is (F2: no door
+ *  checks an id). It brings the main window up, so it is the window capability's. */
+export function mayOpen(capabilities: ReadonlySet<string>): boolean {
+  return capabilities.has("shell.control");
 }
 
 /** Where a surface asked to be, kept on its display: inside the display's bounds for the `clover` tree, inside the work

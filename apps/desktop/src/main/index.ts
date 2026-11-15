@@ -57,7 +57,7 @@ import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs, type AppPrefs }
 import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, surfaceBounds, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
@@ -1435,7 +1435,6 @@ async function show(what: { kind: string; url?: string; section?: string; item?:
 
 /** A part asks to open a place in the main window (the island's Usage and Devices tabs open Settings there). */
 async function openFor(pluginId: string, target: OpenTarget): Promise<void> {
-  if (!mayOpen(pluginId)) throw new LayerError("only the app's own parts open places in its window");
   log(`open: ${target.kind}${target.kind === "settings" && target.section !== undefined ? ` ${target.section}` : ""} for ${pluginId}`);
   await show(target);
 }
