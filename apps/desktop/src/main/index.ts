@@ -550,6 +550,8 @@ async function ready(): Promise<void> {
     },
     // The report a press asked for: logged with how long the page took to get it, so a limit that is too short shows in the log.
     sealedFresh: (token: string, seen: boolean, ms: number) => {
+      // A test build can drop the report, to prove an answer with no report refuses (never in a packaged app).
+      if (typeof __CLOVER_TEST_BUILD__ === "string" && !app.isPackaged && process.env.CLOVER_SMOKE_DROP_FRESH === "1") return;
       sealed.noteFresh(token, seen);
       const cardId = sealed.cardOf(token);
       if (cardId === undefined) return;
@@ -2633,9 +2635,9 @@ async function smoke(): Promise<void> {
       if (spec !== undefined) {
         try {
           const {
-            cardId, element, cover, opacity, doubleClick,
+            cardId, element, cover, opacity, doubleClick, coverLead,
           } = JSON.parse(spec) as {
-            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean;
+            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
@@ -2794,6 +2796,12 @@ async function smoke(): Promise<void> {
               log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
+              if (typeof coverLead === "number") {
+                // A cover drawn `coverLead` ms before the press, on a button the page has long reported ready: the press must not land.
+                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return; const c = document.createElement('div'); c.style.position = 'absolute'; c.style.inset = '0'; c.style.zIndex = '9999'; c.style.pointerEvents = 'none'; b.parentElement?.insertBefore(c, b); })()`, true).catch(() => undefined);
+                await new Promise((r) => setTimeout(r, Math.max(0, Math.min(2000, coverLead))));
+                log(`sealed-click: press ${Math.round(coverLead)} ms after the cover`);
+              }
               await dispatch("mousePressed");
               await dispatch("mouseReleased");
               if (doubleClick === true) {

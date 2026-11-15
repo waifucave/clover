@@ -3,7 +3,7 @@
 // the core's own answer (spec §5.5).
 import { describe, expect, test } from "bun:test";
 import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
-import { SealedFrames, type AnswerSigner, type SealedCard } from "../src/main/sealed";
+import { FRESH_MAX_AGE_MS, SealedFrames, type AnswerSigner, type SealedCard } from "../src/main/sealed";
 
 const CARD: SealedCard = {
   id: "card_0a1b2c3d",
@@ -244,5 +244,21 @@ describe("the sealed frames' store", () => {
     expect(store.buildAnswer(made.token, "deny", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
     const out = store.buildAnswer(made.token, "allow_once", undefined, "m:1:2", signer, "dev_aaaatestdev01");
     expect(out).not.toMatchObject({ error: expect.anything() });
+  });
+});
+
+describe("the fresh report a press asks for", () => {
+  test("it is single use, covered says covered, a missing or stale one says none", () => {
+    let t = 0;
+    const f = new SealedFrames(() => t);
+    expect(f.takeFresh("tok")).toBe("none");
+    f.noteFresh("tok", true);
+    expect(f.takeFresh("tok")).toBe("ok");
+    expect(f.takeFresh("tok")).toBe("none"); // spent
+    f.noteFresh("tok", false);
+    expect(f.takeFresh("tok")).toBe("covered");
+    f.noteFresh("tok", true);
+    t += FRESH_MAX_AGE_MS + 1;
+    expect(f.takeFresh("tok")).toBe("none"); // stale
   });
 });
