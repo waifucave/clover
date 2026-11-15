@@ -1,24 +1,110 @@
 {
   "manifest": 1,
   "name": "Clover Voice",
-  "description": "Your bots' voices: it speaks their replies and hears what you say with push-to-talk, one sound at a time, through the voice provider each bot uses (Fish Audio, or another you add). Turned off, bots are text-only.",
+  "description": "Your bots' voices: it speaks their replies aloud in each bot's voice, one at a time on this computer, through the voice provider the bot uses (Fish Audio, or another you add), and hears what you say with push-to-talk. Turned off, bots are text-only.",
   "engines": {
     "clover": "^1.0.0"
   },
   "host": {
     "entry": "host/index.ts",
-    "runtime": "bun"
+    "runtime": "bun",
+    "declares": {
+      "clover.voice.providers": {
+        "shape": "list",
+        "fields": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "speak"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "speak": {
+              "type": "string",
+              "format": "handler"
+            }
+          }
+        },
+        "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream). A bot's voice names the entry's id."
+      },
+      "clover.voice.modes": {
+        "shape": "list",
+        "fields": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "reply"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "reply": {
+              "type": "string",
+              "format": "handler"
+            }
+          }
+        },
+        "doc": "Another way to speak the bots' replies, chosen in Settings › Voice: `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech)."
+      }
+    }
   },
   "client": {
-    "entry": "client/index.tsx"
+    "entry": "client/index.tsx",
+    "css": [
+      "client/styles.css"
+    ]
   },
+  "capabilities": [
+    "audio",
+    "avatar.control.all",
+    "conversation.read"
+  ],
   "settings": {
     "active": {
       "type": "string",
       "title": "Active voice",
-      "description": "The voice that speaks for your bots and hears you on this computer: Clover Voice, or another voice plugin you installed. Empty is Clover Voice.",
+      "description": "The voice that speaks for your bots and hears you on this computer: Clover Voice, or a voice mode another plugin offers. Empty is Clover Voice.",
       "default": "",
       "scope": "device"
+    },
+    "speakReplies": {
+      "type": "boolean",
+      "title": "Speak replies",
+      "description": "Your bots say their replies aloud with their voices. Off, they stay text-only.",
+      "default": true,
+      "scope": "account"
+    },
+    "provider": {
+      "type": "string",
+      "title": "Voice provider",
+      "description": "The provider of this bot's voice (an entry of Clover Voice's providers, such as fish-audio). Empty: the bot is text-only.",
+      "default": "",
+      "scope": "bot"
+    },
+    "voice": {
+      "type": "string",
+      "title": "Voice",
+      "description": "This bot's voice, as its provider names it.",
+      "default": "",
+      "scope": "bot"
+    },
+    "model": {
+      "type": "string",
+      "title": "Voice model",
+      "description": "The provider's voice model for this bot; empty is the provider's default.",
+      "default": "",
+      "scope": "bot"
     }
   },
   "contributes": {
@@ -29,13 +115,50 @@
         "handler": "voice"
       }
     ],
+    "hooks": [
+      {
+        "id": "replies",
+        "on": [
+          "message.out",
+          "turn.end"
+        ],
+        "handler": "replies",
+        "observe": true,
+        "scope": "bots"
+      }
+    ],
     "ui": [
+      {
+        "spot": "app.background",
+        "id": "player",
+        "component": "Player"
+      },
       {
         "spot": "settings.section",
         "id": "settings",
         "component": "VoiceSection",
         "title": "Voice",
         "order": 700
+      },
+      {
+        "spot": "bot.editor.section",
+        "id": "bot-voice",
+        "component": "BotVoiceSection",
+        "title": "Voice",
+        "order": 400
+      },
+      {
+        "spot": "bot.stage.action",
+        "id": "chip",
+        "component": "VoiceChip"
+      },
+      {
+        "spot": "conversation.message.action",
+        "id": "speak",
+        "title": "Speak",
+        "icon": "assets/speak.svg",
+        "call": "speak",
+        "on": "assistant"
       }
     ]
   }

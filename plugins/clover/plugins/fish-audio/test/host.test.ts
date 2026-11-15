@@ -1,7 +1,7 @@
 // The plugin's host half (../host/index.ts): its `voices` handler speaks in the formats the app plays and listens to
 // push-to-talk audio, with every request going through the keyed fetch it is handed, which adds the key.
 import { describe, expect, test } from "bun:test";
-import { FISH_SECRET, voice, type VoiceContext } from "../host/index";
+import { FISH_SECRET, speak, speakChunks, voice, type VoiceContext } from "../host/index";
 import { FakeFish } from "./fake-fish";
 
 const KEY = "test-key-not-a-secret";
@@ -42,26 +42,31 @@ const joined = (chunks: { audio: Uint8Array }[]) => {
   return out;
 };
 
-describe("the voices handler (lane B's streaming shape)", () => {
+describe("Clover Voice's provider entry (speak) and the core's voices entry (listen)", () => {
   test("speaks with the free model as PCM at 24 kHz by default, asking the core for its key by name", async () => {
     const fish = new FakeFish({ key: KEY, ttfaMs: 0, chunkMs: 0 });
     const seen: { auth?: string | false }[] = [];
-    const out = await drain(voice.speak({ text: "Hello there.", voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f" }, context(fish, seen)));
+    const out = await drain(speakChunks({ text: "Hello there.", voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f" }, context(fish, seen)));
     expect(out.result).toMatchObject({ model: "s2.1-pro-free", format: "pcm16-24k" });
     expect(out.values.length).toBeGreaterThan(0);
     const audio = joined(out.values);
     expect(audio.length % 2).toBe(0);
     expect(out.result.bytes).toBe(audio.length);
     expect(seen).toEqual([{ auth: "fish-api-key" }]);
-    const mp3 = await drain(voice.speak({ text: "Hello there.", voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f", format: "mp3" }, context(fish)));
+    const mp3 = await drain(speakChunks({ text: "Hello there.", voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f", format: "mp3" }, context(fish)));
     expect(joined(mp3.values)[0]).toBe(0xff);
-    await expect(drain(voice.speak({ text: "x", voice: "v", model: "s9" }, context(fish)))).rejects.toThrow("isn't a Fish Audio voice model");
+    await expect(drain(speakChunks({ text: "x", voice: "v", model: "s9" }, context(fish)))).rejects.toThrow("isn't a Fish Audio voice model");
+    // The point's handler: raw bytes as they come, the same audio.
+    const bytes: Uint8Array[] = [];
+    for await (const b of await speak({ text: "Hello there.", voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f" }, context(fish))) bytes.push(b);
+    expect(bytes.every((b) => b instanceof Uint8Array)).toBe(true);
+    expect(bytes.reduce((n, b) => n + b.length, 0)).toBe(audio.length);
   });
 
   test("listens to push-to-talk PCM, whole or as the call's input", async () => {
     const fish = new FakeFish({ key: KEY, ttfaMs: 0, chunkMs: 0, balanceUsd: 1 });
     const said = "What's on my calendar?";
-    const spoken = joined((await drain(voice.speak({ text: said, voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f", format: "pcm16-24k" }, context(fish)))).values);
+    const spoken = joined((await drain(speakChunks({ text: said, voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f", format: "pcm16-24k" }, context(fish)))).values);
     // The fake hears back the PCM it spoke; the handler wraps PCM in WAV, since Fish refuses raw PCM.
     const heard = await drain(voice.listen({ audio: spoken, format: "pcm16-16k", language: "en" }, context(fish)));
     expect(heard.values).toEqual([]);

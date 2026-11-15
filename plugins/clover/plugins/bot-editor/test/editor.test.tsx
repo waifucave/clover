@@ -14,7 +14,7 @@ afterEach(cleanup);
 
 const noop = () => undefined;
 
-const ALPHA_VIEW: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effort: "medium", userLayer: ["theme"], theme: "alpha#alpha-tab", state: "idle", mainSession: "s_alpha", voice: { provider: "Fish Audio", voice: "Alpha" } };
+const ALPHA_VIEW: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effort: "medium", userLayer: ["theme"], theme: "alpha#alpha-tab", state: "idle", mainSession: "s_alpha" };
 
 async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: true } | { applied: false; card: string } = () => ({ applied: true }), extra: Parameters<typeof fakeCore>[0] = {}, entries: UiEntry[] = [], Section?: EntryComponent) {
   const core = fakeCore({
@@ -190,13 +190,13 @@ describe("the sections other plugins add (`bot.editor.section`)", () => {
     expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   });
 
-  test("an entry on the spot draws between the model and the voice, handed the bot", async () => {
+  test("an entry on the spot draws after the model, before the theme, handed the bot", async () => {
     await mount(ALPHA_VIEW, undefined, {}, [section("clover/character")], Section);
     const drawn = screen.getByRole("region", { name: "a plugin's section" });
     expect(JSON.parse(drawn.textContent!)).toMatchObject({ bot: { id: "alpha", name: "Alpha" } });
     const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section")].map((e) => e.getAttribute("aria-label") ?? e.querySelector(".cl-bot-editor__label")?.textContent);
     expect(rows.indexOf("a plugin's section")).toBe(rows.indexOf("Model") + 1);
-    expect(rows[rows.indexOf("a plugin's section") + 1]).toBe("Voice");
+    expect(rows[rows.indexOf("a plugin's section") + 1]).toBe("Theme");
   });
 
   test("the bot's settings are a stock section headed with its name: each kind a control, saved with the bot named; a key is a row that opens the app's own key dialog", async () => {

@@ -275,11 +275,6 @@
   font-size: var(--clover-font-size-caption);
 }
 
-.cl-conv-speak[data-state="speaking"] {
-  background: var(--clover-color-accent-soft);
-  color: var(--clover-color-accent-text);
-}
-
 .cl-conv-bot__actions {
   display: flex;
   gap: 4px;
@@ -295,17 +290,7 @@
   white-space: nowrap;
 }
 
-.cl-conv-bot__actions .cl-conv-speak__label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .cl-conv-copy,
-.cl-conv-speak,
 .cl-conv-action {
   display: inline-flex;
   align-items: center;
@@ -320,7 +305,6 @@
 }
 
 .cl-conv-copy:hover,
-.cl-conv-speak:hover,
 .cl-conv-action:hover {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);

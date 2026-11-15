@@ -40,6 +40,7 @@ export const SPOT_DECLS: Readonly<Record<string, SpotDecl & { declaredBy: string
   conversation: { shape: "single", declaredBy: "bot-tab" },
   composer: { shape: "single", declaredBy: "bot-tab" },
   avatar: { shape: "keyed", declaredBy: "bot-stage" },
+  "bot.stage.action": { shape: "list", declaredBy: "bot-stage" },
   "composer.action": { shape: "keyed", declaredBy: "composer" },
   "conversation.message": { shape: "keyed", declaredBy: "conversation", keep: ["approval"] },
   "conversation.message.extra": { shape: "list", declaredBy: "conversation" },

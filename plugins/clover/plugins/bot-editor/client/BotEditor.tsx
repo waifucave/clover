@@ -132,10 +132,6 @@ export function BotEditor(props: BotEditorProps) {
         {/* The sections other plugins add: the avatar's is the character plugin's (`bot.editor.section`). */}
         {props.sections}
 
-        <Row label={S.voice} detail={S.voiceDetail} {...row("voice")}>
-          <span className="cl-bot-editor__value">{props.voice ? S.voiceOf(props.voice.provider, props.voice.voice) : S.noVoice}</span>
-        </Row>
-
         <Row label={S.theme} detail={S.themeDetail} {...row("theme")}>
           <select
             className="cl-bot-editor__select"

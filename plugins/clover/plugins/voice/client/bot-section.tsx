@@ -1,0 +1,51 @@
+// Clover Voice's section of a bot's editor (`bot.editor.section`): the bot's voice, this plugin's own setting for that
+// bot (`provider`, `voice`, `model`), with a reset back to none. Voices come with the voice providers that fill this
+// plugin's providers point (Fish Audio, or another you add).
+import { useEffect, useId, useState } from "react";
+import type { BotRef, EntryProps } from "../../shell/runtime/types";
+import { usePluginApi } from "./sdk";
+import { S } from "./strings";
+
+export function BotVoiceSection({ props }: EntryProps<{ bot: BotRef }>) {
+  const api = usePluginApi();
+  const id = useId();
+  const bot = props.bot.id;
+  const [voice, setVoice] = useState<{ provider: string; voice: string } | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    const read = (): void => {
+      void Promise.all([api.settings.get<string>("provider", { bot }), api.settings.get<string>("voice", { bot })]).then(([p, v]) => {
+        if (live) setVoice(typeof p === "string" && p !== "" && typeof v === "string" && v !== "" ? { provider: p, voice: v } : undefined);
+      }, () => undefined);
+    };
+    read();
+    const off = api.settings.watch(null, read);
+    return () => {
+      live = false;
+      off();
+    };
+  }, [api, bot]);
+
+  const reset = async (): Promise<void> => {
+    setVoice(undefined);
+    for (const key of ["provider", "voice", "model"]) await Promise.resolve(api.settings.set(key, null, { bot })).catch(() => undefined);
+  };
+
+  return (
+    <section className="cl-bot-editor__row" aria-labelledby={id} data-voice-section="">
+      <div className="cl-bot-editor__text">
+        <span className="cl-bot-editor__label" id={id}>{S.voice}</span>
+        <span className="cl-bot-editor__detail">{S.voiceDetail}</span>
+      </div>
+      <div className="cl-bot-editor__control">
+        <span className="cl-bot-editor__value">{voice ? S.voiceOf(voice.provider, voice.voice) : S.noVoice}</span>
+        {voice && (
+          <button type="button" className="cl-bot-editor__reset" onClick={() => void reset()}>
+            {S.reset}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}

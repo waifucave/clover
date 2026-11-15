@@ -23,8 +23,8 @@ import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./Co
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
 import { plain } from "../../shell/runtime/views";
-import { Spot, useApprovals, useBotSpeech, useCore, usePluginApi, useSpotEntries, useTokens } from "./sdk";
-import type { ActionOutcome, BotItem, ConversationItem, MessageAction, QuestionAnswer, SharedTime, SpeakOutcome } from "./types";
+import { Spot, useApprovals, useCore, usePluginApi, useSpotEntries, useTokens } from "./sdk";
+import type { ActionOutcome, ConversationItem, MessageAction, QuestionAnswer, SharedTime } from "./types";
 
 export interface ConversationEntryProps {
   bot: { id: string; name: string };
@@ -186,7 +186,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
     });
   }, [core, archived, props.session]);
 
-  const { names, here, voiced } = useNames(api);
+  const { names, here } = useNames(api);
   // This session's pending cards, as the card door says (never in the followed stream): drawn in place, after what the
   // session's own records project. Kept while the list says the same, so the transcript isn't projected again per render.
   const approvals = useApprovals();
@@ -209,9 +209,6 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   const tokens = useTokens();
   const ownReply = useSpotEntries("conversation.message", "bot").entries.length === 0;
   const extraInline = Number(tokens["conversation.extra.inline"] ?? 0) === 1 && ownReply;
-  // Speak one past reply: for a bot with a voice, in its main conversation, through the app's door with the user's click
-  // (`voice.speak` takes the session and the reply's seq; the core reads the text from the log).
-  const speech = useBotSpeech(props.bot.id);
   // Plugins' small buttons for a message's row (data the view draws; no frame per message). A press names the entry, the
   // session and the message's seq on the app's own door; main finds the entry and runs its handler.
   const actionEntries = useSpotEntries("conversation.message.action").entries;
@@ -221,11 +218,6 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   const runAction = useCallback(
     (action: MessageAction, item: { seq?: number }): Promise<ActionOutcome> =>
       core!.call("conversation.messageAction", { entry: action.ref, session: props.session, seq: item.seq! }) as Promise<ActionOutcome>,
-    [core, props.session],
-  );
-  const canSpeak = !archived && core !== undefined && voiced[props.bot.id] === props.session;
-  const speak = useCallback(
-    (item: BotItem): Promise<SpeakOutcome> => core!.call("voice.speak", { session: props.session, seq: item.seq! }),
     [core, props.session],
   );
 
@@ -251,7 +243,6 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       onOpenAgent={props.onOpenAgent}
       onOpenFile={props.onOpenFile}
       onCopy={(text) => void navigator.clipboard?.writeText(text)}
-      {...(canSpeak ? { onSpeak: speak, speaking: speech.speaking } : {})}
       {...(messageActions.length > 0 && core !== undefined ? { messageActions, onMessageAction: runAction } : {})}
       // Try again on a failed turn: the app's own door checks the session's log and sends the user's own words again.
       onTryAgain={archived || !core ? undefined : () => core.call("session.resend", { session: props.session })}
@@ -260,8 +251,8 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
 }
 
 /** Display names for the bots, agents and devices a transcript mentions, by `<kind>:<id>`. */
-function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string, string>; here?: { id: string; name: string }; voiced: Record<string, string> } {
-  const [names, setNames] = useState<{ names: Record<string, string>; here?: { id: string; name: string }; voiced: Record<string, string> }>({ names: {}, voiced: {} });
+function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string, string>; here?: { id: string; name: string } } {
+  const [names, setNames] = useState<{ names: Record<string, string>; here?: { id: string; name: string } }>({ names: {} });
   useEffect(() => {
     let live = true;
     void Promise.all([
@@ -271,17 +262,11 @@ function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string,
     ]).then(([bots, sessions, devices]) => {
       if (!live) return;
       const out: Record<string, string> = {};
-      // The bots with a voice, by their main conversation: where a reply can be spoken on request.
-      const voiced: Record<string, string> = {};
-      for (const b of bots) {
-        out[`bot:${b.id}`] = plain(b.name);
-        const v = b as { voice?: unknown; mainSession?: unknown };
-        if (v.voice !== undefined && v.voice !== null && typeof v.mainSession === "string") voiced[b.id] = v.mainSession;
-      }
+      for (const b of bots) out[`bot:${b.id}`] = plain(b.name);
       for (const s of sessions) out[`agent:${s.id}`] = s.backend ?? s.title ?? s.id;
       for (const d of devices) out[`device:${d.id}`] = d.name;
       const here = devices.find((d) => d.isThis);
-      setNames({ names: out, voiced, ...(here ? { here: { id: here.id, name: here.name } } : {}) });
+      setNames({ names: out, ...(here ? { here: { id: here.id, name: here.name } } : {}) });
     });
     return () => {
       live = false;

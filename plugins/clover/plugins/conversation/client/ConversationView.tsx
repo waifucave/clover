@@ -107,8 +107,6 @@ export interface ConversationViewProps extends ConversationActions {
   /** A finished reply's add-ons sit in the row of its actions, after copy (the theme's `conversation.extra.inline`),
    *  instead of under it. Only for the view's own reply renderer, which draws them there. */
   extraInline?: boolean;
-  /** The bot's voice is speaking now (the host's speech state): a speak button the user pressed shows it. */
-  speaking?: boolean;
   /** Plugins' small buttons for a message's row of actions (`conversation.message.action`): drawn here, no frame. */
   messageActions?: readonly MessageAction[];
   /** Start at the bottom, following new output (the default), or at the top. */
@@ -261,7 +259,6 @@ export function ConversationView(props: ConversationViewProps) {
     renderToolResult,
     renderMessageExtra,
     extraInline = false,
-    speaking = false,
     messageActions,
     initialFollow = true,
     initialExpanded,
@@ -272,7 +269,6 @@ export function ConversationView(props: ConversationViewProps) {
     onOpenThread,
     onOpenAgent,
     onCopy,
-    onSpeak,
     onMessageAction,
     onTryAgain,
     agentStatus,
@@ -293,7 +289,7 @@ export function ConversationView(props: ConversationViewProps) {
   }, [items, now, format.locale, format.timeZone]); // eslint-disable-line react-hooks/exhaustive-deps
   const latest = useRef(props);
   latest.current = props;
-  const handlers = { onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onSpeak, onMessageAction, onTryAgain };
+  const handlers = { onAnswerQuestion, onOpenLink, onOpenFile, onOpenDiff, onOpenThread, onOpenAgent, onCopy, onMessageAction, onTryAgain };
   const present = (Object.keys(handlers) as (keyof typeof handlers)[]).filter((k) => handlers[k] !== undefined).join(",");
   const actions = useMemo<ConversationActions>(() => {
     const out: Record<string, unknown> = {};
@@ -309,8 +305,8 @@ export function ConversationView(props: ConversationViewProps) {
     return keptAgents.current;
   }, [items, agentStatus]);
   const ctx = useMemo<MessageContext>(
-    () => ({ ...(agents.length > 0 ? { agents } : {}), botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions, ...(speaking ? { speaking } : {}), ...(messageActions && messageActions.length > 0 ? { messageActions } : {}) }),
-    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, agents, speaking, messageActions],
+    () => ({ ...(agents.length > 0 ? { agents } : {}), botId: bot.id, botName: bot.name, session: props.session ?? "", now, format, device, turnLive: turn?.running === true, actions, ...(messageActions && messageActions.length > 0 ? { messageActions } : {}) }),
+    [bot.id, bot.name, props.session, now, format.locale, format.timeZone, device?.id, device?.name, turn?.running, actions, agents, messageActions],
   );
 
   // A finished reply's add-ons go in its actions row when the theme asks: only where that row shows (its last word in a

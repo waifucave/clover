@@ -11,12 +11,12 @@ const css = readFileSync(join(import.meta.dir, "../client/styles.css"), "utf8");
  *  nothing), breathing status text, a copy button's label. Overlap is the positioned check's business. */
 const LEAVES = [
   ".cl-conv-icon", ".cl-conv-chevron", ".cl-conv-thinking__glyph", ".cl-conv-thinking__label", ".cl-conv-working__glyph",
-  ".cl-conv-working__text", ".cl-conv-copy__label", ".cl-conv-speak__label", "::after",
+  ".cl-conv-working__text", ".cl-conv-copy__label", "::after",
 ];
 
-/** The only out-of-flow elements, each a leaf inside its own box: a copy or speak button's label over its button,
+/** The only out-of-flow elements, each a leaf inside its own box: a copy button's label over its button,
  *  and the screen-reader line (1 by 1 pixels). */
-const POSITIONED = [".cl-conv-bot__actions .cl-conv-copy__label", ".cl-conv-bot__actions .cl-conv-speak__label", ".cl-conv__announce"];
+const POSITIONED = [".cl-conv-bot__actions .cl-conv-copy__label", ".cl-conv__announce"];
 
 describe("the conversation stylesheet", () => {
   test("the stock look keeps a run to its one line: the card parts a theme can show are hidden", () => {

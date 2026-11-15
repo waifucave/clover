@@ -79,6 +79,7 @@ How to read it:
 | `conversation` | single | bot-tab | `conversation.read` | The conversation view. |
 | `composer` | single | bot-tab | `conversation.post` | The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; e… |
 | `avatar` | keyed | bot-stage | — | Draws the bot's avatar, keyed by the avatar file's format (`vrm`, `live2d`, or a plugin's own; `AVATAR_FORMATS`), and lip-syncs it from `speech` (a `SpeechFeed`). |
+| `bot.stage.action` | list | bot-stage | — | Small controls on a bot's stage, over its figure (a corner each places itself in): a voice plugin's mute and stop, say. Each entry draws its own control for the bot it is given. |
 | `composer.action` | keyed | composer | — | The composer's buttons, keyed by action id. |
 | `conversation.message` | keyed | conversation | `conversation.read` | One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls. |
 | `conversation.message.extra` | list | conversation | `conversation.read` | Add-ons under each message, with a UI of their own. A plugin outside Clover's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`. |

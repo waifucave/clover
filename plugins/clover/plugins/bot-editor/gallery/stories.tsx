@@ -16,7 +16,6 @@ export function BotEditorDemo({ own = [], waiting }: { own?: BotField[]; waiting
       bot={ALPHA}
       own={state.own}
       model={{ value: state.model, effort: state.effort, models: MODELS }}
-      voice={{ provider: "Fish Audio", voice: "Alpha" }}
       themes={THEMES}
       {...(state.theme ? { theme: state.theme } : {})}
       lan={state.lan}
