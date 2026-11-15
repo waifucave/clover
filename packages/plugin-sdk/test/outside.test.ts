@@ -14,7 +14,7 @@ test("a program is a name on the PATH or an absolute path; a folder is ~/… or 
   for (const p of ["~", "~/", "/", "~/../x", "~/a/./b", "relative/path", "~user/x"]) expect([p, outsideFolderOk(p)]).toEqual([p, false]);
   // Never one of the disk's top folders, which hold every home (the reviewer's read 44: `/Users` opened the whole home),
   // and nothing of the system's own.
-  for (const p of ["/Users", "/home", "/Volumes", "/private", "/Users/", "/System/Volumes/Data", "/System/Library/x"]) expect([p, outsideFolderOk(p)]).toEqual([p, false]);
+  for (const p of ["/Users", "/home", "/Volumes", "/private", "/Users/", "/System/Volumes/Data", "/System/Library/x", "/system/Volumes/Data", "/SYSTEM/x", "/sYsTeM/Library"]) expect([p, outsideFolderOk(p)]).toEqual([p, false]);
   for (const p of ["/opt/notes", "/Volumes/Data/notes"]) expect([p, outsideFolderOk(p)]).toEqual([p, true]);
 });
 

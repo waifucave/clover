@@ -1518,7 +1518,8 @@ export function outsideFolderOk(p: string): boolean {
   // An absolute path names a folder below the disk's top folders, never one of them (`/Users`, `/home`, `/Volumes`,
   // `/private` hold every home), and nothing of the system's own (`/System` reaches the homes another way). The core
   // also refuses any folder that holds the user's home or Clover's.
-  if (p.startsWith("/")) return parts.length >= 2 && parts[0] !== "System";
+  // Case-folded: the disk is case-insensitive by default, so `/system` is `/System`.
+  if (p.startsWith("/")) return parts.length >= 2 && parts[0]!.toLowerCase() !== "system";
   return true;
 }
 

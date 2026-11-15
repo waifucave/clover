@@ -160,15 +160,21 @@ test("a named folder that holds the user's home or Clover's, or lies in Clover's
 });
 
 darwinDescribe("programs and folders outside the sandbox (P5)", () => {
-  test("a named coding agent's folder: its other files read, its sign-in never (the plugin fence's last deny)", async () => {
+  test("a named folder: its other files read, never what a bot may not read (the coding agents' sign-ins, a password manager's, the browsers' stores: the plugin fence's last deny)", async () => {
     const home = temp("cf-out-");
     const userHome = temp("cf-out-user-");
-    const files = { usage: join(userHome, ".codex", "sessions", "usage.jsonl"), auth: join(userHome, ".codex", "auth.json"), claudeUsage: join(userHome, ".claude", "stats.json"), claudeAuth: join(userHome, ".claude", ".credentials.json") };
+    const files = {
+      usage: join(userHome, ".codex", "sessions", "usage.jsonl"), auth: join(userHome, ".codex", "auth.json"), claudeUsage: join(userHome, ".claude", "stats.json"), claudeAuth: join(userHome, ".claude", ".credentials.json"),
+      // A parent folder named: what a bot may never read stays out (a password manager's, a developer tool's sign-in, the
+      // browsers' cookies), what's beside it reads.
+      configApp: join(userHome, ".config", "app", "settings.json"), op: join(userHome, ".config", "op", "config"), gh: join(userHome, ".config", "gh", "hosts.yml"),
+      notes: join(userHome, "Library", "Notes", "n.txt"), cookies: join(userHome, "Library", "Cookies", "Cookies.binarycookies"), onePassword: join(userHome, "Library", "Application Support", "1Password", "data.sqlite"),
+    };
     for (const f of Object.values(files)) {
       mkdirSync(join(f, ".."), { recursive: true });
       writeFileSync(f, `contents of ${f.slice(userHome.length)}`);
     }
-    plugin(home, "usage", { outside: { read: ["~/.codex", "~/.claude"] } });
+    plugin(home, "usage", { outside: { read: ["~/.codex", "~/.claude", "~/.config", "~/Library"] } });
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
@@ -184,6 +190,9 @@ darwinDescribe("programs and folders outside the sandbox (P5)", () => {
       expect(await read(files.claudeUsage)).toEqual({ ok: true, text: "contents of /.claude/stats.json" });
       expect(await read(files.auth)).toEqual({ ok: false, err: "EPERM" });
       expect(await read(files.claudeAuth)).toEqual({ ok: false, err: "EPERM" });
+      expect(await read(files.configApp)).toEqual({ ok: true, text: "contents of /.config/app/settings.json" });
+      expect(await read(files.notes)).toEqual({ ok: true, text: "contents of /Library/Notes/n.txt" });
+      for (const f of [files.op, files.gh, files.cookies, files.onePassword]) expect([f, await read(f)]).toEqual([f, { ok: false, err: "EPERM" }]);
     } finally {
       await ph.close();
       opened.close();
