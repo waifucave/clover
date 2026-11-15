@@ -1,28 +1,40 @@
 // Clover Voice's host half (spec §6.6), built on general capabilities only:
 // * It hears the bots' replies through its `message.out` hook, an observer (it changes nothing and the replies keep
 //   streaming), and each turn's end through `turn.end`: when a bot's main conversation ends a turn with a reply, that
-//   reply is spoken in the bot's voice, unless its "Speak replies" setting is off.
-// * A bot's voice is this plugin's own setting for that bot (`provider`, `voice`, `model`, bot scope). The provider is
-//   an entry of its own point, `clover.voice.providers` (Fish Audio fills it from its own folder): its `speak` handler
-//   answers with the audio as it is made (`points.stream`), and this streams it to the plugin's background part, the
-//   player (`streams.open("speech")`), which takes the device's speech turn, plays it and moves the bot's mouth.
-// * A voice mode another plugin offers (its entry on `clover.voice.modes`), when the user chose it in Settings › Voice
-//   (the `active` setting), says the replies instead: its `reply` handler is handed the reply and speaks it its own way.
-// * Its ui table: `speak` (the speak button under a reply, `conversation.message.action`) and `stop` (the stage's chip).
+//   reply is spoken in the bot's voice, unless its "Speak replies" setting is off (as the core did before: at the turn's
+//   end, the last reply).
+// * A bot's voice is the user's choice, this plugin's own setting for that bot (`provider`, `voice`, `model`, bot
+//   scope); else the default its own bot plugin gives on this plugin's point `clover.voice.defaults` (only for its own
+//   bot; the user's choice always wins). A default voice speaks only when its provider is set up (the provider's
+//   `ready`); the bot's Voice section says why not.
+// * The provider is an entry of its own point, `clover.voice.providers` (Fish Audio fills it from its own folder): its
+//   `speak` handler answers with the audio as it is made (`points.stream`), and this streams it to the plugin's
+//   background part, the player (`streams.open("speech")`), which takes the device's speech turn, plays it and moves
+//   the bot's mouth.
+// * Which voice speaks is the platform's: `voiceModes` takes one filler at a time, the user's pick in Settings (else
+//   Clover Voice). When the active one is another plugin's, its entry on `clover.voice.modes` is handed the reply
+//   (`reply`) and speaks it its own way.
+// * Its ui table: `speak` (the speak button under a reply, `conversation.message.action`), `stop` (the stage's chip),
+//   `voiceOf`/`forget` (a bot's voice for its parts) and `ready` (the player, once it accepts speech).
+// * The player's controls go as `ui.send` messages that carry the whole state (`holds`: the utterances push-to-talk
+//   holds; `stops`: each bot's stop count), so the newest message of each is all a part needs.
 // * Push-to-talk (the listening half, until it is re-founded too): the core's voice slot hands the user's audio to this
 //   plugin's `voiceModes` handler, which feeds the bot's provider (`voices.listen`) and holds the player meanwhile.
 import type { HostPluginApi, HookInput, PointEntry } from "@waifucave/clover-plugin-sdk";
 
 export const PROVIDERS = "clover.voice.providers";
 export const MODES = "clover.voice.modes";
+/** A bot plugin's default voice for its own bot. */
+export const DEFAULTS = "clover.voice.defaults";
+/** The platform's point of voices, one at a time (Clover Voice fills it too). */
+export const VOICE_MODES = "voiceModes";
 /** The stream to the player. */
 export const SPEECH = "speech";
-/** The player's controls (stop a bot, hold for push-to-talk): a stream with only its `meta`, which reaches the
- *  background part wherever it runs. */
-export const CONTROL = "control";
+/** How long a provider's `ready` answer is kept. */
+export const READY_TTL_MS = 60_000;
 
-/** A bot's voice, from this plugin's settings. */
-export interface BotVoice { provider: string; voice: string; model?: string }
+/** A bot's voice: the user's choice (`user`), or its bot plugin's default (`bot`). */
+export interface BotVoice { provider: string; voice: string; model?: string; from: "user" | "bot" }
 
 let api: HostPluginApi | undefined;
 let count = 0;
@@ -32,6 +44,14 @@ const lastReply = new Map<string, string>();
 const speaking = new Map<string, Set<AbortController>>();
 /** The push-to-talk utterances being heard: the provider's listening, its id, and what it heard. */
 const hearing = new Map<string, { id: string; close: () => void; heard: Promise<string> }>();
+/** The player's state: the utterances push-to-talk holds, and each bot's stop count (only goes up). */
+const holds = new Set<string>();
+const stops: Record<string, number> = {};
+/** Each provider's last `ready` answer. */
+const readiness = new Map<string, { at: number; ready: boolean; why?: string }>();
+/** The player said it accepts speech. */
+let playerReady: Promise<void> = Promise.resolve();
+let readied: (() => void) | undefined;
 
 const need = (): HostPluginApi => {
   if (api === undefined) throw new Error("Clover Voice hasn't started");
@@ -39,46 +59,93 @@ const need = (): HostPluginApi => {
 };
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 300);
 const log = (line: string) => console.error(`voice: ${line}`);
+const topOf = (id: string): string => id.split("/")[0]!;
 
 export function start(given: HostPluginApi): void {
   api = given;
   lastReply.clear();
   speaking.clear();
   hearing.clear();
+  holds.clear();
+  for (const k of Object.keys(stops)) delete stops[k];
+  readiness.clear();
+  playerReady = new Promise<void>((r) => { readied = r; });
 }
 
-/** A bot's voice now, or undefined (text-only). */
+/** A bot's voice now, or undefined (text-only): the user's choice, else its own bot plugin's default. */
 export async function voiceOf(bot: string): Promise<BotVoice | undefined> {
   const a = need();
   const [provider, voice, model] = await Promise.all([
     a.settings.get<string>("provider", { bot }), a.settings.get<string>("voice", { bot }), a.settings.get<string>("model", { bot }),
   ]);
-  if (typeof provider !== "string" || provider === "" || typeof voice !== "string" || voice === "") return undefined;
-  return { provider, voice, ...(typeof model === "string" && model !== "" ? { model } : {}) };
+  if (typeof provider === "string" && provider !== "" && typeof voice === "string" && voice !== "") {
+    return { provider, voice, ...(typeof model === "string" && model !== "" ? { model } : {}), from: "user" };
+  }
+  // Only the bot's own plugin (its tree) speaks for its default.
+  const own = (await a.points.entries<{ provider?: unknown; voice?: unknown; model?: unknown }>(DEFAULTS).catch(() => [])).find((e) => topOf(e.pluginId) === topOf(bot));
+  const v = own?.value;
+  if (v === undefined || typeof v.provider !== "string" || v.provider === "" || typeof v.voice !== "string" || v.voice === "") return undefined;
+  return { provider: v.provider, voice: v.voice, ...(typeof v.model === "string" && v.model !== "" ? { model: v.model } : {}), from: "bot" };
 }
 
-/** The voice mode the user chose, when it is another plugin's and it is on. */
-async function chosenMode(): Promise<PointEntry | undefined> {
+/** Whether a provider is set up (its key or sign-in in its own settings), by its optional `ready` handler; one without
+ *  it says nothing, and is taken as set up. */
+export async function providerReady(entry: PointEntry<{ ready?: unknown }>): Promise<{ ready: boolean; why?: string }> {
+  if (typeof entry.value.ready !== "string") return { ready: true };
+  const kept = readiness.get(entry.entryId);
+  if (kept !== undefined && Date.now() - kept.at < READY_TTL_MS) return kept;
+  let got: { ready: boolean; why?: string };
+  try {
+    const r = (await need().points.call(PROVIDERS, entry, "ready", {})) as { ready?: unknown; why?: unknown } | undefined;
+    got = r?.ready === false ? { ready: false, why: typeof r.why === "string" ? r.why.slice(0, 300) : "its provider isn't set up" } : { ready: true };
+  } catch (err) {
+    got = { ready: false, why: reason(err) };
+  }
+  readiness.set(entry.entryId, { at: Date.now(), ...got });
+  return got;
+}
+
+/** The voice mode the user picked (the platform's active `voiceModes` filler), when it is another plugin's: its entry
+ *  on this plugin's modes point, or undefined (Clover Voice speaks; or that plugin offers no `reply`, and is handed
+ *  nothing). */
+async function activeMode(): Promise<{ other: false } | { other: true; mode: PointEntry | undefined }> {
   const a = need();
-  const active = await a.settings.get<string>("active").catch(() => undefined);
-  if (typeof active !== "string" || active === "" || active === a.plugin.id) return undefined;
-  return (await a.points.entries(MODES).catch(() => [])).find((e) => e.pluginId === active);
+  const active = await a.points.active(VOICE_MODES).catch(() => undefined);
+  if (active === undefined || active.pluginId === a.plugin.id) return { other: false };
+  return { other: true, mode: (await a.points.entries(MODES).catch(() => [])).find((e) => e.pluginId === active.pluginId) };
 }
 
 type Said = { speaking: true } | { speaking: false; note: string };
 
-/** Says `text` in `bot`'s voice: through the user's chosen voice mode, or the provider's audio to the player. */
+/** Opens the stream to the player; once more after it says it accepts speech, when its frame was still loading. */
+async function openSpeech(meta: Record<string, unknown>, signal: AbortSignal): Promise<WritableStream<Uint8Array>> {
+  const a = need();
+  try {
+    return await a.streams.open(SPEECH, { meta, signal });
+  } catch {
+    await Promise.race([playerReady, new Promise((r) => setTimeout(r, 10_000))]);
+    return await a.streams.open(SPEECH, { meta, signal });
+  }
+}
+
+/** Says `text` in `bot`'s voice: through the voice mode the user picked, or the provider's audio to the player. */
 export async function say(o: { bot: string; session: string; text: string; asked: boolean }): Promise<Said> {
   const a = need();
-  const voice = await voiceOf(o.bot);
-  if (voice === undefined) return { speaking: false, note: "This bot has no voice. Choose one in its settings to hear its replies." };
-  const mode = await chosenMode();
-  if (mode !== undefined) {
-    await a.points.call(MODES, mode, "reply", { bot: o.bot, session: o.session, text: o.text, asked: o.asked });
+  const picked = await activeMode();
+  if (picked.other) {
+    if (picked.mode === undefined) return { speaking: false, note: "The voice picked in Settings doesn't speak replies through Clover Voice." };
+    await a.points.call(MODES, picked.mode, "reply", { bot: o.bot, session: o.session, text: o.text, asked: o.asked });
     return { speaking: true };
   }
-  const provider = (await a.points.entries<{ name?: string }>(PROVIDERS)).find((e) => e.entryId === voice.provider);
+  const voice = await voiceOf(o.bot);
+  if (voice === undefined) return { speaking: false, note: "This bot has no voice. Choose one in its settings to hear its replies." };
+  const provider = (await a.points.entries<{ name?: string; ready?: unknown }>(PROVIDERS)).find((e) => e.entryId === voice.provider);
   if (provider === undefined) return { speaking: false, note: "Its voice plugin isn't installed or is turned off, so this reply can't be spoken." };
+  // A default voice speaks only with a provider the user set up.
+  if (voice.from === "bot") {
+    const r = await providerReady(provider);
+    if (!r.ready) return { speaking: false, note: `${provider.value.name ?? voice.provider} isn't set up: ${r.why ?? ""}` };
+  }
   const abort = new AbortController();
   const mine = speaking.get(o.bot) ?? new Set<AbortController>();
   speaking.set(o.bot, mine);
@@ -86,7 +153,7 @@ export async function say(o: { bot: string; session: string; text: string; asked
   const utterance = `cv_${Date.now().toString(36)}_${(++count).toString(36)}`;
   try {
     const audio = await a.points.stream(PROVIDERS, provider, "speak", { text: o.text, voice: voice.voice, ...(voice.model === undefined ? {} : { model: voice.model }), format: "pcm16-24k" }, { signal: abort.signal });
-    const out = await a.streams.open(SPEECH, { meta: { bot: o.bot, session: o.session, utterance, asked: o.asked }, signal: abort.signal });
+    const out = await openSpeech({ bot: o.bot, session: o.session, utterance, asked: o.asked }, abort.signal);
     // The provider's bytes to the player as they come; the player's own pace holds the provider back (back-pressure).
     const reader = audio.getReader();
     const writer = out.getWriter();
@@ -144,25 +211,52 @@ export async function replies(input: HookInput): Promise<void> {
   if (!said.speaking) log(`${bot}'s reply wasn't spoken: ${said.note}`);
 }
 
-/** Tells the player something (`meta`, no bytes). */
-function tell(meta: Record<string, unknown>): void {
-  void api?.streams.open(CONTROL, { meta }).then((w) => w.close(), () => undefined).catch(() => undefined);
+/** Tells the player the utterances push-to-talk holds now (the whole state, `ui.send`). */
+function sendHolds(): void {
+  try {
+    api?.ui.send("holds", { utterances: [...holds] });
+  } catch {
+    /* no part to tell */
+  }
+}
+
+function hold(utterance: string, on: boolean): void {
+  if (on) holds.add(utterance);
+  else if (!holds.delete(utterance)) return;
+  sendHolds();
 }
 
 /** Stops what `bot` says now: its provider streams, and the player (the stage's chip). */
 function stopBot(bot: string): void {
   for (const c of speaking.get(bot) ?? []) c.abort();
   speaking.delete(bot);
-  tell({ op: "stop", bot });
+  stops[bot] = (stops[bot] ?? 0) + 1;
+  try {
+    api?.ui.send("stops", { ...stops });
+  } catch {
+    /* no part to tell */
+  }
 }
 
 /** The plugin's ui table (`host.call`): the speak button's `speak`, the chip's `stop`, and a bot's voice for its
  *  parts (`voiceOf`, `forget`): a page reads and changes only its plugin's plain settings, a bot's value is the host
  *  half's. */
 export const ui = {
-  async voiceOf(args: unknown): Promise<BotVoice | null> {
+  /** A bot's voice, where it comes from, and why it can't speak when its provider isn't set up. */
+  async voiceOf(args: unknown): Promise<(BotVoice & { why?: string }) | null> {
     const bot = (args as { bot?: unknown } | null)?.bot;
-    return typeof bot === "string" ? (await voiceOf(bot)) ?? null : null;
+    if (typeof bot !== "string") return null;
+    const v = await voiceOf(bot);
+    if (v === undefined) return null;
+    const provider = (await need().points.entries<{ name?: string; ready?: unknown }>(PROVIDERS).catch(() => [])).find((e) => e.entryId === v.provider);
+    if (provider === undefined) return { ...v, why: "Its voice plugin isn't installed or is turned off." };
+    const r = await providerReady(provider);
+    return r.ready ? v : { ...v, why: `${provider.value.name ?? v.provider} isn't set up: ${r.why ?? ""}` };
+  },
+  /** The player, mounted: it accepts speech now; what it should hold and each bot's stop count so far. */
+  async ready(): Promise<{ holds: string[]; stops: Record<string, number> }> {
+    readied?.();
+    return { holds: [...holds], stops: { ...stops } };
   },
   /** The user's reset in a bot's editor: the bot goes text-only. */
   async forget(args: unknown): Promise<{ ok: true }> {
@@ -225,7 +319,7 @@ export const voice = {
     const v = await voiceOf(args.bot);
     if (v === undefined) throw new Error(`${args.bot} has no voice; it is text-only`);
     // The user talks: whatever sounds stops, and nothing starts until they let go.
-    tell({ op: "hold", utterance: args.utterance, on: true });
+    hold(args.utterance, true);
     const id = `cl_${(++count).toString(36)}`;
     let close = () => {};
     const heard = new Promise<string>((resolve, reject) => {
@@ -247,13 +341,13 @@ export const voice = {
     } finally {
       hearing.delete(args.utterance);
       h.close();
-      tell({ op: "hold", utterance: args.utterance, on: false });
+      hold(args.utterance, false);
     }
   },
   async listenEnd(args: { bot: string; utterance: string }): Promise<void> {
     const h = hearing.get(args.utterance);
     hearing.delete(args.utterance);
     h?.close();
-    tell({ op: "hold", utterance: args.utterance, on: false });
+    hold(args.utterance, false);
   },
 };

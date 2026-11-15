@@ -1,15 +1,23 @@
 // Clover Voice's host half against a fake plugin API: a bot's main-conversation reply (the message.out observer, then the
 // turn's end) streams its provider's audio to the player part; nothing for a side thread, a failed turn, a bot with no
-// voice or "Speak replies" off; a voice mode the user chose is handed the reply instead; the speak button reads the reply
-// from the log; push-to-talk holds the player.
+// voice or "Speak replies" off; the voice the user picked (the platform's active `voiceModes` filler) is handed the reply
+// instead; a bot plugin's default voice for its own bot (the user's choice wins; it speaks only with a provider set up);
+// the speak button reads the reply from the log; the player's stops and holds go as whole-state `ui.send` messages.
 import { describe, expect, test } from "bun:test";
 import * as host from "../host/index";
 import type { HookInput } from "@waifucave/clover-plugin-sdk";
 
-function fake(o: { settings?: Record<string, unknown>; modes?: unknown[]; history?: Record<string, unknown>[] } = {}) {
+type Fake = {
+  settings?: Record<string, unknown>; modes?: unknown[]; defaults?: unknown[]; history?: Record<string, unknown>[];
+  active?: { pluginId: string; entryId: string }; ready?: { ready: boolean; why?: string }; refuseFirstOpen?: boolean;
+};
+function fake(o: Fake = {}) {
   const settings = new Map<string, unknown>(Object.entries(o.settings ?? {}));
   const opened: { name: string; meta: Record<string, unknown>; bytes: number; closed: boolean }[] = [];
   const asked: { point: string; args: unknown }[] = [];
+  const sent: [string, unknown][] = [];
+  let refuse = o.refuseFirstOpen === true;
+  const provider = { pluginId: "acceptance-voice", entryId: "acceptance-voice", value: { name: "Tone", ...(o.ready ? { ready: "ready" } : {}) } };
   const api = {
     plugin: { id: "clover/voice" },
     settings: {
@@ -17,29 +25,39 @@ function fake(o: { settings?: Record<string, unknown>; modes?: unknown[]; histor
       set: async (key: string, value: unknown, opts?: { bot?: string }) => void settings.set(opts?.bot ? `${key}@${opts.bot}` : key, value),
     },
     points: {
-      entries: async (point: string) => (point === host.PROVIDERS ? [{ pluginId: "acceptance-voice", entryId: "acceptance-voice", value: { name: "Tone" } }] : (o.modes ?? [])),
+      entries: async (point: string) => (point === host.PROVIDERS ? [provider] : point === host.DEFAULTS ? (o.defaults ?? []) : (o.modes ?? [])),
+      active: async (point: string) => (point === host.VOICE_MODES ? (o.active ?? { pluginId: "clover/voice", entryId: "clover-voice" }) : undefined),
       stream: async (point: string, _e: unknown, field: string, args: unknown) => {
         asked.push({ point: `${point}#${field}`, args });
         // Plain stand-ins for the Web streams (this suite's document stands in for the browser's globals).
         const queue = [new Uint8Array(4800), new Uint8Array(4800)];
         return { getReader: () => ({ read: async () => (queue.length > 0 ? { done: false, value: queue.shift()! } : { done: true, value: undefined }), cancel: async () => undefined }) };
       },
-      call: async (point: string, _e: unknown, field: string, args: unknown) => { asked.push({ point: `${point}#${field}`, args }); return { ok: true }; },
+      call: async (point: string, _e: unknown, field: string, args: unknown) => {
+        asked.push({ point: `${point}#${field}`, args });
+        return field === "ready" ? o.ready : { ok: true };
+      },
     },
     streams: {
       open: async (name: string, opts: { meta: Record<string, unknown> }) => {
+        if (refuse) {
+          refuse = false;
+          throw new Error(`clover/voice has no component accepting a stream named "${name}"`);
+        }
         const rec = { name, meta: opts.meta, bytes: 0, closed: false };
         opened.push(rec);
         return { close: async () => { rec.closed = true; }, getWriter: () => ({ write: async (c: Uint8Array) => { rec.bytes += c.length; }, close: async () => { rec.closed = true; }, abort: async () => undefined }) };
       },
     },
+    voices: { listen: () => () => undefined, feed: async () => undefined, providers: async () => [] },
+    ui: { send: (event: string, data: unknown) => void sent.push([event, data]) },
     conversation: {
       get: async (session: string) => ({ id: session, kind: session.startsWith("b_") ? "bot" : "side-thread", bot: "alpha" }),
       history: async () => ({ events: o.history ?? [], hasMore: false }),
     },
   };
   host.start(api as never);
-  return { opened, asked, settings };
+  return { opened, asked, settings, sent };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
@@ -77,8 +95,8 @@ describe("Clover Voice's host half", () => {
     expect(f.opened).toEqual([]);
   });
 
-  test("a voice mode the user chose is handed the reply; Clover Voice's player gets nothing", async () => {
-    const f = fake({ settings: { ...VOICED, active: "acme-voice" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme" } }] });
+  test("the voice the user picked (another plugin's active voiceModes entry) is handed the reply; Clover Voice's player gets nothing", async () => {
+    const f = fake({ settings: VOICED, active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme" } }] });
     await host.replies(at("message.out", { text: "Hi." }));
     await host.replies(at("turn.end", { outcome: "completed" }));
     await settle();
@@ -98,11 +116,72 @@ describe("Clover Voice's host half", () => {
 
   test("a bot's voice for its parts, its reset, and the chip's stop", async () => {
     const f = fake({ settings: { ...VOICED, "model@alpha": "s2" } });
-    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "tone", model: "s2" });
+    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "tone", model: "s2", from: "user" });
     await host.ui.forget({ bot: "alpha" });
     expect(await host.ui.voiceOf({ bot: "alpha" })).toBeNull();
     await host.ui.stop({ bot: "alpha" });
     await settle();
-    expect(f.opened.map((s) => [s.name, s.meta, s.closed])).toEqual([["control", { op: "stop", bot: "alpha" }, true]]);
+    await host.ui.stop({ bot: "alpha" });
+    await host.ui.stop({ bot: "beta" });
+    // Each message carries the whole state: the newest is all the player needs.
+    expect(f.sent).toEqual([["stops", { alpha: 1 }], ["stops", { alpha: 2 }], ["stops", { alpha: 2, beta: 1 }]]);
+    expect(await host.ui.ready()).toEqual({ holds: [], stops: { alpha: 2, beta: 1 } });
+  });
+
+  test("a bot plugin's default voice for its own bot: used until the user chooses one; another plugin's default for it is ignored", async () => {
+    const defaults = [
+      { pluginId: "beta", entryId: "0", value: { provider: "acceptance-voice", voice: "not-hers" } },
+      { pluginId: "alpha/extras", entryId: "0", value: { provider: "acceptance-voice", voice: "hers", model: "m1" } },
+    ];
+    let f = fake({ defaults });
+    expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", voice: "hers", model: "m1", from: "bot" });
+    await host.replies(at("message.out", { text: "Hi." }));
+    await host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(f.opened.map((s) => [s.name, s.meta.bot])).toEqual([["speech", "alpha"]]);
+    f = fake({ defaults, settings: VOICED });
+    expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", voice: "tone", from: "user" });
+    f = fake({ defaults: [defaults[0]] });
+    expect(await host.voiceOf("alpha")).toBeUndefined();
+  });
+
+  test("a default voice from a provider the user hasn't set up doesn't speak, and its Voice section says why", async () => {
+    const defaults = [{ pluginId: "alpha", entryId: "0", value: { provider: "acceptance-voice", voice: "hers" } }];
+    const f = fake({ defaults, ready: { ready: false, why: "add your Tone key in its settings" } });
+    await host.replies(at("message.out", { text: "Hi." }));
+    await host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(f.opened).toEqual([]);
+    expect(f.asked.map((a) => a.point)).toEqual([`${host.PROVIDERS}#ready`]);
+    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "hers", from: "bot", why: "Tone isn't set up: add your Tone key in its settings" });
+    // Set up: it speaks.
+    const g = fake({ defaults, ready: { ready: true } });
+    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "hers", from: "bot" });
+    await host.replies(at("message.out", { text: "Hi." }));
+    await host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(g.opened.map((s) => s.name)).toEqual(["speech"]);
+  });
+
+  test("push-to-talk's holds go to the player as the whole set; the player's ready answers the state so far", async () => {
+    const f = fake({ settings: VOICED });
+    await host.voice.listenStart({ bot: "alpha", utterance: "u1", format: "pcm16-16k" });
+    await host.voice.listenStart({ bot: "alpha", utterance: "u2", format: "pcm16-16k" });
+    expect(await host.ui.ready()).toEqual({ holds: ["u1", "u2"], stops: {} });
+    await host.voice.listenEnd({ bot: "alpha", utterance: "u1" });
+    await host.voice.listenEnd({ bot: "alpha", utterance: "u9" });
+    expect(f.sent).toEqual([["holds", { utterances: ["u1"] }], ["holds", { utterances: ["u1", "u2"] }], ["holds", { utterances: ["u2"] }]]);
+  });
+
+  test("a reply before the player's frame accepts speech waits for its ready, then goes to it", async () => {
+    const f = fake({ settings: VOICED, refuseFirstOpen: true });
+    await host.replies(at("message.out", { text: "Early." }));
+    const ended = host.replies(at("turn.end", { outcome: "completed" }));
+    await settle();
+    expect(f.opened).toEqual([]);
+    await host.ui.ready();
+    await ended;
+    await settle();
+    expect(f.opened.map((s) => [s.name, s.bytes, s.closed])).toEqual([["speech", 9600, true]]);
   });
 });

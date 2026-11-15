@@ -1,6 +1,7 @@
 // Clover Voice's section of a bot's editor (`bot.editor.section`): the bot's voice, this plugin's own setting for that
-// bot (`provider`, `voice`, `model`), with a reset back to none. Voices come with the voice providers that fill this
-// plugin's providers point (Fish Audio, or another you add).
+// bot (`provider`, `voice`, `model`), with a reset back to none; else the default its own bot plugin gives (shown as
+// such). Voices come with the voice providers that fill this plugin's providers point (Fish Audio, or another you add);
+// when the provider isn't set up, it says why the voice can't speak.
 import { useEffect, useId, useState } from "react";
 import type { BotRef, EntryProps } from "../../shell/runtime/types";
 import { usePluginApi } from "./sdk";
@@ -10,13 +11,13 @@ export function BotVoiceSection({ props }: EntryProps<{ bot: BotRef }>) {
   const api = usePluginApi();
   const id = useId();
   const bot = props.bot.id;
-  const [voice, setVoice] = useState<{ provider: string; voice: string } | undefined>(undefined);
+  const [voice, setVoice] = useState<{ provider: string; voice: string; from?: "user" | "bot"; why?: string } | undefined>(undefined);
 
   useEffect(() => {
     let live = true;
     const read = (): void => {
       // A bot's voice is the host half's to read (a page reads only its plugin's plain settings).
-      void Promise.resolve(api.host.call<{ provider: string; voice: string } | null>("voiceOf", { bot })).then((v) => { if (live) setVoice(v ?? undefined); }, () => undefined);
+      void Promise.resolve(api.host.call<{ provider: string; voice: string; from?: "user" | "bot"; why?: string } | null>("voiceOf", { bot })).then((v) => { if (live) setVoice(v ?? undefined); }, () => undefined);
     };
     read();
     const off = api.settings.watch(null, read);
@@ -35,11 +36,12 @@ export function BotVoiceSection({ props }: EntryProps<{ bot: BotRef }>) {
     <section className="cl-bot-editor__row" aria-labelledby={id} data-voice-section="">
       <div className="cl-bot-editor__text">
         <span className="cl-bot-editor__label" id={id}>{S.voice}</span>
-        <span className="cl-bot-editor__detail">{S.voiceDetail}</span>
+        <span className="cl-bot-editor__detail">{voice?.from === "bot" ? S.byBot : S.voiceDetail}</span>
+        {voice?.why !== undefined && <span className="cl-bot-editor__detail" role="note" data-voice-why="">{voice.why}</span>}
       </div>
       <div className="cl-bot-editor__control">
         <span className="cl-bot-editor__value">{voice ? S.voiceOf(voice.provider, voice.voice) : S.noVoice}</span>
-        {voice && (
+        {voice?.from === "user" && (
           <button type="button" className="cl-bot-editor__reset" onClick={() => void reset()}>
             {S.reset}
           </button>

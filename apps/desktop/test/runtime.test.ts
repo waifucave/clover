@@ -1014,6 +1014,31 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(() => s.rt.describe(rootFrame, 8, undefined)).toThrow();
   });
 
+  test("a background part is a client part like any other: its host half's ui.send reaches its document, and its own calls act as its plugin", () => {
+    const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
+    const s = setup(bg);
+    s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
+    const rootFrame = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const root = s.rt.describe(rootFrame, 8, undefined);
+    const item = s.rt.resolve(rootFrame, root.mount, "app.background").items[0] as { mount: string; url: string };
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-background", token);
+    const child = frame(item.url, rootFrame);
+    s.rt.describe(child, 8, token);
+    // The host half's `ui.send` (a plugin_ui_message on the plugin's own connection) goes to the background document.
+    s.sent.length = 0;
+    const message = { type: "api-event", pluginId: "fixture-background", method: "core.event", params: { type: "plugin_ui_message", pluginId: "fixture-background", event: "holds", value: { utterances: ["u1"] } } };
+    s.rt.pluginMessage("fixture-background", message as never);
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: message as never }]);
+    // Another plugin's message doesn't reach it.
+    s.sent.length = 0;
+    s.rt.pluginMessage("clover/voice", { ...message, pluginId: "clover/voice" } as never);
+    expect(s.sent.filter((x) => x.to === `${child.processId}:${child.routingId}`)).toEqual([]);
+    // The other way: its part's calls (`host.call` to its host half among them) go as its own plugin, with its capabilities.
+    expect(s.rt.partOf(child, item.mount)).toBe("fixture-background");
+    expect([...s.rt.capabilitiesOf(child, item.mount)]).toContain("audio");
+  });
+
   test("the menu broker learns a frame's place from each document above it", () => {
     const { s, shell, item, child } = withFixtureFrame();
     const place = s.rt.placeOf(child);

@@ -1,7 +1,7 @@
 // The plugin's host half (../host/index.ts): its `voices` handler speaks in the formats the app plays and listens to
 // push-to-talk audio, with every request going through the keyed fetch it is handed, which adds the key.
 import { describe, expect, test } from "bun:test";
-import { FISH_SECRET, speak, speakChunks, voice, type VoiceContext } from "../host/index";
+import { FISH_SECRET, ready, speak, speakChunks, voice, type VoiceContext } from "../host/index";
 import { FakeFish } from "./fake-fish";
 
 const KEY = "test-key-not-a-secret";
@@ -43,6 +43,16 @@ const joined = (chunks: { audio: Uint8Array }[]) => {
 };
 
 describe("Clover Voice's provider entry (speak) and the core's voices entry (listen)", () => {
+  test("ready: set up with a key saved; not, with none (the keyed fetch's no_credential), and it says where to add it", async () => {
+    const fish = new FakeFish({ key: KEY, ttfaMs: 0, chunkMs: 0 });
+    expect(await ready({}, context(fish))).toEqual({ ready: true });
+    const noKey: VoiceContext = {
+      signal: new AbortController().signal,
+      api: { net: { fetch: async () => { throw Object.assign(new Error("no key"), { code: "no_credential" }); } } },
+    };
+    expect(await ready({}, noKey)).toEqual({ ready: false, why: "add your Fish Audio API key in the Fish Audio plugin's settings" });
+  });
+
   test("speaks with the free model as PCM at 24 kHz by default, asking the core for its key by name", async () => {
     const fish = new FakeFish({ key: KEY, ttfaMs: 0, chunkMs: 0 });
     const seen: { auth?: string | false }[] = [];

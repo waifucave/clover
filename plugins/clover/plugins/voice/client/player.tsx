@@ -1,8 +1,10 @@
 // Clover Voice's background part (`app.background`, spec §6.6): the player. It accepts the host half's speech streams
 // (`streams.accept("speech")`), plays them one at a time in the device's speech turn (`src/player.ts`), sends the
-// bots' mouths as speech cues (`src/levels.ts`, `avatar.control.all`), and hears the host half's stop and push-to-talk
-// hold (`streams.accept("control")`, a stream's meta) and its own "Speak replies" setting (off: what plays stops). It
-// draws nothing.
+// bots' mouths as speech cues (`src/levels.ts`, `avatar.control.all`), and hears the host half's stops and push-to-talk
+// holds (`host.on`, the host half's `ui.send`) and its own "Speak replies" setting (off: what plays stops). It draws
+// nothing. Both messages carry the whole state (the held utterances; each bot's stop count, which only goes up), since
+// the app hands a part only the newest message of each name within a tick; on mount it asks its host half for that
+// state (`ready`), which also tells the host half it now accepts speech.
 import { useEffect } from "react";
 import { usePluginApi } from "./sdk";
 import { SpeechCues } from "../src/levels";
@@ -64,20 +66,38 @@ export function Player() {
         player.end(id);
       })().catch(() => player.end(id));
     });
-    // The host half's controls: a stream with only its meta (the user's stop on a bot, push-to-talk's hold).
-    const controls = api.streams.accept("control", (stream, meta) => {
-      void stream.cancel("read").catch(() => undefined);
-      if (meta.op === "stop" && typeof meta.bot === "string") player.stop(meta.bot);
-      else if (meta.op === "hold" && typeof meta.utterance === "string") player.hold(meta.utterance, meta.on === true);
-    });
+    // The host half's controls, as state: the utterances push-to-talk holds now, and each bot's stop count.
+    const held = new Set<string>();
+    const holds = (data: unknown): void => {
+      const now = new Set(Array.isArray((data as { utterances?: unknown } | null)?.utterances) ? (data as { utterances: unknown[] }).utterances.filter((u): u is string => typeof u === "string") : []);
+      for (const u of [...held]) if (!now.has(u)) { held.delete(u); player.hold(u, false); }
+      for (const u of now) if (!held.has(u)) { held.add(u); player.hold(u, true); }
+    };
+    const seen = new Map<string, number>();
+    const stops = (data: unknown, baseline = false): void => {
+      if (typeof data !== "object" || data === null) return;
+      for (const [bot, n] of Object.entries(data as Record<string, unknown>)) {
+        if (typeof n !== "number" || n <= (seen.get(bot) ?? 0)) continue;
+        seen.set(bot, n);
+        if (!baseline) player.stop(bot);
+      }
+    };
+    const offHolds = api.host.on("holds", holds);
+    const offStops = api.host.on("stops", (d) => stops(d));
     let live = true;
+    void Promise.resolve(api.host.call<{ holds?: unknown; stops?: unknown }>("ready", {})).then((s) => {
+      if (!live || s === undefined || s === null) return;
+      stops(s.stops, true);
+      holds({ utterances: s.holds });
+    }, () => undefined);
     const mute = (): void => void api.settings.get<boolean>("speakReplies").then((on) => { if (live) player.setMuted(on === false); }, () => undefined);
     mute();
     const offMute = api.settings.watch("speakReplies", mute);
     return () => {
       live = false;
       accepting();
-      controls();
+      offHolds();
+      offStops();
       offMute();
       player.stopAll();
       cues.close();

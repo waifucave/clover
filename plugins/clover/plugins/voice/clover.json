@@ -28,10 +28,14 @@
             "speak": {
               "type": "string",
               "format": "handler"
+            },
+            "ready": {
+              "type": "string",
+              "format": "handler"
             }
           }
         },
-        "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream). A bot's voice names the entry's id."
+        "doc": "A voice provider: `speak` answers `{ text, voice, model?, format }` with the audio as it is made (pcm16-24k bytes, through points.stream); the optional `ready` answers `{ ready, why? }`, whether the user set it up (its key or sign-in). A bot's voice names the entry's id."
       },
       "clover.voice.modes": {
         "shape": "list",
@@ -55,7 +59,29 @@
             }
           }
         },
-        "doc": "Another way to speak the bots' replies, chosen in Settings › Voice: `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech)."
+        "doc": "Another way to speak the bots' replies, used while its plugin is the active voice (the platform's `voiceModes`, one at a time, the user's pick in Settings): `reply` is handed `{ bot, session, text, asked }` and speaks it its own way (its own background part, taking device/speech)."
+      },
+      "clover.voice.defaults": {
+        "shape": "list",
+        "fields": {
+          "type": "object",
+          "required": [
+            "provider",
+            "voice"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "voice": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        },
+        "doc": "A bot plugin's default voice for its own bot (the bot of its own tree; any other's is ignored): `provider` (an entry of clover.voice.providers), `voice`, `model?`. The user's own choice in the bot's Voice section always wins, and a default speaks only when its provider is set up."
       }
     }
   },
@@ -71,13 +97,6 @@
     "conversation.read"
   ],
   "settings": {
-    "active": {
-      "type": "string",
-      "title": "Active voice",
-      "description": "The voice that speaks for your bots and hears you on this computer: Clover Voice, or a voice mode another plugin offers. Empty is Clover Voice.",
-      "default": "",
-      "scope": "device"
-    },
     "speakReplies": {
       "type": "boolean",
       "title": "Speak replies",

@@ -12,7 +12,7 @@
 // entry, `fish-api-key`: the core adds the key, reaches only `api.fish.audio`, and fails at once when the user has no
 // key, in which case the bot stays text-only (§6.6).
 import type { HostPluginApi } from "@waifucave/clover-plugin-sdk";
-import { ASR_MODELS, FishAudioClient, FREE_TTS_MODEL, TTS_MODELS, type AsrModel, type Latency, type TtsModel } from "../src/fish";
+import { ASR_MODELS, FishAudioClient, FishError, FREE_TTS_MODEL, TTS_MODELS, type AsrModel, type Latency, type TtsModel } from "../src/fish";
 
 /** The `auth` entry whose key the core adds to this plugin's requests. */
 export const FISH_SECRET = "fish-api-key";
@@ -134,6 +134,19 @@ export async function speak(args: SpeakArgs, ctx: VoiceContext): Promise<AsyncIt
   return (async function* () {
     for await (const c of chunks) yield c.audio;
   })();
+}
+
+/** The `clover.voice.providers` entry's `ready`: whether the user set Fish Audio up (their key in this plugin's settings).
+ *  It asks Fish for one voice of its library with the key: no key saved is the only "not set up"; anything else (Fish
+ *  down, a bad network) isn't the user's set-up, and speaking says what went wrong itself. */
+export async function ready(_args: unknown, ctx: VoiceContext): Promise<{ ready: boolean; why?: string }> {
+  try {
+    await clientFor(ctx).voices({ pageSize: 1, signal: ctx.signal });
+    return { ready: true };
+  } catch (err) {
+    if (err instanceof FishError && err.code === "no_key") return { ready: false, why: "add your Fish Audio API key in the Fish Audio plugin's settings" };
+    return { ready: true };
+  }
 }
 
 export const voice = {

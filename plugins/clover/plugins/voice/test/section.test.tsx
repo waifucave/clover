@@ -1,8 +1,9 @@
-// Clover Voice's parts in the window: Settings › Voice (the modes on its own point, the choice and "Speak replies" in its
-// own settings), the section of a bot's editor (the bot's voice, its own bot setting) and the stage's chip (speaking from
-// the device's speech turn; its press stops or mutes).
+// Clover Voice's parts in the window: Settings › Voice ("Speak replies" in its own settings; which voice speaks is the
+// platform's one-at-a-time picker, not this section's), the section of a bot's editor (the bot's voice: the user's, or
+// its bot plugin's default with why it can't speak) and the stage's chip (speaking from the device's speech turn; its
+// press stops or mutes).
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { fakeApi, settle } from "../../shell/runtime/testkit";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { UiRuntimeProvider } from "../../shell/client/sdk";
@@ -14,14 +15,13 @@ afterEach(cleanup);
 
 /** The entry props a spot gives its component, for Alpha. */
 const alpha = { props: { bot: { id: "alpha", name: "Alpha" } } } as unknown as EntryProps<{ bot: BotRef }>;
-const ACME: PointEntry = { pluginId: "acme-voice", entryId: "acme", value: { name: "Acme Voice" } };
 
 function mount(api: PluginApi, node: React.ReactNode) {
   render(<UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>{node}</UiRuntimeProvider>);
 }
 
 /** A fake API whose settings know bots (`key@bot`). */
-function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn?: TurnState; calls?: { name: string; args: unknown }[] } = {}) {
+function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn?: TurnState; calls?: { name: string; args: unknown }[]; byBot?: Record<string, unknown> } = {}) {
   const a = fakeApi({ pluginId: "clover/voice", settings: o.settings ?? {}, points: { "clover.voice.modes": o.modes ?? [] } });
   const stored = a.stored;
   const watchers = new Set<(s: TurnState) => void>();
@@ -37,7 +37,7 @@ function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn
         const bot = (args as { bot?: string }).bot;
         if (name === "voiceOf") {
           const p = stored.get(`provider@${bot}`), v = stored.get(`voice@${bot}`);
-          return typeof p === "string" && p !== "" && typeof v === "string" ? { provider: p, voice: v } : null;
+          return typeof p === "string" && p !== "" && typeof v === "string" ? { provider: p, voice: v, from: "user" } : (o.byBot?.[bot!] ?? null);
         }
         if (name === "forget") { stored.set(`provider@${bot}`, null); stored.set(`voice@${bot}`, null); return { ok: true }; }
         o.calls?.push({ name, args });
@@ -50,25 +50,10 @@ function api(o: { settings?: Record<string, unknown>; modes?: PointEntry[]; turn
 }
 
 describe("Settings › Voice", () => {
-  test("Clover Voice and the modes on its point, Clover Voice chosen while the setting is empty; a click stores the choice", async () => {
-    const a = api({ modes: [ACME] });
-    mount(a, <VoiceSection />);
+  test("no voice picker of its own: which voice speaks is the platform's one-at-a-time picker", async () => {
+    mount(api(), <VoiceSection />);
     await act(() => settle(6));
-    const group = screen.getByRole("radiogroup", { name: "Active voice" });
-    const radios = () => within(group).getAllByRole("radio");
-    expect(radios().map((o) => o.textContent)).toEqual(["Clover Voice", "Acme Voice"]);
-    expect(radios().map((o) => o.getAttribute("aria-checked"))).toEqual(["true", "false"]);
-    await act(async () => { fireEvent.click(within(group).getByRole("radio", { name: "Acme Voice" })); await settle(4); });
-    expect(a.stored.get("active")).toBe("acme-voice");
-    await act(async () => { fireEvent.click(within(group).getByRole("radio", { name: "Clover Voice" })); await settle(4); });
-    expect(a.stored.get("active")).toBe("");
-  });
-
-  test("a chosen voice that isn't on is shown as not running", async () => {
-    mount(api({ settings: { active: "acme-voice" } }), <VoiceSection />);
-    await act(() => settle(6));
-    const checked = screen.getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true");
-    expect(checked.map((r) => r.textContent)).toEqual(["acme-voice (not running)"]);
+    expect(screen.queryByRole("radiogroup")).toBeNull();
   });
 
   test("Speak replies: on while unset; the user's click writes the plugin's own speakReplies", async () => {
@@ -92,6 +77,16 @@ describe("a bot's editor: its voice", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Reset" })); await settle(4); });
     expect(screen.getByText("None")).toBeTruthy();
     expect(a.stored.get("provider@alpha")).toBeNull();
+  });
+
+  test("a bot plugin's default shows as its own, with no reset, and says why it can't speak when its provider isn't set up", async () => {
+    const a = api({ byBot: { alpha: { provider: "fish-audio", voice: "hers", from: "bot", why: "Fish Audio isn't set up: add your key" } } });
+    mount(a, <BotVoiceSection {...alpha} />);
+    await act(() => settle(6));
+    expect(screen.getByText("hers · fish-audio")).toBeTruthy();
+    expect(screen.getByText("The bot's own default. A voice you choose takes its place.")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toBe("Fish Audio isn't set up: add your key");
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
   });
 });
 
