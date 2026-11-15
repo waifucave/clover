@@ -988,7 +988,8 @@ export interface TurnState {
  *  limit passes, when the holder's frame is gone, its host process exits, its plugin stops, or the app quits (for a
  *  frame); a take still waiting leaves the queue the same ways. */
 export interface TurnsApi {
-  /** Waits for the caller's turn, then resolves with it. Refused (`refused`) for a name the caller may not take. */
+  /** Waits for the caller's turn, then resolves with it. Refused (`refused`) for a name the caller may not take, and over
+   *  the caps: 64 takes of one name and 256 over all its names held or waiting per plugin, 4,096 on the computer. */
   take(name: string, options?: TurnOptions, onEvent?: (event: TurnEvent) => void): Promise<Turn>;
   /** Ends the caller's own turn (or takes its waiting take out of the queue) by its id; an id already ended is a no-op. */
   done(id: string): Promise<void>;

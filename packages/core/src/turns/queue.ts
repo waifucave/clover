@@ -13,6 +13,19 @@ import { randomUUID } from "node:crypto";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { Clock, TimerHandle } from "../contracts/clock";
 
+/** A plugin's takes of one name, held and waiting together, at most. */
+export const TURN_TAKES_PER_NAME = 64;
+/** A plugin's takes over all names, at most. */
+export const TURN_TAKES_PER_PLUGIN = 256;
+/** Every plugin's takes on this computer, at most. */
+export const TURN_TAKES_ALL = 4_096;
+
+/** A take's note as the log and `state` carry it: control characters (C0, DEL, C1), line and paragraph separators and
+ *  bidirectional overrides out, each run of them one space, trimmed. */
+export function cleanTurnNote(note: string): string {
+  return note.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/ {2,}/g, " ").trim();
+}
+
 /** Where a take came from: a component ("ui"), or a host half in a process the core started. */
 export type TurnSide = HostProcess | "ui";
 
@@ -61,9 +74,17 @@ export class TurnQueues {
   /** Joins `name`'s queue; `listener` hears the take's events. The returned function is the take's watch ending: it
    *  leaves the queue, or ends a held turn as gone (its holder went), and is a no-op once the take is over. */
   take(name: string, who: { pluginId: string; side: TurnSide }, opts: { limitMs?: number; note?: string }, listener: (event: TurnEvent) => void): { id: string; leave: () => void } {
+    // The caps (held and waiting takes together): far above what a real plugin queues, so only a runaway one meets them.
+    const mine = [...this.#takes.values()].filter((x) => x.pluginId === who.pluginId);
+    if (mine.filter((x) => x.name === name).length >= TURN_TAKES_PER_NAME) {
+      throw new ContractError("refused", `${who.pluginId} already has ${TURN_TAKES_PER_NAME} takes of ${name} held or waiting; one must end before another joins`);
+    }
+    if (mine.length >= TURN_TAKES_PER_PLUGIN) throw new ContractError("refused", `${who.pluginId} already has ${TURN_TAKES_PER_PLUGIN} takes held or waiting; one must end before another joins`);
+    if (this.#takes.size >= TURN_TAKES_ALL) throw new ContractError("refused", `${TURN_TAKES_ALL} takes are held or waiting on this computer; one must end before another joins`);
+    const note = opts.note === undefined ? "" : cleanTurnNote(opts.note);
     const t: Take = {
       id: `turn_${randomUUID()}`, name, pluginId: who.pluginId, side: who.side, limitMs: opts.limitMs ?? TURN_LIMIT_DEFAULT_MS, takenAt: this.#o.clock.now(), listener,
-      ...(opts.note !== undefined && opts.note !== "" ? { note: opts.note } : {}),
+      ...(note !== "" ? { note } : {}),
     };
     const q = this.#queue(name);
     this.#takes.set(t.id, t);
