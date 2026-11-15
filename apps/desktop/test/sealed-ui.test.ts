@@ -263,8 +263,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
       const landed = answerCallsOf(r.home).length;
       console.log(`parent cover ${lead} ms (verdict pinned): ${landed} answer(s) taken`);
       // At lead 0 the cover and the press are sent together: which one the compositor sees first is not decided here (the measured
-      // window is reported, not asserted). From a few ms on the fresh report must see the cover and nothing is taken.
-      if (lead >= 10) {
+      // window is reported, not asserted). From 2 ms on the fresh report must see the cover and nothing is taken.
+      if (lead >= 2) {
         expect(r.output).toMatch(/fresh report (covered|none in time) after \d+ ms/);
         expect(landed, r.output).toBe(0);
       }
@@ -273,8 +273,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
       const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", parentCoverLead: lead } });
       expect(r.output).toContain("presses=[[");
       const line = /sealed: press on [^\n]*: (not-visible|fresh report [^\n]*)/.exec(r.output)?.[1] ?? "(none)";
-      console.log(`parent cover ${lead} ms (unpinned): ${line}`);
-      expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+      console.log(`parent cover ${lead} ms (unpinned): ${line}, ${answerCallsOf(r.home).length} answer(s) taken`);
+      if (lead >= 2) expect(answerCallsOf(r.home), r.output).toHaveLength(0); // at 0 the cover and the press are sent together: reported, not asserted
     }, 120_000);
   }
 
