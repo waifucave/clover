@@ -127,7 +127,8 @@ describe("the plugin API's gating", () => {
     // checks per source: the calls themselves need no capability.
     // avatar.control.all widens whose figure `avatar.cue` may move (the core checks it per bot) and carries avatar.control
     // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
-    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all"];
+    // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call.
+    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone"];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });

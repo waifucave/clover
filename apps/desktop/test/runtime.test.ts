@@ -1009,6 +1009,8 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     // Closing its window drops the mount.
     s.rt.closeWindow(8);
     expect(() => s.rt.describe(rootFrame, 8, undefined)).toThrow();
+  });
+
   test("a plugin holding `microphone`: its frames carry the flag and the runtime says its layer holds it; no other plugin's does", () => {
     const view = (capabilities: string[]) => readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-surface")), capabilities }] as never);
     const hold = setup(view(["microphone"]));

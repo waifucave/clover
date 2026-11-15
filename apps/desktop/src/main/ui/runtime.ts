@@ -1061,6 +1061,8 @@ export class UiRuntime {
       }
     }
     return out;
+  }
+
   /** Whether the plugin whose layer is `layer` (its origin's host, `clover-plugin://<layer>/`) holds a capability now. Main's permission
    *  handlers judge a microphone request by it: the layer is read from the frame's own address, which only that plugin's files can have. */
   layerHolds(layer: string, capability: string): boolean {
