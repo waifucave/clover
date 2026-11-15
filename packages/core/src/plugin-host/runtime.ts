@@ -328,51 +328,6 @@ export class HostRuntime {
     }
   }
 
-  /** `audio.play` from a host half: the audio crosses as pieces of one utterance (a whole clip as one piece), the last
-   *  `final`; the answer is `{ stop, done }` once the first piece is taken (a refusal fails the call). `stop` sends no
-   *  more and ends the utterance; `done` settles once its last piece went. */
-  async #audioPlay(pluginId: string, inside: string | undefined, args: unknown[]): Promise<{ stop(): void; done: Promise<void> }> {
-    const peer = this.#o.peer;
-    const audio = (args[0] ?? {}) as { format?: unknown; data?: unknown };
-    const opts = args[1];
-    const utterance = `pa_${crypto.randomUUID()}`;
-    let seq = 0;
-    let stopped = false;
-    const piece = (data: Uint8Array, final: boolean) => peer.request("pluginHost.api", {
-      pluginId, callId: `api_${++this.#apiSeq}`, call: "audio.play",
-      args: [{ format: audio.format, data }, opts ?? {}, { utterance, seq: seq++, final }],
-      ...(inside === undefined ? {} : { invocation: inside }),
-    }).then(() => undefined, (err: unknown) => { throw apiFailure(err, "audio.play"); });
-    const data = audio.data;
-    if (data instanceof Uint8Array) {
-      await piece(data, true);
-      return { stop: () => {}, done: Promise.resolve() };
-    }
-    if (data === null || typeof data !== "object" || typeof (data as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") {
-      throw apiFailure(new ContractError("invalid", "audio.play's data is bytes (a Uint8Array) or an async iterable of them"), "audio.play");
-    }
-    const it = (data as AsyncIterable<unknown>)[Symbol.asyncIterator]();
-    const first = await it.next();
-    if (first.done) {
-      await piece(new Uint8Array(0), true);
-      return { stop: () => {}, done: Promise.resolve() };
-    }
-    if (!(first.value instanceof Uint8Array)) throw apiFailure(new ContractError("invalid", "audio.play's stream gives Uint8Array pieces"), "audio.play");
-    await piece(first.value, false);
-    const done = (async () => {
-      for (;;) {
-        if (stopped) break;
-        const next = await it.next();
-        if (next.done || stopped) break;
-        if (!(next.value instanceof Uint8Array)) throw apiFailure(new ContractError("invalid", "audio.play's stream gives Uint8Array pieces"), "audio.play");
-        await piece(next.value, false);
-      }
-      await piece(new Uint8Array(0), true);
-    })();
-    done.catch(() => {});
-    return { stop: () => { stopped = true; void it.return?.(); }, done };
-  }
-
   /** A points stream's handler answered: its bytes go into the stream the daemon made, through `streams.write` (each
    *  piece awaited: the daemon's back-pressure), then `streams.end`. A `Uint8Array` is one piece, an async iterable or a
    *  `ReadableStream` gives many; anything else, a piece that isn't bytes, or a stream the reader cancelled throws, and
@@ -591,8 +546,6 @@ export class HostRuntime {
           const inside = invocation ?? this.#scope.getStore();
           // `net.fetch` crosses as its own messages: a RequestInit and a Response can't go as call arguments.
           if (call === "net.fetch") return this.#fetches.fetch(pluginId, inside, args).catch((err: unknown) => { throw apiFailure(err, call); });
-          // `audio.play` answers `{ stop, done }`, and its audio may be a stream: it crosses a piece at a time.
-          if (call === "audio.play") return this.#audioPlay(pluginId, inside, args);
           // `turns.take` answers a `Turn` once the turn comes: a watch on the wire, whose events make it.
           if (call === "turns.take") return this.#turnTake(pluginId, inside, args);
           // A stream's two ends and a handler's stream are Web streams made from watches (the SDK's streams.ts).

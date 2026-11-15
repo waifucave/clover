@@ -1,7 +1,8 @@
 // Push-to-talk (try 15, lane E-listen; spec §6.6): the app records while the user holds the composer's talk button and hands
 // the audio to the bot's listening voice plugin. The run's fixture voice (`acceptance-voice`: no key, no network) is installed
-// the user's way and set as Alpha's voice (her user layer), and the row holds the button down with real mouse events, as a
-// person does, so main sees the press (a recording starts only after one).
+// the user's way and set as Alpha's voice (Clover Voice's own setting for her), and the row holds the button down with real
+// mouse events, as a person does, so main sees the press (a recording starts only after one). The listening half still runs
+// on the core's voice slot until it is re-founded; the speaking clause is voice-mode-step.ts.
 //
 // No real microphone: the test build's recorder takes a generated 1.2 s tone clip in place of getUserMedia (listen.ts's
 // `clipSource`), so no run opens a device or raises a system prompt; the row proves the real constructor was never reached
@@ -52,17 +53,19 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     installed = true;
     await ctx.pressCard(`${VOICE_ID}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === VOICE_ID);
     await until(`${VOICE_ID} running`, 30_000, async () => ((await state()) === "running" ? true : undefined));
-    await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: { provider: VOICE_ID, voice: "tone" } } });
+    for (const [key, value] of [["provider", VOICE_ID], ["voice", "tone"]] as const) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value, bot: "alpha" });
     voiced = true;
     // The daemon's own answer, where this connection may ask (a packaged core's CLI role may not: the talk button
     // below, which the composer draws from the same answer, then says it).
     const status = await rpc.request<{ listens: boolean }>("voice.status", { bot: "alpha" }).catch((e: unknown) => { if (/may not call voice\.status/.test(String((e as { message?: unknown })?.message ?? e))) return undefined; throw e; });
     if (status !== undefined && status.listens !== true) fail(`voice.status says ${JSON.stringify(status)} for Alpha with a listening voice`);
 
-    // The talk button appears (the composer re-reads the daemon's answer when the voice changes, or when the window is focused).
+    // The talk button appears (the composer re-reads the daemon's answer when the bot changes, or when the window is focused:
+    // the voice is Clover Voice's own setting, so the run gives the window the focus back, as the user coming back would).
     const at = await until("the composer's talk button", 60_000, async () => {
       const d = await composerDoc(cdp);
       if (d === undefined) return undefined;
+      await cdp.evaluate(d.session, "window.dispatchEvent(new Event('focus'))").catch(() => undefined);
       const c = await cdp.centerOf(d.session, BUTTON);
       return c === undefined ? undefined : { session: d.session, c };
     }, async () => "no talk button in the composer");
@@ -134,7 +137,7 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     done.push(...(await voiceModeClause(ctx)));
     return done.join("; ");
   } finally {
-    if (voiced) await rpc.request("bot.setUserLayer", { id: "alpha", patch: { voice: null } }).catch(() => undefined);
+    if (voiced) for (const key of ["provider", "voice"]) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value: null, bot: "alpha" }).catch(() => undefined);
     if (installed) {
       const rm = await rpc.request<{ card?: string }>("plugin.remove", { id: VOICE_ID }).catch(() => undefined);
       if (rm?.card !== undefined) await ctx.approveCard(rm.card).catch(() => undefined);

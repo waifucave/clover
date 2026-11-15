@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 // The document is this file's own: left registered, the next file that registers one fails at its import ("Happy DOM has
-// already been globally registered": ui-api, voice-hooks, pill-bots and key-dialog on the systems whose file order runs
+// already been globally registered": ui-api, pill-bots and key-dialog on the systems whose file order runs
 // this one first).
 afterAll(async () => {
   await GlobalRegistrator.unregister();

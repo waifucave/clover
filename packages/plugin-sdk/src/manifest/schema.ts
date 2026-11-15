@@ -36,8 +36,12 @@ export const PointDeclSchema = z.strictObject({
   /** One filler at a time (§5.4 "One at a time"): the platform keeps which entry is active, the user's choice in
    *  Settings or the default (the first bundled filler, else the first installed); `points.active` reads it. */
   oneAtATime: z.boolean().optional(),
-  /** The point's own title: Settings' picker for a one-at-a-time point is titled by it ("Voice", "Stage"). */
+  /** The point's own title: Settings' picker for a one-at-a-time point is titled by it ("Voice", "Stage"), and a
+   *  `fills` line names the point by it. */
   title: Text.optional(),
+  /** The line its fillers' OK cards show (`fillsOkLines`): what a plugin that fills this point is given or does, in the
+   *  declarer's words, shown as plain text and attributed to the declarer. `warns`: shown as a caution. */
+  fills: z.strictObject({ ok: utf16(300, 1), warns: z.boolean().optional() }).optional(),
 });
 
 export const DeclaresSchema = z.record(PointName, PointDeclSchema);
@@ -105,17 +109,15 @@ export const BotSchema = z.strictObject({
       if (problem) ctx.addIssue({ code: "custom", path: ["file"], message: problem });
     })
     .optional(),
-  voice: z.strictObject({
-    provider: EntryId, voice: utf16(256, 1), model: utf16(128, 1).optional(),
-    /** Listening from another voice provider (§6.6). */
-    listen: z.strictObject({ provider: EntryId, model: utf16(128, 1).optional() }).optional(),
-  }).optional(),
   /** A theme id from this plugin, and a layout file; both apply in its tab. */
   theme: EntryId.optional(),
   layout: Path.optional(),
   greeting: Path.optional(),
   /** Starter memories, copied once into the bot's memory folder. */
   memory: Path.optional(),
+  /** Retired: a bot's voice is no longer set here (the validator warns, and nothing reads it). A plugin gives its bot
+   *  a default voice on Clover Voice's point `clover.voice.defaults`. Accepted so an older bot still loads. */
+  voice: z.unknown().optional(),
   ...declares,
 });
 
@@ -237,6 +239,10 @@ export const HookSchema = z.strictObject({
   /** `own-bot`: only the sessions of the bots this plugin's tree contributes (their conversations, side threads and
    *  the agents they start), enforced by the host before a hook is called; the OK card says so. */
   scope: PartScope.optional(),
+  /** Only hears its events: what it answers is ignored, and it holds nothing up. A `message.out` observer is told each
+   *  bot's reply once it is stored (with the bot and the session), so the replies keep streaming as they would with no
+   *  hook (a hook that may rewrite a reply holds it until it ran). The OK says it sees and never says it changes. */
+  observe: z.boolean().optional(),
   ...declares,
 });
 
@@ -260,6 +266,9 @@ export const TriggerSchema = z.strictObject({
   ...declares,
 });
 
+/** A voice provider's listening, for push-to-talk (§6.6, the listening half until it is re-founded): `handler`'s
+ *  `listen` takes the recording as its input and returns what it heard. Speaking is a provider's entry on Clover
+ *  Voice's own point (`clover.voice.providers`), not this one. */
 export const VoiceSchema = z.strictObject({
   id: EntryId,
   name: Text,
@@ -270,9 +279,10 @@ export const VoiceSchema = z.strictObject({
   ...declares,
 });
 
-/** A voice mode (§6.6): the one plugin, of those installed, that speaks the bots' replies, plays sound as their
- *  voices and hears push-to-talk; the user chooses which is active (Settings › Voice). `handler` names the host
- *  export the core calls (`reply`, `stop`, `listenStart`, `listenEnd`, `offer`: `VoiceModeHandler`). */
+/** A voice mode's listening (§6.6, the listening half until it is re-founded): the one plugin, of those installed,
+ *  that hears push-to-talk; the user chooses which in Settings › Voice (Clover Voice's `active` setting). `handler`
+ *  names the host export the core calls (`listens`, `listenStart`, `listenPiece`, `listenEnd`: `VoiceModeHandler`). A
+ *  voice mode that speaks the replies offers itself on Clover Voice's own point (`clover.voice.modes`). */
 export const VoiceModeSchema = z.strictObject({
   id: EntryId,
   name: Text,

@@ -45,8 +45,8 @@ describe("the active one", () => {
     expect(oneAtATimePoints(reg, catalog).map((o) => o.point.name)).toEqual(["voiceModes"]);
     expect(mayReadActive(reg, "voiceModes", "theirs", catalog).name).toBe("voiceModes");
     expect(() => mayReadActive(reg, "voiceModes", "other", catalog)).toThrow(/only the plugin that declares/);
-    // As shipped, no core point is one at a time (F1 marks the voice one).
-    expect(activeOne(reg, "voiceModes")).toBeUndefined();
+    // As shipped, the voice point is one at a time (F1), titled "Voice".
+    expect([activeOne(reg, "voiceModes")?.title, ref(activeOne(reg, "voiceModes")?.active && refOf(activeOne(reg, "voiceModes")!.active!))]).toEqual(["Voice", "ours/ours"]);
   });
 
   test("the default is the first bundled filler, else the first installed; a point that isn't one-at-a-time has none", () => {
@@ -134,7 +134,7 @@ describe("the active one", () => {
     const user = { caller: { kind: "user", client: "app" } as Caller } as never;
     const plugin = { caller: { kind: "plugin", pluginId: "one" } as Caller } as never;
     const list = await methods["point.active.list"]!({}, user) as { points: unknown[] };
-    expect(list.points).toEqual([{
+    expect(list.points).toEqual([{ point: "voiceModes", title: "Voice", declaredBy: "core", fillers: [] }, {
       point: "deck.mode", title: "Deck mode", declaredBy: "deck",
       fillers: [{ pluginId: "one", entryId: "one", name: "First" }, { pluginId: "two", entryId: "two", name: "Second" }],
       active: { pluginId: "one", entryId: "one" },

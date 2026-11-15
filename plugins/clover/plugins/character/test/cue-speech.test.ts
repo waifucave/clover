@@ -91,6 +91,27 @@ describe("the stage's speech from the cue API", () => {
     expect(heard.slice(before)).toEqual([0.2, 0.2, 0.2, 0.2, 0.2]);
   });
 
+  test("a cut drops only its own sender's levels: another plugin's speech goes on", () => {
+    const clock = fakeClock();
+    const speech = new CueSpeech(clock);
+    const heard: number[] = [];
+    speech.subscribe((frames) => heard.push(...frames.map((f) => f.rms)));
+    const t0 = clock.now();
+    speech.accept({ frames: levels(t0 + 100, 50, 20, 0.9) }, "clover/voice");
+    speech.accept({ frames: levels(t0 + 110, 50, 20, 0.3) }, "acme-voice");
+    clock.advance(200);
+    const before = heard.length;
+    speech.accept({ frames: [], cut: true }, "clover/voice");
+    expect(speech.speaking).toBe(true);
+    clock.advance(2_000);
+    const after = heard.slice(before);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after.every((rms) => rms === 0.3)).toBe(true);
+    speech.accept({ frames: [], cut: true }, "acme-voice");
+    clock.advance(2_000);
+    expect(speech.speaking).toBe(false);
+  });
+
   test("stale levels are dropped, levels absurdly far ahead are ignored, the queue is bounded, and bad numbers are never taken", () => {
     const clock = fakeClock();
     const speech = new CueSpeech(clock);

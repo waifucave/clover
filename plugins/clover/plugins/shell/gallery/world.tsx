@@ -154,7 +154,7 @@ export const NOW = Date.UTC(2026, 10, 5, 16, 30);
 const bot = (id: string, name: string, extra: Partial<BotView> = {}): BotView => ({ id, name, model: "openai/gpt-6", effort: "medium", userLayer: [], state: "idle", computer: "Studio", mainSession: `s_${id}`, ...extra });
 
 export const BOTS: BotView[] = [
-  bot("alpha", "Alpha", { portrait: portrait("A", "#8ccbf0", "#3d7fb0"), state: "thinking", voice: { provider: "Fish Audio", voice: "Alpha" }, theme: "alpha#alpha-tab", userLayer: ["theme"] }),
+  bot("alpha", "Alpha", { portrait: portrait("A", "#8ccbf0", "#3d7fb0"), state: "thinking", theme: "alpha#alpha-tab", userLayer: ["theme"] }),
   bot("luna", "Luna", { portrait: portrait("L", "#c9a7f2", "#6f4ab0") }),
   bot("juniper", "Juniper"),
   bot("mira", "Mira", { portrait: portrait("M", "#f6b8a0", "#b0583d") }),

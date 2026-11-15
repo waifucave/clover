@@ -89,14 +89,15 @@ describe("the character stage", () => {
     expect(document.querySelector(".cl-bot-stage")).toBeNull();
   });
 
-  test("a bot with a voice has one small stop/mute button with a plain tooltip; a bot with none has nothing", async () => {
-    await mount({ ...luna, voice: { provider: "clover/fish-audio", voice: "v1" } }, [renderer("vrm")]);
-    const chip = document.querySelector(".cl-bot-stage__chip")!;
-    expect(chip.tagName).toBe("BUTTON");
-    expect(chip.getAttribute("title")).toBe("Mute spoken replies");
-    cleanup();
-    await mount(luna, [renderer("vrm")]);
-    expect(document.querySelector(".cl-bot-stage__chip")).toBeNull();
+  test("other plugins' small controls draw on the stage (`bot.stage.action`), each given the bot", async () => {
+    const control = { pluginId: "acme-voice", id: "chip", spot: "bot.stage.action", component: "Chip" } as UiEntry;
+    const api = fakeApi({ bots: { list: async () => [luna], get: async () => luna, watch: () => () => undefined } });
+    const Chip: EntryComponent = ({ props }) => <button type="button" data-chip={(props as { bot: { id: string } }).bot.id}>chip</button>;
+    const Stub: EntryComponent = () => <div data-stub="avatar" />;
+    const runtime = runtimeWith({ api: () => api, core: () => fakeCore({}), approvals: fakeApprovals(), spot: (name) => SPOT_DECLS[name], entries: [renderer("vrm"), control], component: (_p, name) => (name === "Draw" ? Stub : name === "Chip" ? Chip : undefined) });
+    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(BotStage as never, { props: { bot: { id: luna.id, name: luna.name } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+    expect(document.querySelector(".cl-bot-stage [data-chip]")!.getAttribute("data-chip")).toBe("luna");
   });
 });
 

@@ -26,7 +26,6 @@ import {
   Sparkles,
   SquareTerminal,
   TriangleAlert,
-  Volume2,
   Wrench,
   X,
   type LucideIcon,
@@ -59,7 +58,6 @@ export const IconFileText = icon(FileText);
 export const IconGlobe = icon(Globe);
 export const IconPencil = icon(Pencil);
 export const IconSparkles = icon(Sparkles);
-export const IconSpeaker = icon(Volume2);
 export const IconWrench = icon(Wrench);
 export const IconImage = icon(Image);
 export const IconArrowDown = icon(ArrowDown);

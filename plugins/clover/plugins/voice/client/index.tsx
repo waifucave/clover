@@ -1,2 +1,6 @@
-// Clover Voice's client entry: `VoiceSection` fills Settings' `settings.section` (which voice speaks on this computer).
+// Clover Voice's client entry: its background part (`Player`, `app.background`), Settings › Voice (`VoiceSection`), its
+// section of a bot's editor (`BotVoiceSection`) and its chip on a bot's stage (`VoiceChip`).
+export { Player } from "./player";
 export { VoiceSection } from "./section";
+export { BotVoiceSection } from "./bot-section";
+export { VoiceChip } from "./chip";

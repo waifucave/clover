@@ -45,7 +45,7 @@ export const modules: Record<CloverChildId, Record<string, unknown>> = {
   "clover/island": island,
   "clover/pill": pill,
   "clover/usage": usage,
-  // Clover Voice's Settings › Voice section (its host half is the bundled voice mode).
+  // Clover Voice's parts: its player (a background part), Settings › Voice, a bot's editor section and the stage's chip.
   "clover/voice": voice,
   "clover/devices": devices,
   // The avatars hear the app's language only through their installed translator (lane G's ask).

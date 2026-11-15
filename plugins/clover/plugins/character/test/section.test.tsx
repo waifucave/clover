@@ -65,11 +65,12 @@ describe("the bot editor and this plugin's section", () => {
     expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   });
 
-  test("the section sits between the model and the voice", async () => {
+  // The voice is Clover Voice's own section now (a later order in the same spot), not one of the editor's rows.
+  test("the section sits right after the model", async () => {
     await editor(ALPHA);
     const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section")].map((e) => e.querySelector(".cl-bot-editor__label, .cl-avatar-section__label")?.textContent);
     expect(rows.indexOf("Avatar")).toBe(rows.indexOf("Model") + 1);
-    expect(rows[rows.indexOf("Avatar") + 1]).toBe("Voice");
+    expect(rows).not.toContain("Voice");
   });
 });
 

@@ -1713,15 +1713,6 @@
               "maxLength": 81,
               "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
             }
-          },
-          "voice": {
-            "type": "object",
-            "properties": {
-              "speakReplies": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": false
           }
         },
         "required": [
@@ -1908,14 +1899,6 @@
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                 }
-              },
-              "voice": {
-                "type": "object",
-                "properties": {
-                  "speakReplies": {
-                    "type": "boolean"
-                  }
-                }
               }
             }
           }
@@ -1962,7 +1945,7 @@
       }
     },
     "voice.listen": {
-      "doc": "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
+      "doc": "Push-to-talk audio for the active voice mode, on the computer the user talks on (§6.6; the listening half, until push-to-talk is re-founded).",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -2055,205 +2038,6 @@
         },
         "required": [
           "listens"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "voice.play": {
-      "doc": "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
-      "owner": "D",
-      "direction": "from-daemon",
-      "roles": [
-        "app"
-      ],
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "string",
-            "maxLength": 81,
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-          },
-          "session": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9._:-]+$"
-          },
-          "utterance": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "seq": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "audio": {
-            "type": "string",
-            "maxLength": 2000000
-          },
-          "format": {
-            "type": "string",
-            "enum": [
-              "pcm16-24k",
-              "mp3",
-              "opus"
-            ]
-          },
-          "final": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "bot",
-          "session",
-          "utterance",
-          "seq",
-          "audio",
-          "format",
-          "final"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "voice.played": {
-      "doc": "The app's player says an utterance it was sent has ended (§6.6): the voice mode's queue goes on.",
-      "owner": "D",
-      "direction": "to-daemon",
-      "roles": [
-        "app"
-      ],
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "string",
-            "maxLength": 81,
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-          },
-          "utterance": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          }
-        },
-        "required": [
-          "bot",
-          "utterance"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "voice.stop": {
-      "doc": "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
-      "owner": "D",
-      "direction": "to-daemon",
-      "roles": [
-        "app"
-      ],
-      "userOnly": true,
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "string",
-            "maxLength": 81,
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "voice.speak": {
-      "doc": "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
-      "owner": "D",
-      "direction": "to-daemon",
-      "roles": [
-        "app"
-      ],
-      "userOnly": true,
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "session": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9._:-]+$"
-          },
-          "seq": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "session",
-          "seq"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "speaking": {
-            "type": "boolean"
-          },
-          "note": {
-            "type": "string",
-            "maxLength": 500
-          }
-        },
-        "required": [
-          "speaking"
         ],
         "additionalProperties": false
       }
@@ -2887,14 +2671,6 @@
                   "type": "string",
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-                }
-              },
-              "voice": {
-                "type": "object",
-                "properties": {
-                  "speakReplies": {
-                    "type": "boolean"
-                  }
                 }
               }
             },

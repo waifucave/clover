@@ -371,46 +371,6 @@
               ],
               "additionalProperties": false
             },
-            "voice": {
-              "type": "object",
-              "properties": {
-                "provider": {
-                  "$ref": "#/$defs/__schema5"
-                },
-                "voice": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                },
-                "model": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "listen": {
-                  "type": "object",
-                  "properties": {
-                    "provider": {
-                      "$ref": "#/$defs/__schema5"
-                    },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    }
-                  },
-                  "required": [
-                    "provider"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "provider",
-                "voice"
-              ],
-              "additionalProperties": false
-            },
             "theme": {
               "$ref": "#/$defs/__schema5"
             },
@@ -423,6 +383,7 @@
             "memory": {
               "$ref": "#/$defs/__schema1"
             },
+            "voice": {},
             "declares": {
               "$ref": "#/$defs/__schema29"
             }
@@ -967,6 +928,23 @@
           },
           "title": {
             "$ref": "#/$defs/__schema0"
+          },
+          "fills": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "warns": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -1593,6 +1571,9 @@
         },
         "scope": {
           "$ref": "#/$defs/__schema38"
+        },
+        "observe": {
+          "type": "boolean"
         },
         "declares": {
           "$ref": "#/$defs/__schema29"

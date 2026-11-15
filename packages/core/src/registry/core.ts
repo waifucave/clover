@@ -38,6 +38,9 @@ export interface RegistryInput {
   /** A plugin a bot built (the workshop rule, §5.6): `change` is judged against the user's last OK whatever came between
    *  (a change that asked, the user's no), so one that takes a request back out applies and runs again with no card. */
   workshop?: boolean;
+  /** The very tree it was OK'd for asks again: its OK card now shows a line its OK didn't (a point's `fills` line its
+   *  declarer added or changed, `fillsAdded`). The user's OK of this tree, given again, keeps the new card's words. */
+  asksAgain?: boolean;
 }
 
 /** Raises a plugin's OK card and reports the user's answer once (an unanswered card never refuses, rule 6). */
@@ -399,6 +402,7 @@ export class RegistryCore implements PluginRegistry {
       okHash = approved ? hash : undefined;
     } else if (prev.hash === hash) {
       ({ approved, okHash, cardHeld } = prev);
+      if (input.asksAgain === true) approved = false;
     } else {
       const change = input.change ?? "asks-again";
       okHash = prev.okHash;

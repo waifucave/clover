@@ -66,28 +66,6 @@
                   "type": "string",
                   "maxLength": 32
                 },
-                "voice": {
-                  "type": "object",
-                  "properties": {
-                    "provider": {
-                      "type": "string",
-                      "maxLength": 128
-                    },
-                    "voice": {
-                      "type": "string",
-                      "maxLength": 256
-                    },
-                    "model": {
-                      "type": "string",
-                      "maxLength": 128
-                    }
-                  },
-                  "required": [
-                    "provider",
-                    "voice"
-                  ],
-                  "additionalProperties": false
-                },
                 "theme": {
                   "type": "string",
                   "maxLength": 256
@@ -123,7 +101,6 @@
                       "instructions",
                       "model",
                       "effort",
-                      "voice",
                       "avatar",
                       "theme",
                       "layout",
@@ -245,28 +222,6 @@
                 "type": "string",
                 "maxLength": 32
               },
-              "voice": {
-                "type": "object",
-                "properties": {
-                  "provider": {
-                    "type": "string",
-                    "maxLength": 128
-                  },
-                  "voice": {
-                    "type": "string",
-                    "maxLength": 256
-                  },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 128
-                  }
-                },
-                "required": [
-                  "provider",
-                  "voice"
-                ],
-                "additionalProperties": false
-              },
               "theme": {
                 "type": "string",
                 "maxLength": 256
@@ -302,7 +257,6 @@
                     "instructions",
                     "model",
                     "effort",
-                    "voice",
                     "avatar",
                     "theme",
                     "layout",
@@ -430,34 +384,6 @@
                   {
                     "type": "string",
                     "maxLength": 32
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "voice": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "type": "string",
-                        "maxLength": 128
-                      },
-                      "voice": {
-                        "type": "string",
-                        "maxLength": 256
-                      },
-                      "model": {
-                        "type": "string",
-                        "maxLength": 128
-                      }
-                    },
-                    "required": [
-                      "provider",
-                      "voice"
-                    ]
                   },
                   {
                     "type": "null"
@@ -2946,27 +2872,6 @@
                 "type": "string",
                 "maxLength": 32
               },
-              "voice": {
-                "type": "object",
-                "properties": {
-                  "provider": {
-                    "type": "string",
-                    "maxLength": 128
-                  },
-                  "voice": {
-                    "type": "string",
-                    "maxLength": 256
-                  },
-                  "model": {
-                    "type": "string",
-                    "maxLength": 128
-                  }
-                },
-                "required": [
-                  "provider",
-                  "voice"
-                ]
-              },
               "theme": {
                 "type": "string",
                 "maxLength": 256
@@ -3001,7 +2906,6 @@
                     "instructions",
                     "model",
                     "effort",
-                    "voice",
                     "avatar",
                     "theme",
                     "layout",

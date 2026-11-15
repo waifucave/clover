@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Bot editor",
-  "description": "Edit a bot: its name, your instructions, its model, voice, theme and layout, kept as your own layer over its plugin's. Other plugins add their own sections, such as the avatar's.",
+  "description": "Edit a bot: its name, your instructions, its model, theme and layout, kept as your own layer over its plugin's. Other plugins add their own sections, such as the avatar's and the voice's.",
   "engines": {
     "clover": "^1.0.0"
   },

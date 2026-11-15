@@ -103,6 +103,15 @@ change. The component draws nothing the user sees; it listens (a timer, `api.eve
   audio and it is covered.
 - The OK card says "It keeps a part running in the background while Clover is open", and the Plugins page labels the
   plugin "Background".
+- **Speaking** (Clover Voice's way, a pattern any plugin can copy): the background part is the player. Its host half
+  streams it the audio (`api.streams.open("speech", { meta })` in the host, `api.streams.accept("speech", …)` in the
+  part); before it sounds, the part takes the device's speech turn (`api.turns.take("device/speech", { note })`), so it
+  never talks over another plugin's speech, and lets it go (`turn.done()`) when it has played; it moves a bot's mouth
+  with speech cues (`api.avatar.cue({ type: "speech", frames }, { bot })`, `avatar.control.all` for a bot not its own).
+  Its controls (stop a bot, hold for push-to-talk) are `api.ui.send` messages that carry the whole state (the held
+  utterances, each bot's stop count): within one tick a part gets only the newest message of each name. A background
+  part's frame loads after its plugin starts, so the part tells its host half when it is listening
+  (`api.host.call("ready")`) and gets the state so far back.
 
 ## An app a bot can work in
 

@@ -51,10 +51,11 @@ async function probe(a: Api): Promise<string> {
   await at("routines", async () => `listed:${(await a.routines.list({})).length}`);
   await at("own-command", async () => word((await a.commands.run("acceptance-api.ping", {})).text));
   await at("other-command", async () => `ran:${word(JSON.stringify(await a.commands.run("acceptance-echo.say", { text: "x" })))}`);
-  await at("audio-play", async () => {
-    const h = await a.audio.play({ format: "pcm16-24k", data: new Uint8Array(0) }, { bot: "alpha" });
-    await h.done;
-    return "handed";
+  // A plugin's sound is its own part's, in the device's speech turn (behind `audio`): taken and let go.
+  await at("speech-turn", async () => {
+    const t = await a.turns.take("device/speech", { limitMs: 5_000, note: "acceptance-api" });
+    await t.done();
+    return "taken";
   });
   await at("audio-listen", async () => {
     const off = a.audio.onRecording(() => {});

@@ -6,15 +6,12 @@
 import { useState } from "react";
 import { useLayerMessage, useMountContext, useShellReport, useWindowDrag, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { useListenRecorder } from "./listen-hooks";
-import { useVoicePlayback } from "./voice-hooks";
 import { Shell as FShell, type ShellProps, type ShellStart } from "@clover-child/shell";
 
 export function Shell({ props, tokens, entry }: EntryProps<ShellProps>) {
   const ctx = useMountContext();
   // The window's title areas move it: the CSS region is ignored inside a frame (see `useWindowDrag`).
   useWindowDrag();
-  // The bot's voice: the pieces main forwards play here, and the stage reads what plays.
-  useVoicePlayback();
   // Push-to-talk: the shell records (never a plugin) when main says the user's press asked for it, and sends the audio back.
   useListenRecorder();
   // An act of the window a bot's own plugin asked for through `shell.*` (main checked the capability, whose tab shows and the user's press): handed to the shell.

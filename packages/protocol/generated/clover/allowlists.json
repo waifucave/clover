@@ -136,10 +136,7 @@
       "usage.summary",
       "user.send",
       "voice.listen",
-      "voice.played",
-      "voice.speak",
-      "voice.status",
-      "voice.stop"
+      "voice.status"
     ],
     "receives": [
       "account_changed",
@@ -192,8 +189,7 @@
       "app.tab.open",
       "app.window.capture",
       "app.window.open",
-      "app.window.render",
-      "voice.play"
+      "app.window.render"
     ]
   },
   "layer": {

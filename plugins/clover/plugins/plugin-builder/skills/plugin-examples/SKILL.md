@@ -237,7 +237,7 @@ File `README.md`:
 ```markdown
 # Ex bot
 
-A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, a voice, an avatar and a theme. What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `"app": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `"scope": "own-bot"` is this bot's alone.
+A bot. Its instructions are in `bot/instructions.md`; its manifest, `clover.json`, can also give it a model, an avatar and a theme, and a default voice on Clover Voice's point `clover.voice.defaults` (the user's own choice wins). What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `"app": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `"scope": "own-bot"` is this bot's alone.
 
 Check it with `clover plugin validate`, and try it on this computer with `clover plugin dev .`.
 ```

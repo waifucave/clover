@@ -18,7 +18,8 @@ test("a data point says it with a title; never a single point or a UI spot", () 
 test("its title for Settings' picker; points.active and points.onActive in both halves, onActive a watch", () => {
   expect(oneAtATimeOf("deck.mode", { oneAtATime: true, title: "Deck mode" })).toEqual({ title: "Deck mode" });
   expect(oneAtATimeOf("deck.mode", { oneAtATime: false, title: "Deck mode" })).toBeUndefined();
-  expect(oneAtATimeOf("voiceModes", undefined)).toBeUndefined();
+  expect(oneAtATimeOf("voiceModes", undefined)).toEqual({ title: "Voice" });
+  expect(oneAtATimeOf("models", undefined)).toBeUndefined();
   expect([API_CALLS["points.active"], API_CALLS["points.onActive"]]).toEqual([{ where: "both" }, { where: "both" }]);
   expect(LISTENER_ARGS["points.onActive"]).toEqual({ at: 1 });
 });

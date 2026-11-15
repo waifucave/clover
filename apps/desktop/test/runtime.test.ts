@@ -653,16 +653,16 @@ describe("each document's strings (§5.5's translations)", () => {
   });
 });
 
-describe("a bot's speech to the main window's shell", () => {
-  test("a voice piece goes to the window's clover shell document only (not the core root, not another window's)", () => {
+describe("a message to the main window's shell", () => {
+  test("a shell message goes to the window's clover shell document only (not the core root, not another window's)", () => {
     const s = setup([]);
     const shell = mountShell(s);
-    const piece = { bot: "luna", utterance: "u1", seq: 0, audio: "AAAA", format: "pcm16-24k" as const, final: false };
+    const m = { type: "listen" as const, op: "stop" as const, utterance: "u1" };
     s.sent.length = 0;
-    s.rt.shellMessage(WIN, { type: "voice", piece });
-    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m: { type: "voice", piece } }]);
+    s.rt.shellMessage(WIN, m);
+    expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m }]);
     s.sent.length = 0;
-    s.rt.shellMessage(WIN + 1, { type: "voice", piece });
+    s.rt.shellMessage(WIN + 1, m);
     expect(s.sent).toEqual([]);
   });
 
@@ -783,7 +783,8 @@ describe("lane B's #179 hooks in the runtime", () => {
     s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["pinner#pin", "pinReply", "Pin"]]);
+    // Clover Voice's speak button is the bundled tree's own entry beside it.
+    expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["clover/voice#speak", "speak", "Speak"], ["pinner#pin", "pinReply", "Pin"]]);
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation.message.action").items).toEqual([]);
   });
 
@@ -1019,13 +1020,15 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   test("background parts: app.background components that may run, each in a window of its own whose root shows only it; audio only for a plugin holding it", () => {
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
-    expect(s.rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true, microphone: false }]);
+    // Clover Voice's player is the bundled tree's own background part.
+    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true, microphone: false };
+    expect(s.rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true, microphone: false }]);
     // The surface list doesn't take it, and in safe mode only clover's would run.
     expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
-    expect(setup(bg, { safeMode: true }).rt.backgroundEntries()).toEqual([]);
+    expect(setup(bg, { safeMode: true }).rt.backgroundEntries().filter((e) => e.pluginId !== VOICE.pluginId)).toEqual([]);
     // A plugin without `audio`.
     const quiet = readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-background")), capabilities: [] }] as never);
-    expect(setup(quiet).rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false, microphone: false }]);
+    expect(setup(quiet).rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false, microphone: false }]);
     // Its window's root declares `app.background` and places just that entry; the frame may autoplay (the plugin holds `audio`), and the
     // other plugin's would not.
     s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
@@ -1088,6 +1091,31 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const none = setup(view([]));
     expect(none.rt.layerHolds("fixture-surface", "microphone")).toBe(false);
     expect(itemOf(none).microphone).toBeUndefined();
+  });
+
+  test("a background part is a client part like any other: its host half's ui.send reaches its document, and its own calls act as its plugin", () => {
+    const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
+    const s = setup(bg);
+    s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
+    const rootFrame = frame("clover-core://app/?surface=fixture-background%23ticker");
+    const root = s.rt.describe(rootFrame, 8, undefined);
+    const item = s.rt.resolve(rootFrame, root.mount, "app.background").items[0] as { mount: string; url: string };
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-background", token);
+    const child = frame(item.url, rootFrame);
+    s.rt.describe(child, 8, token);
+    // The host half's `ui.send` (a plugin_ui_message on the plugin's own connection) goes to the background document.
+    s.sent.length = 0;
+    const message = { type: "api-event", pluginId: "fixture-background", method: "core.event", params: { type: "plugin_ui_message", pluginId: "fixture-background", event: "holds", value: { utterances: ["u1"] } } };
+    s.rt.pluginMessage("fixture-background", message as never);
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: message as never }]);
+    // Another plugin's message doesn't reach it.
+    s.sent.length = 0;
+    s.rt.pluginMessage("clover/voice", { ...message, pluginId: "clover/voice" } as never);
+    expect(s.sent.filter((x) => x.to === `${child.processId}:${child.routingId}`)).toEqual([]);
+    // The other way: its part's calls (`host.call` to its host half among them) go as its own plugin, with its capabilities.
+    expect(s.rt.partOf(child, item.mount)).toBe("fixture-background");
+    expect([...s.rt.capabilitiesOf(child, item.mount)]).toContain("audio");
   });
 
   test("the menu broker learns a frame's place from each document above it", () => {

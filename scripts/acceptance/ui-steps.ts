@@ -38,7 +38,7 @@ export const UI_STEPS = [
   "a bot's question card (AskUserQuestion) takes a pressed option and Send answer in the window and the turn goes on with the answer; a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
   "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage; and the mouth: a folder plugin holding avatar.control.all sends speech levels for Alpha that her stage's renderer takes at their stamps, while one without it is refused for a bot that isn't its own",
-  "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
+  "a bot with a voice speaks its reply (the run's fixture voice, a tone, on Clover Voice's providers point): Clover Voice's background part gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip (Clover Voice's own) mutes at once and the next reply stays silent",
   "Alpha's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to Alpha's own on her tab and shows on the plain bot's; her stage tools are offered to her and not to the plain bot; her outfit is her setting (her Outfit tool, the setting and her tool agree with what her figure wears)",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
   "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
@@ -1940,12 +1940,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       rmSync(parent, { recursive: true, force: true });
     }
   });
-  // 19: a bot's voice (§6.6). The run's fixture voice (scripts/acceptance/fixtures/acceptance-voice: a generated tone, no key, no
-  // network) is installed from its folder and set as the voice of a picture-swap bot and of Alpha, the user's way (their user
-  // layers). A turn of each: the core speaks the reply (`voice.play` pieces), the shell's player counts them and makes frames (the
-  // test build's counters on its root: data-voice-pieces, data-voice-frames, data-voice-speaking), the picture-swap renderer shows
-  // its talking picture while the bot speaks, and Alpha's stage gets frames. Then the stage's chip mutes (the app's one mute,
-  // `voice.speakReplies`, through the stage's `ui.set`): the next reply plays nothing, at once, with no restart.
+  // 19: a bot's voice (§6.6), Clover Voice on general capabilities. The run's fixture voice (scripts/acceptance/fixtures/
+  // acceptance-voice: a generated tone, no key, no network, an entry on Clover Voice's providers point) is installed from its
+  // folder and set as the voice of a picture-swap bot and of Alpha, the user's way (Clover Voice's own bot settings). A turn of
+  // each: Clover Voice's message.out observer streams the provider's audio to its background part, which plays it in the
+  // device's speech turn and counts it (the test build's counters on its document's root: data-voice-pieces, data-voice-frames,
+  // data-voice-speaking), the picture-swap renderer shows its talking picture while the bot speaks (the mouth: speech cues), and
+  // Alpha's stage gets frames. Then the stage's chip (Clover Voice's `bot.stage.action` entry) mutes (its `speakReplies`): the
+  // next reply plays nothing, at once, with no restart.
   await step(19, async () => {
     if (ctx.pressCard === undefined) fail("this run can't press a card");
     const voiceDir = resolve(import.meta.dir, "fixtures", "acceptance-voice");
@@ -1962,6 +1964,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       manifest: 1, id: botId, name, description: "The acceptance run's bot that speaks.", version: "0.0.1", engines: { clover: "^1.0.0" },
       contributes: { bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
     }));
+    /** A bot's voice, the user's way: Clover Voice's own settings for that bot. */
+    const setVoice = async (bot: string, voice: { provider: string; voice: string } | null) => {
+      for (const [key, value] of [["provider", voice?.provider ?? null], ["voice", voice?.voice ?? null]] as const) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value, bot });
+    };
     const VOICE = { provider: "acceptance-voice", voice: "tone" };
     const installed: string[] = [];
     const voiced: string[] = [];
@@ -1998,7 +2004,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
       }
       for (const id of [botId, "alpha"]) {
-        await rpc.request("bot.setUserLayer", { id, patch: { voice: VOICE } });
+        await setVoice(id, VOICE);
         voiced.push(id);
       }
 
@@ -2054,11 +2060,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const quiet = (await counters())!;
       if (quiet.pieces !== muted.pieces) fail(`muted, the next reply still sent ${quiet.pieces - muted.pieces} piece(s)`);
       await clickIn("the stage's chip again (unmute)", "button.cl-bot-stage__chip", undefined);
-      // Both bots' replies went through Clover Voice's one queue: never two at once on the player.
+      // Both bots' replies went through Clover Voice's player, one at a time in the device's speech turn: never two at once.
       if (quiet.overlap > 1) fail(`two bots sounded at once (data-voice-overlap ${quiet.overlap}); the player (ms pieces speaking overlap): ${await voiceRecord()}`);
-      return `the fixture voice on ${botId} and Alpha (their user layers), spoken by Clover Voice: ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; never two bots at once (data-voice-overlap ${quiet.overlap}); muted by the stage's chip, the next reply sent no piece`;
+      return `the fixture voice on ${botId} and Alpha (Clover Voice's bot settings), spoken by Clover Voice's background part: ${botId}'s reply came as ${after.pieces - before.pieces} piece(s) and ${after.frames - before.frames} frame(s), and its renderer showed ${shown.join(" → ")}; Alpha's as ${alphaAfter.pieces - alphaBefore.pieces} piece(s) and ${alphaAfter.frames - alphaBefore.frames} frame(s) while she spoke; never two bots at once (data-voice-overlap ${quiet.overlap}); muted by the stage's chip, the next reply sent no piece`;
     } finally {
-      for (const id of voiced) await rpc.request("bot.setUserLayer", { id, patch: { voice: null } }).catch(() => undefined);
+      for (const id of voiced) await setVoice(id, null).catch(() => undefined);
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }

@@ -57,6 +57,11 @@ input, result, text, outcome }` (the fields of its event) and returns what its e
 Hooks on one event run one after another. Keep them fast and narrow (`tools` filter, `scope: "own-bot"` for a bot's
 plugin). Hook events are on the OK card, and a new one asks again.
 
+A hook with `"observe": true` only hears its events: what it returns is ignored and it never holds anything up. Use it
+to react to a bot's replies without changing them: a `message.out` observer is told each reply once it is stored
+(`text`, `bot`, `session`), and the replies keep streaming (a `message.out` hook that may rewrite holds each reply until
+it ran). Return at once and do the work after (a hook runs inline, at most 30 seconds).
+
 ### Commands and triggers
 
 A command handler gets the args its `args` schema describes, from the user in the composer. A trigger's handler is an

@@ -95,8 +95,8 @@ Each key below is one of the core's points. A key with a dot (`alpha.scenes`) is
 spot is never a key here, it goes in `ui`. plugin-catalog lists every point and spot.
 
 - **`bot`** (one): `name`, `instructions` (a Markdown file), and optionally `model: { default: "<qualified id>",
-  effort }`, `avatar: { file, format: "vrm" | "live2d" | a renderer plugin's format, portrait }`, `voice: { provider,
-  voice, model, listen }`, `theme` (one of this plugin's theme ids), `layout` (a layout file for its tab), `greeting`
+  effort }`, `avatar: { file, format: "vrm" | "live2d" | a renderer plugin's format, portrait }`, `theme` (one of this
+  plugin's theme ids), `layout` (a layout file for its tab), `greeting`
   (Markdown), `memory` (a folder of starter memories).
 - **`models`** (list): `provider` (an entry id), `name`, `terms`, `catalog` (a path to rows, or the rows), `auth`
   (sign-ins, may be `[]`), and either `endpoint: { protocol: "openai-chat" | "openai-responses" |
@@ -114,15 +114,24 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
 - **`agents`** (list): a Markdown file path, or `{ id, name, backend, model, effort, instructions, computer, root,
   plugins: { only, except }, scope }` (`scope: "own-bot"`: a definition only the plugin's bot may start).
 - **`hooks`** (list): `{ id, on: [<events>], tools: ["Bash", "mcp__*"], handler | command + args, timeoutMs,
-  scope: "bots" | "agents" | "both" | "own-bot" }`. Events and what each may return: plugin-catalog. `own-bot`
-  limits it to the sessions of this tree's own bots (and the OK card says so).
+  scope: "bots" | "agents" | "both" | "own-bot", observe: true }`. Events and what each may return: plugin-catalog.
+  `own-bot` limits it to the sessions of this tree's own bots (and the OK card says so). `observe` only hears: its
+  answer is ignored and it holds nothing up (a `message.out` observer hears each stored reply; replies keep streaming).
 - **`commands`** (list): `{ name, description, args (JSON Schema), handler, runsOn, scope }`: the user runs them from
   the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
   only that one. `key` is a default shortcut (building-plugins, "Limits today").
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
-- **`voices`** (list): `{ id, name, speak, listen, auth, handler }`.
-- **`voiceModes`** (list, at most one): `{ id, name, handler }`: a voice mode for the voice slot (Settings › Voice);
-  the active one speaks the bots' replies and plays sound as their voices through its one queue.
+- **`voices`** (list): `{ id, name, speak, listen, auth, handler }`: a provider's listening, for push-to-talk (its
+  `listen`). To speak for the bots, fill Clover Voice's own point instead: `"clover.voice.providers": [{ id, name,
+  speak, ready? }]`, whose `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes
+  (`points.stream`) and whose optional `ready` answers `{ ready, why? }`: whether the user set it up (a key saved). A
+  plugin that brings a bot gives that bot a default voice with `"clover.voice.defaults": [{ provider, voice, model? }]`; the user's
+  choice in the bot's Voice section wins, and a default speaks only with a provider that is set up.
+- **`voiceModes`** (list, at most one): `{ id, name, handler }`: the voice the bots speak and listen with. One at a
+  time (`oneAtATime`, titled "Voice"): the user's pick in Settings › Plugins, else Clover Voice; the active one hears
+  push-to-talk (its handler's `listens`, `listenStart`, `listenPiece`, `listenEnd`). To speak the replies your own way
+  while it is the one, add `"clover.voice.modes": [{ id, name, reply }]` and play in a background part of your own,
+  taking `device/speech` (plugin-host, "Turns").
 - **`turns`** (list): `{ name, doc }`: one of the plugin's own one-at-a-time turns (`<plugin id>/<name>`) that other
   plugins may take too (plugin-host, "Turns"). Its own turns need no entry; another plugin's take of one it doesn't list
   is refused.
@@ -180,6 +189,9 @@ point): `"declares": { "<your-id>.<name>": { "shape": "single" | "list" | "keyed
   else the first bundled filler, else the first installed; when it stops, the next takes over and the user is told.
   Read it with `api.points.active(point)` and hear it change with `api.points.onActive(point, listener)` (your tree and
   the fillers may); no plugin call or setting changes it;
+- `fills: { ok, warns? }`: the line your fillers' OK cards show, in your words and named as yours (`Fills <your name>'s
+  "<title>": <ok>.`), plain text up to 300 characters: say what a filler is given or what it makes happen (`warns`:
+  shown as a caution). A filler whose card gains it asks the user again, and so do your fillers when you change it;
 - rarely: `gates` (props that reach only a filler holding a capability, by dotted path) and `keep` (keys that can't be
   hidden).
 

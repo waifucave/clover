@@ -26,6 +26,8 @@ export interface CorePointInfo {
    *  by `title`. */
   readonly oneAtATime?: boolean;
   readonly title?: string;
+  /** The line its fillers' OK cards show (`fillsOkLines`), attributed to Clover. */
+  readonly fills?: { readonly ok: string; readonly warns?: boolean };
 }
 
 export const CORE_POINTS: readonly CorePointInfo[] = [
@@ -47,9 +49,11 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "triggers", side: "daemon", shape: "keyed", uniqueBy: "type", kind: "code", runsOn: "each computer, started at once",
     doc: "Arms them for routine files (§7).", shipsWith: "schedule, webhook" },
   { name: "voices", side: "daemon", shape: "list", uniqueBy: "id", kind: "code", runsOn: "the computer the user is talking on",
-    doc: "Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes.", shipsWith: "Fish Audio" },
+    doc: "Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover Voice's own point (`clover.voice.providers`).", shipsWith: "Fish Audio",
+    title: "Voice listening", fills: { ok: "plugins you allow can ask it to transcribe, using your account with it" } },
   { name: "voiceModes", side: "daemon", shape: "list", uniqueBy: "id", kind: "code", runsOn: "the computer the user is talking on",
-    doc: "The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears push-to-talk. The others neither speak nor hear.", shipsWith: "Clover Voice" },
+    doc: "The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listening half until it is re-founded); a mode that speaks the replies also offers its `reply` on Clover Voice's own point (`clover.voice.modes`).", shipsWith: "Clover Voice",
+    oneAtATime: true, title: "Voice", fills: { ok: "when you choose it in Settings, it hears what you say with push-to-talk" } },
   { name: "turns", side: "daemon", shape: "list", kind: "data", runsOn: "data",
     doc: "Names of the plugin's own one-at-a-time turns that another plugin may take (`<plugin id>/<name>`, §5.4 \"Turns\"); its own need no entry.", shipsWith: "—" },
   { name: "computerProviders", side: "daemon", shape: "keyed", uniqueBy: "id", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",

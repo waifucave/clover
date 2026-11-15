@@ -27,9 +27,9 @@ export interface PluginBot {
    *  copy (the registry's `bundledDirs`); whether its tags are the staged bytes' is the bot side's `bundledChoice`. */
   source: PluginRecord["source"];
   entry: BotEntry;
-  /** Set by the bot service once per load (never here): whether `entry`'s model tag and voice are the ones Clover's
-   *  own bundled plugin chose, as staging verified its bytes (`BotServiceOptions.bundledChoice`). */
-  bundled?: { model: boolean; voice: boolean };
+  /** Set by the bot service once per load (never here): whether `entry`'s model tag is the one Clover's own bundled
+   *  plugin chose, as staging verified its bytes (`BotServiceOptions.bundledChoice`). */
+  bundled?: { model: boolean };
   /** The plugin's `<bot-instructions>` text. */
   instructions: string;
   greeting?: string;

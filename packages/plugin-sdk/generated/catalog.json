@@ -184,8 +184,8 @@
     },
     {
       "name": "voices.use",
-      "lets": "Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back",
-      "ok": "can ask your voice providers to speak or transcribe, which may use your accounts with them",
+      "lets": "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back",
+      "ok": "can ask your voice providers to transcribe, which may use your accounts with them",
       "warns": true
     },
     {
@@ -343,8 +343,12 @@
       "uniqueBy": "id",
       "kind": "code",
       "runsOn": "the computer the user is talking on",
-      "doc": "Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes.",
-      "shipsWith": "Fish Audio"
+      "doc": "Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover Voice's own point (`clover.voice.providers`).",
+      "shipsWith": "Fish Audio",
+      "title": "Voice listening",
+      "fills": {
+        "ok": "plugins you allow can ask it to transcribe, using your account with it"
+      }
     },
     {
       "name": "voiceModes",
@@ -353,8 +357,13 @@
       "uniqueBy": "id",
       "kind": "code",
       "runsOn": "the computer the user is talking on",
-      "doc": "The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears push-to-talk. The others neither speak nor hear.",
-      "shipsWith": "Clover Voice"
+      "doc": "The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listening half until it is re-founded); a mode that speaks the replies also offers its `reply` on Clover Voice's own point (`clover.voice.modes`).",
+      "shipsWith": "Clover Voice",
+      "oneAtATime": true,
+      "title": "Voice",
+      "fills": {
+        "ok": "when you choose it in Settings, it hears what you say with push-to-talk"
+      }
     },
     {
       "name": "turns",
@@ -2402,6 +2411,63 @@
           "file",
           "format",
           "speaking"
+        ]
+      }
+    },
+    {
+      "name": "bot.stage.action",
+      "shape": "list",
+      "declaredBy": "bot-stage",
+      "botsOffer": true,
+      "context": [
+        "bot"
+      ],
+      "doc": "Small controls on a bot's stage, over its figure (a corner each places itself in): a voice plugin's mute and stop, say. Each entry draws its own control for the bot it is given.",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "props": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en"
+                    ],
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "bot"
         ]
       }
     },
@@ -4466,33 +4532,13 @@
       "capability": "avatar.report",
       "where": "ui"
     },
-    "audio.play": {
-      "capability": "audio",
-      "where": "both"
-    },
     "audio.onRecording": {
       "capability": "audio",
-      "where": "both"
-    },
-    "speech.piece": {
-      "where": "host"
-    },
-    "speech.play": {
-      "where": "host"
-    },
-    "speech.stop": {
-      "where": "host"
-    },
-    "speech.modes": {
       "where": "both"
     },
     "voices.providers": {
       "capability": "voices.use",
       "where": "both"
-    },
-    "voices.speak": {
-      "capability": "voices.use",
-      "where": "host"
     },
     "voices.listen": {
       "capability": "voices.use",

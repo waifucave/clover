@@ -1101,14 +1101,6 @@ function makePair(): Pair {
     log(`notify: closed (${typeof id === "string" ? id : "all"})`);
     return { ok: true };
   });
-  // A bot's speech (§6.6): each piece goes on, as it came, to the main window's shell, which plays it. No file, no route.
-  p.handle("voice.play", (params) => {
-    const parsed = APP_METHODS.voicePlay.params.safeParse(params);
-    if (!parsed.success) throw new Error("voice.play needs a bot, an utterance, a piece number, audio and a format");
-    if (mainWindow !== undefined && !mainWindow.isDestroyed()) activateShellAudio(mainWindow.id);
-    if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.shellMessage(mainWindow.id, { type: "voice", piece: { bot: parsed.data.bot, utterance: parsed.data.utterance, seq: parsed.data.seq, audio: parsed.data.audio, format: parsed.data.format, final: parsed.data.final } });
-    return { ok: true };
-  });
   // The user's look at what a window draws (`clover-core app screenshot`, capture.ts): Electron's own capture of the
   // window's page and the views over it, never the screen; nothing is shown, raised, focused or resized for it.
   const captureDeps: CaptureDeps = {
@@ -2162,20 +2154,6 @@ const hangs = new HangWatch((windowId) => {
   void restart(true);
 });
 
-/** The player's AudioContext starts only after a user activation in its own document, and the window keeps the gesture rule
- *  (a plugin's page must not make sound unasked). So the shell's own document, and only it, is given one, once per document
- *  (a reloaded document is a new mount), before the first piece reaches it. */
-const activatedShells = new Set<string>();
-function activateShellAudio(windowId: number): void {
-  for (const { mount, frame } of runtime.shellFrames(windowId)) {
-    if (activatedShells.has(mount)) continue;
-    const f = webFrameMain.fromId(frame.processId, frame.routingId);
-    if (f === undefined || f === null || f.detached) continue;
-    activatedShells.add(mount);
-    f.executeJavaScript("0", true).catch(() => activatedShells.delete(mount));
-  }
-}
-
 /** A window went unresponsive: which of its documents? Each is pinged; a plugin layer that doesn't answer has its
  *  process killed (its parent then shows "This part stopped" with a reload), and only a core root that doesn't answer
  *  starts the countdown to a safe-mode restart. */
@@ -2952,6 +2930,8 @@ async function smoke(): Promise<void> {
     frames: frames.map((f) => ({ ...f, sandboxed: metrics.find((m) => m.pid === f.osPid)?.sandboxed ?? null })),
     mounts: runtime.stats(),
     surfaces: surfaceFacts,
+    // The hidden windows of the background parts that run now (`app.background`), each its own.
+    backgrounds: [...backgrounds.keys()],
     web: webFacts,
     housing: (() => {
       if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);

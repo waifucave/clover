@@ -285,41 +285,6 @@ describe("user and bot messages", () => {
     expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
   });
 
-  test("speak: only where the host offers it, on a finished reply from the log; it asks with that reply", async () => {
-    const reply = bot(at(0, 1, 0), "the answer", { seq: 41 });
-    // No host speak: no button (the stock look).
-    const { rerenderWith } = renderView({ items: [reply] });
-    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
-    const asked: number[] = [];
-    const onSpeak = mock(async (item: { seq?: number }) => {
-      asked.push(item.seq ?? -1);
-      return { speaking: true };
-    });
-    // A reply still streaming, and one with no seq, offer none.
-    rerenderWith({ items: [bot(at(0, 1, 0), "the ans", { streaming: true })], turn: { running: true }, onSpeak });
-    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
-    rerenderWith({ items: [bot(at(0, 1, 0), "the answer")], onSpeak });
-    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
-    rerenderWith({ items: [reply], onSpeak, speaking: false });
-    const speak = screen.getByRole("button", { name: "Read this reply aloud" });
-    await act(async () => void fireEvent.click(speak));
-    expect(asked).toEqual([41]);
-    // Speaking now: the button says so until the bot's voice goes quiet.
-    rerenderWith({ items: [reply], onSpeak, speaking: true });
-    expect(screen.getByRole("button", { name: "Speaking" }).dataset.state).toBe("speaking");
-    rerenderWith({ items: [reply], onSpeak, speaking: false });
-    expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
-  });
-
-  test("speak that won't happen: the core's sentence shows under the reply, as it is", async () => {
-    const onSpeak = mock(async () => ({ speaking: false, note: "Alpha has no voice set up yet." }));
-    const { container } = renderView({ items: [bot(at(0, 1, 0), "the answer", { seq: 7 })], onSpeak });
-    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Read this reply aloud" })));
-    const note = container.querySelector(".cl-conv-bot__note")!;
-    expect([note.textContent, note.getAttribute("role")]).toEqual(["Alpha has no voice set up yet.", "status"]);
-    expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
-  });
-
   test("plugins' message actions: drawn in the row, on the side they ask for, one press runs with the message's seq", async () => {
     const pin = { ref: "alpha#pin", title: "Pin to her stage", icon: "/_t/alpha/assets/pin.png", on: "assistant" as const };
     const quote = { ref: "notes#quote", title: "Quote in a note", on: "both" as const };

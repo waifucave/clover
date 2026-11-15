@@ -1064,40 +1064,6 @@ function fetchInit(init: RequestInit | undefined): Record<string, unknown> | und
   return out;
 }
 
-/** `audio.play` from a component, as a host half's: a whole clip in one call, or an async iterable a piece at a time
- *  under one utterance, the last `final`; `{ stop, done }` once the first piece is taken. */
-async function layerAudioPlay(mount: string, audio: { format: string; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }): Promise<{ stop(): void; done: Promise<void> }> {
-  const data = audio?.data;
-  if (data instanceof Uint8Array) {
-    await layerCall(mount, "audio.play", [{ format: audio.format, data }, opts ?? {}]);
-    return { stop: () => {}, done: Promise.resolve() };
-  }
-  if (data === null || typeof data !== "object" || typeof (data as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") throw new Error("audio.play's data is bytes (a Uint8Array) or an async iterable of them");
-  const utterance = `pa_${crypto.randomUUID()}`;
-  const piece = (bytes: Uint8Array, final: boolean) => layerCall(mount, "audio.play", [{ format: audio.format, data: bytes }, opts ?? {}, { utterance, final }]).then(() => undefined);
-  const it = (data as AsyncIterable<unknown>)[Symbol.asyncIterator]();
-  const first = await it.next();
-  if (first.done) {
-    await piece(new Uint8Array(0), true);
-    return { stop: () => {}, done: Promise.resolve() };
-  }
-  if (!(first.value instanceof Uint8Array)) throw new Error("audio.play's stream gives Uint8Array pieces");
-  await piece(first.value, false);
-  let stopped = false;
-  const done = (async () => {
-    for (;;) {
-      if (stopped) break;
-      const next = await it.next();
-      if (next.done || stopped) break;
-      if (!(next.value instanceof Uint8Array)) throw new Error("audio.play's stream gives Uint8Array pieces");
-      await piece(next.value, false);
-    }
-    await piece(new Uint8Array(0), true);
-  })();
-  done.catch(() => {});
-  return { stop: () => { stopped = true; void it.return?.(); }, done };
-}
-
 /** `turns.take` from a component (§5.4 "Turns"): the take is a watch on the part's own plugin's connection (its events
  *  the listener's), and the `Turn` is made from its grant. `done` says so to the core, then ends the watch; the watch
  *  ending without it (this frame gone, the app quit) is the core's "gone". A refusal, or the take ended before its turn,
@@ -1199,7 +1165,7 @@ function layerStreams(mount: string, pluginId: string): StreamsTransport {
  *  plugin from the `ui` side, with the same capability, fence and limits as its host half's: every member the catalog
  *  gives components (`catalogMembers`), with these laid over them where a component's own path serves it (the pickers,
  *  `shell` and the app's own events through the app; `host.*`, `storage.synced`, `settings` and `points.watch` on its
- *  own plugin's events; `net.fetch` and `audio.play`, which carry bytes). */
+ *  own plugin's events; `net.fetch`, which carries bytes). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
@@ -1402,9 +1368,6 @@ export function usePluginApi(): PluginApi {
       net: {
         fetch: (url: string | URL, init?: RequestInit, opts?: unknown) => layerCall(part.mount, "net.fetch", [String(url), fetchInit(init), opts]) as Promise<Response>,
       } as unknown as PluginApi["net"],
-      audio: {
-        play: (audio: { format: string; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }) => layerAudioPlay(part.mount, audio, opts),
-      } as unknown as PluginApi["audio"],
       settings: {
         // Its own plugin's settings. A third-party layer reads them on its own connection (`plugin.layer.call`'s
         // `settings.get`: the value in effect, a `secret` field only as `{ set }`, and with no bot, so a `bot` field reads

@@ -50,7 +50,7 @@ export interface BotItem extends ItemBase {
   streaming?: boolean;
   /** The user's message cut this answer off (spec §6.4). */
   interrupted?: boolean;
-  /** The `seq` of the `assistant_message` that finished it, in the session's log: how the speak button names it. */
+  /** The `seq` of the `assistant_message` that finished it, in the session's log: how a message action (Clover Voice's speak, say) names it. */
   seq?: number;
 }
 
@@ -322,12 +322,6 @@ export interface ActionOutcome {
   note?: string;
 }
 
-/** What a speak request came to: speaking, or not, with the core's one sentence why. */
-export interface SpeakOutcome {
-  speaking: boolean;
-  note?: string;
-}
-
 export interface ConversationActions {
   /** May return a promise: if it rejects, the card takes answers again. */
   onAnswerQuestion?: (callId: string, answer: QuestionAnswer) => void | Promise<unknown>;
@@ -340,9 +334,6 @@ export interface ConversationActions {
   /** Open a background agent's live tab (spec §9.3). */
   onOpenAgent?: (agentId: string) => void;
   onCopy?: (text: string) => void;
-  /** Speak one finished reply aloud, as the user asked (it replaces whatever is playing). The host passes it only for a bot
-   *  that has a voice; without it, no speak button shows. */
-  onSpeak?: (item: BotItem) => Promise<SpeakOutcome | void>;
   /** Runs a plugin's message action for one message from the log (its `seq`), by the user's click. */
   onMessageAction?: (action: MessageAction, item: { seq?: number }) => Promise<ActionOutcome | void>;
   /** Send the message that began the failed turn again (the host checks all of it and refuses what it can't). It rejects

@@ -1,5 +1,5 @@
 // The plugin SDK's UI API, from this part's own React (as every part's `client/sdk.ts`); in the `clover` layer the build
-// swaps it for the app's runtime. The voice controls below are the stand-in's (a gallery and the tests have no player); the app's `sdk.ts` has the real ones.
+// swaps it for the app's runtime.
 import * as React from "react";
 import { uiFor } from "../../shell/runtime/ui";
 export { AvatarControlHub, cleanAvatarCue } from "../../shell/runtime/ui";
@@ -20,8 +20,4 @@ export function AvatarSpeechProvider(props: { feed: Feed | undefined; speaking: 
 }
 export function useAvatarSpeech(): { feed: Feed | undefined; speaking: boolean } {
   return React.useContext(SpeechContext);
-}
-export interface VoiceControls { speaking: boolean; speakReplies: boolean; stop(): void; toggle(): void }
-export function useVoiceControls(_bot: string): VoiceControls {
-  return { speaking: false, speakReplies: true, stop: () => undefined, toggle: () => undefined };
 }

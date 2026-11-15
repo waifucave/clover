@@ -4,7 +4,7 @@
 // `avatar.cue({ type: "speech", frames })`, kept by time in `cue-speech.ts`), never from the app's own player.
 import { useEffect, useMemo, useState } from "react";
 import type { BotRef, BotView, EntryProps } from "../../shell/runtime/types";
-import { AvatarControlHub, AvatarControlProvider, AvatarSpeechProvider, Spot, cleanAvatarCue, usePluginApi, useVoiceControls } from "./sdk";
+import { AvatarControlHub, AvatarControlProvider, AvatarSpeechProvider, Spot, cleanAvatarCue, usePluginApi } from "./sdk";
 import { CueSpeech, type CueSpeechStats } from "./cue-speech";
 
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;
@@ -80,10 +80,11 @@ function useCueSpeech(bot: string): { feed: CueSpeech; speaking: boolean } {
     feed.reopen();
     const offSpeaking = feed.onSpeaking((now) => { setSpeaking(now); if (show) publish(feed.stats); });
     const off = api.host.on("clover.avatar.cue", (value) => {
-      const v = value as { bot?: unknown; cue?: unknown } | null;
+      const v = value as { bot?: unknown; cue?: unknown; from?: unknown } | null;
       const cue = v?.bot === bot ? (v.cue as { type?: unknown } | null) : undefined;
       if (cue?.type !== "speech") return;
-      feed.accept(cue);
+      // Keyed by the sending plugin: a `cut` drops only its own levels.
+      feed.accept(cue, typeof v?.from === "string" ? v.from : "");
       if (show) publish(feed.stats);
     });
     return () => {
@@ -94,19 +95,6 @@ function useCueSpeech(bot: string): { feed: CueSpeech; speaking: boolean } {
     };
   }, [api, bot, feed]);
   return { feed, speaking };
-}
-
-/** The stage's one small control for a bot that has a voice: pressing while it speaks stops it; otherwise it switches
- *  spoken replies off or on (the app's one mute). Plain tooltip. */
-function VoiceChip({ bot }: { bot: string }) {
-  const v = useVoiceControls(bot);
-  const label = v.speaking ? "Stop speaking" : v.speakReplies ? "Mute spoken replies" : "Unmute spoken replies";
-  return (
-    <button type="button" className="cl-bot-stage__chip" data-voice={v.speaking ? "speaking" : v.speakReplies ? "on" : "muted"} title={label} aria-label={label} aria-pressed={!v.speakReplies}
-      onClick={() => (v.speaking ? v.stop() : v.toggle())}>
-      {v.speaking ? "\u25A0" : v.speakReplies ? "\u266A" : "\u266A\u0338"}
-    </button>
-  );
 }
 
 /** How the stage frames the figure, as the avatar spot's `framing` prop: the theme's `--clover-avatar-framing` (`full`, `bust`, `waist`)
@@ -161,7 +149,8 @@ export function BotStage({ props }: EntryProps<{ bot: BotRef }>) {
         <Spot name="avatar" spotKey={avatar.format} props={{ bot: props.bot, src: avatar.src, file: avatar.src, format: avatar.format, name: bot.name, speaking: speech.speaking, ...(framing === undefined ? {} : { framing }), ...(bot.portrait === undefined ? {} : { portrait: bot.portrait }) }} fallback={portrait} />
         </AvatarControlProvider>
       </AvatarSpeechProvider>
-      {bot.voice !== undefined ? <VoiceChip bot={props.bot.id} /> : null}
+      {/* Other plugins' small controls on the stage (Clover Voice's chip, say). */}
+      <Spot name="bot.stage.action" props={{ bot: props.bot }} />
     </div>
   );
 }

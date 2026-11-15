@@ -1,4 +1,4 @@
-// The user layer (spec §6.1): the user's changes to a bot's name, instructions, model, effort, voice, avatar, theme
+// The user layer (spec §6.1): the user's changes to a bot's name, instructions, model, effort, avatar, theme
 // and layout. A field it sets wins over the plugin's, and Reset clears it. Bots can't write it (§9.1): its folder is
 // in the fenced set (`userLayersDir`), and the core changes it only for the user (`bot.setUserLayer` is `userOnly`).
 // A bot changes itself by editing its plugin folder, which sits under the layer. Owner: lane D.
@@ -14,7 +14,7 @@ import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { LayoutFileSchema } from "@waifucave/clover-plugin-sdk";
 import { userLayerFile, userLayersDir } from "./paths";
 
-export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"] as const;
+export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "avatar", "theme", "layout", "lan"] as const;
 export type UserLayerField = (typeof USER_LAYER_FIELDS)[number];
 
 export interface UserLayer {
@@ -22,7 +22,6 @@ export interface UserLayer {
   instructions?: string;
   model?: string;
   effort?: string;
-  voice?: { provider: string; voice: string; model?: string };
   avatar?: { file: string; format: string; portrait?: string; credit?: string };
   theme?: string;
   layout?: string;

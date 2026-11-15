@@ -107,7 +107,8 @@ export class AvatarService {
     const held = this.#reports.get(bot);
     const no = judgeSpeech(held?.report);
     if (no !== undefined || held === undefined) return no ?? { ok: false, reason: "no-renderer", message: "nothing is drawing this bot's figure right now" };
-    this.emit({ type: "plugin_ui_message", pluginId: held.stage, event: AVATAR_CUE_EVENT, value: { bot, cue } });
+    // `from`: the sending plugin, so the stage's `cut` drops only that sender's own levels.
+    this.emit({ type: "plugin_ui_message", pluginId: held.stage, event: AVATAR_CUE_EVENT, value: { bot, cue, from: pluginId } });
     return { ok: true };
   }
 

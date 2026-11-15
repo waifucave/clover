@@ -71,10 +71,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  and in no other plugin's. The system's own question still applies (the first time, on a Mac). Push-to-talk to the bots is
    *  `audio`'s, not this. */
   { name: "microphone", lets: "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it", ok: "hears your microphone, also while no window of it shows", warns: true },
-  /** The voice providers' endpoints (`voices.*`, §6.6): their audio or text back as the plugin's own data (a narration
-   *  track, a transcript). A voice mode has it by being one. Nothing sounds through it: the player is the active
-   *  voice mode's alone. */
-  { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back", ok: "can ask your voice providers to speak or transcribe, which may use your accounts with them", warns: true },
+  /** The voice providers' listening (`voices.*`, §6.6): their text back as the plugin's own data (a transcript). A voice
+   *  mode has it by being one. */
+  { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back", ok: "can ask your voice providers to transcribe, which may use your accounts with them", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from

@@ -54,7 +54,6 @@ export const LISTENER_ARGS = {
   "logs.follow": { at: 1 },
   "avatar.watch": { at: 0 },
   "audio.onRecording": { at: 0 },
-  "voices.speak": { at: 2 },
   "voices.listen": { at: 2 },
   // A take is a watch on the wire (its events are its listener's; ending the watch leaves the queue or ends the turn),
   // whose `Turn` the SDK's own `take` makes in both halves.

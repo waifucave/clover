@@ -22,10 +22,6 @@ export const S = {
   model: "Model",
   modelDetail: "The model the bot thinks with.",
   effort: "Effort",
-  voice: "Voice",
-  voiceDetail: "Voices come with voice plugins.",
-  noVoice: "None",
-  voiceOf: (provider: string, voice: string) => `${voice} · ${provider}`,
   theme: "Theme",
   themeDetail: "What the bot's tab wears.",
   themeOwn: "The bot's own",
@@ -47,5 +43,5 @@ export const S = {
   },
   lan: "Local network",
   lanDetail: (name: string) => `Lets ${name}'s browser tabs open pages on devices on your local network, such as your router or a printer.`,
-  fields: { name: "name", instructions: "instructions", model: "model", effort: "effort", voice: "voice", theme: "theme", layout: "layout", lan: "local network setting" },
+  fields: { name: "name", instructions: "instructions", model: "model", effort: "effort", theme: "theme", layout: "layout", lan: "local network setting" },
 };

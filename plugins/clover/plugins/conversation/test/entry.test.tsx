@@ -125,11 +125,10 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { liveHistory?: () => Promise<{ events: CoreEvent[]; hasMore: boolean }>; archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
+  function mount(extra: { liveHistory?: () => Promise<{ events: CoreEvent[]; hasMore: boolean }>; archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
     const core = fakeCore({
       "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })),
-      ...(extra.speak ? { "voice.speak": extra.speak } : {}),
       ...(extra.action ? { "conversation.messageAction": extra.action } : {}),
     } as never);
     const api = fakeApi({
@@ -164,26 +163,6 @@ describe("the conversation entry", () => {
     );
     return { core, push: (e: CoreEvent) => listener?.(e) };
   }
-
-  test("speak: offered for a bot with a voice in its main conversation; it asks the app's door with the session and the reply's seq", async () => {
-    const reply = HISTORY[1]!.seq as number;
-    const voiced = { id: "alpha", name: "Alpha", model: "m", userLayer: [], state: "idle", mainSession: "s_alpha", voice: { provider: "p", voice: "v" } };
-    const { core } = mount({ bots: [voiced], speak: () => ({ speaking: false, note: "The voice plugin isn't installed." }) });
-    await act(() => settle());
-    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Read this reply aloud" })));
-    await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "voice.speak").map((c) => c.params)).toEqual([{ session: "s_alpha", seq: reply }]);
-    expect(screen.getByText("The voice plugin isn't installed.")).toBeTruthy();
-    cleanup();
-    // No voice, or not its main conversation: no button.
-    mount({ bots: [{ ...voiced, voice: undefined }], speak: () => ({ speaking: true }) });
-    await act(() => settle());
-    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
-    cleanup();
-    mount({ bots: [{ ...voiced, mainSession: "s_other" }], speak: () => ({ speaking: true }) });
-    await act(() => settle());
-    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
-  });
 
   test("message actions: the spot's data entries, drawn without a frame; a press names the entry, the session and the seq on the app's door", async () => {
     const reply = HISTORY[1]!.seq as number;

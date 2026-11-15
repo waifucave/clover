@@ -1,17 +1,18 @@
-// The Fish Audio plugin's host half (clover/fish-audio): the handler of its `voices` entry (clover.json), which the core
-// calls on the computer the user is talking on (spec §5.2, §6.6). It starts only when first needed.
+// The Fish Audio plugin's host half (clover/fish-audio): Fish Audio's voices for Clover Voice (spec §6.6). It starts only
+// when first needed.
 //
-// The handler is an object of handlers, `speak` and `listen`, in lane B's streaming shape (the plugin host's `stream`):
-// * `speak` yields the audio as Fish sends it (`{ audio }` chunks), so the app plays the first words while the rest
-//   arrives, and returns what was spoken (the model, the format, the times);
-// * `listen` takes the recording as it is made (`ctx.input`, chunks of audio) or whole (`args.audio`), and returns
-//   what it heard. Fish's `transcribe-1` takes a whole recording, so it yields nothing on the way.
+// * `speak` fills Clover Voice's own providers point (`clover.voice.providers`, this plugin's clover.json): Clover Voice
+//   calls it through `points.stream` with the text and the bot's voice, and it answers with the audio as Fish sends it,
+//   raw bytes in the format asked (pcm16-24k by default), so the first words play while the rest arrives.
+// * `voice.listen` is the core's `voices` entry, for push-to-talk (the listening half, until it moves to Clover Voice's
+//   own point too): it takes the recording as it is made (`ctx.input`, chunks of audio) or whole (`args.audio`), and
+//   returns what it heard. Fish's `transcribe-1` takes a whole recording, so it yields nothing on the way.
 //
 // The plugin never holds the user's key. Every request goes through the core's keyed fetch with this plugin's `auth`
 // entry, `fish-api-key`: the core adds the key, reaches only `api.fish.audio`, and fails at once when the user has no
 // key, in which case the bot stays text-only (§6.6).
 import type { HostPluginApi } from "@waifucave/clover-plugin-sdk";
-import { ASR_MODELS, FishAudioClient, FREE_TTS_MODEL, TTS_MODELS, type AsrModel, type Latency, type TtsModel } from "../src/fish";
+import { ASR_MODELS, FishAudioClient, FishError, FREE_TTS_MODEL, TTS_MODELS, type AsrModel, type Latency, type TtsModel } from "../src/fish";
 
 /** The `auth` entry whose key the core adds to this plugin's requests. */
 export const FISH_SECRET = "fish-api-key";
@@ -24,7 +25,7 @@ export interface VoiceContext {
   readonly api: Pick<HostPluginApi, "net">;
 }
 
-/** The formats `voice.play` takes (protocol, app area). */
+/** The formats Clover Voice's player takes (`pcm16-24k`), and two more a caller may ask for. */
 export type PlayFormat = "pcm16-24k" | "mp3" | "opus";
 
 export interface SpeakArgs {
@@ -104,8 +105,8 @@ async function recording(args: ListenArgs, ctx: VoiceContext): Promise<Uint8Arra
   return out;
 }
 
-export const voice = {
-  async *speak(args: SpeakArgs, ctx: VoiceContext): AsyncGenerator<SpeakChunk, SpeakResult, undefined> {
+/** The audio for `args.text`, as Fish sends it, with what was spoken at the end. */
+export async function* speakChunks(args: SpeakArgs, ctx: VoiceContext): AsyncGenerator<SpeakChunk, SpeakResult, undefined> {
     const model = (args.model ?? FREE_TTS_MODEL) as TtsModel;
     if (!(TTS_MODELS as readonly string[]).includes(model)) throw new Error(`"${String(args.model)}" isn't a Fish Audio voice model`);
     const format = args.format ?? "pcm16-24k";
@@ -125,8 +126,30 @@ export const voice = {
       yield { audio: chunk };
     }
     return { model, format, bytes, ...(firstAudioMs === undefined ? {} : { firstAudioMs }), totalMs: performance.now() - speech.startedAt };
-  },
+}
 
+/** The `clover.voice.providers` entry's `speak` (a `points.stream` handler): the audio, raw bytes as they come. */
+export async function speak(args: SpeakArgs, ctx: VoiceContext): Promise<AsyncIterable<Uint8Array>> {
+  const chunks = speakChunks(args, ctx);
+  return (async function* () {
+    for await (const c of chunks) yield c.audio;
+  })();
+}
+
+/** The `clover.voice.providers` entry's `ready`: whether the user set Fish Audio up (their key in this plugin's settings).
+ *  It asks Fish for one voice of its library with the key: no key saved is the only "not set up"; anything else (Fish
+ *  down, a bad network) isn't the user's set-up, and speaking says what went wrong itself. */
+export async function ready(_args: unknown, ctx: VoiceContext): Promise<{ ready: boolean; why?: string }> {
+  try {
+    await clientFor(ctx).voices({ pageSize: 1, signal: ctx.signal });
+    return { ready: true };
+  } catch (err) {
+    if (err instanceof FishError && err.code === "no_key") return { ready: false, why: "add your Fish Audio API key in the Fish Audio plugin's settings" };
+    return { ready: true };
+  }
+}
+
+export const voice = {
   // eslint-disable-next-line require-yield
   async *listen(args: ListenArgs, ctx: VoiceContext): AsyncGenerator<never, ListenResult, undefined> {
     const model = (args.model ?? "transcribe-1") as AsrModel;

@@ -154,6 +154,7 @@ const OkSchema = z.object({
   plugins: z.record(z.string(), Fingerprint),
   cards: z.string(),
   codePaths: z.array(z.string()), okLines: z.array(z.string().max(8000)).max(2000).optional(),
+  fills: z.array(z.string().max(1000)).max(256).optional(),
 });
 const AdultSchema = z.object({ confirmedAt: z.number() });
 // Not strict: a file an earlier build wrote (with its signed-index records: keys, accepted, overrides, removedBlocks)

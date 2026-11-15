@@ -1,7 +1,6 @@
 import { ReadElements } from "./approvals/browser-words";
 import { pluginToolContained, pluginToolReadOnly, pluginWebTool } from "./registry/read-only-tools";
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { CLOVER_VOICE } from "./voices/slot";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { budgetRootOf, SeenUrls } from "./approvals/seen-urls";
 import { botSandboxSettings, runLaterByName } from "./fence/sandbox-settings";
@@ -229,6 +228,7 @@ import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClas
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
+import { moveSettingsToPlugins } from "./migration/settings-moved-to-plugins";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
 import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
@@ -1018,6 +1018,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // keys are read from `sdk/` only since L3.2). Under the lock, before anything reads them. Once per key;
   // never throws; `settings.json` itself is never written.
   splitSettingsToSdk(home, { log: (line) => console.error(line) });
+
+  // Settings that moved from the core to a plugin go into that plugin's own settings, once, before anything reads them
+  // (the table of rows in migration/settings-moved-to-plugins.ts).
+  moveSettingsToPlugins(home, { log: (line) => console.error(line) });
 
   // The skills Clover ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
   // skill tier, `sdk/skills/` — the builtin tier is staged into no run folder. Every boot, every home, after the
@@ -3921,10 +3925,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         bots: () => daemonParts?.bots, node: () => daemonParts?.node, links: () => daemonLinks?.links ?? undefined, browser: () => daemonParts?.browser?.service,
         emitToApp: (event) => void cloverServer?.coreEvent(event, { to: (conn) => conn.role === "app" }),
         grants: () => pickedFiles,
-        // `audio.play`: a plugin's audio to this computer's app, as `voice.play` pieces (the bots' speech's own way).
-        voicePlay: (p) => {
-          for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
-        },
         // `usage.*`: lane D's ledger (with the bot side) and this computer's plan readings.
         usage: () => ({
           ...(daemonParts?.usage ? { ledger: daemonParts.usage } : {}),
@@ -4223,8 +4223,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       // #323: `user.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
-      // §6.6: the bots' voices stream from their voice plugins on the plugin host, and each piece goes to this
-      // computer's app (`voice.play`), which plays it and lip-syncs the avatar.
+      // §6.6, push-to-talk (the listening half): the providers' listening runs on the plugin host.
       ...(pluginHost !== undefined ? { voiceHost: pluginHost.host } : {}),
       // §7: a routine file that names a plugin's trigger type is armed through that plugin (read at each call: the plugin
       // host may have started again since).
@@ -4232,17 +4231,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         arm: async (type, routine, fields) => (pluginHost?.triggers ?? notStartedHost()).arm(type, routine, fields),
         disarm: async (type, routine) => (pluginHost?.triggers ?? notStartedHost()).disarm(type, routine),
       },
-      voicePlay: (p) => {
-        for (const c of (cloverServer?.connections() ?? []).filter((x) => x.role === "app")) c.send("voice.play", p);
-      },
-      // The voice slot (§6.6): the user's choice is Clover Voice's own `active` setting (their chosen mode, else Clover
-      // Voice; neither running, text-only), a voice that stops is said in words, as Clover Voice's notice, and a chosen
-      // mode that is removed clears the choice.
-      voiceChosen: async () => {
-        const v = await pluginHost?.settings.layerView(CLOVER_VOICE, "active").catch(() => undefined);
-        return typeof v === "string" && v !== "" ? v : undefined;
-      },
-      voiceForget: () => pluginHost?.settings.layerSet(CLOVER_VOICE, "active", null),
       // The session panels' reads (sessions/panel-reads.ts): a model's context window from the catalog; and the plugin
       // MCP servers a session gets (the driver's own list), with how many belong to a plugin that has sign-ins and none
       // of them signed in.
@@ -4258,13 +4246,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           waiting.set(plugin, auth.length > 0 && !auth.some((a) => a.state === "signed-in" || a.state === "refreshing"));
         }
         return { total: servers.length, needSignIn: servers.filter((x) => waiting.get(x.plugin) === true).length };
-      },
-      voiceTell: (text) => {
-        try {
-          notifyService?.send(CLOVER_VOICE, { title: "Voice", body: text });
-        } catch (err) {
-          console.error(`[voice] ${text} (not shown: ${(err as Error).message})`);
-        }
       },
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
