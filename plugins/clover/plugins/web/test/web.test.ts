@@ -31,7 +31,11 @@ const noSearch = { search: async () => ({ ok: true as const, results: [], tier: 
 describe("the web plugin", () => {
   test("its manifest serves WebSearch and WebFetch, preloaded, from a host MCP server", () => {
     const m = JSON.parse(readFileSync(join(dir, "clover.json"), "utf8"));
-    expect(m.contributes.mcpServers.web).toEqual({ type: "host", tools: { WebSearch: "preload", WebFetch: "preload" }, instructions: "instructions.md" });
+    // The web lists and what each tool needs are manifest fields now (R1: the core names no plugin id for them).
+    expect(m.contributes.mcpServers.web).toEqual({
+      type: "host", tools: { WebSearch: "preload", WebFetch: "preload" }, instructions: "instructions.md",
+      webSearch: ["WebSearch"], webFetch: ["WebFetch"], needs: { WebFetch: "network:public" },
+    });
     expect(m.host.entry).toBe("host/index.ts");
     expect(WEB_TOOLS.map((t) => t.name)).toEqual(["WebSearch", "WebFetch"]);
   });

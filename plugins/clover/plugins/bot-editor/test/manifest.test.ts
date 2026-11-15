@@ -13,6 +13,8 @@ const CAPABILITIES = new Set([
   "computers.control", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
   // Lane B's, beyond the spec's list: the terminal (F's request) and the devices list.
   "terminal", "devices.read",
+  // Every pending card, whichever bot or plugin asks (lane G: the capability that replaced the id check on the window's cards).
+  "approvals.all",
 ]);
 
 describe("clover.json (spec §5.9, format 1)", () => {
