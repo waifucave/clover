@@ -411,6 +411,41 @@ export function writeBackground(root: string, id: string, o: { audio: boolean })
     manifest: 1, id, name: o.audio ? "Acceptance background" : "Acceptance background (quiet)", version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
     ...(o.audio ? { capabilities: ["audio"] } : {}),
     contributes: { ui: [{ spot: "app.background", id: "ticker", component: "Ticker" }] },
+  }, undefined, {
+    "client/index.js": [
+      "import { jsx } from \"react/jsx-runtime\";",
+      "import { useEffect, useState } from \"react\";",
+      "const startedAt = Date.now();",
+      "export function Ticker() {",
+      "  const [s, set] = useState({ ticks: 0, ctx: \"none\", rms: 0, time: 0, vis: document.visibilityState });",
+      "  useEffect(() => {",
+      "    let ticks = 0, rms = 0, ctxState = \"none\", analyser = null, ctx = null;",
+      "    try {",
+      "      ctx = new AudioContext();",
+      "      const osc = ctx.createOscillator(); osc.frequency.value = 440;",
+      "      const gain = ctx.createGain(); gain.gain.value = 0.2;",
+      "      analyser = ctx.createAnalyser(); analyser.fftSize = 512;",
+      "      osc.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);",
+      "      osc.start();",
+      "      ctx.resume().catch(() => undefined);",
+      "    } catch { ctxState = \"refused\"; }",
+      "    const buf = new Float32Array(512);",
+      "    const timer = setInterval(() => {",
+      "      ticks++;",
+      "      if (ctx !== null) {",
+      "        ctxState = ctx.state;",
+      "        if (analyser !== null && ctx.state === \"running\") { analyser.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v; rms = Math.max(rms, Math.sqrt(sum / buf.length)); }",
+      "      }",
+      "      set({ ticks, ctx: ctxState, rms, time: ctx === null ? 0 : ctx.currentTime, vis: document.visibilityState });",
+      "    }, 100);",
+      "    return () => { clearInterval(timer); if (ctx !== null) ctx.close().catch(() => undefined); };",
+      "  }, []);",
+      "  return jsx(\"div\", { \"data-acc-background\": \"\", \"data-started\": String(startedAt), \"data-ticks\": String(s.ticks), \"data-ctx\": s.ctx, \"data-rms\": s.rms.toFixed(4), \"data-time\": s.time.toFixed(3), \"data-vis\": s.vis, children: \"background\" });",
+      "}",
+      "",
+    ].join("\n"),
+  });
+}
 /** The microphone plugins (window row 28): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer) and
  *  `app.background`; `acc-mic-quiet` fills `composer.action` and doesn't hold it. Each part, on its own as it mounts, asks for
  *  `getUserMedia({ audio: true })` and reads one second and a bit of it through a track processor (no audio context, so nothing

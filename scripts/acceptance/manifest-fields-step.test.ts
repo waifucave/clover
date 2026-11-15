@@ -36,6 +36,8 @@ test("the background fixtures validate; the OK says it keeps a part running, and
   expect(describeOk(read(sound))).toContain("It keeps a part running in the background while Clover is open.");
   expect(read(sound).capabilities).toEqual(["audio"]);
   expect(read(quiet).capabilities).toEqual([]);
+});
+
 test("the microphone fixtures validate; only the holder holds `microphone`, and its OK says it hears the microphone", async () => {
   const holder = writeMicrophone(root, MIC_IDS.holder, { mic: true });
   const other = writeMicrophone(root, MIC_IDS.other, { mic: false });
