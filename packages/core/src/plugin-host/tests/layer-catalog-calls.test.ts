@@ -76,9 +76,9 @@ describe("a component's calls of the catalog", () => {
     // The bundled tree's own component may ask for it (the core places the account token; the page never sees it).
     expect((await w.ui.methods[M.pluginLayerCall.name]!({ call: "net.fetch", args: ["https://api.example.com/x", {}, { auth: "waifucave" }] }, w.conn("clover/notifier").ctx) as { result: unknown }).result).toHaveProperty("$response");
     expect(await refused("luna", "conversation.note", ["s_1", { text: "x".repeat(LAYER_CALL_MAX_BYTES) }])).toContain(`at most ${LAYER_CALL_MAX_BYTES}`);
-    // A clip may be bigger.
-    await w.ui.methods[M.pluginLayerCall.name]!({ call: "audio.play", args: [{ format: "mp3", data: { $bytes: "A".repeat(LAYER_CALL_MAX_BYTES * 2) } }] }, w.conn("luna").ctx);
-    expect(w.routed.filter((r) => r.path !== "net.fetch").map((r) => r.path)).toEqual(["audio.play"]);
+    // A file's bytes may be bigger.
+    await w.ui.methods[M.pluginLayerCall.name]!({ call: "files.write", args: ["grant:00000000-0000-0000-0000-000000000000", { $bytes: "A".repeat(LAYER_CALL_MAX_BYTES * 2) }] }, w.conn("luna").ctx);
+    expect(w.routed.filter((r) => r.path !== "net.fetch").map((r) => r.path)).toEqual(["files.write"]);
     w.ui.close();
   });
 

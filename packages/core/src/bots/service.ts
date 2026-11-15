@@ -71,11 +71,6 @@ export interface EffectiveBot {
    *  asks nothing, like the user's own choice. Only with `modelFrom: "plugin"`. */
   modelBundled?: true;
   effort?: string;
-  voice?: { provider: string; voice: string; model?: string };
-  /** Who chose the voice: the user (the bot's user layer) or the bot's plugin, whose provider the user approves once. */
-  voiceFrom?: "user" | "plugin";
-  /** The plugin's voice comes from Clover's own bundled plugin, as staged: it asks nothing. Only with `voiceFrom: "plugin"`. */
-  voiceBundled?: true;
   avatar?: { file: string; format: string; portrait?: string; credit?: string };
   theme?: string;
   layout?: string;
@@ -187,7 +182,7 @@ export interface BotServiceOptions {
   modelOffer?(model: string): "offered" | "starting" | "absent";
   /** What Clover's own bundled plugin chose for a bot, read from its manifest's bytes as staging verified them (the
    *  daemon's: `source` `bundled`, its folder in the staged copy, the manifest's digest the staged one), or undefined
-   *  for any other plugin. Asked once per bot load: a loaded tag (model or voice) equal to the verified bytes' asks
+   *  for any other plugin. Asked once per bot load: a loaded model tag equal to the verified bytes' asks
    *  nothing, so the exemption holds for the tag the bot runs, whatever was on disk when the registry read it.
    *  Without it, nothing is exempt (every plugin's choice asks). */
   bundledChoice?(plugin: { id: string; folder: string; source: PluginBot["source"] }): BundledChoice | undefined;
@@ -196,10 +191,9 @@ export interface BotServiceOptions {
   warn?(message: string): void;
 }
 
-/** The model and voice the verified bytes of a bundled plugin's manifest choose for its bot (its `contributes.bot`). */
+/** The model the verified bytes of a bundled plugin's manifest choose for its bot (its `contributes.bot`). */
 export interface BundledChoice {
   model?: string;
-  voice?: { provider: string; voice: string; model?: string };
 }
 
 /** A routine's run, as the routine engine (M3) hands it over. */
@@ -633,10 +627,8 @@ export class BotService {
       choice = undefined;
     }
     if (choice === undefined) return bot;
-    const { model, voice } = bot.entry;
-    const sameVoice = voice !== undefined && choice.voice !== undefined && voice.provider === choice.voice.provider
-      && voice.voice === choice.voice.voice && voice.model === choice.voice.model;
-    return { ...bot, bundled: { model: model !== undefined && model.default === choice.model, voice: sameVoice } };
+    const { model } = bot.entry;
+    return { ...bot, bundled: { model: model !== undefined && model.default === choice.model } };
   }
 
   async #add(bot: PluginBot): Promise<void> {
@@ -761,8 +753,6 @@ export class BotService {
       modelFrom = "default";
       effort = layer.effort ?? fallback.effort;
     }
-    const voice = layer.voice ?? (entry.voice === undefined ? undefined : { provider: entry.voice.provider, voice: entry.voice.voice, ...(entry.voice.model === undefined ? {} : { model: entry.voice.model }) });
-    const voiceFrom = layer.voice !== undefined ? "user" as const : entry.voice !== undefined ? "plugin" as const : undefined;
     // Clover's own bundled plugin, as staged: what it chose asks nothing (the owner's ruling, revising #298/#311's).
     // Decided once per load (`#bundled`), against the verified bytes' own tags.
     const bundled = live.plugin.bundled;
@@ -777,9 +767,6 @@ export class BotService {
       modelFrom,
       ...(bundled?.model === true && modelFrom === "plugin" ? { modelBundled: true as const } : {}),
       ...(effort === undefined ? {} : { effort }),
-      ...(voice === undefined ? {} : { voice }),
-      ...(voiceFrom === undefined ? {} : { voiceFrom }),
-      ...(bundled?.voice === true && voiceFrom === "plugin" ? { voiceBundled: true as const } : {}),
       ...(avatar === undefined ? {} : { avatar: structuredClone(avatar) }),
       ...(theme === undefined ? {} : { theme }),
       ...(layout === undefined ? {} : { layout }),
@@ -860,20 +847,6 @@ export class BotService {
     if (pin === undefined) return bot;
     const { modelBundled: _now, ...rest } = bot;
     return { ...rest, model: pin.model, modelFrom: pin.modelFrom, ...(pin.modelBundled ? { modelBundled: true as const } : {}) };
-  }
-
-  /** Whether the bot may use its voice's provider (a plugin-chosen one asks once, `bot.voice:<provider>`). `at`: the
-   *  session using the voice (its card, and its running turn's origin, read from the session: a caller's own word is
-   *  never taken for it), or the user talking to the bot: only then is a held no asked again. */
-  checkVoice(id: string, at: { session?: string; origin?: "user"; onAsk?: () => void } = {}): Promise<ProviderConsent> {
-    const live = this.#must(id);
-    const consent = this.#o.providerConsent;
-    if (consent === undefined) return Promise.resolve({ ok: true });
-    const asker = at.session !== undefined && this.#o.host.get(at.session) !== undefined ? at.session : undefined;
-    const origin: TurnOrigin | undefined = at.session !== undefined
-      ? (asker === undefined ? undefined : this.#o.host.turnOrigin(asker))
-      : at.origin;
-    return consent.checkVoice(this.#effective(live), live.mainSession, { ...(origin === undefined ? {} : { origin }), ...(asker === undefined ? {} : { asker }), ...(at.onAsk === undefined ? {} : { onAsk: at.onAsk }) });
   }
 
   #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string, level?: Level): BotSessionContext {
@@ -983,7 +956,6 @@ export class BotService {
       ...(portrait === undefined ? {} : { portrait }),
       model: eff.model,
       ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-      ...(eff.voice === undefined ? {} : { voice: eff.voice }),
       ...(eff.theme === undefined ? {} : { theme: eff.theme }),
       ...(avatarSrc === "" || eff.avatar === undefined ? {} : { avatar: { src: avatarSrc, format: eff.avatar.format, ...(eff.userLayer.includes("avatar") && eff.avatar.credit !== undefined ? { credit: eff.avatar.credit } : {}) } }),
       ...(eff.lan === true ? { lan: true } : {}),

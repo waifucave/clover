@@ -33,7 +33,6 @@ import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks
 import { voicesMethods } from "../voices/rpc";
 import { VoiceService, type VoiceServiceOptions } from "../voices/service";
 import { VoiceSlot } from "../voices/slot";
-import { speakReplies } from "../voices/replies";
 import { readUiSettings } from "../plugin-host/ui-settings";
 import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
 import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
@@ -90,15 +89,11 @@ export interface BotSideOptions {
   /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
    *  update closes it (update-gate.ts). */
   updateGate?: UpdateGateLike;
-  /** Bots' voices on this device (§6.6): the `voices` entries, the plugin host that streams them, and `voice.play`
-   *  to the app. Each bot's voice is its effective one (its user layer's, else its plugin's). */
-  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "play" | "listenIdleMs"> & {
+  /** Push-to-talk on this device (§6.6, the listening half until it is re-founded): the `voices` entries and the plugin
+   *  host that streams them. The bots' voices are Clover Voice's own settings; it speaks on its own. */
+  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "listenIdleMs"> & {
     /** The user's choice of voice mode (Clover Voice's `active` setting), read at each use (§6.6). */
     chosen?(): Promise<string | undefined> | string | undefined;
-    /** Tells the user, in words, that their voice stopped and which speaks now. */
-    tell?(text: string): void;
-    /** Clears the user's choice of voice mode (its plugin was removed). */
-    forget?(): Promise<void> | void;
   };
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
@@ -230,28 +225,16 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const questions = botQuestions({ host, ...(o.warn === undefined ? {} : { warn: o.warn }) });
   const voices = o.voices === undefined ? undefined : new VoiceService({
     ...o.voices,
-    voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
-    // A voice the bot's plugin chose, on the user's stored voice key, asks the user once (provider-consent.ts).
-    mayUse: (bot, at) => bots.checkVoice(bot, at),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
-  // The voice slot (§6.6): the active voice mode (Clover Voice by default) says the replies, plays the plugins' sound
-  // and hears push-to-talk; the service is its transport.
+  // The voice slot (§6.6): the active voice mode (Clover Voice by default) hears push-to-talk; the service carries the
+  // providers' listening.
   const voiceSlot = voices === undefined || o.voices?.host.invoke === undefined ? undefined : new VoiceSlot({
     registry: o.voices.registry, host: o.voices.host as Pick<PluginHost, "invoke">, service: voices,
     ...(o.voices.chosen === undefined ? {} : { chosen: o.voices.chosen }),
-    ...(o.voices.tell === undefined ? {} : { tell: o.voices.tell }),
-    ...(o.voices.forget === undefined ? {} : { forget: o.voices.forget }),
     ...(o.voices.listenIdleMs === undefined ? {} : { listenIdleMs: o.voices.listenIdleMs }),
     ...(o.warn === undefined ? {} : { warn: o.warn, log: o.warn }),
   });
-  // Each reply of a bot's main conversation, spoken with its voice while the user's `voice.speakReplies` is on (unset is
-  // on; read at each turn's end).
-  let offReplies: (() => void) | undefined;
-  // A removed plugin that was the user's chosen voice takes the choice with it (a stop or a crash keeps it).
-  const registryWatch = (o.voices?.registry as Partial<Pick<PluginRegistry, "watch">> | undefined)?.watch;
-  const offVoiceRemovals = voiceSlot === undefined || registryWatch === undefined ? undefined
-    : registryWatch.call(o.voices!.registry, (change) => { if (change.type === "removed") void voiceSlot.removed(change.id).catch(() => undefined); });
   // Held by an update's restart: started again as the gate reopens.
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
@@ -306,23 +289,15 @@ export function createBotSide(o: BotSideOptions): BotSide {
       // `pill.target` entry's handler through the plugin host, when there is one.
       ...pillMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
-      ...(voices === undefined ? {} : voicesMethods({ voices, host, ...(voiceSlot === undefined ? {} : { slot: voiceSlot }) })),
+      ...(voices === undefined ? {} : voicesMethods({ ...(voiceSlot === undefined ? {} : { slot: voiceSlot }) })),
       };
     },
     start: async () => {
       await bots.start();
       await routines?.start();
       if (o.routines?.ingress?.poll !== false) ingress?.start();
-      if (voices !== undefined && offReplies === undefined) {
-        offReplies = speakReplies({
-          host, voices: voiceSlot !== undefined ? { speak: (r) => voiceSlot.reply(r) } : voices, enabled: () => readUiSettings(o.home).voice?.speakReplies !== false,
-          ...(o.warn === undefined ? {} : { warn: o.warn }),
-        });
-      }
     },
     close: async () => {
-      offReplies?.();
-      offVoiceRemovals?.();
       offBusy?.();
       offQuestions?.();
       offReopen?.();

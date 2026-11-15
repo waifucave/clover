@@ -106,17 +106,14 @@ export interface DaemonBotsInput {
   routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
   /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
   pluginHost?: BotPluginHost;
-  /** Sends `voice.play` to the app (with `pluginHost`, or `voiceHost`). */
-  voicePlay?: NonNullable<BotSideOptions["voices"]>["play"];
-  /** The user's choice of voice mode, and how they are told their voice stopped (§6.6, the voice slot). */
+  /** Push-to-talk (§6.6, the listening half): with `pluginHost` (or `voiceHost`), the voice slot serves it; this is the
+   *  user's choice of voice mode (Clover Voice's `active` setting). */
   voiceChosen?: NonNullable<BotSideOptions["voices"]>["chosen"];
-  voiceTell?: NonNullable<BotSideOptions["voices"]>["tell"];
-  voiceForget?: NonNullable<BotSideOptions["voices"]>["forget"];
   /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
    *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
   contextWindowOf?: SessionPanelDeps["contextWindowOf"];
   connectorsOf?: SessionPanelDeps["connectorsOf"];
-  /** The plugin host the bots' voices stream from, where the daemon gives no `pluginHost` (whose ingress and
+  /** The plugin host push-to-talk's voices stream from, where the daemon gives no `pluginHost` (whose ingress and
    *  triggers this leaves off). */
   voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
   /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
@@ -595,7 +592,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
  *   computers a routine may go to and their levels from the computer node, a routine made for another computer written
  *   there through the folder tree, and the plugins' triggers from the registry. The webhook ingress and the plugin
  *   triggers' arming run on the plugin host, once there is one (#277).
- * * **Voices** (§6.6) run on the plugin host too, with `voice.play` to the app.
+ * * **Push-to-talk** (§6.6, the listening half) runs on the plugin host too.
  * * **Compaction** takes the daemon's numbers; **assets**, the app's URL for a plugin's file. */
 export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | null; node: ComputerNode | undefined; computer: string }): Partial<BotSideOptions> {
   const { b, links, node } = o;
@@ -620,7 +617,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
   return {
     ...(relay ? { relay } : {}),
     routines,
-    ...((host ?? b.voiceHost) && b.voicePlay ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, play: b.voicePlay, ...(b.voiceChosen ? { chosen: b.voiceChosen } : {}), ...(b.voiceTell ? { tell: b.voiceTell } : {}), ...(b.voiceForget ? { forget: b.voiceForget } : {}) } } : {}),
+    ...((host ?? b.voiceHost) ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, ...(b.voiceChosen ? { chosen: b.voiceChosen } : {}) } } : {}),
     ...(b.compaction ? { compaction: b.compaction } : {}),
     ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
   };

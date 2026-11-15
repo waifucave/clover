@@ -217,8 +217,6 @@ export type LayerMessage =
   | { type: "avatar"; mount: string; message: AvatarDown }
   /** What an avatar frame says about its model and figure, to its parent only (`cleanAvatarUp`). */
   | { type: "avatar-up"; child: string; message: AvatarUp }
-  /** One piece of a bot's spoken reply (`voice.play`), to the main window's `clover` shell only: its player plays it. */
-  | { type: "voice"; piece: VoicePiece }
   /** Push-to-talk, to the main window's `clover` shell only, which records (a plugin never gets the microphone): `start` is sent
    *  only after the user's own press reached main (the composer's `listenStart`) and carries the utterance main minted; `stop`
    *  after their release (or the cap). The shell sends the audio back as `voice.listen` pieces, which main numbers and checks. */
@@ -241,15 +239,6 @@ export type LayerMessage =
   /** The core asks where a child frame is in this document's viewport (the menu broker); answered by `rectReply`. */
   | { type: "rect-query"; id: string; child: string };
 
-/** A piece of speech as `voice.play` carries it (base64 pcm16-24k, the last piece `final` and empty). */
-export interface VoicePiece {
-  bot: string;
-  utterance: string;
-  seq: number;
-  audio: string;
-  format: "pcm16-24k" | "mp3" | "opus";
-  final: boolean;
-}
 
 /** An item of a menu the core shows for a part (it crosses frames, so the core draws it): data only. */
 export interface MenuItem {

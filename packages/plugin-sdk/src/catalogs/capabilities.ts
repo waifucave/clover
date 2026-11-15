@@ -58,10 +58,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
   { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices", warns: true },
-  /** The voice providers' endpoints (`voices.*`, §6.6): their audio or text back as the plugin's own data (a narration
-   *  track, a transcript). A voice mode has it by being one. Nothing sounds through it: the player is the active
-   *  voice mode's alone. */
-  { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back", ok: "can ask your voice providers to speak or transcribe, which may use your accounts with them", warns: true },
+  /** The voice providers' listening (`voices.*`, §6.6): their text back as the plugin's own data (a transcript). A voice
+   *  mode has it by being one. */
+  { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back", ok: "can ask your voice providers to transcribe, which may use your accounts with them", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from

@@ -159,8 +159,8 @@
     },
     {
       "name": "voices.use",
-      "lets": "Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back",
-      "ok": "can ask your voice providers to speak or transcribe, which may use your accounts with them",
+      "lets": "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back",
+      "ok": "can ask your voice providers to transcribe, which may use your accounts with them",
       "warns": true
     },
     {
@@ -319,7 +319,7 @@
       "uniqueBy": "id",
       "kind": "code",
       "runsOn": "the computer the user is talking on",
-      "doc": "Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes.",
+      "doc": "Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover Voice's own point (`clover.voice.providers`).",
       "shipsWith": "Fish Audio"
     },
     {
@@ -329,7 +329,7 @@
       "uniqueBy": "id",
       "kind": "code",
       "runsOn": "the computer the user is talking on",
-      "doc": "The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears push-to-talk. The others neither speak nor hear.",
+      "doc": "Push-to-talk's voice mode (§6.6, the listening half until it is re-founded): one is active (Settings › Voice, Clover Voice's `active` setting) and hears push-to-talk; the others don't. A mode that speaks the replies offers itself on Clover Voice's own point (`clover.voice.modes`).",
       "shipsWith": "Clover Voice"
     },
     {
@@ -4438,33 +4438,13 @@
       "capability": "avatar.report",
       "where": "ui"
     },
-    "audio.play": {
-      "capability": "audio",
-      "where": "both"
-    },
     "audio.onRecording": {
       "capability": "audio",
-      "where": "both"
-    },
-    "speech.piece": {
-      "where": "host"
-    },
-    "speech.play": {
-      "where": "host"
-    },
-    "speech.stop": {
-      "where": "host"
-    },
-    "speech.modes": {
       "where": "both"
     },
     "voices.providers": {
       "capability": "voices.use",
       "where": "both"
-    },
-    "voices.speak": {
-      "capability": "voices.use",
-      "where": "host"
     },
     "voices.listen": {
       "capability": "voices.use",

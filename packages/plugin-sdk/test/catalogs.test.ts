@@ -21,7 +21,7 @@ describe("capabilities", () => {
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
       "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
-      "can ask your voice providers to speak or transcribe, which may use your accounts with them",
+      "can ask your voice providers to transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards",
     ]);
   });
@@ -179,7 +179,7 @@ describe("points and spots", () => {
   });
 
   test("what Bots offers a bot's plugin is a closed list: inside its tab, its top bar, the Browser and agent panels; never the sidebar, Settings or the Edit page", () => {
-    expect([...BOTS_OFFER.keys()].sort()).toEqual(["avatar", "bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
+    expect([...BOTS_OFFER.keys()].sort()).toEqual(["avatar", "bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.stage.action", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
       "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "panel", "tool.result"]);
     expect(BOTS_OFFER.get("panel")).toEqual(["browser", "agent"]);
     expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, true, false]);

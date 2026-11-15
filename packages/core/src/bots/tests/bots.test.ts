@@ -304,7 +304,7 @@ describe("the user layer", () => {
   async function luna(opts: { hasKeyFor?: (m: string) => boolean; modelOffer?: (m: string) => "offered" | "starting" | "absent" } = {}) {
     const root = tempDir();
     const dir = writePlugin(root, "luna", {
-      "clover.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5", effort: "high" }, voice: { provider: "fish-audio", voice: "v1", model: "s2.1-pro-free" } }),
+      "clover.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5", effort: "high" } }),
       "bot/instructions.md": "You are Luna.",
     });
     const home = tempDir();
@@ -459,10 +459,10 @@ describe("the user layer", () => {
 
   test("the layer survives a restart", async () => {
     const { home, inputs, b } = await luna();
-    await b.bots.setUserLayer("luna", { voice: { provider: "fish-audio", voice: "v2" } }, theUser);
+    await b.bots.setUserLayer("luna", { name: "Moon" }, theUser);
     await b.shutdown();
     const again = await boot({ home, plugins: inputs });
-    expect(again.bots.get("luna")).toMatchObject({ voice: { provider: "fish-audio", voice: "v2" }, userLayer: ["voice"] });
+    expect(again.bots.get("luna")).toMatchObject({ name: "Moon", userLayer: ["name"] });
     await again.shutdown();
   });
 

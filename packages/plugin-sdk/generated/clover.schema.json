@@ -351,46 +351,6 @@
               ],
               "additionalProperties": false
             },
-            "voice": {
-              "type": "object",
-              "properties": {
-                "provider": {
-                  "$ref": "#/$defs/__schema5"
-                },
-                "voice": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
-                },
-                "model": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "listen": {
-                  "type": "object",
-                  "properties": {
-                    "provider": {
-                      "$ref": "#/$defs/__schema5"
-                    },
-                    "model": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    }
-                  },
-                  "required": [
-                    "provider"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "provider",
-                "voice"
-              ],
-              "additionalProperties": false
-            },
             "theme": {
               "$ref": "#/$defs/__schema5"
             },

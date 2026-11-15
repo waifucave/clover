@@ -1,7 +1,8 @@
-// The acceptance voice's host half: `voice.speak` yields a 220 Hz tone as pcm16-24k (16-bit little-endian mono at
-// 24 kHz), in three pieces of 0.2 s each, whatever the text; the voice `long` in five pieces of 0.5 s (a reply that sounds
-// long enough for the run to do something while it plays). No key, no network: what the run asserts is that a reply
-// became speech the app played, not what it said.
+// The acceptance voice's host half: `speak` (its entry on Clover Voice's providers point, `clover.voice.providers`,
+// answering `points.stream` with bytes) makes a 220 Hz tone as pcm16-24k (16-bit little-endian mono at 24 kHz), in three
+// pieces of 0.2 s each, whatever the text; the voice `long` in five pieces of 0.5 s (a reply that sounds long enough for
+// the run to do something while it plays). No key, no network: what the run asserts is that a reply became speech Clover
+// Voice's player played, not what it said.
 //
 // `listen` is push-to-talk's other end: it reads the recording as the app's pieces arrive (`ctx.input`, one chunk per
 // numbered piece) and answers with fixed words that say what reached it: how many pieces, how many bytes and in what format,
@@ -26,19 +27,16 @@ export function tone(start: number, seconds: number): Uint8Array {
 /** The words `listen` answers with, for a recording of `pieces` pieces and `bytes` bytes. */
 export const heard = (pieces: number, bytes: number, format: string): string => `heard ${pieces} pieces, ${bytes} bytes of ${format}`;
 
-export const voice = {
-  async *speak(args: { text?: unknown; voice?: unknown; format?: unknown }): AsyncGenerator<{ audio: Uint8Array }, { format: string; bytes: number }, undefined> {
-    if (args.format !== undefined && args.format !== "pcm16-24k") throw new Error(`the acceptance voice speaks pcm16-24k, not ${String(args.format)}`);
-    const [pieces, seconds] = args.voice === "long" ? [LONG.pieces, LONG.seconds] : [PIECES, PIECE_SECONDS];
-    let bytes = 0;
-    for (let p = 0; p < pieces; p++) {
-      const audio = tone(p * seconds * SAMPLE_RATE, seconds);
-      bytes += audio.length;
-      yield { audio };
-    }
-    return { format: "pcm16-24k", bytes };
-  },
+/** The `clover.voice.providers` entry's `speak`: the tone, as bytes, a piece at a time. */
+export async function speak(args: { text?: unknown; voice?: unknown; format?: unknown }): Promise<AsyncIterable<Uint8Array>> {
+  if (args.format !== undefined && args.format !== "pcm16-24k") throw new Error(`the acceptance voice speaks pcm16-24k, not ${String(args.format)}`);
+  const [pieces, seconds] = args.voice === "long" ? [LONG.pieces, LONG.seconds] : [PIECES, PIECE_SECONDS];
+  return (async function* () {
+    for (let p = 0; p < pieces; p++) yield tone(p * seconds * SAMPLE_RATE, seconds);
+  })();
+}
 
+export const voice = {
   // eslint-disable-next-line require-yield
   async *listen(args: { format?: unknown }, ctx: { input?: AsyncIterable<unknown> }): AsyncGenerator<never, { text: string }, undefined> {
     if (ctx.input === undefined) throw new Error("the acceptance voice listens to the app's pieces");

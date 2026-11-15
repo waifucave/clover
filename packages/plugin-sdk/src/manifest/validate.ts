@@ -1263,12 +1263,12 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   return lines;
 }
 
-/** A voice mode's lines on its OK card (§6.6): it replaces Clover's voice only when the user chooses it, and it uses the
- *  voice providers (`voices.use`, which it holds by being a voice mode). */
-export const VOICE_MODE_OK_LINE = "It can replace Clover's voice: when you choose it in Settings › Voice, it speaks your bots' replies and hears what you say with push-to-talk.";
-export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it asks them to speak or transcribe, which may use your accounts with them.";
+/** A voice mode's lines on its OK card (§6.6, push-to-talk): it hears push-to-talk only when the user chooses it, and
+ *  it uses the voice providers' listening (`voices.use`, which it holds by being a voice mode). */
+export const VOICE_MODE_OK_LINE = "It can replace Clover's voice: when you choose it in Settings › Voice, it hears what you say with push-to-talk.";
+export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it asks them to transcribe, which may use your accounts with them.";
 /** A voice provider's line (`voices`): its entry is an endpoint other plugins may call. */
-export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to speak or transcribe, using your account with it.";
+export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to transcribe, using your account with it.";
 
 /** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
  *  island, so the user has seen that before it can. */

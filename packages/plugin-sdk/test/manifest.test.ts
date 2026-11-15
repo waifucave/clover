@@ -15,7 +15,6 @@ const ALPHA = `{ "manifest": 1, "id": "alpha", "version": "1.111.1", "name": "Al
     "bot": { "name": "Alpha", "instructions": "bot/instructions.md", "greeting": "bot/greeting.md", "memory": "bot/memory",
              "model": { "default": "<qualified catalog id>", "effort": "medium" },
              "avatar": { "file": "assets/alpha.vrm", "format": "vrm", "portrait": "assets/portrait.webp" },
-             "voice": { "provider": "fish-audio", "voice": "<fish voice id>", "model": "s2.1-pro-free" },
              "theme": "alpha", "layout": "tab/layout.json" },
     "themes": [{ "id": "alpha", "file": "tab/theme.json" }] } }`;
 
@@ -29,7 +28,6 @@ describe("Alpha's manifest from the spec", () => {
     expect(r.class).toBe("data");
     expect(r.bot).toBe(true);
     expect(r.contributions).toEqual([{ point: "bot", entries: 1 }, { point: "themes", entries: 1 }]);
-    expect(r.manifest?.contributes?.bot?.voice?.provider).toBe("fish-audio");
   });
 
   test("is refused when it isn't bundled: `alpha` is one of the plugins Clover ships", () => {

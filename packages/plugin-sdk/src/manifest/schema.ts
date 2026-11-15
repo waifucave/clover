@@ -100,11 +100,6 @@ export const BotSchema = z.strictObject({
       if (problem) ctx.addIssue({ code: "custom", path: ["file"], message: problem });
     })
     .optional(),
-  voice: z.strictObject({
-    provider: EntryId, voice: utf16(256, 1), model: utf16(128, 1).optional(),
-    /** Listening from another voice provider (§6.6). */
-    listen: z.strictObject({ provider: EntryId, model: utf16(128, 1).optional() }).optional(),
-  }).optional(),
   /** A theme id from this plugin, and a layout file; both apply in its tab. */
   theme: EntryId.optional(),
   layout: Path.optional(),
@@ -246,6 +241,9 @@ export const TriggerSchema = z.strictObject({
   ...declares,
 });
 
+/** A voice provider's listening, for push-to-talk (§6.6, the listening half until it is re-founded): `handler`'s
+ *  `listen` takes the recording as its input and returns what it heard. Speaking is a provider's entry on Clover
+ *  Voice's own point (`clover.voice.providers`), not this one. */
 export const VoiceSchema = z.strictObject({
   id: EntryId,
   name: Text,
@@ -256,9 +254,10 @@ export const VoiceSchema = z.strictObject({
   ...declares,
 });
 
-/** A voice mode (§6.6): the one plugin, of those installed, that speaks the bots' replies, plays sound as their
- *  voices and hears push-to-talk; the user chooses which is active (Settings › Voice). `handler` names the host
- *  export the core calls (`reply`, `stop`, `listenStart`, `listenEnd`, `offer`: `VoiceModeHandler`). */
+/** A voice mode's listening (§6.6, the listening half until it is re-founded): the one plugin, of those installed,
+ *  that hears push-to-talk; the user chooses which in Settings › Voice (Clover Voice's `active` setting). `handler`
+ *  names the host export the core calls (`listens`, `listenStart`, `listenPiece`, `listenEnd`: `VoiceModeHandler`). A
+ *  voice mode that speaks the replies offers itself on Clover Voice's own point (`clover.voice.modes`). */
 export const VoiceModeSchema = z.strictObject({
   id: EntryId,
   name: Text,

@@ -32,7 +32,6 @@ export const BotView = z.object({
   /** A qualified catalog id; the user's default model when there is no key for the bot's own (§6.1). */
   model: utf16(200),
   effort: utf16(32).optional(),
-  voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
   /** The avatar it stands with on its stage: the file's asset URL and its format (a renderer's `avatar.formats` id: `vrm`, `live2d`, or one a plugin brings), when it has one (§6.6). */
   avatar: z.object({
@@ -41,7 +40,7 @@ export const BotView = z.object({
     credit: utf16(1200).optional(),
   }).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
-  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
+  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "avatar", "theme", "layout", "lan"])),
   /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
    *  #260). Only the person sets it, in the user layer (`bot.setUserLayer`, theirs alone); it is never a plugin's. */
   lan: z.boolean().optional(),
@@ -59,7 +58,6 @@ export const UserLayerPatch = z.object({
   instructions: utf16(200_000).nullable().optional(),
   model: utf16(200).nullable().optional(),
   effort: utf16(32).nullable().optional(),
-  voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).nullable().optional(),
   avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional(), credit: utf16(1200).optional() }).nullable().optional(),
   /** Sets (text) or clears (`null`) the credit note of the user's own avatar; the avatar must be the user's own. */
   avatarCredit: utf16(1200).nullable().optional(),

@@ -153,7 +153,7 @@ export const LAYER_CALLS_PER_SECOND = 20;
 export const LAYER_UNRATED_CALLS: ReadonlySet<string> = new Set(["streams.write", "streams.ack"]);
 /** The members whose args carry bytes (a clip, a file), and how many serialized bytes they may take: under the app's
  *  own cap on a layer's call (`LAYER_CALL_MAX` in the app's layer-links.ts, 2,000,000 characters). */
-const BIG_ARGS: ReadonlySet<string> = new Set(["audio.play", "files.write"]);
+const BIG_ARGS: ReadonlySet<string> = new Set(["files.write"]);
 export const LAYER_CALL_BIG_MAX_BYTES = 1_500_000;
 /** An answer handed to a component, serialized, at most: one line well under the connection's 4 MiB send buffer
  *  (`ConnWriter`), so a big answer is refused with why rather than cutting the page's connection. */

@@ -50,9 +50,6 @@ export const UiSettings = z.object({
   textSize: z.enum(["small", "default", "large"]).optional(),
   /** A pack chosen for a language when two translate the same keys (§5.5). */
   packs: z.record(z.string(), AnyPluginId).optional(),
-  /** Voice (§6.6). `speakReplies`: a bot that has a voice speaks each reply of its main conversation aloud when its turn
-   *  ends (`voice.play`); `false` is the app's one mute. Unset is on. Set with `ui.set` (the whole `voice` object). */
-  voice: z.object({ speakReplies: z.boolean().optional() }).optional(),
 });
 export type UiSettings = z.infer<typeof UiSettings>;
 
@@ -259,63 +256,15 @@ export const APP_METHODS = {
       audio: utf16(2_000_000), format: z.enum(["pcm16-16k", "opus"]), final: z.boolean(),
     }),
     result: z.object({ text: utf16(100_000).optional() }),
-    doc: "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
+    doc: "Push-to-talk audio for the active voice mode, on the computer the user talks on (§6.6; the listening half, until push-to-talk is re-founded).",
   }),
-  /** Whether a `voice.listen` for the bot would be taken now: the bot has a voice, its voice plugin is installed and on,
-   *  and that entry listens. The app shows its hold-to-talk control only when it does. It reads the same entry the
-   *  listening itself does, so the control and the call never disagree; it asks nothing of the plugin and never a card. */
+  /** Whether a `voice.listen` for the bot would be taken now: the active voice mode says (the bot has a voice, in Clover
+   *  Voice's own settings, whose provider listens). The app shows its hold-to-talk control only when it does. */
   voiceStatus: defineMethod({
     name: "voice.status", owner: "D", roles: ["app"],
     params: z.object({ bot: BotId }),
     result: z.object({ listens: z.boolean() }),
     doc: "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
-  }),
-  /** One piece of a bot's spoken reply, to every app connection. The contract the app's player codes against:
-   *  * `utterance` names one reply's speech; its pieces come in order, `seq` 0, 1, 2…, each `audio` base64 of at most
-   *    2 MB (about 1.5 MB of samples). The last piece has `final: true` and empty `audio`: the utterance is complete.
-   *  * `format` is `pcm16-24k` in this build (16-bit little-endian signed mono samples at 24 kHz, no header, a piece
-   *    ends on a whole sample); `mp3` and `opus` are reserved. A new utterance of the same bot replaces the one playing.
-   *  * The user stops a bot's speech with `voice.stop` (the core ends the utterance; the app stops its own playback). */
-  voicePlay: defineMethod({
-    name: "voice.play", owner: "D", roles: ["app"], direction: "from-daemon",
-    params: z.object({
-      bot: BotId, session: SessionId, utterance: utf16(128, 1), seq: z.number().int().nonnegative(),
-      audio: utf16(2_000_000), format: z.enum(["pcm16-24k", "mp3", "opus"]), final: z.boolean(),
-    }),
-    result: Ok,
-    doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
-  }),
-  /** The app's player says an utterance it was sent has ended on this device: played out, stopped, cut by a newer one
-   *  of the same bot, or dropped while muted. The core ignores an utterance it didn't send to this app; the report only
-   *  lets the active voice mode's queue go on sooner (its next sound waits for it, or for a deadline when no report
-   *  comes), and never starts a sound. Sent by the app's own shell, never by a plugin. */
-  voicePlayed: defineMethod({
-    name: "voice.played", owner: "D", roles: ["app"],
-    params: z.object({ bot: BotId, utterance: utf16(128, 1) }),
-    result: Ok,
-    doc: "The app's player says an utterance it was sent has ended (§6.6): the voice mode's queue goes on.",
-  }),
-  voiceStop: defineMethod({
-    name: "voice.stop", owner: "D", roles: ["app"], userOnly: true,
-    params: z.object({ bot: BotId }),
-    result: Ok,
-    doc: "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
-  }),
-  /** The user asks to hear one past reply of a bot (the speak button under a reply), by its click:
-   *  * `seq` is the reply's own: the `seq` of an `assistant_message` event in that bot's MAIN conversation's log. The core
-   *    reads the text from the log, never from the caller; anything else is refused (`invalid`).
-   *  * It replaces whatever that bot is speaking, and it speaks with `voice.speakReplies` off too (the mute is for the
-   *    automatic speaking of new replies; this is the user asking). The pieces come as `voice.play`, as for any reply.
-   *  * `speaking: true` once the first piece went (or the voice is still making it after a while); `speaking: false`
-   *    with a `note` when nothing will be spoken (no voice, a voice plugin that isn't installed or doesn't speak, no
-   *    key, the user's no to its provider, a voice that failed): a short sentence the part shows as is.
-   *  * It never waits on a card: when the voice's provider needs the user's OK (a card raised or pending), it answers
-   *    at once (`speaking: false`, "Answer the card to let <voice> speak.") and speaks that reply when they say yes. */
-  voiceSpeak: defineMethod({
-    name: "voice.speak", owner: "D", roles: ["app"], userOnly: true,
-    params: z.object({ session: SessionId, seq: z.number().int().nonnegative() }),
-    result: z.object({ speaking: z.boolean(), note: utf16(500).optional() }),
-    doc: "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
   }),
   pillSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree

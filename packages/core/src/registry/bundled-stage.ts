@@ -127,7 +127,7 @@ export function stagedManifest(o: { folder: string; stagedDir: string; digests: 
   }
 }
 
-/** What Clover's own bundled plugin chose for its bot (its `contributes.bot` model tag and voice), read from a staged
+/** What Clover's own bundled plugin chose for its bot (its `contributes.bot` model tag), read from a staged
  *  folder's manifest as staging verified it, or undefined on any doubt: the folder must be inside the staged copy
  *  (`stagedBundledDir`, under `run/`, which no runner reads or writes), and the manifest's bytes, read once, must hash
  *  to the digest staging measured (`digests`, by real path); the choice is parsed from those same bytes. The bot side
@@ -137,21 +137,18 @@ export function stagedManifest(o: { folder: string; stagedDir: string; digests: 
  *  In a dev run (`dev:daemon`, or a core run from source) the staged copy is built from this checkout's own
  *  `plugins/` (`devBundledSource`): a local edit to `plugins/alpha` is staged, verified and exempt there, as the
  *  checkout's owner is the one choosing. A dist core stages only the bytes its compiled manifest names. */
-export function stagedBotChoice(o: { folder: string; stagedDir: string; digests: ReadonlyMap<string, string> | undefined }): { model?: string; voice?: { provider: string; voice: string; model?: string } } | undefined {
+export function stagedBotChoice(o: { folder: string; stagedDir: string; digests: ReadonlyMap<string, string> | undefined }): { model?: string } | undefined {
   const bytes = stagedManifest(o);
   if (bytes === undefined) return undefined;
   try {
     const parsed = parseJsonc(bytes.toString("utf8"));
     if (!parsed.ok) return undefined;
-    const bot = (parsed.value as { contributes?: { bot?: { model?: unknown; voice?: unknown } } } | null)?.contributes?.bot;
+    const bot = (parsed.value as { contributes?: { bot?: { model?: unknown } } } | null)?.contributes?.bot;
     if (bot === null || typeof bot !== "object") return undefined;
     const str = (v: unknown): v is string => typeof v === "string";
     const m = bot.model as { default?: unknown } | undefined;
-    const v = bot.voice as { provider?: unknown; voice?: unknown; model?: unknown } | undefined;
     return {
       ...(m !== null && typeof m === "object" && str(m.default) ? { model: m.default } : {}),
-      ...(v !== null && typeof v === "object" && str(v.provider) && str(v.voice) && (v.model === undefined || str(v.model))
-        ? { voice: { provider: v.provider, voice: v.voice, ...(v.model === undefined ? {} : { model: v.model }) } } : {}),
     };
   } catch {
     return undefined;
