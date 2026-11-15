@@ -2,7 +2,8 @@
 // (client/index.tsx), in the device's speech turn. Its host half only tells the part what to say: a reply handed to it
 // as a voice mode Clover Voice's user chose (`clover.voice.modes`' `reply`), or its own `chime`. The part reports each
 // span it held the turn (`record`), which `report` answers with, so the run can prove it never overlapped Clover Voice.
-// It tells its part through a stream with only its meta (`say`).
+// It tells its part through a stream with only its meta (`say`), once the part has said it accepts them (`ready`): a
+// background part's frame loads after its plugin starts, and a stream opened before that finds no one to accept it.
 
 type Api = { streams: { open(name: string, o: { meta: Record<string, unknown> }): Promise<{ close(): Promise<void> }> } };
 
@@ -18,8 +19,14 @@ const need = (): Api => {
   return api;
 };
 
-/** Tells its part what to say: a stream to it with only its meta (it reaches the background part wherever it runs). */
+let ready = false;
+let readied: (() => void) | undefined;
+const partReady = new Promise<void>((r) => { readied = r; });
+
+/** Tells its part what to say: a stream to it with only its meta (it reaches the background part wherever it runs),
+ *  waiting up to 20 s for the part to accept them. */
 async function say(what: string, seconds: number): Promise<void> {
+  await Promise.race([partReady, new Promise((r) => setTimeout(r, 20_000))]);
   const w = await need().streams.open("say", { meta: { what, seconds } });
   await w.close();
 }
@@ -38,10 +45,16 @@ export const chime = async () => {
   return { offered: true, at };
 };
 
-export const report = async () => ({ replies: [...said.replies], spans: [...said.spans] });
+export const report = async () => ({ ready, replies: [...said.replies], spans: [...said.spans] });
 
 /** Its part's own table: each span it held the device's speech turn. */
 export const ui = {
+  /** Its part accepts `say` now. */
+  ready: async () => {
+    ready = true;
+    readied?.();
+    return { ok: true };
+  },
   record: async (args: unknown) => {
     const s = args as { what?: unknown; from?: unknown; to?: unknown } | null;
     if (typeof s?.what === "string" && typeof s.from === "number" && typeof s.to === "number") said.spans.push({ what: s.what, from: s.from, to: s.to });
