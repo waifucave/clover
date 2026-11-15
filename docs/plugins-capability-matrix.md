@@ -167,8 +167,9 @@ yet". A class test (`plugin-host/tests/host-calls-served.test.ts`) fails when a 
 
 Approval cards: `approvals.pending` and `approvals.watch` are served to components only, with `approvals`: the cards that wait for the plugin's own bot (the bundled `clover` tree: all), ids and places, never their text. A host half has none.
 
-`browser` itself is a bundled-tree capability (`bundledOnly`): a third-party plugin that declares it fails validation, so
-no OK puts it in force. Raw DevTools on the person's signed-in pages is more than an OK card's one line can carry.
+`browser` is any plugin's to ask for (the owner, 2026-11-15), with a warning line on its card: "drives the Clover Browser:
+it can open pages, read them and act on them in its tabs, signed in wherever you signed in there". The `browser.*` calls
+are still served to the two bundled plugins by id until F5 turns them into the capability's.
 
 A host half that reads a member the API doesn't have (`api.env`, `api.log`) gets a TypeError naming it, where it reads
 it. Feature-test with `in`, which never throws: `"files" in api`, `"get" in api.settings` (false for a call not served

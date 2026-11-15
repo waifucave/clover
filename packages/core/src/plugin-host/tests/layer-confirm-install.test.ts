@@ -1,8 +1,8 @@
 // What a component reaches through its layer's real entries (`plugin.layer.call` on its own connection, and the app's
 // `plugin.layer.api`), over the real registry, a real plugin host's capability gate and the registry's own install door:
 // `confirm` and `confirmCard` raise the app's own sealed card naming the plugin, as a host half's do, and the component
-// gets only the answer (and the card's id); `plugins.install` (capability `plugins.install`, bundled-only in the
-// catalog: "from the indexes and npm") installs from an index or npm through the user's door, landing found behind its OK
+// gets only the answer (and the card's id); `plugins.install` (capability `plugins.install`, any plugin's behind its OK
+// card's warning line: "from the indexes and npm") installs from an index or npm through the user's door, landing found behind its OK
 // card, which says which plugin asked. Refused: a folder or a wrapped item (the user's own to bring), a plugin without
 // the capability, a host half's call (components only), a source that isn't one, a plugin that's off.
 // Temp homes, the fake approval broker and an in-memory secret store; nothing opens a window.
@@ -41,7 +41,7 @@ function plugin(folder: string, manifest: Record<string, unknown>): void {
 async function world() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-layer-")));
   temps.push(home);
-  // Clover's own tree holds `plugins.install` (the catalog: bundled only); a third party doesn't and can't.
+  // Clover's own tree holds `plugins.install`; this third party didn't ask for it, so it doesn't hold it.
   const root = join(home, "resources", "plugins");
   plugin(join(root, "clover"), { id: "clover", name: "Clover", capabilities: ["plugins.install"] });
   const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });

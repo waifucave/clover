@@ -154,6 +154,19 @@ export const McpServerSchema = z.strictObject({
    *  hold only where the tree can't reach the network and holds no capability beyond reading Clover's own state
    *  (`containedToolsHold`). Never a tool also listed in `readOnly`; a change to the list asks for the OK again. */
   contained: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
+  /** The tools of this server that search the web (R1: what the core once knew only of its own web plugin): named on the
+   *  OK card with a warning, a call to one is judged as a web search (effect `search`: at the default level it runs
+   *  without a card). The plugin must hold a `network:` capability. Never a tool on another of these lists; a change to
+   *  the list asks for the OK again. */
+  webSearch: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(16).optional(),
+  /** The tools of this server that read a web page at `input.url`: named on the OK card with a warning, a call to one is
+   *  judged as a page fetch (a page whose address the session already saw runs without a card, within the turn's
+   *  budget; any other asks, and "Always allow" holds for its site). The plugin must hold `network:public`. Never a tool
+   *  on another of these lists; a change to the list asks for the OK again. */
+  webFetch: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(16).optional(),
+  /** A tool offered only while its plugin holds a capability (`{ "WebFetch": "network:public" }`): one that could only
+   *  refuse without it isn't listed. Each capability must be one the plugin declares. */
+  needs: z.record(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/), utf16(512, 1)).optional(),
   /** Extra text for the MCP block, capped at about 4 KB (§6.1). */
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */

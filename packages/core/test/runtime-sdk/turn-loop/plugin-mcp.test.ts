@@ -823,16 +823,24 @@ test("a host server that can't work in this build (notServed): never started, li
   mcp.close();
 });
 
-test("the web plugin's WebFetch is offered only while the plugin holds network:public; WebSearch always", async () => {
+test("a tool its server's `needs` ties to a capability is offered only while the plugin holds it, whatever the plugin's id (the web plugin's WebFetch and network:public)", async () => {
   const folder = mkdtempSync(join(tmpdir(), "clover-a3-pmcp-"));
   temps.push(folder);
-  for (const [granted, expected] of [[["network:mcp.exa.ai"], ["Later", "WebSearch"]], [["network:mcp.exa.ai", "network:public"], ["Later", "WebFetch", "WebSearch"]]] as const) {
-    const registry = fakeRegistry([entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } })], { "clover/web": folder }, {}, { "clover/web": { granted } });
-    const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
-    await mcp.refresh();
-    expect(mcp.servers("bot").flatMap((s) => s.tools.map((t) => t.name)).sort()).toEqual([...expected]);
-    mcp.close();
+  for (const id of ["clover/web", "acme-web"]) {
+    for (const [granted, expected] of [[["network:mcp.exa.ai"], ["Later", "WebSearch"]], [["network:mcp.exa.ai", "network:public"], ["Later", "WebFetch", "WebSearch"]]] as const) {
+      const registry = fakeRegistry([entry(id, "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" }, needs: { WebFetch: "network:public" } })], { [id]: folder }, {}, { [id]: { granted } });
+      const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+      await mcp.refresh();
+      expect([id, mcp.servers("bot").flatMap((s) => s.tools.map((t) => t.name)).sort()]).toEqual([id, [...expected]]);
+      mcp.close();
+    }
   }
+  // With no `needs`, every tool is offered, whatever it holds.
+  const registry = fakeRegistry([entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } })], { "clover/web": folder }, {}, { "clover/web": { granted: [] } });
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+  await mcp.refresh();
+  expect(mcp.servers("bot").flatMap((s) => s.tools.map((t) => t.name)).sort()).toEqual(["Later", "WebFetch", "WebSearch"]);
+  mcp.close();
 });
 
 test("placement and fields are per tool; each bundled server is offered under its own key (today), its listing saying so", async () => {

@@ -15,7 +15,9 @@ Every plugin waits for the user's OK before anything in it runs. The card shows 
 builder, and one line for each thing it may do:
 
 - each capability, in the words plugin-catalog's "the OK card says" column gives (some with a warning:
-  `computers.control`, `approvals`, `project.write`, `audio`);
+  `computers.control`, `approvals`, `project.write`, `browser`, `terminal`, `plugins.install`, `plugins.watch`,
+  `avatar.report`, `audio`, `voices.use`, `network:public`). Any plugin may ask for any capability: none is kept for
+  Clover's own plugins, and the card is the gate;
 - each network host (`network:<host>`, and the hosts of its model endpoints, `web` entries and `auth` URLs);
 - that it runs code (a host half, a client half, a `stdio` server, a hook command), its hook events, its add-ons;
 - its tools that skip the card (below), named one by one;
@@ -53,7 +55,15 @@ plugin: a child plugin's lists don't count):
   `memory.read`, `bots.read`, `routines.read`, `computers.read`, `devices.read`, `usage.read`, `shell.read`,
   `shell.control`, `avatar.read`, `avatar.control`.
 
-Never put a tool that changes anything outside the plugin's display on either list. A tool can't be on both.
+- `webSearch`: tools that search the web (the plugin needs a `network:` capability). A call is judged as a web search:
+  at the default level it runs without a card. The card warns that what a bot searches goes to the plugin.
+- `webFetch`: tools that read the web page at their `url` input (the plugin needs `network:public`). A page whose
+  address the session already saw runs without a card, a few a turn; any other asks, and "Always allow" holds for its
+  site. The card warns that what is read goes through the plugin.
+
+Never put a tool that changes anything outside the plugin's display on any of these lists. A tool can be on one only.
+`needs` (`{ "<tool>": "<capability>" }`) lists a tool only while the plugin holds that capability, for a tool that
+could only refuse without it.
 
 ## Cards a plugin raises itself
 

@@ -99,7 +99,9 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   "anthropic-messages", baseUrl }` (no code) or `adapter` (a host export).
 - **`mcpServers`** (by name: letters, digits, `_`, `-`): `type` `host` (the host half's `mcp.<name>` export) or
   `stdio` (`command`, `args`, `env`) or `http` (a remote server: `url`, `headers`). `tools`: per tool `preload` or `on-demand`, `"*"` the
-  default (on-demand when unsaid). `readOnly` / `contained`: tools that skip the card (plugin-cards). `instructions`
+  default (on-demand when unsaid). `readOnly` / `contained` / `webSearch` / `webFetch`: tools the approvals judge as
+  their list says (plugin-cards); `needs`: `{ "<tool>": "<capability>" }`, a tool offered only while the plugin holds
+  that capability. `instructions`
   (a Markdown file, about 4 KB at most), `perComputer`, `scope` (its own, over the plugin's: `own-bot` keeps the
   server's tools inside the plugin's bot), `when: { os }`. A session sees a tool as `mcp__<server>__<tool>`.
 - **`skills`** (list): a path or glob (`skills/*/SKILL.md`), or `{ "path": "<glob>", "scope": "own-bot" }` for skills

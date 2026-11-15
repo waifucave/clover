@@ -2,7 +2,8 @@
 // never a router of their own. B's gate runs first (an un-OK'd plugin never reaches them) and every other call of the
 // plugin API keeps its own handler. Row 1.91: a third-party plugin's keyed fetch reaches its own declared hosts with
 // its own stored key (never a provider slot, never another plugin's), `secrets.get` reads only its own entries' secrets
-// in a process of its own, and neither the account token nor the keyless public path is a third party's.
+// in a process of its own, and the account token is never a third party's; the keyless public path is any plugin's
+// that holds `network:public` (the owner, 2026-11-15), with no key.
 import { describe, expect, test } from "bun:test";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 import type { SecretStore as DaemonSecretStore } from "../../../src/auth/secret-store";
@@ -75,13 +76,19 @@ describe("the model plugins' calls behind B's gate", () => {
     expect(await w.call("acme", "settings.get", ["x"])).toBe("stored");
   });
 
-  test("neither the account token nor the keyless public path is a third party's", async () => {
+  test("the account token is never a third party's; the keyless public path is, once it holds network:public, with no key", async () => {
     const w = await world([{ id: "acme", manifest: manifest("acme", { capabilities: ["network:api.example.com", "network:public"] }), source: "local" }]);
     // The account token: the clover process only (guardApiRouter's `cloverProcessOnly`).
     await expect(w.call("acme", "net.fetch", ["https://api.example.com/", {}, { auth: "waifucave" }])).rejects.toThrow();
-    // `network:public` is bundled-only: even granted, a third party's undeclared host stays undeclared.
-    await expect(w.call("acme", "net.fetch", ["https://news.example.org/"])).rejects.toThrow();
     expect(w.sent).toEqual([]);
+    // `network:public`, granted after its OK card's warning line: an undeclared public host, keyless.
+    await w.call("acme", "net.fetch", ["https://news.example.org/"]);
+    expect(w.sent.map((s) => s.url)).toEqual(["https://news.example.org/"]);
+    expect(Object.keys(w.sent[0]!.headers).filter((k) => /key|authorization|cookie/i.test(k))).toEqual([]);
+    // Without it, the same host is refused by B's gate.
+    const plain = await world([{ id: "beta", manifest: manifest("beta", { capabilities: ["network:api.example.com"] }), source: "local" }]);
+    await expect(plain.call("beta", "net.fetch", ["https://news.example.org/"])).rejects.toThrow(/network:news\.example\.org/);
+    expect(plain.sent).toEqual([]);
   });
 
   test("secrets.get: a third party's own entry's secret, in a process of its own only; another name, or a worker, is refused", async () => {

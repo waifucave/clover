@@ -1,6 +1,6 @@
-// A bundled plugin's `net.fetch` to a public website outside its `network:` list (`network:public`, the plugin SDK's
-// catalog: bundled only, OK text "connects to any public website, through Clover's web safeguards"): today only the
-// web plugin's WebFetch. B's gate lets the host through only when the plugin's GRANTED set holds `network:public`
+// A plugin's `net.fetch` to a public website outside its `network:` list (`network:public`, the plugin SDK's catalog:
+// any plugin may ask, its OK card's warning line "connects to any public website, through Clover's web safeguards, so
+// what you or your bots give it can leave your computer"): the web plugin's WebFetch, or any plugin that holds it. B's gate lets the host through only when the plugin's GRANTED set holds `network:public`
 // (daemon-host.ts `allowNetwork`); this is the fetch that then runs, with no key and Clover's web safeguards.
 //
 // * No key, ever: a request that names an `auth` entry is refused (keys go only to the plugin's declared hosts, through

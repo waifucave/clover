@@ -1426,7 +1426,7 @@ export function usePluginApi(): PluginApi {
       // card's id).
       confirm: (text: string) => call<{ result: boolean }>("plugin.layer.call", { call: "confirm", args: [text] }).then((r) => r.result === true),
       confirmCard: (text: string) => call<{ result: { allowed: boolean; card: string } }>("plugin.layer.call", { call: "confirmCard", args: [text] }).then((r) => r.result),
-      // `plugins.install` (capability `plugins.install`, bundled-only): an install through the user's own door; what it
+      // `plugins.install` (capability `plugins.install`, any plugin's behind its OK card): an install through the user's own door; what it
       // installs lands found, behind its sealed OK card, which says this plugin asked.
       plugins: {
         install: (source: unknown) => call<{ result: { id: string; state: string; card?: string } }>("plugin.layer.call", { call: "plugins.install", args: [source] }).then((r) => r.result),

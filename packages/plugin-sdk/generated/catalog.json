@@ -71,16 +71,14 @@
     {
       "name": "browser",
       "lets": "Drive the Clover Browser through its API",
-      "ok": "drives the Clover Browser",
-      "warns": false,
-      "bundledOnly": true
+      "ok": "drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there",
+      "warns": true
     },
     {
       "name": "terminal",
       "lets": "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only",
-      "ok": "runs commands on your computers",
-      "warns": true,
-      "bundledOnly": true
+      "ok": "runs commands in a terminal on your computers, as you, outside Clover's sandbox",
+      "warns": true
     },
     {
       "name": "shell.read",
@@ -97,16 +95,14 @@
     {
       "name": "plugins.install",
       "lets": "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK",
-      "ok": "installs plugins for you to OK",
-      "warns": false,
-      "bundledOnly": true
+      "ok": "downloads other plugins from the indexes and npm onto your computer, each waiting for your OK on its own card",
+      "warns": true
     },
     {
       "name": "plugins.watch",
       "lets": "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing",
-      "ok": "sees which plugins you have and whether they're on",
-      "warns": false,
-      "bundledOnly": true
+      "ok": "sees every plugin you have, whether it's on, and when you add or remove one",
+      "warns": true
     },
     {
       "name": "usage.read",
@@ -135,9 +131,8 @@
     {
       "name": "avatar.report",
       "lets": "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)",
-      "ok": "reports your bots' figures",
-      "warns": false,
-      "bundledOnly": true
+      "ok": "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
+      "warns": true
     },
     {
       "name": "notify",
@@ -166,9 +161,8 @@
     {
       "name": "network:public",
       "lets": "Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, size and time caps, no key, and the audit log; its components reach no host from it",
-      "ok": "connects to any public website, through Clover's web safeguards",
-      "warns": true,
-      "bundledOnly": true
+      "ok": "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
+      "warns": true
     },
     {
       "name": "network:<host>",

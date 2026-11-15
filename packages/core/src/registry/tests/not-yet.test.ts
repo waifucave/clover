@@ -256,30 +256,28 @@ describe("a plugin not available in this build yet", () => {
   });
 });
 
-describe("a capability only Clover's own plugins may hold", () => {
-  // `terminal` is bundled-only (the SDK's catalog). The rules drop it from `granted` for any plugin not in Clover's own
-  // tree by its install source, whatever its manifest or record says, even put straight in, past the validator.
+describe("no capability is Clover's own (the owner, 2026-11-15: \"Yes, all with a warning\")", () => {
+  // `terminal` was bundled-only. Now the rules grant whatever the OK'd manifest asks, for any plugin by any source: the
+  // OK card, with its warning line, is the gate.
   const holds = (id: string, source: RegistryInput["source"], caps: string[]): RegistryInput =>
     ({ id, manifest: { manifest: 1, name: id, capabilities: caps } as unknown as Manifest, treeHash: `sha256:${id}`, approved: true, source });
 
-  test("a stale record: a plugin from an index, OK'd when its manifest held it, gets only the rest", () => {
+  test("a plugin from an index, OK'd with terminal, is granted it, as Clover's own panel is", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
     reg.putAll([
       { id: "clover", manifest: clover, treeHash: "sha256:c", approved: true, source: "bundled" },
       { ...holds("clover/panel-terminal", "bundled", ["terminal"]), treeHash: "sha256:c" },
       holds("luna", "index", ["terminal", "notify"]),
     ]);
-    expect(grantsInForce(reg.get("luna"))).toEqual(["notify"]);
+    expect(grantsInForce(reg.get("luna"))).toEqual(["terminal", "notify"]);
     expect(grantsInForce(reg.get("clover/panel-terminal"))).toEqual(["terminal"]);
   });
 
-  test("a spoofed id: a tree whose top id is `clover` but isn't installed as Clover's own holds none", () => {
+  test("each of the six that were Clover's own is granted to a local plugin the user OK'd", () => {
+    const six = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"];
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
-    reg.putAll([
-      { id: "clover", manifest: clover, treeHash: "sha256:s", approved: true, source: "local" },
-      { ...holds("clover/x", "local", ["terminal", "notify"]), treeHash: "sha256:s" },
-    ]);
-    expect(grantsInForce(reg.get("clover/x"))).toEqual(["notify"]);
+    reg.putAll([holds("asks-all", "local", six)]);
+    expect(grantsInForce(reg.get("asks-all"))).toEqual(six);
   });
 
   test("a spoofed id through the plugins folder: a tree that says it is `clover` is invalid, granted nothing", async () => {
