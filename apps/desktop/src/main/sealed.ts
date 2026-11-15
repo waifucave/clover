@@ -97,6 +97,10 @@ const SERVE_TTL_MS = 60_000;
  *  (a reader takes their time, S5: the serve's ttl is the scheme's alone). */
 const ANSWER_TTL_MS = 60 * 60_000;
 
+/** How long after a press's fresh visibility report the answer that rides on it may still be taken (the page sends the report, then
+ *  the answer at once; this is only the slack for a starved main process). */
+export const FRESH_MAX_AGE_MS = 1_500;
+
 /** The app's own fallback card's channel element: the page answers with the user's pick, checked like any button's. */
 export const OWN_ELEMENT = "own";
 
@@ -117,6 +121,7 @@ export class SealedFrames {
   /** The frame tokens whose page has reported itself visible (IOv2), for the fallback rule (§5.5: only show the
    *  fallback when no plugin has both buttons visible within 2 s). */
   private readonly visible = new Set<string>();
+  private readonly fresh = new Map<string, { seen: boolean; at: number }>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -227,6 +232,22 @@ export class SealedFrames {
   markVisible(token: string, visible: boolean): void {
     if (visible) this.visible.add(token);
     else this.visible.delete(token);
+  }
+
+  /** The report a press asked for (a new observer the page made at the press): whether the button showed whole and uncovered
+   *  right then. One per press: `takeFresh` spends it, and one older than FRESH_MAX_AGE_MS counts for nothing. */
+  noteFresh(token: string, seen: boolean): void {
+    if (this.fresh.size > 256) this.fresh.delete(this.fresh.keys().next().value!);
+    this.fresh.set(token, { seen, at: this.now() });
+  }
+
+  /** Spends the press's fresh report: "ok" if it said the button showed uncovered, "covered" if it said otherwise (or the
+   *  page's limit ran out), "none" if no report came with the press or it is stale. */
+  takeFresh(token: string): "ok" | "covered" | "none" {
+    const f = this.fresh.get(token);
+    this.fresh.delete(token);
+    if (f === undefined || this.now() - f.at > FRESH_MAX_AGE_MS) return "none";
+    return f.seen ? "ok" : "covered";
   }
 
   /** Whether a frame's page has reported itself visible (its IOv2 verdict): what the smoke run waits for before it

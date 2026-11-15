@@ -15,7 +15,38 @@ import type { SealedValue } from "./sealed";
 import type { CardSummary, PreviewBlock } from "./card-summary";
 
 /** What a sealed page says of a press, one word each: taken, or why not (the app logs it with the card's id). */
-export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer"];
+/** How long a press waits for the visibility report it asks for (a new observer made at the press) before it is refused as not checked:
+ *  well under half a second, so a press is never felt waiting; the report itself takes about a frame. */
+export const FRESH_LIMIT_MS = 400;
+
+/** The page's way of asking for it, for every sealed page: a NEW observer on the pressed button, whose first report (made after the
+ *  press, never an older timer-driven one) says whether the button shows whole, uncovered and at its size. The report goes to the app
+ *  before the answer does, and the app takes the answer only on it; no report within the limit counts as covered. */
+const FRESH_SCRIPT = `
+  const askFresh = (btn) => new Promise((resolve) => {
+    const t0 = performance.now();
+    let done = false;
+    let o = null;
+    let timer = 0;
+    const finish = (seen) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { if (o !== null) o.disconnect(); } catch (e) { /* going */ }
+      try { b.fresh?.(seen, Math.round(performance.now() - t0)); } catch (e) { /* going */ }
+      resolve(seen);
+    };
+    timer = setTimeout(() => finish(false), ${FRESH_LIMIT_MS});
+    o = new IntersectionObserver((entries) => {
+      const e = entries[entries.length - 1];
+      if (e === undefined) return;
+      const r = btn.getBoundingClientRect();
+      finish(e.intersectionRatio >= 1 && e.isVisible === true && r.width >= 24 && r.height >= 24);
+    }, { threshold: [0, 1], trackVisibility: true, delay: 100 });
+    o.observe(btn);
+  });`;
+
+export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer", "covered"];
 
 /** The card's own tokens as the page's custom properties: `card.*` alone (§5.5 "sealed frames take only these"), and
  *  only values of the kinds the catalog lets a card take. Anything else — tags, `/*` comments, `url(`/`var(`, values
@@ -261,7 +292,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   });
   mark();
   // Each press is told to the app by one word (never a text), so a press that did nothing leaves a line in its log: why.
-  const say = (w) => { try { b.pressed?.(w); } catch (e) { /* going */ } };
+  const say = (w) => { try { b.pressed?.(w); } catch (e) { /* going */ } };${FRESH_SCRIPT}
   window.addEventListener("pointerdown", (e) => {
     if (answering) { say("answering"); return; }
     if (!e.isTrusted) { say("untrusted"); return; }
@@ -286,9 +317,21 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     document.body.dataset.answering = "yes";
     // A refused answer says so on the card and the button answers again: never a "…" that stays.
     const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
-    b.answer(option).then((r) => {
-      if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; delete document.body.dataset.answering; answering = false; if (state !== null) state.textContent = ""; }
-      else refused(r);
+    // The press counts only if the report that follows it says the button shows uncovered: asked for now, not read from the last one.
+    askFresh(closest).then((ok) => {
+      if (!ok) {
+        say("covered");
+        answering = false; delete document.body.dataset.answering;
+        if (state !== null) state.textContent = "";
+        closest.dataset.again = "yes"; closest.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+        if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+        setTimeout(() => { delete closest.dataset.again; closest.removeAttribute("title"); if (state !== null && state.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) state.textContent = ""; }, 1800);
+        return null;
+      }
+      return b.answer(option).then((r) => {
+        if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; delete document.body.dataset.answering; answering = false; if (state !== null) state.textContent = ""; }
+        else refused(r);
+      });
     }).catch(() => refused(null));
   }, { capture: true });
 })();`;
@@ -397,7 +440,7 @@ export function ownCardPage(input: {
   // Hidden and shown again: the pointer must come in again and a second pass, as on a fresh page.
   document.addEventListener("visibilitychange", () => { openedAt = Date.now(); pointerEntered = false; mark(); });
   mark();
-  const say = (w) => { try { b.pressed?.(w); } catch (e) { /* going */ } };
+  const say = (w) => { try { b.pressed?.(w); } catch (e) { /* going */ } };${FRESH_SCRIPT}
   document.addEventListener("click", (e) => {
     if (!e.isTrusted) { say("untrusted"); return; }
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
@@ -418,9 +461,19 @@ export function ownCardPage(input: {
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card, and its buttons answer again.
     const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
-    void b.answer(b2.dataset.option).then((r) => {
-      if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; if (state !== null) state.textContent = ""; }
-      else refused(r);
+    // The same rule as a part's button: the press counts only if the report that follows it says the button shows uncovered.
+    void askFresh(b2).then((ok) => {
+      if (!ok) {
+        say("covered");
+        b2.dataset.again = "yes"; b2.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+        if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+        setTimeout(() => { delete b2.dataset.again; b2.removeAttribute("title"); if (state !== null && state.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) state.textContent = ""; }, 1800);
+        return null;
+      }
+      return b.answer(b2.dataset.option).then((r) => {
+        if (r !== null && typeof r === "object" && r.accepted === true) { document.body.dataset.answered = "yes"; if (state !== null) state.textContent = ""; }
+        else refused(r);
+      });
     }).catch(() => refused(null));
   }, { capture: true });
   // The Review: the app's own fetch for this page; its report goes in as text, never markup, and it never answers.

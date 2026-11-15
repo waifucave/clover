@@ -45,7 +45,7 @@ import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { frameChainAt, hitScript, type HitFrame } from "./frame-hit";
-import { ownCardPage } from "./sealed-pages";
+import { FRESH_LIMIT_MS, ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { gateAnswer } from "./registry-gate";
@@ -475,6 +475,14 @@ async function ready(): Promise<void> {
     // core's answer. The computer-use gate runs here in the main process, on both this button path and the fallback
     // (B3): fail closed — anything the core can't answer about it, the answer is refused.
     sealedAnswer: async (token, option, senderKey, children) => {
+      // A press counts only if the visibility report that FOLLOWS it (a new observer the page made at the press) says the button
+      // showed whole and uncovered: a cover drawn a moment before the press is in that report, while the page's last timer-driven
+      // verdict (up to ~200 ms old and longer when the renderer is starved) is not. Taken first, so a refused answer spends it.
+      const fresh = sealed.takeFresh(token);
+      if (fresh !== "ok") {
+        log(`sealed: answer refused (${fresh === "covered" ? "the button was covered or not shown at the press" : "no visibility report came with the press"})`);
+        return { accepted: false, reason: fresh === "covered" ? "the button wasn't fully showing when it was pressed" : "the press wasn't checked just now" };
+      }
       // One place at a time: a press from the island's frame while Clover's window is in front is not taken (the card is drawn
       // in the window now; the island's frame was a beat behind the move).
       const from = sealed.windowOf(token);
@@ -539,6 +547,13 @@ async function ready(): Promise<void> {
         log(`card: ${cardId} fallback timer armed (a button stopped showing in ${surfaceName(sealed.windowOf(token))})`);
         void armFallback(cardId);
       }
+    },
+    // The report a press asked for: logged with how long the page took to get it, so a limit that is too short shows in the log.
+    sealedFresh: (token: string, seen: boolean, ms: number) => {
+      sealed.noteFresh(token, seen);
+      const cardId = sealed.cardOf(token);
+      if (cardId === undefined) return;
+      log(`sealed: press on ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(sealed.windowOf(token))}: fresh report ${seen ? "uncovered" : ms >= FRESH_LIMIT_MS ? "none in time" : "covered"} after ${ms} ms`);
     },
     // A press the sealed page saw (a word, never a text): every one is in the log with its card, the surface and what came of it.
     sealedPress: (token: string, what: string) => {
