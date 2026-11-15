@@ -558,7 +558,7 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.list", "plugin.get", "plugin.setEnabled", "plugin.setScope", "plugin.setComputers", "plugin.restart", "plugin.logs",
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
-  "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
+  "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "point.active.list", "point.active.set", "command.list",
   "command.run", "glossary.query", "plugin.ui", "plugin.layer.api", "plugin.layer.call", "plugin.layer.watch", "plugin.layer.unwatch", "notify.send", "plugin.iconSource",
   "plugin.review",
 ];
@@ -573,6 +573,7 @@ export function beforePluginsOpen(method: string): unknown {
   if (method === "plugin.index.list") return { indexes: [] };
   if (method === "plugin.index.search") return { entries: [] };
   if (method === "point.list") return { points: [] };
+  if (method === "point.active.list") return { points: [] };
   if (method === "command.list") return { commands: [] };
   throw new ContractError("refused", "the plugin registry is still opening; try again in a moment");
 }

@@ -3968,6 +3968,12 @@
     "points.call": {
       "where": "both"
     },
+    "points.active": {
+      "where": "both"
+    },
+    "points.onActive": {
+      "where": "both"
+    },
     "commands.run": {
       "capability": "call:*",
       "where": "both"

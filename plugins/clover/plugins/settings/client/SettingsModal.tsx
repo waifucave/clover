@@ -6,7 +6,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
-import type { SettingsModalProps, SettingsSection, ToolPermission, ToolsView } from "./types";
+import type { OneAtATimeView, SettingsModalProps, SettingsSection, ToolPermission, ToolsView } from "./types";
 
 export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "tools", "levels", "bots"];
 
@@ -63,6 +63,36 @@ function ThreeWay({ label, value, mixed, onPick }: { label: string; value: ToolP
         </button>
       ))}
     </div>
+  );
+}
+
+const sameRef = (a: { pluginId: string; entryId: string } | undefined, b: { pluginId: string; entryId: string }) => a !== undefined && a.pluginId === b.pluginId && a.entryId === b.entryId;
+
+/** One picker per point that takes one filler at a time and has two or more (spec §5.4 "One at a time"), titled by the
+ *  point's own title: one radio group, the active filler pressed. Only the user's press here picks it. */
+function ActivePickers({ points, onPick }: { points: OneAtATimeView[] | undefined; onPick: SettingsModalProps["onPickActive"] }) {
+  const shown = (points ?? []).filter((p) => p.fillers.length >= 2);
+  if (shown.length === 0) return null;
+  return (
+    <>
+      {shown.map((p) => {
+        const standIn = p.chosen !== undefined && !p.fillers.some((f) => sameRef(p.chosen, f)) ? p.fillers.find((f) => sameRef(p.active, f)) : undefined;
+        return (
+          <section key={p.point} className="cl-settings__one" aria-label={p.title} data-point={p.point}>
+            <Row label={p.title} detail={standIn !== undefined ? S.oneStandIn(standIn.name) : S.oneDetail}>
+              <div className="cl-settings__three cl-settings__one-options" role="radiogroup" aria-label={p.title}>
+                {p.fillers.map((f) => (
+                  <button key={`${f.pluginId}/${f.entryId}`} type="button" role="radio" aria-checked={sameRef(p.active, f)} data-plugin={f.pluginId} data-entry={f.entryId}
+                    className="cl-settings__three-option" disabled={!onPick} onClick={() => onPick?.(p.point, { pluginId: f.pluginId, entryId: f.entryId })}>
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            </Row>
+          </section>
+        );
+      })}
+    </>
   );
 }
 
@@ -272,6 +302,7 @@ function Page({ props }: { props: SettingsModalProps }) {
         <>
           <h3 className="cl-settings__subhead">{S.plugins}</h3>
           <p className="cl-settings__note">{S.pluginsDetail}</p>
+          <ActivePickers points={props.oneAtATime} onPick={props.onPickActive} />
           {values.plugins.map((p) => (
             <div key={p.id} className="cl-settings__row cl-settings__plugin" role="group" aria-label={p.name} data-state={p.state} {...marks(props.item, p.id)}>
               <div className="cl-settings__text">

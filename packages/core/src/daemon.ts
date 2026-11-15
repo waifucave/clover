@@ -90,6 +90,7 @@ import { pluginsInstallApi } from "./plugin-host/api/install";
 import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
+import { ActiveNotices } from "./registry/active-one";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { appTabPort } from "./browser/app-port";
 import { browserCallerOf } from "./browser/service";
@@ -262,7 +263,7 @@ export interface BrowserHostInjection {
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { Level, NewSessionEvent, PluginProvenance } from "@waifucave/clover-protocol";
-import { AppRenderResult, topPluginIdOf } from "@waifucave/clover-protocol";
+import { AppRenderResult, BUNDLED_ROOT_PLUGIN, topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, loginShellPathRetrier, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -3976,7 +3977,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       void grantsHost.picksChanged?.(id)?.catch((err: unknown) => console.error(`[plugin-host] ${id}: ${(err as Error).message}`));
       void stdioMcp?.picksChanged(id).catch((err: unknown) => console.error(`[plugins] ${id}: ${(err as Error).message}`));
     });
-    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); notices.stop(); stopGrantRefence(); };
+    // One at a time (§5.4): when a one-at-a-time point's active entry stops (off, removed, stopped), the next takes over
+    // and the user is told once, under the point's declarer (Clover for a core point), as a voice that stops is.
+    const activeNotices = new ActiveNotices({
+      registry: opened.registry,
+      tell: (point, title, text) => {
+        console.error(`[plugins] ${point.name}: ${text}`);
+        try {
+          notifyService?.send(point.declaredBy === "core" ? BUNDLED_ROOT_PLUGIN : point.declaredBy.pluginId, { title, body: text });
+        } catch (err) {
+          console.error(`[plugins] ${point.name}: not shown (${(err as Error).message})`);
+        }
+      },
+    });
+    stopRegistryEvents = () => { stopEvents(); stopGrantDrops(); notices.stop(); stopGrantRefence(); activeNotices.close(); };
     glossary = new GlossaryIndex({ registry: opened.registry });
     const notifyRouter = pluginHost.gate;
     pluginMethods = {

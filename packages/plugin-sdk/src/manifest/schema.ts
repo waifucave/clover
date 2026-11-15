@@ -33,6 +33,11 @@ export const PointDeclSchema = z.strictObject({
   private: z.boolean().optional(),
   deprecated: Text.optional(),
   doc: Text.optional(),
+  /** One filler at a time (§5.4 "One at a time"): the platform keeps which entry is active, the user's choice in
+   *  Settings or the default (the first bundled filler, else the first installed); `points.active` reads it. */
+  oneAtATime: z.boolean().optional(),
+  /** The point's own title: Settings' picker for a one-at-a-time point is titled by it ("Voice", "Stage"). */
+  title: Text.optional(),
 });
 
 export const DeclaresSchema = z.record(PointName, PointDeclSchema);

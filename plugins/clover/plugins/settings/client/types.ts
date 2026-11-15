@@ -80,6 +80,16 @@ export interface ExtraSection {
   render: () => ReactNode;
 }
 
+/** A point that takes one filler at a time (spec §5.4 "One at a time"), as `point.active.list` gives it: Settings
+ *  draws a picker for it, titled by its own title, when it has two or more fillers. */
+export interface OneAtATimeView {
+  point: string;
+  title: string;
+  fillers: { pluginId: string; entryId: string; name: string }[];
+  active?: { pluginId: string; entryId: string };
+  chosen?: { pluginId: string; entryId: string };
+}
+
 export interface SettingsModalProps {
   /** A change that didn't take, said at the top of the page (the control has gone back to what is real). */
   failure?: string;
@@ -124,6 +134,9 @@ export interface SettingsModalProps {
   tools?: ToolsView;
   onSetTool?: (server: string, tool: string | undefined, permission: ToolPermission) => void;
   onTakeBackRule?: (server: string, tool: string, bot: string) => void;
+  /** The one-at-a-time points (on the Plugins page), and the user's pick of the active filler of one. */
+  oneAtATime?: OneAtATimeView[];
+  onPickActive?: (point: string, entry: { pluginId: string; entryId: string }) => void;
 }
 
 /** A pairing under way: the code to enter on the other device, then the four words both show. */

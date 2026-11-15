@@ -5084,6 +5084,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
       setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme),
       pressKey: (key: string, modifiers: string[]) => writeFileSync(keyFile, JSON.stringify({ n: ++keyPresses, key, modifiers })),
       mainWindow: (what: "close" | "open") => writeFileSync(join(root, "main-window"), `${what} ${++windowSeam}`),
+      daemonLog: () => readLog(join(logs, `daemon-${daemonRun}.log`)),
       ...(pressable ? {
         pressCard: async (what: string, match: (c: Card) => boolean) => {
           const card = await until(what, 30_000, async () => (await cards(rpc)).find(match), 500);

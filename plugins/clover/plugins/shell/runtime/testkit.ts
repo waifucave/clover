@@ -63,6 +63,8 @@ export function fakeApi(
       watch: () => () => undefined,
       call: none("point handlers"),
       stream: none("point handlers' streams"),
+      active: async () => undefined,
+      onActive: () => () => undefined,
     },
     host: { call: none("host half"), on: () => () => undefined },
     ui: { send: () => undefined },

@@ -67,6 +67,8 @@ export const S = {
   // Plugins.
   plugins: "Installed plugins",
   pluginsDetail: "Each runs with only the OKs you gave it. Turn one off to stop everything it adds.",
+  oneDetail: "Only one of these is used at a time.",
+  oneStandIn: (name: string) => `The one you picked isn't running, so ${name} is used for now.`,
   pluginState: {
     found: "Waits for your OK",
     refused: "Refused",
