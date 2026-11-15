@@ -621,6 +621,14 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     if ((await cardsOf(ctx)).some((c) => c.pluginId === BOT_ID)) fail("a card for it is waiting after her edit applied");
     said.push(`her Edit of its instructions: no card, reloaded; compacted after ${more} more turn(s)${refused !== "" ? " (refused before: nothing to compact)" : ""}, its next prompt has the new words, not the old`);
 
+    // Its tab showing when it is removed: the shell must leave it, so a removed bot's tab isn't the one on the screen.
+    const tabShown = async (): Promise<boolean> => {
+      for (const d of await treeDocs(ctx.cdp)) if ((await ctx.cdp.evaluate(d.session, `[...document.querySelectorAll('.cl-composer textarea')].some((e) => e.getAttribute('aria-label') === ${JSON.stringify(label)})`).catch(() => false)) === true) return true;
+      return false;
+    };
+    await escape(ctx.cdp);
+    await clickShown(ctx, `its row under Bots in the sidebar (to have its tab showing)`, row, BOT_NAME, 30_000);
+    await until("its tab showing before the removal", 20_000, async () => ((await tabShown()) ? true : undefined), () => frames(ctx.cdp));
     // Removed by the user (its removal card pressed in the window): its bot leaves bot.list.
     const r = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: BOT_ID });
     if (r.card !== undefined) await ctx.pressCard("its removal card", (c) => c.id === r.card);
@@ -632,7 +640,8 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
       return false;
     };
     await until("its row out of the sidebar", 8_000, async () => ((await rowShown()) ? undefined : true), async () => "its row is still under Bots in the sidebar (bot_removed should drop it)");
-    said.push("removed: out of bot.list and, within seconds and with no reload, out of the sidebar");
+    await until("its tab left", 8_000, async () => ((await tabShown()) ? undefined : true), async () => "its tab (its composer) is still the one showing after its bot was removed");
+    said.push("removed: out of bot.list and, within seconds and with no reload, out of the sidebar, and its tab (showing at the time) was left");
     // Her tab again, for the rows after this one in the same window.
     await toAlphasTab(ctx);
     done.push(`9 a bot builds a bot: ${said.join("; ")}`);
