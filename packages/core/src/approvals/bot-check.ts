@@ -88,9 +88,9 @@ export const CORE_TOOL_RULES: ReadonlyMap<string, "read" | "contained"> = new Ma
   ["Glossary", "read"],
 ]);
 
-/** What a bundled, checked plugin's tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): the web plugin's
- *  search and fetch, or a read (`BUNDLED_READ_TOOLS`). */
-export type BundledToolKind = "web-search" | "web-fetch" | "read" | "browser";
+/** What a declared tool is (the daemon's word, `botApprovalCheck`'s `bundledTool`): a web search or a page fetch (a
+ *  plugin's `webSearch`/`webFetch`, on the tree the user OK'd or the build's copy), or the bundled Browser tool. */
+export type BundledToolKind = "web-search" | "web-fetch" | "browser";
 
 /** The bundled Browser tool (`plugins/clover/plugins/browser`): a bot's hands on its own tab of the Clover Browser. */
 export const BROWSER_PLUGIN_ID = "clover/browser";
@@ -99,17 +99,6 @@ export const BROWSER_PLUGIN_ID = "clover/browser";
  *  no card at any level. `click`, `type`, `key` and `select` act on a page and are the other class. */
 export const BROWSER_LOOKING_VERBS: ReadonlySet<string> = new Set(["tabs", "open", "close", "navigate", "back", "forward", "reload", "screenshot", "read", "scroll", "wait"]);
 export const BROWSER_ACTING_VERBS: ReadonlySet<string> = new Set(["click", "type", "key", "select"]);
-
-/** The bundled web plugin (`plugins/clover/plugins/web`): its `WebSearch` and `WebFetch`. */
-export const WEB_PLUGIN_ID = "clover/web";
-
-/** Bundled tools that only read or compute, by plugin: a call is a read, with no card at the default level. A child of
- *  Clover's tree can't use its manifest's `readOnly` list (that holds only for a top-level plugin whose tree reaches no
- *  network, and Clover's tree holds `network:` grants), so the daemon names them here, for the staged, digest-checked
- *  copy only. The plugin builder's `PluginNew` returns a template's files and touches no disk or network. */
-export const BUNDLED_READ_TOOLS: Readonly<Record<string, readonly string[]>> = {
-  "clover/plugin-builder": ["PluginNew"],
-};
 
 /** Whether `tool` is the agent SDK's built-in of that name in a session whose host serves `hostTools` itself. */
 export function isBuiltinTool(tool: string, hostTools: ReadonlySet<string> = new Set()): boolean {
@@ -355,7 +344,7 @@ export interface BotToolRequestOptions {
   /** This computer's name: a session on another computer has its paths left unresolved. Unset: every session is
    *  taken as this computer's. */
   localComputer?: string;
-  /** What the call does when Clover knows better than its name (a core tool, a bundled web tool), and whether it stays
+  /** What the call does when Clover knows better than its name (a core tool, a declared web tool), and whether it stays
    *  inside what the fence and sandbox confine (`ApprovalRequest.contained`). */
   effect?: ActionEffect;
   contained?: boolean;
@@ -412,8 +401,9 @@ export function botApprovalCheck(
     /** A bot's commands run in a sandbox drawn from this computer's fence (#356, #362: no network, writes only to the
      *  level's roots, never outside it): each is contained, so at ask for risky actions it runs without asking. */
     commandsSandboxed?: boolean;
-    /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
-     *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
+    /** A plugin's tool whose class Clover holds to: a web search or a page fetch its manifest declares (`webSearch`,
+     *  `webFetch`) on the tree the user OK'd or the build's copy, or the bundled Browser tool (its staged,
+     *  digest-checked manifest). Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
     /** The site the bot's own browser tab is on (the host of its address), or undefined: it has no tab. */
     browserHost?: (ctx: BotSessionContext) => Promise<string | undefined>;
@@ -724,7 +714,7 @@ interface Known {
 }
 
 /** What Clover knows of a call beyond its name: a core tool's rule (`CORE_TOOL_RULES`, and where a message goes), or
- *  a bundled web tool's (a search is a search; a fetch is contained when its address was already seen and the turn's
+ *  a declared web tool's (a search is a search; a fetch is contained when its address was already seen and the turn's
  *  budget holds, and its "always" holds for its site only). */
 function knownEffect(
   ctx: BotSessionContext, tool: string, input: Record<string, unknown>, hostTools: ReadonlySet<string>,
@@ -746,7 +736,6 @@ function knownEffect(
     return rule === "read" ? { effect: "read" } : rule === "contained" ? { contained: true } : {};
   }
   const bundled = opts.bundledTool?.(ctx, tool);
-  if (bundled === "read") return { effect: "read" };
   if (bundled === "browser") return browserKnown(ctx, tool, input, opts);
   if (bundled === "web-search") return { effect: "search" };
   if (bundled === "web-fetch") {

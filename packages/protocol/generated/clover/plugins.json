@@ -3944,6 +3944,213 @@
         "additionalProperties": false
       }
     },
+    "point.active.list": {
+      "doc": "Every point that takes one filler at a time (§5.4 \"One at a time\"), with its fillers, the active one and the user's choice: Settings draws a picker for each with two or more fillers, titled by the point's own title. The user's own view.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "points": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "point": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "declaredBy": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "core"
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    }
+                  ]
+                },
+                "fillers": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "pluginId": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      },
+                      "entryId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "name": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "pluginId",
+                      "entryId",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "active": {
+                  "type": "object",
+                  "properties": {
+                    "pluginId": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entryId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "pluginId",
+                    "entryId"
+                  ],
+                  "additionalProperties": false
+                },
+                "chosen": {
+                  "type": "object",
+                  "properties": {
+                    "pluginId": {
+                      "type": "string",
+                      "maxLength": 81,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                    },
+                    "entryId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "pluginId",
+                    "entryId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "point",
+                "title",
+                "declaredBy",
+                "fillers"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "points"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "point.active.set": {
+      "doc": "The user picks which filler of a one-at-a-time point is active (Settings' picker): one of its fillers running now. Kept with the registry's records; when it stops, the default stands in until it runs again. Only the user sets it: no plugin's call or setting does.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "point": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "entry": {
+            "type": "object",
+            "properties": {
+              "pluginId": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "entryId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "pluginId",
+              "entryId"
+            ]
+          }
+        },
+        "required": [
+          "point",
+          "entry"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "command.list": {
       "doc": "Every plugin command, for the palette (§5.4).",
       "owner": "B",

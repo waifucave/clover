@@ -127,6 +127,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "tool.permissions": { disposition: READ, part: SETTINGS_PART },
   "tool.setPermission": { disposition: "settings", part: SETTINGS_PART, gesture: true },
   "tool.takeBackRule": { disposition: "settings", part: SETTINGS_PART, gesture: true },
+  // One at a time (§5.4): Settings' pickers read every one-at-a-time point, and only the user's press in Settings picks
+  // which filler is active (no plugin's call or setting does).
+  "point.active.list": { disposition: READ, part: SETTINGS_PART },
+  "point.active.set": { disposition: "settings", part: SETTINGS_PART, gesture: true },
   "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
   "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
   // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.

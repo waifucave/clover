@@ -56,7 +56,7 @@ const HOST_ENV_KEYS = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "
 
 /** B's gate's network rule for `net.fetch`: a host on the plugin's GRANTED `network:` list, read as its proxy reads it
  *  (`hostRules`/`hostAllowed`, net-proxy.ts: no port means 443 and 80), or, when the granted set holds `network:public`
- *  (bundled only), any host on 443 or 80 (that fetch is keyless, through Clover's web safeguards:
+ *  (any plugin's, after its OK card's warning line), any host on 443 or 80 (that fetch is keyless, through Clover's web safeguards:
  *  runtime-sdk/model-plugins/public-fetch.ts, which takes https on the default port only). `port` is the URL's, or its
  *  scheme's (the router's `targetOf`). */
 export function pluginNetworkAllowed(caps: readonly string[], host: string, port?: number): boolean {
@@ -570,7 +570,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // `net.fetch` reaches the hosts the plugin's OK granted, read the way its process's proxy reads them (2g): an entry
   // without a port is 443 and 80, one with a port only that port (the router hands every call its URL's port, or its
   // scheme's). A host named by a setting (`${setting:region}`) fails closed. A host outside the list passes only when
-  // the GRANTED set holds `network:public` (the SDK's catalog: bundled only), on 443 or 80: that fetch is keyless,
+  // the GRANTED set holds `network:public` (any plugin's, after its OK card's warning line), on 443 or 80: that fetch is keyless,
   // through Clover's web safeguards (runtime-sdk/model-plugins/public-fetch.ts, which allows https and the default port
   // only).
   const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed, ...(o.userEndpoint !== undefined ? { userEndpoint: o.userEndpoint } : {}) });

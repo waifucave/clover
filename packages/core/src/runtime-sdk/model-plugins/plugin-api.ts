@@ -12,7 +12,6 @@
 // * `secrets.get` answers only a plugin the core put in a process of its own (`hostProcessFor` from the install
 //   record), and only for a secret its own `auth` entries name.
 import type { ApiHandlers } from "../../plugin-host/api/router";
-import { isBundledClover } from "./load";
 import { pinnedFetch, PinnedFetchRefused } from "../../plugin-host/pinned-fetch";
 import { ipAddressClass } from "../../agent/tools/web";
 import { originOf } from "./user-endpoint";
@@ -170,7 +169,7 @@ function keyedInit(init: RequestInit | undefined): KeyedFetchInit {
  * hold its processes to its own hosts too): a plugin's fetch reaches only its declared hosts, with only its own keys
  * (a third party's are its own items, which the user stored for it; never a provider slot, `keychain-tokens.ts`), and
  * `secrets.get` reads only its own `auth` entries' secrets, in a process of its own. The keyless `network:public` path
- * is the bundled tree's alone (the capability is `bundledOnly`, and is checked here again).
+ * is any plugin's that holds the capability (granted after its OK card's warning line; the owner, 2026-11-15).
  */
 export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers {
   const fetches = new Map<string, { key: string; fetch: KeyedFetch }>();
@@ -229,7 +228,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
       try {
         // A host on the plugin's declared network: list goes through its keyed fetch; any other only with
         // `network:public` granted (B's gate checked it too), keyless, through Clover's web safeguards.
-        if (!declaredHost(ctx.record, url) && isBundledClover(ctx.record) && reachesPublicNetwork(ctx.record.granted)) {
+        if (!declaredHost(ctx.record, url) && reachesPublicNetwork(ctx.record.granted)) {
           return maskResponse(await publicOf(ctx.record.id, url, init ?? {}, fetchOpts as Record<string, unknown> | undefined), keys);
         }
         return maskResponse(await fetchFor(ctx.record)(url, keyedInit(init), fetchOpts), keys);

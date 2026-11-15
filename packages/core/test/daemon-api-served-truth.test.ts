@@ -6,8 +6,8 @@
 // Two fixtures, each walked on both sides:
 // - a third party holding every capability a third party may hold, its host half in a process of its own;
 // - a child of the bundled `clover` tree (`clover/truth`, staged as the dev stage `<home>/run/dev-bundled/` a daemon
-//   with its own store reads), holding every capability, its host half in the `clover` process: the bundled-only
-//   capabilities and the `clover`-process members (`keys.*`, `desktop.*`) are called for real.
+//   with its own store reads), holding every capability, its host half in the `clover` process: the
+//   `clover`-process members (`keys.*`, `desktop.*`) are called for real.
 // On each side:
 // - host members (`host`, `own`, `clover`, `both`) are called by its host half, as the app's page would reach it
 //   (`host.call` through `plugin.layer.api`);

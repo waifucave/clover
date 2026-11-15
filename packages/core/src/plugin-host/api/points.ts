@@ -18,7 +18,10 @@
 //   serves a session's call acts as that session).
 // * `points.stream` is `points.call` for a handler that answers with a stream (§5.4 "Streams"): the same entry, field and
 //   checks, the caller's watch the stream's reader and the contributor's host half its writer.
-import { STREAM_POINT_TIMEOUT_MAX_MS, type PointEntry } from "@waifucave/clover-plugin-sdk";
+// * `points.active` and `points.onActive` (§5.4 "One at a time"): which entry of a one-at-a-time point is active, as
+//   its plugin and entry id (never its value), for the declarer's tree and for a plugin of a tree with an entry in it
+//   (`registry/active-one.ts`). Only the user's own door changes it (`point.active.set`); no plugin call does.
+import { STREAM_POINT_TIMEOUT_MAX_MS, type ActiveFiller, type PointEntry } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
@@ -26,9 +29,10 @@ import { RUNNING_STATES, type Contribution, type PluginRegistry, type Registered
 import type { StreamEvent, StreamHub } from "../../streams/hub";
 import { assetPath } from "../paths";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "./router";
+import { activeOne, mayReadActive, refOf } from "../../registry/active-one";
 
 export interface PointsApiOptions {
-  registry: Pick<PluginRegistry, "entries" | "points" | "watch"> & Partial<Pick<PluginRegistry, "get">>;
+  registry: Pick<PluginRegistry, "entries" | "points" | "watch"> & Partial<Pick<PluginRegistry, "get" | "chosen">>;
   host: Pick<PluginHost, "invoke">;
   /** The URL a component or host fetches a plugin's file from (lane E's asset server), given the path relative to the
    *  plugin's folder, checked and with each segment percent-encoded (`assetPath`). */
@@ -175,6 +179,12 @@ export function pointsApi(o: PointsApiOptions): ApiHandlers {
     if (typeof handler !== "string") throw new ContractError("not_installed", `${ref.pluginId}'s entry names no ${field}`);
     return { entry, handler, opts, point, field };
   };
+  const activeFor = (ctx: ApiCallContext, point: string): ActiveFiller | undefined => {
+    readerRuns(ctx);
+    mayReadActive(o.registry, point, ctx.pluginId);
+    const a = activeOne(o.registry, point)?.active;
+    return a === undefined ? undefined : refOf(a);
+  };
   return {
     "points.entries": (ctx, args) => entriesFor(ctx, stringArg(args, 0, "the point")),
     "points.watch": (ctx, args): Unsubscribe => {
@@ -189,6 +199,24 @@ export function pointsApi(o: PointsApiOptions): ApiHandlers {
           now = []; // the declaration went away: its entries are gone for the declarer
         }
         const text = JSON.stringify(now);
+        if (text === last) return;
+        last = text;
+        listener(now);
+      });
+    },
+    "points.active": (ctx, args) => activeFor(ctx, stringArg(args, 0, "the point")),
+    "points.onActive": (ctx, args): Unsubscribe => {
+      const point = stringArg(args, 0, "the point");
+      const listener = listenerArg<ActiveFiller | undefined>(args, 1);
+      let last = JSON.stringify(activeFor(ctx, point) ?? null);
+      return o.registry.watch(() => {
+        let now: ActiveFiller | undefined;
+        try {
+          now = activeFor(ctx, point);
+        } catch {
+          now = undefined; // the point or the reader went: nothing is active for it
+        }
+        const text = JSON.stringify(now ?? null);
         if (text === last) return;
         last = text;
         listener(now);

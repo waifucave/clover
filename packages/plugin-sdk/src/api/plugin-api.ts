@@ -341,6 +341,18 @@ export interface PointsApi {
    *  anything else, errors the stream with why. `timeoutMs` (default and most 10 minutes) bounds the whole stream;
    *  `signal` aborted, or the stream cancelled, stops the handler's pump. */
   stream(point: string, entry: { pluginId: string; entryId: string }, field: string, args?: unknown, opts?: CallOptions & { method?: string }, onEvent?: (event: StreamReadEvent) => void): Promise<ReadableStream<Uint8Array>>;
+  /** A one-at-a-time point's active entry (§5.4 "One at a time"): the user's choice in Settings, else the default (the
+   *  first bundled filler, else the first installed); undefined when it has no filler running. Its declarer's tree reads
+   *  it, and so does a plugin with an entry in it (a filler learns whether it is the one). Only the user changes it. */
+  active(point: string): Promise<ActiveFiller | undefined>;
+  /** Hears the active entry change: the user's choice, or the default taking over when the active one stops. */
+  onActive(point: string, listener: (active: ActiveFiller | undefined) => void): Unsubscribe;
+}
+
+/** Which entry of a one-at-a-time point is active: its plugin and entry id, never its value. */
+export interface ActiveFiller {
+  readonly pluginId: string;
+  readonly entryId: string;
 }
 
 /** Commands (§5.4): another plugin's run only with `call:<plugin-id>`, which the OK lists. A call to a plugin that
@@ -632,13 +644,13 @@ export interface FileGrant { token: string; name: string; kind: "file" | "folder
 export type FilePickResult = { grants: FileGrant[] } | { cancelled: true };
 
 /** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for the component that draws
- *  one. Only the bundled `clover` tree holds it (`bundledOnly`, review T1); its OK says it runs commands on the user's
- *  computers, and a computer at read-only never opens one for a plugin (`refused`). Components only.
+ *  one. Any plugin may ask for it (the owner, 2026-11-15); its OK warns that it runs commands as the user outside
+ *  Clover's sandbox, and a computer at read-only never opens one for a plugin (`refused`). Components only.
  *  What reaches a terminal is not written by the component: lane E's runtime derives it from trusted input events.
  *  `input` takes the `keydown` or `paste` event itself; a trusted key press becomes its bytes, and a trusted paste goes
  *  through the paste door, which takes the clipboard's text, brackets it when the program turned bracketed paste on,
  *  and asks the user before one of more than one line goes. An untrusted or made-up event sends nothing. */
-/** `plugins.install`, bundled-only (the plugin index browser): what it installs lands found, with its sealed OK card, and
+/** `plugins.install` (the plugin index browser's, or any plugin's that the user OK'd with it): what it installs lands found, with its sealed OK card, and
  *  never runs before the user's OK (F-M2's review, S1). Components only. */
 export interface PluginsApi {
   install(source: InstallSource): Promise<{ id: string; state: PluginState; card?: string }>;

@@ -95,6 +95,10 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
 - `api.ui.send(event, data)`: to the plugin's components (`api.host.on` there).
 - `api.points.entries(name)` / `watch` / `call`: entries of a point the plugin declared, and their handlers
   (plugin-ui, "Points": which entries show, and how `call` runs a contributor's export).
+- `api.points.active(name)` / `onActive(name, listener)`: for a point that takes one filler at a time
+  (`oneAtATime`, plugin-manifest), which entry is active (`{ pluginId, entryId }`, or undefined with none running):
+  the user's pick in Settings, else the default. Your tree reads it, and so does a plugin that fills it (to know
+  whether it is the one). No call changes it: only the user does, in Settings.
 - `api.net.fetch(url, init, { auth })`: HTTPS to the hosts the plugin holds as `network:<host>`; the core adds the
   key from the plugin's `auth` (the code never sees it). Every other host fails. Use it rather than a plain `fetch`: it is the door the fence keeps open.
 - `api.secrets.get(name)`: only with `host.process: "own"`. Most plugins never need it: let `net.fetch` add the key.

@@ -22,6 +22,10 @@ export interface CorePointInfo {
   readonly runsOn: string;
   readonly doc: string;
   readonly shipsWith: string;
+  /** One filler at a time (§5.4 "One at a time"): the platform keeps which entry is active; Settings' picker is titled
+   *  by `title`. */
+  readonly oneAtATime?: boolean;
+  readonly title?: string;
 }
 
 export const CORE_POINTS: readonly CorePointInfo[] = [
@@ -82,6 +86,9 @@ export interface DataPointInfo {
   readonly entry: z.ZodType;
   readonly kind: "data" | "code";
   readonly doc: string;
+  /** One filler at a time (§5.4 "One at a time"), with the title Settings' picker shows. */
+  readonly oneAtATime?: boolean;
+  readonly title?: string;
 }
 
 /** One `avatar.formats` entry: what a renderer plugin declares about the model format it draws. */
@@ -139,4 +146,16 @@ export const WELL_KNOWN_POINT_NAMES: ReadonlySet<string> = new Set([
 
 export function dataPointInfo(name: string): DataPointInfo | undefined {
   return DATA_POINTS.find((p) => p.name === name);
+}
+
+/** Whether a point takes one filler at a time (§5.4 "One at a time"), with the title Settings' picker shows: a core
+ *  point's from `CORE_POINTS`, any other's from its declaration (a well-known name's declaration is the catalog's). */
+export function oneAtATimeOf(name: string, decl: { oneAtATime?: boolean; title?: unknown } | undefined): { title: string | { en: string; [lang: string]: string } } | undefined {
+  const core = CORE_POINTS.find((p) => p.name === name);
+  if (core !== undefined) return core.oneAtATime === true ? { title: core.title ?? name } : undefined;
+  if (decl?.oneAtATime !== true) return undefined;
+  const t = decl.title;
+  if (typeof t === "string" && t !== "") return { title: t };
+  if (typeof t === "object" && t !== null && typeof (t as { en?: unknown }).en === "string") return { title: t as { en: string; [lang: string]: string } };
+  return { title: name };
 }

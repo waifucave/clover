@@ -224,6 +224,22 @@ describe("what a layer hears and reads of other plugins", () => {
     states.set("luna", { enabled: false, state: "off" });
     await expect(read("luna")).rejects.toMatchObject({ code: "plugin_stopped" });
   });
+
+  test("points.active from a page (one at a time, P4): the declarer's tree and a filler read which entry is used; another plugin doesn't; onActive is a watch", async () => {
+    const decl = { name: "luna.deck", shape: "list", declaredBy: { pluginId: "luna", ref: "host" }, spot: false, active: true, decl: { shape: "list", oneAtATime: true, title: "Deck", fields: { type: "object", properties: { id: { type: "string" } } } } };
+    const registry = {
+      get: (id: string) => ({ id, enabled: true, state: "running", granted: [] }),
+      points: () => [decl],
+      entries: (p: string) => (p !== "luna.deck" ? [] : ["fool", "tower"].map((id) => ({ point: "luna.deck", pluginId: `tarot-${id}`, ref: "luna.deck/0", entryId: id, state: "active", value: { id } }))),
+      chosen: () => ({ pluginId: "tarot-tower", entryId: "tower" }),
+      watch: () => () => {},
+    };
+    const router = createApiRouter({ registry: registry as never, handlers: [pointsApi({ registry: registry as never, host: { invoke: async () => undefined } as never, assetUrl: (id, p) => `a://${id}/${p}` })] });
+    const read = (pluginId: string) => router({ pluginId, process: "ui", path: "points.active", args: ["luna.deck"], caller: plugin(pluginId) } as never);
+    for (const reader of ["luna", "luna/page", "tarot-fool"]) expect(await read(reader)).toEqual({ pluginId: "tarot-tower", entryId: "tower" });
+    await expect(read("vn-composer")).rejects.toMatchObject({ code: "refused" });
+    expect([layerCallRefusal("points.active"), layerCallRefusal("points.onActive", true)]).toEqual([undefined, undefined]);
+  });
 });
 
 /** The calls a layer makes to its own plugin's own things (`plugin.layer.call`), and what holds each to that plugin. The
@@ -242,7 +258,7 @@ const OWN_CALLS: Record<string, string> = {
   "avatar.report": "the bundled stage's report of the renderer it drew for a bot (`avatar.report`, the `clover` tree only)",
   "confirm": "a question to the user on the app's own sealed card naming the plugin; the answer only",
   "confirmCard": "the same, with the card's id",
-  "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`, bundled-only)",
+  "plugins.install": "an install through the user's door, behind its OK card naming the plugin (`plugins.install`)",
 };
 
 describe("plugin.layer.call, as a class", () => {

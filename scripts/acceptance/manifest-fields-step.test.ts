@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { botPartLines, describeOk, validateManifest } from "../../packages/plugin-sdk/src/manifest/validate";
 import { validatePluginFolder } from "../../packages/core/src/registry/validate";
-import { AGENTS_ONLY_SHORT, BACKGROUND_IDS, writeBackground, BOT_COMMAND_REFUSAL, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, HELPER_REFUSAL, NODE_REFUSAL, oldSidebarTaken, offerWrong, OWN_BOT_ITEMS, ownBotWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeOldSidebarTheme, writeReach, writeRefusals, writeRefused } from "./manifest-fields-step";
+import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
+import { asksAllWrong, ONCE_CLOVERS_OWN, writeAsksAll, AGENTS_ONLY_SHORT, BACKGROUND_IDS, writeBackground, BOT_COMMAND_REFUSAL, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, HELPER_REFUSAL, NODE_REFUSAL, oldSidebarTaken, offerWrong, OWN_BOT_ITEMS, ownBotWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeOldSidebarTheme, writeReach, writeRefusals, writeRefused } from "./manifest-fields-step";
 
 const root = mkdtempSync(join(tmpdir(), "clover-b-fields-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -35,6 +36,19 @@ test("the background fixtures validate; the OK says it keeps a part running, and
   expect(describeOk(read(sound))).toContain("It keeps a part running in the background while Clover is open.");
   expect(read(sound).capabilities).toEqual(["audio"]);
   expect(read(quiet).capabilities).toEqual([]);
+});
+
+test("R1: the plugin that asks for the six that were Clover's own validates, its OK lines are the catalog's warnings, and the verdict names each miss", async () => {
+  const dir = writeAsksAll(root);
+  expect(await errors(dir)).toEqual([]);
+  const v = await validatePluginFolder(dir, { os: "macos" });
+  const card = JSON.stringify(v.okText ?? []);
+  const okLines = Object.fromEntries(ONCE_CLOVERS_OWN.map((cap) => [cap, CAPABILITIES.find((x) => x.name === cap)!.ok]));
+  for (const cap of ONCE_CLOVERS_OWN) expect(CAPABILITIES.find((x) => x.name === cap)?.warns).toBe(true);
+  const all = { card, granted: [...ONCE_CLOVERS_OWN], okLines, terminal: "opened t1", avatar: "answered", install: "found acc-asked-npm", fetched: "{\"text\":\"ACCEPTANCE-ARTICLE-TEXT\"}" };
+  expect(asksAllWrong(all)).toEqual([]);
+  expect(asksAllWrong({ card, granted: [...ONCE_CLOVERS_OWN], okLines })).toEqual([]);
+  expect(asksAllWrong({ ...all, granted: ["browser"], terminal: "refused: terminal isn't granted" })).toHaveLength(6);
 });
 
 test("the plugin with a bot validates and its OK lines are the ones the row looks for; a bot's entry on the sidebar is refused with its words", async () => {

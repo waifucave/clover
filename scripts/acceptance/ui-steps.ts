@@ -13,6 +13,7 @@ import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
 import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeOfficePanels } from "./manifest-fields-step";
+import { ACTIVE_IDS, ACTIVE_NAMES, ACTIVE_POINT, ACTIVE_TITLE, activeWrong, writeActiveOne, type ActiveSeen } from "./active-one-step";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
 export interface UiRow { name: string; status: UiStatus; detail: string }
@@ -47,6 +48,7 @@ export const UI_STEPS = [
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
   "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
   "a plugin keeps a part running in the background (`app.background`, the owner, November 15): it is mounted in a hidden window of its own while the app is open, keeps counting at its real rate while hidden and through the main window being closed and opened again, plays a generated tone with no press when its plugin holds `audio` (made and measured in the page, muted at the app's output), gets no sound without it, and goes when the plugin is turned off",
+  "a point that takes one filler at a time (P4, the owner, November 15): a folder plugin declares one and three folder plugins fill it; the first installed is the default, Settings › Plugins draws one picker titled by the point's own title, the user's press picks the second (the declarer's host reads it and hears it, the filler reads it too), the second turned off lets the first stand in (the picker says so and the user is told once), and turned on again it is the one again",
 ] as const;
 
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
@@ -102,6 +104,8 @@ interface Ctx {
   pressKey?(key: string, modifiers: string[]): void;
   /** Closes the main window, or opens it again, as the user would (a file the test build watches: CLOVER_TEST_WINDOW_FILE). */
   mainWindow?(what: "close" | "open"): void;
+  /** The daemon's own log, as text (what the core says it told the user). */
+  daemonLog?(): string;
   /** The folder the test build's picker gives (CLOVER_TEST_PICK) and the plugin it holds. */
   pickFolder?: { path: string; id: string; name: string; tool: string };
   /** Only these window steps run (`--only-ui`), by their place in UI_STEPS; the others are skipped, not recorded. */
@@ -3267,6 +3271,73 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return said.join("; ");
     } finally {
       for (const id of ids) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  // 29: one at a time (P4, the owner, November 15: no plugin's own setting decides which voice mode, stage or other filler is
+  // used). A folder plugin declares `acc-deck.mode` with `oneAtATime` and a title; three folder plugins fill it (none bundled,
+  // so the first installed is the default). Each host half's `active` command says what `points.active` answers and what
+  // `points.onActive` heard. Settings › Plugins draws one picker titled by the point's title, the user's press on the second
+  // makes it the one (the declarer hears it, the second filler reads itself), the second turned off lets the first stand in
+  // (the picker's note, and the daemon's notice to the user), and turned on again the user's pick is the one again.
+  await step(29, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const parent = mkdtempSync(join(tmpdir(), "clover-active-"));
+    const folders = writeActiveOne(parent);
+    const order = [[ACTIVE_IDS.deck, folders.deck], [ACTIVE_IDS.one, folders.one], [ACTIVE_IDS.two, folders.two], [ACTIVE_IDS.three, folders.three]] as const;
+    const asked = async (id: string) => (await rpc.request<{ result: { active: string; heard: string[] } }>("command.run", { name: `${id}.active`, args: {} }, 30_000)).result;
+    const group = `.cl-settings__one [role=radiogroup][aria-label=${JSON.stringify(ACTIVE_TITLE)}]`;
+    const pickerNow = async () => (await inTree<string>(cdp, `(() => { const g = document.querySelector(${JSON.stringify(group)}); if (!g) return null; return JSON.stringify({ title: g.getAttribute('aria-label'), options: [...g.querySelectorAll('[role=radio]')].map((r) => [r.textContent, r.getAttribute('aria-checked') === 'true']), note: g.closest('.cl-settings__one')?.querySelector('.cl-settings__detail')?.textContent ?? '' }); })()`))?.value;
+    type Drawn = { title: string; options: [string, boolean][]; note: string };
+    const drawnPicker = (what: string, ok: (d: Drawn) => boolean) => until(what, 30_000, async () => {
+      const v = await pickerNow();
+      const d = v === undefined ? undefined : (JSON.parse(v) as Drawn);
+      return d !== undefined && ok(d) ? d : undefined;
+    }, () => dumpFrames(cdp));
+    const openPlugins = async () => {
+      await escape();
+      await clickIn("the Settings button", "button[aria-label=Settings]", undefined);
+      await clickIn("the Settings window's Plugins section", "button.cl-settings__section", "Plugins");
+    };
+    try {
+      for (const [id, folder] of order) {
+        const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+        if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+        await ctx.pressCard!(`${id}'s OK card`, (c) => c.kind === "plugin-ok" && c.pluginId === id);
+        await until(`${id} running`, 30_000, async () => ((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+      }
+      const before = (await asked(ACTIVE_IDS.deck)).active;
+      // Settings › Plugins: the picker, from the registry, titled by the point's own title. A layer installed a moment ago
+      // loads the window's document again, which closes a dialog opened before it: opened again until the picker shows.
+      let shown: Drawn | undefined;
+      for (let attempt = 0; attempt < 3 && shown === undefined; attempt++) {
+        await openPlugins().catch(() => undefined);
+        shown = await drawnPicker("the deck mode picker", (d) => d.options.length === 3).catch(() => undefined);
+      }
+      if (shown === undefined) fail(`Settings › Plugins drew no picker titled "${ACTIVE_TITLE}" (point.active.list: ${JSON.stringify(await rpc.request("point.active.list", {}).catch((e: unknown) => String(e))).slice(0, 600)})`);
+      // The user's press on the second, in the window.
+      await clickIn(`the picker's ${ACTIVE_NAMES.two}`, `${group} [role=radio]`, ACTIVE_NAMES.two);
+      await drawnPicker("the second pressed", (d) => d.options.some(([n, on]) => n === ACTIVE_NAMES.two && on));
+      const picked = await until("the declarer to hear the pick", 20_000, async () => { const a = await asked(ACTIVE_IDS.deck); return a.heard.length > 0 ? a : undefined; });
+      const fillerSees = (await asked(ACTIVE_IDS.two)).active;
+      // The second turned off: the first stands in, the picker says so, and the daemon tells the user once.
+      await rpc.request("plugin.setEnabled", { id: ACTIVE_IDS.two, enabled: false }, 30_000);
+      const offActive = await until("the first standing in", 20_000, async () => { const a = (await asked(ACTIVE_IDS.deck)).active; return a.includes(ACTIVE_IDS.one) ? a : undefined; }).catch(async () => (await asked(ACTIVE_IDS.deck)).active);
+      await openPlugins().catch(() => undefined);
+      const note = (await drawnPicker("the picker with the first standing in", (d) => d.note.includes("isn't running")).catch(() => undefined))?.note ?? "";
+      const noticeLine = `${ACTIVE_POINT}: ${ACTIVE_NAMES.two} isn't running, so ${ACTIVE_NAMES.one} takes its place for now.`;
+      const notice = ctx.daemonLog === undefined ? false : await until("the daemon's notice", 10_000, async () => (ctx.daemonLog!().includes(noticeLine) ? true : undefined)).catch(() => false);
+      await rpc.request("plugin.setEnabled", { id: ACTIVE_IDS.two, enabled: true }, 30_000);
+      const back = await until("the user's pick again", 30_000, async () => { const a = (await asked(ACTIVE_IDS.deck)).active; return a.includes(ACTIVE_IDS.two) ? a : undefined; }).catch(async () => (await asked(ACTIVE_IDS.deck)).active);
+      const seen: ActiveSeen = { before, picker: { title: shown!.title, options: shown!.options }, picked: { active: picked.active, heard: picked.heard }, fillerSees, off: { active: offActive, note, notice }, back };
+      const wrong = activeWrong(seen);
+      if (/window: shown while headless/.test(ctx.appLog())) wrong.push("a window was shown while headless");
+      if (wrong.length > 0) fail(`${wrong.join("; ")} (${JSON.stringify(seen).slice(0, 800)})`);
+      return `the default was the first installed (${before}); Settings › Plugins drew "${ACTIVE_TITLE}" with ${shown!.options.map(([n]) => n).join(", ")}; the user's press made ${picked.active} the one (the declarer heard ${picked.heard.join(", ")}, the second filler read ${fillerSees}); the second off, ${offActive} stood in ("${note}") and the daemon told the user once; on again, ${back} was the one`;
+    } finally {
+      await escape().catch(() => undefined);
+      for (const [id] of [...order].reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
   });

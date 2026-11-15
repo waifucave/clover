@@ -12,9 +12,9 @@ import {
   EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot,
 } from "../contracts/plugin-registry-rules";
 import type { CoreEntries, Manifest, PointDecl } from "../contracts/sdk-types";
-import { botNameOf, contributionLabels, mayHoldCapability, pluginParts } from "@waifucave/clover-plugin-sdk";
+import { botNameOf, contributionLabels, pluginParts } from "@waifucave/clover-plugin-sdk";
 import type { ChangeKind } from "./changes";
-import type { PluginState as StoredState, RegistryStore } from "./state";
+import type { PluginState as StoredState, RegistryStateFile, RegistryStore } from "./state";
 
 /** A plugin as its folder shows it now (the fake's `FakePluginInput`, field for field). */
 export interface RegistryInput {
@@ -475,7 +475,7 @@ export class RegistryCore implements PluginRegistry {
     }
     this.#persist(ids);
     const before = this.#snap;
-    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, mayHold: mayHoldCapability, labels: contributionLabels, ...(this.#o.platform !== undefined ? { platform: this.#o.platform } : {}) });
+    this.#snap = computeRegistry(plugins, { catalog: this.#o.catalog, adultConfirmed: this.#adult, labels: contributionLabels, ...(this.#o.platform !== undefined ? { platform: this.#o.platform } : {}) });
     const changes = registryChanges(before, this.#snap);
     for (const change of changes) this.#listeners.emit(change);
     // A plugin whose tree changed under the same id (an update applied, a folder edited) and is still there, when the
@@ -513,10 +513,35 @@ export class RegistryCore implements PluginRegistry {
       else if (this.#state.plugins[id] !== undefined) plugins[id] = this.#state.plugins[id]!;
     }
     const order = [...ids.filter((id) => plugins[id] !== undefined), ...this.#state.order.filter((id) => !ids.includes(id) && plugins[id] !== undefined)];
-    const next = { ...this.#state, order, plugins };
+    // The user's one-at-a-time choices (§5.4) go with their plugin's record: a removed plugin takes its choices along.
+    const active = Object.fromEntries(Object.entries(this.#state.active ?? {}).filter(([, r]) => plugins[r.pluginId] !== undefined));
+    const next: RegistryStateFile = { ...this.#state, order, plugins };
+    if (Object.keys(active).length > 0) next.active = active;
+    else delete next.active;
     if (JSON.stringify(next) === JSON.stringify(this.#state)) return;
     this.#state = next;
     this.#o.store.save(next);
+  }
+
+  /** The user's choice for a one-at-a-time point (§5.4 "One at a time"), from the records. */
+  chosen(point: string): { pluginId: string; entryId: string } | undefined {
+    const r = this.#state.active?.[point];
+    return r === undefined ? undefined : { pluginId: r.pluginId, entryId: r.entryId };
+  }
+
+  /** Keeps the user's choice for a one-at-a-time point, or forgets it (`point.active.set`, the user's own door, checks
+   *  the point and the entry first), and reports it as the point's change. */
+  choose(point: string, ref: { pluginId: string; entryId: string } | undefined): void {
+    const active = { ...(this.#state.active ?? {}) };
+    if (ref === undefined) delete active[point];
+    else active[point] = { pluginId: ref.pluginId, entryId: ref.entryId };
+    const next: RegistryStateFile = { ...this.#state };
+    if (Object.keys(active).length > 0) next.active = active;
+    else delete next.active;
+    if (JSON.stringify(next) === JSON.stringify(this.#state)) return;
+    this.#state = next;
+    this.#o.store.save(next);
+    this.#listeners.emit({ type: "entries", point });
   }
 
   /** The records' development folders (`folders.ts` keeps them). */

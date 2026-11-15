@@ -40,7 +40,7 @@ export function catalogPointDecl(name: string): PointDecl | undefined {
     };
   }
   const p = dataPointInfo(name)!;
-  return { shape: p.shape, fields: schema(p.entry), doc: p.doc };
+  return { shape: p.shape, fields: schema(p.entry), doc: p.doc, ...(p.oneAtATime === true ? { oneAtATime: true, ...(p.title !== undefined ? { title: p.title } : {}) } : {}) };
 }
 
 export function catalogJson() {

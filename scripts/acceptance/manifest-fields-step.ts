@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
 import { resolveShell } from "../../packages/plugin-sdk/src/formats/shell";
 
-export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session";
+export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session; a folder plugin that asks for the six capabilities that were Clover's own (browser, terminal, plugins.install, plugins.watch, avatar.report, network:public): its OK card warns of each, OK'd each is granted, and its terminal, its figure report, its install from npm and its public page answer";
 
 export const ENGINES = { clover: "^1.0.0" } as const;
 
@@ -28,7 +28,50 @@ export const FIELDS_IDS = {
   bot: "acc-juniper",
   botSidebar: "acc-bot-sidebar",
   oldSidebar: "acc-old-sidebar",
+  asksAll: "acc-asks-all",
 } as const;
+
+/** R1 (the owner, 2026-11-15: "Yes, all with a warning"): the six capabilities that were Clover's own. */
+export const ONCE_CLOVERS_OWN = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"] as const;
+
+/** The public page its host fetches through `network:public` (the run's outside world serves it: fake-exa.ts). */
+export const ASKS_ALL_PAGE = "https://news.acceptance-site.com/article";
+
+/** A folder plugin that asks for the six, with a host half whose `fetchPublic` command reads a public page keyless. */
+export function writeAsksAll(root: string): string {
+  const host = [
+    "// The acceptance run's R1 fixture (written by the run): a plugin that asks for the six capabilities that were Clover's own.",
+    "let api;",
+    "export async function start(a) { api = a; }",
+    "export async function stop() {}",
+    `export async function fetchPublic() { const r = await api.net.fetch(${JSON.stringify(ASKS_ALL_PAGE)}); return { status: r.status, text: (await r.text()).slice(0, 400) }; }`,
+    "",
+  ].join("\n");
+  return writePlugin(join(root, FIELDS_IDS.asksAll), {
+    manifest: 1, id: FIELDS_IDS.asksAll, name: "Asks for all", version: "1.0.0", engines: ENGINES,
+    host: { entry: "host/index.js", runtime: "bun" },
+    capabilities: [...ONCE_CLOVERS_OWN],
+    contributes: { commands: [{ name: "fetch-public", description: "Reads a public page keyless", handler: "fetchPublic", args: { type: "object", properties: {}, additionalProperties: false } }] },
+  }, host);
+}
+
+/** What is wrong with the R1 clause's answers; empty when each of the six was on the card, granted, and each call it
+ *  made answered. A call left undefined wasn't made (a component's calls go through `plugin.layer.api`, the app's own
+ *  method, which a packaged core's CLI-role run can't make; the npm install and the public page need the run's outside
+ *  world). `browser` and `plugins.watch` gate no call this row makes: the first is served by id until F5, the second
+ *  is events only. */
+export function asksAllWrong(o: { card: string; granted: readonly string[]; okLines: Readonly<Record<string, string>>; terminal?: string; avatar?: string; install?: string; fetched?: string }): string[] {
+  const wrong: string[] = [];
+  for (const cap of ONCE_CLOVERS_OWN) {
+    if (!o.card.includes(`It ${o.okLines[cap]}.`)) wrong.push(`its OK card doesn't carry ${cap}'s warning line ("It ${o.okLines[cap]}.")`);
+    if (!o.granted.includes(cap)) wrong.push(`${cap} isn't granted after its OK (${JSON.stringify(o.granted)})`);
+  }
+  if (o.terminal !== undefined && !o.terminal.startsWith("opened")) wrong.push(`terminal.open: ${o.terminal.slice(0, 200)}`);
+  if (o.avatar !== undefined && o.avatar !== "answered") wrong.push(`avatar.report: ${o.avatar.slice(0, 200)}`);
+  if (o.install !== undefined && !o.install.startsWith("found")) wrong.push(`plugins.install: ${o.install.slice(0, 200)}`);
+  if (o.fetched !== undefined && !o.fetched.includes("ACCEPTANCE-ARTICLE-TEXT")) wrong.push(`net.fetch of a public page (network:public): ${o.fetched.slice(0, 200)}`);
+  return wrong;
+}
 
 /** A host half that serves the named host MCP servers, each with its tools, every tool answering `<tool>-pong` unless
  *  `calls` names it (tool → body of an async function of the host's `api`, run while serving the call, so its API calls

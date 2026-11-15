@@ -8,8 +8,8 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
-  reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
+  reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer, describeOk,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -20,26 +20,47 @@ describe("capabilities", () => {
       "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
+      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders",
+      "drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there",
+      "runs commands in a terminal on your computers, as you, outside Clover's sandbox",
+      "downloads other plugins from the indexes and npm onto your computer, each waiting for your OK on its own card",
+      "sees every plugin you have, whether it's on, and when you add or remove one",
+      "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
+      "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
       "can ask your voice providers to transcribe, which may use your accounts with them",
-      "connects to any public website, through Clover's web safeguards",
+      "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
     ]);
   });
 
-  test("terminal is for the bundled clover tree only, decided from the install record (review T1)", () => {
-    expect(mayHoldCapability("terminal", { id: "clover/panel-terminal", source: "bundled" })).toBe(true);
-    expect(mayHoldCapability("terminal", { id: "clover/panel-terminal", source: "store" })).toBe(false);
-    expect(mayHoldCapability("terminal", { id: "luna", source: "bundled" })).toBe(false);
-    expect(mayHoldCapability("files", { id: "luna", source: "store" })).toBe(true);
-    const term = (id: string, parent?: { id: string; namespace: string }) => validateManifest(
-      { manifest: 1, ...(parent ? {} : { id }), name: "T", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: ["terminal"] },
-      parent ? { parent, folderName: id, bundled: true } : { folderName: id },
-    );
-    expect(term("shellish").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
-    expect(term("panel-terminal", { id: "clover", namespace: "clover" }).issues.map((i) => i.code)).toEqual([]);
+  test("no capability is Clover's own: any plugin may ask for the six that were (the owner, 2026-11-15), each a warning on its card", () => {
+    const six = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"];
+    for (const name of six) expect({ name, warns: CAPABILITIES.find((c) => c.name === name)?.warns }).toEqual({ name, warns: true });
+    expect(CAPABILITIES.some((c) => "bundledOnly" in c)).toBe(false);
+    const asks = validateManifest({ manifest: 1, id: "asks-all", name: "Asks", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: six }, { folderName: "asks-all" });
+    expect(asks.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const ok = describeOk(asks);
+    for (const name of six) expect(ok).toContain(`It ${CAPABILITIES.find((c) => c.name === name)!.ok}.`);
   });
 
-  test("network:public is the clover tree's alone: any public host through the core's fetch, no host for its components", () => {
+  test("a web plugin's tools are its manifest's (webSearch, webFetch, needs), any plugin's, each a warning on its card", () => {
+    const web = (server: Record<string, unknown>, capabilities: string[] = ["network:search.example.com", "network:public"]) => validateManifest(
+      { manifest: 1, id: "acme-web", name: "Acme web", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities, contributes: { mcpServers: { web: { type: "host", tools: { Search: "preload", Fetch: "preload" }, ...server } } } },
+      { folderName: "acme-web" },
+    );
+    const good = web({ webSearch: ["Search"], webFetch: ["Fetch"], needs: { Fetch: "network:public" } });
+    expect(good.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(good.webTools).toEqual([{ server: "web", search: ["Search"], fetch: ["Fetch"] }]);
+    const ok = describeOk(good);
+    expect(ok).toContain("Its server web says Search searches the web: at the default approval level a search runs without asking, and what a bot searches goes to this plugin.");
+    expect(ok.some((l) => l.startsWith("Its server web says Fetch reads web pages: at the default approval level a page whose link a bot already has is read without asking"))).toBe(true);
+    // A page fetch needs network:public; a search a network: capability; a need a declared capability; one tool, one list.
+    expect(web({ webFetch: ["Fetch"] }, ["network:search.example.com"]).issues.map((i) => i.code)).toEqual(["web_tool_no_network"]);
+    expect(web({ webSearch: ["Search"] }, []).issues.map((i) => i.code)).toEqual(["web_tool_no_network"]);
+    expect(web({ needs: { Fetch: "browser" } }).issues.map((i) => i.code)).toEqual(["tool_needs_undeclared"]);
+    expect(web({ readOnly: ["Search"], webSearch: ["Search"] }).issues.map((i) => i.code)).toEqual(["tool_in_both_lists"]);
+  });
+
+  test("network:public: any public host through the core's fetch, no host for its components", () => {
     expect(parseCapability("network:public")).toEqual({ kind: "fixed", name: "network:public" });
     expect(reachesPublicNetwork(["network:public"])).toBe(true);
     expect(reachesPublicNetwork(["network:api.example.com"])).toBe(false);
@@ -47,12 +68,11 @@ describe("capabilities", () => {
       { manifest: 1, ...(parent ? {} : { id }), name: "Web", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities: ["network:public"] },
       parent ? { parent, folderName: id, bundled: true } : { folderName: id },
     );
-    expect(web("webby").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
+    expect(web("webby").issues).toEqual([]);
+    expect(web("webby").networkHosts).toEqual([]);
     const bundled = web("web", { id: "clover", namespace: "clover" });
     expect(bundled.issues).toEqual([]);
     expect(bundled.networkHosts).toEqual([]);
-    expect(mayHoldCapability("network:public", { id: "clover/web", source: "bundled" })).toBe(true);
-    expect(mayHoldCapability("network:public", { id: "luna", source: "store" })).toBe(false);
   });
 
   test("network:<host> is a name, an IP, with :port if needed, or *. and a domain (§5.4)", () => {

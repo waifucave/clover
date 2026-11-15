@@ -16,7 +16,7 @@ import { LanguageChooser } from "./LanguageChooser";
 import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
 import { SettingsModal } from "./SettingsModal";
 import { S } from "./strings";
-import type { ExtraSection, Language, SettingsSection, SettingsValues, ToolPermission } from "./types";
+import type { ExtraSection, Language, OneAtATimeView, SettingsSection, SettingsValues, ToolPermission } from "./types";
 
 /** `tool.permissions`' answer. */
 interface ToolsRaw { plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; isNew?: boolean; cardRules: { bot: string; computers: string[] }[] }[] }[] }
@@ -160,6 +160,16 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     void (core.call as (m: string, p: unknown) => Promise<ToolsRaw>)("tool.permissions", {}).then((r) => live && setToolsRaw(r), () => live && setFailure(S.choiceFailed(S.section.tools)));
     return () => { live = false; };
   }, [section, core, toolsRev]);
+  // One at a time (spec §5.4): the points' pickers on the Plugins page, read when it opens, after a pick, and after a
+  // plugin is switched (its fillers change).
+  const [oneRaw, setOneRaw] = useState<{ points: { point: string; title: string | { en: string }; fillers: OneAtATimeView["fillers"]; active?: OneAtATimeView["active"]; chosen?: OneAtATimeView["chosen"] }[] } | undefined>(undefined);
+  const [oneRev, setOneRev] = useState(0);
+  useEffect(() => {
+    if (section !== "plugins" || core === undefined) return;
+    let live = true;
+    void (core.call as (m: string, p: unknown) => Promise<NonNullable<typeof oneRaw>>)("point.active.list", {}).then((r) => live && setOneRaw(r), () => undefined);
+    return () => { live = false; };
+  }, [section, core, oneRev, revision]);
   const toolsCall = (m: string, p: unknown): void => {
     void (core!.call as (m: string, p: unknown) => Promise<unknown>)(m, p).then(() => setToolsRev((r) => r + 1), () => setFailure(S.choiceFailed(S.section.tools)));
   };
@@ -304,6 +314,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       extraSections={extra}
       {...(toolsRaw !== undefined ? { tools: { plugins: toolsRaw.plugins.map((p) => ({ ...p, tools: p.tools.map((t) => ({ ...t, cardRules: t.cardRules.map((r) => ({ ...r, botName: bots.find((b) => b.id === r.bot)?.name ?? r.bot })) })) })) } } : {})}
       {...(core ? { onSetTool: (server: string, tool: string | undefined, permission: ToolPermission) => toolsCall("tool.setPermission", { server, ...(tool !== undefined ? { tool } : {}), permission }), onTakeBackRule: (server: string, tool: string, bot: string) => toolsCall("tool.takeBackRule", { server, tool, bot }) } : {})}
+      {...(oneRaw !== undefined ? { oneAtATime: oneRaw.points.map((p) => ({ ...p, title: typeof p.title === "string" ? p.title : p.title.en })) } : {})}
+      {...(core ? { onPickActive: (point: string, entry: { pluginId: string; entryId: string }) => void (core.call as (m: string, p: unknown) => Promise<unknown>)("point.active.set", { point, entry }).then(() => setOneRev((r) => r + 1), () => setFailure(S.choiceFailed(S.section.plugins))) } : {})}
     />
   );
 }

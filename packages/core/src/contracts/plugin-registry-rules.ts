@@ -44,10 +44,6 @@ export interface RegistryRuleOptions {
   catalog: (name: string) => PointDecl | undefined;
   /** The user confirmed they are 18 or older (§5.7). */
   adultConfirmed: boolean;
-  /** Whether a plugin may hold a capability at all (the plugin SDK's `mayHoldCapability`: a bundled-only one only in
-   *  Clover's own tree, by its install source and top id). Required, so every caller of the rules decides it: `granted`
-   *  never carries what it refuses, whatever the manifest or the records say. */
-  mayHold: (capability: string, plugin: { id: string; source: string }) => boolean;
   /** This computer's platform (`darwin-arm64`, …): a plugin whose `platforms` leaves it out is off here, with why.
    *  Absent: no plugin is held to its `platforms` (a test's rules). */
   platform?: string;
@@ -297,11 +293,8 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       // Granted: what the user's OK covers and the plugin may use now. A change that adds a capability asks again
       // (§5.6), so an OK'd tree's capabilities are always the OK's or fewer; nothing is granted before the OK, after a
       // refusal or a block, or for an invalid plugin.
-      // A capability the plugin may not hold at all (bundled-only, outside Clover's own tree by its install source) is
-      // never granted, even where the validator was skipped.
-      granted: held.approved && top.approved && !["found", "refused", "invalid"].includes(state)
-        ? (m.capabilities ?? []).filter((c) => opts.mayHold(c, { id: parentOf(id) ?? id, source: top.source ?? held.source ?? "local" }))
-        : [],
+      // Any plugin may hold any capability (the owner, 2026-11-15: "Yes, all with a warning"): the OK is the gate.
+      granted: held.approved && top.approved && !["found", "refused", "invalid"].includes(state) ? [...(m.capabilities ?? [])] : [],
       issues: structuredClone(held.issues ?? []),
       provenance: held.provenance ?? { by: "user-app", at: 0 },
     });

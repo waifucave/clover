@@ -157,6 +157,12 @@ export interface PluginRegistry {
    *  plugin's edit in place): what `watch` doesn't report. The plugin host reloads its host half on it and its MCP
    *  servers are listed again. Optional: a registry whose trees never change in place has none. */
   watchTrees?(fn: (changed: { id: string }) => void): Unsubscribe;
+  /** The user's choice for a one-at-a-time point (§5.4 "One at a time"), kept with the records: the entry they picked
+   *  in Settings, whether it runs now or not; undefined when they picked none. A removed plugin's choices go with it. */
+  chosen?(point: string): { pluginId: string; entryId: string } | undefined;
+  /** Keeps the user's choice (only the user's own door calls it: Settings' picker, `point.active.set`), or forgets it;
+   *  reported as an `entries` change of the point. */
+  choose?(point: string, ref: { pluginId: string; entryId: string } | undefined): void;
 }
 
 /** The entry field each core point keeps unique among enabled plugins (§5.1 "Entry ids"); the plugin SDK's catalog

@@ -334,6 +334,8 @@ const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; own
   "tool.permissions": { parts: ["clover/settings"], gesture: [] },
   "tool.setPermission": { parts: ["clover/settings"], gesture: ["clover/settings"] },
   "tool.takeBackRule": { parts: ["clover/settings"], gesture: ["clover/settings"] },
+  "point.active.list": { parts: ["clover/settings"], gesture: [] },
+  "point.active.set": { parts: ["clover/settings"], gesture: ["clover/settings"] },
   "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
   "plugin.grant.list": { parts: [PLUGINS_PART], gesture: [] },
@@ -388,6 +390,8 @@ const WORST: Record<string, Worst> = {
   "tool.permissions": "read", // plugin tools by their own names, each with its value and the bots' saved card rules
   "tool.setPermission": "user's permission press", // always allow, ask or always block: the user's own press in Settings, never another part
   "tool.takeBackRule": "user's permission press", // takes back a card's Always allow for one bot
+  "point.active.list": "read", // the one-at-a-time points, their fillers and the one active, for Settings' pickers
+  "point.active.set": "user's permission press", // which filler of a one-at-a-time point is used: the user's own press in Settings
   "plugin.auth.list": "read",
   "plugin.dev.list": "read",
   "plugin.grant.list": "read", // the files and folders picked for one plugin: paths only the user chose
