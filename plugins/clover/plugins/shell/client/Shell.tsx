@@ -90,7 +90,7 @@ export function newestCoding(sessions: readonly SessionView[]): SessionView | un
 
 export function Shell({ props }: EntryProps<ShellProps>) {
   const api = usePluginApi();
-  const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api]);
+  const bots = useLiveList(api.bots ? () => api.bots!.list() : undefined, api.bots?.watch, (a, b) => a.id === b.id, [api], (b) => b.id);
   // Where the user is (the route, the tab under Settings, each tab's open panels and agent) outlives a reload of this
   // document: installing, turning on or updating a plugin with its own layer loads it again, and the window shows the
   // same place from its first frame (`useKept`, the window's own session storage).
@@ -106,6 +106,20 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   useEffect(() => {
     if (!route && bots && bots[0]) setRoute({ route: "bot", params: { bot: bots[0].id } });
   }, [route, bots]);
+
+  // A bot that is removed while its tab shows (or under Settings): the window goes to the first bot left, or the empty state, and the
+  // removed bot's kept panels and agent go with it.
+  const goneBot = [route, under].map((r) => (r?.route === "bot" ? r.params.bot : undefined)).find((id) => id !== undefined && bots !== undefined && !bots.some((b) => b.id === id));
+  useEffect(() => {
+    if (goneBot === undefined || !bots) return;
+    const first = bots[0] ? ({ route: "bot", params: { bot: bots[0].id } } as ShellRoute) : null;
+    if (route?.route === "bot" && route.params.bot === goneBot) setRoute(first);
+    if (under?.route === "bot" && under.params.bot === goneBot) setUnder(first);
+    const key = `bot:${goneBot}`;
+    setPanels((p) => (key in p ? Object.fromEntries(Object.entries(p).filter(([k]) => k !== key)) : p));
+    setAgents((a) => (key in a ? Object.fromEntries(Object.entries(a).filter(([k]) => k !== key)) : a));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goneBot]);
 
   const dialog = route?.route === "settings" ? route : undefined;
   const shown = dialog ? under : route;

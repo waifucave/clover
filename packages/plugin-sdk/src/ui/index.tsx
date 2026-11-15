@@ -1130,7 +1130,11 @@ export function usePluginApi(): PluginApi {
       bots: {
         list: () => call<{ bots: unknown[] }>("bot.list", {}).then((r) => r.bots),
         get: (bot: string) => call<{ bot: unknown }>("bot.get", { id: bot }).then((r) => r.bot),
-        watch: watcher(part.mount, part.entry.pluginId, "sessions", "bot_changed", "bot"),
+        watch: (listener: (bot: unknown) => void, onRemoved?: (id: string) => void): Unsubscribe => {
+          const off = watcher(part.mount, part.entry.pluginId, "sessions", "bot_changed", "bot")(listener);
+          const offRemoved = onRemoved === undefined ? undefined : watcher<string>(part.mount, part.entry.pluginId, "sessions", "bot_removed", "id")(onRemoved);
+          return () => { off(); offRemoved?.(); };
+        },
       } as unknown as PluginApi["bots"],
       computers: {
         list: () => call<{ computers: unknown[] }>("computer.list", {}).then((r) => r.computers),

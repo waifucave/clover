@@ -433,6 +433,25 @@ describe("the UI API in a layer", () => {
     expect((await hooks.api!.conversation!.get!("s")) as unknown).toEqual({ id: "s", computer: "Laptop" });
   });
 
+  test("the plugin API in a layer: bots.watch hears a changed bot, and, when asked, a removed one's id", async () => {
+    const changed: string[] = [];
+    const removed: string[] = [];
+    const off = hooks.api!.bots!.watch((b) => changed.push(b.id), (id) => removed.push(id));
+    await act(async () => {
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "bot_changed", bot: { id: "luna" } } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "bot_removed", id: "luna" } });
+      fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "bot_removed", id: "not-mine" } });
+    });
+    off();
+    expect([changed, removed]).toEqual([["luna"], ["luna"]]);
+    // With no `onRemoved`, nothing more is subscribed and a removal is not heard.
+    const only: string[] = [];
+    const offOnly = hooks.api!.bots!.watch((b) => only.push(b.id));
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "bot_removed", id: "luna" } }));
+    offOnly();
+    expect(only).toEqual([]);
+  });
+
   test("the plugin API in a layer: its own plugin's host half and store, on its own connection; its messages only", async () => {
     const api = hooks.api!;
     fake.calls.length = 0;

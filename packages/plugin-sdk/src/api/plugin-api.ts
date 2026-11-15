@@ -510,7 +510,8 @@ export interface MemoryApi {
 export interface BotsApi {
   list(): Promise<BotView[]>;
   get(bot: string): Promise<BotView>;
-  watch(listener: (bot: BotView) => void): Unsubscribe;
+  /** `listener` hears each bot that changes (or appears); `onRemoved`, when given, hears the id of each bot that is removed. */
+  watch(listener: (bot: BotView) => void, onRemoved?: (id: string) => void): Unsubscribe;
 }
 
 export interface RoutinesApi {
