@@ -84,13 +84,32 @@ export async function say(o: { bot: string; session: string; text: string; asked
   try {
     const audio = await a.points.stream(PROVIDERS, provider, "speak", { text: o.text, voice: voice.voice, ...(voice.model === undefined ? {} : { model: voice.model }), format: "pcm16-24k" }, { signal: abort.signal });
     const out = await a.streams.open(SPEECH, { meta: { bot: o.bot, session: o.session, utterance, asked: o.asked }, signal: abort.signal });
-    let bytes = 0;
-    void audio.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ transform: (c, ctl) => { bytes += c.length; ctl.enqueue(c); } }))
-      .pipeTo(out, { signal: abort.signal })
-      .then(() => log(`${o.bot}'s ${o.asked ? "asked " : ""}reply spoken by ${voice.provider} (${bytes} bytes)`), (err: unknown) => {
+    // The provider's bytes to the player as they come; the player's own pace holds the provider back (back-pressure).
+    const reader = audio.getReader();
+    const writer = out.getWriter();
+    abort.signal.addEventListener("abort", () => {
+      void reader.cancel("stopped").catch(() => undefined);
+      void writer.abort("stopped").catch(() => undefined);
+    }, { once: true });
+    void (async () => {
+      let bytes = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || abort.signal.aborted) break;
+          bytes += value.length;
+          await writer.write(value);
+        }
+        if (!abort.signal.aborted) await writer.close();
+        log(`${o.bot}'s ${o.asked ? "asked " : ""}reply spoken by ${voice.provider} (${bytes} bytes)`);
+      } catch (err) {
         if (!abort.signal.aborted) log(`${o.bot}'s reply wasn't spoken whole: ${reason(err)}`);
-      })
-      .finally(() => mine.delete(abort));
+        void writer.abort(reason(err)).catch(() => undefined);
+        void reader.cancel(reason(err)).catch(() => undefined);
+      } finally {
+        mine.delete(abort);
+      }
+    })();
     return { speaking: true };
   } catch (err) {
     mine.delete(abort);
