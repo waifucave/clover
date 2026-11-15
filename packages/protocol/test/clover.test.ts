@@ -518,10 +518,10 @@ describe("#179's review and H-M1's asks", () => {
   });
 
   test("the user's words from the pill reach the daemon only from the app (S2)", () => {
-    const spec = CLOVER_METHODS.get("pill.send")!;
+    const spec = CLOVER_METHODS.get("user.send")!;
     expect(spec.roles).toEqual(["app"]);
     expect(spec.userOnly).toBe(true);
-    expect(allowedMethods("layer").has("pill.send")).toBe(false);
+    expect(allowedMethods("layer").has("user.send")).toBe(false);
     for (const to of [{ bot: "alpha" }, { session: "s_alpha" }, { target: "home#lights" }]) {
       expect([to, spec.params.safeParse({ to, text: "hi", clientMessageId: "m1" }).success]).toEqual([to, true]);
     }

@@ -8,8 +8,6 @@ import { join } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
 import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed } from "../src/main/shortcuts";
-import { islandCards } from "../src/layer/clover/cards";
-import type { CardMeta } from "@waifucave/clover-protocol";
 import { builtClientFile, builtClientUrl, mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -168,15 +166,17 @@ describe("the tray", () => {
     expect(menu.map((m) => m.label ?? m.type)).toEqual(["Reconnecting to Clover…", "separator", "Open Clover", "Restart in Safe Mode", "separator", "Quit Clover"]);
     for (const m of menu) (m.click as (() => void) | undefined)?.();
     expect(calls).toEqual(["open", "restart true", "quit"]);
-    // The pill's item flips between Hide and Show with its state, and only where the app offers it.
-    const pillCalls: string[] = [];
-    const withPill = { ...actions, togglePill: () => pillCalls.push("toggle") };
-    const shown = trayMenu({ safeMode: false, pillHidden: false }, withPill);
+    // A plugin's toggle line (the pill's) flips between Hide and Show with its state, and only where the app offers it; a command line just runs.
+    const lineCalls: string[] = [];
+    const withLine = { ...actions, line: (ref: string) => lineCalls.push(ref) };
+    const pill = { ref: "clover/pill#put-away", title: "Dispatch Pill", hidden: false };
+    const shown = trayMenu({ safeMode: false, lines: [pill] }, withLine);
     expect(shown.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Hide Dispatch Pill", "Restart in Safe Mode", "separator", "Quit Clover"]);
     (shown[1]!.click as () => void)();
-    expect(pillCalls).toEqual(["toggle"]);
-    expect(trayMenu({ safeMode: false, pillHidden: true }, withPill).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
-    expect(trayMenu({ safeMode: false }, withPill).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
+    expect(lineCalls).toEqual(["clover/pill#put-away"]);
+    expect(trayMenu({ safeMode: false, lines: [{ ...pill, hidden: true }] }, withLine).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
+    expect(trayMenu({ safeMode: false, lines: [{ ref: "x#go", title: "Run the thing" }] }, withLine).map((m) => m.label ?? m.type)[1]).toBe("Run the thing");
+    expect(trayMenu({ safeMode: false, lines: [pill] }, actions).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
     // The one mute over all plugin sound is a checkbox too, there only where the app offers it.
     const muteCalls: string[] = [];
     const withMute = { ...actions, toggleSoundMute: () => muteCalls.push("toggle") };
@@ -186,16 +186,17 @@ describe("the tray", () => {
     expect(muteCalls).toEqual(["toggle"]);
     expect(trayMenu({ safeMode: false, soundMuted: true }, withMute).find((m) => m.label === "Mute Sound from Plugins")?.checked).toBe(true);
     expect(trayMenu({ safeMode: false }, withMute).map((m) => m.label)).not.toContain("Mute Sound from Plugins");
-    // The four-finger tap's switch is a checkbox, there only where the Mac has the add-on for it.
+    // The four-finger tap's switch is a checkbox, there only where the Mac has the add-on for it and a surface asks for the tap.
     const tapCalls: string[] = [];
     const withTap = { ...actions, toggleFourFingerTap: () => tapCalls.push("tap") };
-    const tapItem = trayMenu({ safeMode: false, fourFingerTap: true }, withTap).find((m) => m.label === "Four-Finger Tap Hides the Dispatch Pill")!;
+    const tapItem = trayMenu({ safeMode: false, fourFingerTap: true, tapTitles: ["Dispatch Pill"] }, withTap).find((m) => m.label === "Four-Finger Tap Hides and Shows Dispatch Pill")!;
     expect(tapItem.type).toBe("checkbox");
     expect(tapItem.checked).toBe(true);
     (tapItem.click as () => void)();
     expect(tapCalls).toEqual(["tap"]);
-    expect(trayMenu({ safeMode: false, fourFingerTap: false }, withTap).find((m) => m.type === "checkbox")?.checked).toBe(false);
-    expect(trayMenu({ safeMode: false }, withTap).some((m) => m.type === "checkbox")).toBe(false);
+    expect(trayMenu({ safeMode: false, fourFingerTap: false, tapTitles: ["Dispatch Pill"] }, withTap).find((m) => m.type === "checkbox")?.checked).toBe(false);
+    expect(trayMenu({ safeMode: false, tapTitles: ["Dispatch Pill"] }, withTap).some((m) => m.type === "checkbox")).toBe(false);
+    expect(trayMenu({ safeMode: false, fourFingerTap: true }, withTap).some((m) => m.type === "checkbox")).toBe(false);
     // In safe mode the core's plugin manager is there too (§5.8).
     const safe = trayMenu({ safeMode: true }, actions);
     expect(safe.map((m) => m.label ?? m.type)).toEqual(["Open Clover", "Manage Plugins…", "Restart Normally", "separator", "Quit Clover"]);
@@ -243,22 +244,6 @@ describe("the app's shortcuts", () => {
     // Unpackaged alone isn't enough either: the smoke run is always headless.
     expect(sealedInputAllowed({ packaged: false, headless: false })).toBe(false);
     expect(sealedInputAllowed({ packaged: false, headless: true })).toBe(true);
-  });
-  test("the island's strip reads the pending cards' metas: elicitation draws as a link, the rest as approvals", () => {
-    expect(islandCards([])).toEqual([]);
-    const meta: CardMeta = {
-      id: "card_1", kind: "tool", computer: "Laptop", origin: "user", issuedAt: 7, expiresAt: null,
-      options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
-    };
-    expect(islandCards([meta])).toEqual([{
-      id: "card_1", kind: "approval", tool: true, computer: "Laptop", issuedAt: 7,
-      options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
-    }]);
-    // A link request draws as a link; no computer and no options fall back to the island's own defaults.
-    const link: CardMeta = { ...meta, id: "card_2", kind: "elicitation", computer: null, options: [] };
-    expect(islandCards([link])).toEqual([
-      { id: "card_2", kind: "link", issuedAt: 7 },
-    ]);
   });
 });
 

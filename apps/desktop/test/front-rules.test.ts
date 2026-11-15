@@ -1,39 +1,44 @@
 import { describe, expect, test } from "bun:test";
-import { appIsRegular, mainWindowFront, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "../src/main/front-rules";
+import { appIsRegular, mainWindowFront, afterTap, afterTray, surfaceShown, type FrontRule, type MainWindowState, type PutAway } from "../src/main/front-rules";
+
+// What the two bundled surfaces' manifests say: the pill steps aside, the island stays; another plugin's surface says its own.
+const PILL: FrontRule = { stepsAside: true };
+const ISLAND: FrontRule = { stepsAside: false };
 
 const FRONT: MainWindowState = { exists: true, visible: true, minimized: false, focused: true };
 
 describe("the pill steps aside while Clover's own window is in front", () => {
   test("window focused and visible: the pill is hidden, the island stays", () => {
     expect(mainWindowFront(FRONT)).toBe(true);
-    expect(surfaceShown("clover/pill", true, FRONT)).toBe(false);
-    expect(surfaceShown("clover/island", true, FRONT)).toBe(true);
+    expect(surfaceShown(PILL, true, FRONT)).toBe(false);
+    expect(surfaceShown(ISLAND, true, FRONT)).toBe(true);
   });
   test("each way the window stops being in front brings the pill back", () => {
-    expect(surfaceShown("clover/pill", true, { ...FRONT, focused: false })).toBe(true); // another app (or window) in front
-    expect(surfaceShown("clover/pill", true, { ...FRONT, minimized: true })).toBe(true);
-    expect(surfaceShown("clover/pill", true, { ...FRONT, visible: false })).toBe(true); // hidden or closed to the tray
-    expect(surfaceShown("clover/pill", true, { exists: false, visible: false, minimized: false, focused: false })).toBe(true); // closed
+    expect(surfaceShown(PILL, true, { ...FRONT, focused: false })).toBe(true); // another app (or window) in front
+    expect(surfaceShown(PILL, true, { ...FRONT, minimized: true })).toBe(true);
+    expect(surfaceShown(PILL, true, { ...FRONT, visible: false })).toBe(true); // hidden or closed to the tray
+    expect(surfaceShown(PILL, true, { exists: false, visible: false, minimized: false, focused: false })).toBe(true); // closed
   });
   test("a surface that asked to be hidden stays hidden whatever is in front", () => {
-    expect(surfaceShown("clover/pill", false, { ...FRONT, focused: false })).toBe(false);
-    expect(surfaceShown("clover/island", false, FRONT)).toBe(false);
+    expect(surfaceShown(PILL, false, { ...FRONT, focused: false })).toBe(false);
+    expect(surfaceShown(ISLAND, false, FRONT)).toBe(false);
   });
-  test("another plugin's surface is not touched", () => {
-    expect(surfaceShown("someone/else", true, FRONT)).toBe(true);
+  test("a surface that doesn't say steps-aside is not touched", () => {
+    expect(surfaceShown({ stepsAside: false }, true, FRONT)).toBe(true);
   });
 });
 
 describe("the pill: put away, summoned, stepping aside", () => {
   const IN_FRONT: MainWindowState = { exists: true, visible: true, minimized: false, focused: true };
   const BEHIND: MainWindowState = { exists: true, visible: true, minimized: false, focused: false };
-  const shown = (mode: PillMode, main: MainWindowState, wants = true) => surfaceShown("clover/pill", wants, main, mode);
+  const shown = (mode: PutAway, main: MainWindowState, wants = true) => surfaceShown(PILL, wants, main, mode);
 
   test("auto: the pill shows when its part asks and steps aside for the window in front; the island never does", () => {
     expect(shown("auto", BEHIND)).toBe(true);
     expect(shown("auto", IN_FRONT)).toBe(false);
     expect(shown("auto", BEHIND, false)).toBe(false);
-    expect(surfaceShown("clover/island", true, IN_FRONT, "hidden")).toBe(true);
+    expect(surfaceShown(ISLAND, true, IN_FRONT)).toBe(true);
+    expect(surfaceShown(ISLAND, true, IN_FRONT, "hidden")).toBe(false); // a surface put away is away, whoever it is
   });
   test("hidden stays away whatever the part asks; summoned shows over the window in front, while its part asks", () => {
     expect(shown("hidden", BEHIND)).toBe(false);
@@ -42,28 +47,28 @@ describe("the pill: put away, summoned, stepping aside", () => {
     expect(shown("summoned", IN_FRONT, false)).toBe(false);
   });
   test("a tap with Clover's window in front summons the pill over it; the next tap puts it away", () => {
-    const first = pillAfterTap("auto", true, IN_FRONT);
+    const first = afterTap("auto", PILL, true, IN_FRONT);
     expect(first).toBe("summoned");
     expect(shown(first, IN_FRONT)).toBe(true);
-    const second = pillAfterTap(first, true, IN_FRONT);
+    const second = afterTap(first, PILL, true, IN_FRONT);
     expect(second).toBe("hidden");
     expect(shown(second, IN_FRONT)).toBe(false);
-    expect(pillAfterTap(second, true, IN_FRONT)).toBe("summoned");
+    expect(afterTap(second, PILL, true, IN_FRONT)).toBe("summoned");
   });
   test("a tap with another app in front: a pill on screen is put away, a put-away pill is summoned", () => {
-    expect(pillAfterTap("auto", true, BEHIND)).toBe("hidden");
-    expect(pillAfterTap("hidden", true, BEHIND)).toBe("summoned");
-    expect(pillAfterTap("summoned", true, BEHIND)).toBe("hidden");
+    expect(afterTap("auto", PILL, true, BEHIND)).toBe("hidden");
+    expect(afterTap("hidden", PILL, true, BEHIND)).toBe("summoned");
+    expect(afterTap("summoned", PILL, true, BEHIND)).toBe("hidden");
   });
   test("a pill whose part has nothing to show is not on screen, so a tap summons it", () => {
-    expect(pillAfterTap("auto", false, BEHIND)).toBe("summoned");
+    expect(afterTap("auto", PILL, false, BEHIND)).toBe("summoned");
   });
   test("the tray item: hide from anywhere but hidden, show from hidden back to the usual behaviour (it steps aside again)", () => {
-    expect(pillAfterTray("auto")).toBe("hidden");
-    expect(pillAfterTray("summoned")).toBe("hidden");
-    expect(pillAfterTray("hidden")).toBe("auto");
-    expect(shown(pillAfterTray("hidden"), IN_FRONT)).toBe(false);
-    expect(shown(pillAfterTray("hidden"), BEHIND)).toBe(true);
+    expect(afterTray("auto")).toBe("hidden");
+    expect(afterTray("summoned")).toBe("hidden");
+    expect(afterTray("hidden")).toBe("auto");
+    expect(shown(afterTray("hidden"), IN_FRONT)).toBe(false);
+    expect(shown(afterTray("hidden"), BEHIND)).toBe(true);
   });
 });
 
@@ -78,8 +83,8 @@ describe("a press on an overlay surface leaves the app and its main window alone
     const behind: MainWindowState = { exists: true, visible: true, minimized: false, focused: false };
     for (const mode of ["auto", "summoned", "hidden"] as const) {
       expect(mainWindowFront(behind)).toBe(false);
-      void surfaceShown("clover/island", true, behind, mode);
-      void surfaceShown("clover/pill", true, behind, mode);
+      void surfaceShown(ISLAND, true, behind, mode);
+      void surfaceShown(PILL, true, behind, mode);
       expect(mainWindowFront(behind)).toBe(false);
     }
   });

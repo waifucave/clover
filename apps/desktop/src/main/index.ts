@@ -52,11 +52,11 @@ import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed 
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
-import { DEFAULT_PREFS, readPrefs, writePrefs, type AppPrefs } from "./prefs";
+import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs, type AppPrefs } from "./prefs";
 import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
@@ -68,7 +68,7 @@ import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { cloverFront, FrontWatcher, islandMayDraw, placeCard, pressMayBeTaken, placeLine, type CardPlace } from "./card-place";
-import { appIsRegular, mainWindowFront, PILL_PLUGIN, pillAfterTap, pillAfterTray, surfaceShown, type MainWindowState, type PillMode } from "./front-rules";
+import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
@@ -326,7 +326,7 @@ async function ready(): Promise<void> {
   // What came of each part's ask for a card's frames, before the first one was made (the narrow card's diagnosis).
   runtime.onSealedAsk = noteAsk;
   // One place at a time: while Clover's window is in front the island is given no frame of a card (the window draws it).
-  runtime.islandMayDraw = () => islandMayDraw(mainWindowFront(mainState()));
+  runtime.cardSurfaceMayDraw = () => islandMayDraw(mainWindowFront(mainState()));
   // A part's Review on a plugin's card: the app's own page for that card, shown now (a fallback already up stays).
   runtime.onCardPage = async (cardId) => {
     if (sealed.get(cardId) === undefined || !sealed.isPending(cardId)) return false;
@@ -477,7 +477,7 @@ async function ready(): Promise<void> {
       // One place at a time: a press from the island's frame while Clover's window is in front is not taken (the card is drawn
       // in the window now; the island's frame was a beat behind the move).
       const from = sealed.windowOf(token);
-      if (!pressMayBeTaken({ fromIsland: [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.pluginId === "clover/island"), front: mainWindowFront(mainState()) })) {
+      if (!pressMayBeTaken({ fromIsland: [...surfaces.values()].some((s) => !s.win.isDestroyed() && s.win.id === from && s.cards), front: mainWindowFront(mainState()) })) {
         log(`sealed: answer refused (the island's frame while the window is in front: the card is drawn in the window)`);
         return { accepted: false, reason: "this card is in Clover's window now" };
       }
@@ -581,9 +581,9 @@ async function ready(): Promise<void> {
       if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
       if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
       try {
-        return await client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+        return await client.request<{ seq?: number }>("user.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
       } catch (err) {
-        log(`send: the core refused pill.send (${why(err)})`);
+        log(`send: the core refused user.send (${why(err)})`);
         throw err;
       }
     },
@@ -710,10 +710,10 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
-    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillMode(pillAfterTray(pillMode), "from the tray"), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap), toggleSoundMute: () => setSoundMuted(!prefs.soundMuted) }, log);
-    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: pillMode === "hidden", soundMuted: prefs.soundMuted };
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), line: (ref) => runTrayLine(ref), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap), toggleSoundMute: () => setSoundMuted(!prefs.soundMuted) }, log);
+    trayState = { safeMode, strings: runtime.coreStrings(), soundMuted: prefs.soundMuted };
     syncFourFingerTap();
-    tray.show(trayState);
+    refreshTray();
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
   if (start.by === "user" || headless) void openMainWindow();
@@ -1109,7 +1109,7 @@ function makePair(): Pair {
   const captureDeps: CaptureDeps = {
     windows: () => [
       ...(mainWindow !== undefined && !mainWindow.isDestroyed() ? [{ name: "main", win: mainWindow as unknown as WindowLike }] : []),
-      ...[...surfaces].map(([id, s]) => ({ name: captureName(id), win: s.win as unknown as WindowLike })),
+      ...[...surfaces.values()].map((s) => ({ name: captureName(s.id), win: s.win as unknown as WindowLike })),
     ],
     scaleOf: (bounds) => screen.getDisplayMatching(bounds).scaleFactor,
     fromBitmap: (bitmap, size) => nativeImage.createFromBitmap(bitmap, size),
@@ -1639,14 +1639,22 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
 
 interface Surface {
   win: BrowserWindow;
+  /** The entry's id (`island`); the ref (`<plugin>#<id>`) is the surface's own key. */
+  id: string;
   ref: string;
   pluginId: string;
   placement?: string;
   regions: Rect[];
   clicks: ClickThrough;
   poll?: ReturnType<typeof setInterval>;
-  /** What the part last asked for (`visible`); the window shows only while `surfaceShown` agrees (the pill steps aside for the main window). */
+  /** What the part last asked for (`visible`); the window shows only while `surfaceShown` agrees (a surface that says `front: "steps-aside"` leaves for the main window). */
   wantsVisible?: boolean;
+  /** What its manifest and its plugin's capabilities say (`SurfaceEntry`): it floats (`overlay`), draws the pending cards while the
+   *  window isn't in front (`window.cards`), steps aside for the window in front, and is summoned by the four-finger tap. */
+  floats: boolean;
+  cards: boolean;
+  stepsAside: boolean;
+  tap: boolean;
 }
 
 /** A test-marked headless build's stand-in for the window being in front (its windows are never the focused ones): the file named
@@ -1698,36 +1706,83 @@ function mainState(): MainWindowState {
   return cloverFront(mainWindow, [...fallbacks.values()].map((f) => f.win));
 }
 
-/** Shows or hides one surface's window as its part asked and the front rules allow. */
-/** The choices this computer keeps across restarts (the pill put away). */
+/** The choices this computer keeps across restarts (the surfaces put away). */
 const prefsFile = (): string => join(app.getPath("userData"), "prefs.json");
 let prefs: AppPrefs = process.type === "browser" ? readPrefs(prefsFile()) : { ...DEFAULT_PREFS };
 let trayState: TrayState | undefined;
 
-/** What the user has done to the pill; only "hidden" is kept across restarts (a summon is for this run). */
-let pillMode: PillMode = prefs.pillHidden ? "hidden" : "auto";
-/** Whether the pill's part has asked to be shown (it asks until it has nothing to show). */
-const pillWants = (): boolean => [...surfaces.values()].some((s) => s.pluginId === PILL_PLUGIN && s.wantsVisible === true);
+/** What the user has done to each surface (by its ref): only "hidden" is kept across restarts (a summon is for this run). */
+const surfaceModes = new Map<string, PutAway>();
+const modeOf = (s: Surface): PutAway => surfaceModes.get(s.ref) ?? (prefs.hiddenSurfaces.includes(s.ref) ? "hidden" : "auto");
+/** The tray lines plugins added that toggle a surface (`app.tray` with `toggles`), by the surface's ref. */
+const trayToggleOf = (ref: string) => runtime.trayEntries().find((t) => t.surface === ref);
 
-/** Puts the Dispatch pill away, summons it (a tap shows it over Clover's own window too, until the next tap) or gives it its
- *  usual behaviour back. The window follows at once, the tray item says what a press will do next, and the log says what
- *  happened on the screen. */
-function setPillMode(mode: PillMode, how: string): void {
-  if (pillMode === mode) return;
-  pillMode = mode;
+/** The tray's menu as the plugins' lines and the surfaces' states say. */
+function refreshTray(): void {
+  if (trayState === undefined) return;
+  const lines = runtime.trayEntries().map((t) => {
+    // A command's line says whose it is (a plugin's own words are not the menu's); a toggle's verb is Clover's.
+    if (t.surface === undefined) return { ref: t.ref, title: `${t.title} (${t.pluginName})` };
+    const s = [...surfaces.values()].find((x) => x.ref === t.surface);
+    return { ref: t.ref, title: t.title, hidden: s !== undefined && modeOf(s) === "hidden" };
+  });
+  const tapTitles = [...surfaces.values()].filter((s) => s.tap).map((s) => trayToggleOf(s.ref)?.title ?? s.id);
+  trayState = { ...trayState, lines, tapTitles, ...(touches !== null && touches !== undefined ? { fourFingerTap: prefs.fourFingerTap } : {}) };
+  tray?.show(trayState);
+}
+
+/** A tray line pressed: a toggle puts its surface away or gives it back; a command runs through the core, and only a command the
+ *  core lists as this plugin's own (a line can't run another plugin's). */
+function runTrayLine(ref: string): void {
+  const line = runtime.trayEntries().find((t) => t.ref === ref);
+  if (line === undefined) return;
+  if (line.surface !== undefined) {
+    const s = [...surfaces.values()].find((x) => x.ref === line.surface);
+    if (s !== undefined) setSurfaceMode(s, afterTray(modeOf(s)), "from the tray");
+    return;
+  }
+  if (line.command === undefined) return;
+  const client = pair.client;
+  if (client === undefined) return;
+  void client.request<{ commands?: { name?: string; pluginId?: string }[] }>("command.list", {}, 10_000)
+    .then((r) => {
+      const mine = (r.commands ?? []).some((c) => c.name === line.command && c.pluginId === line.pluginId);
+      if (!mine) { log(`tray: ${ref} names a command ${line.pluginId} doesn't have`); return undefined; }
+      return client.request("command.run", { name: line.command }, 30_000);
+    })
+    .catch((err: unknown) => log(`tray: ${ref}'s command didn't run (${why(err)})`));
+}
+
+/** Whether a surface's part has asked to be shown (it asks until it has nothing to show). */
+const surfaceWants = (s: Surface): boolean => s.wantsVisible === true;
+
+/** Puts a surface away, summons it (a tap shows it over Clover's own window too, until the next tap) or gives it its usual
+ *  behaviour back. The window follows at once, the tray line says what a press will do next, and the log says what happened on
+ *  the screen. */
+function setSurfaceMode(s: Surface, mode: PutAway, how: string): void {
+  if (modeOf(s) === mode && surfaceModes.has(s.ref)) return;
+  surfaceModes.set(s.ref, mode);
   const hidden = mode === "hidden";
-  if (prefs.pillHidden !== hidden) {
-    prefs = { ...prefs, pillHidden: hidden };
+  if (prefs.hiddenSurfaces.includes(s.ref) !== hidden || prefs.pillHidden) {
+    prefs = { ...prefs, pillHidden: false, hiddenSurfaces: hidden ? [...prefs.hiddenSurfaces, s.ref] : prefs.hiddenSurfaces.filter((r) => r !== s.ref) };
     writePrefs(prefsFile(), prefs, log);
   }
-  for (const s of surfaces.values()) applyVisibility(s);
-  if (trayState !== undefined) { trayState = { ...trayState, pillHidden: hidden }; tray?.show(trayState); }
+  applyVisibility(s);
+  refreshTray();
   const front = mainWindowFront(mainState());
-  log(`pill: ${mode === "hidden" ? "put away" : mode === "summoned" ? (front ? "summoned over the main window" : "summoned") : front ? "back to its usual place (not shown: the main window is in front)" : "shown"} ${how}`);
+  log(`surface: ${s.id} ${mode === "hidden" ? "put away" : mode === "summoned" ? (front ? "summoned over the main window" : "summoned") : front && s.stepsAside ? "back to its usual place (not shown: the main window is in front)" : "shown"} ${how}`);
+}
+
+/** The first version's `pillHidden` switch, applied once to the surfaces that have a tray toggle (the pill's, today), then cleared. */
+function applyLegacyHidden(s: Surface): void {
+  if (!prefs.pillHidden || trayToggleOf(s.ref) === undefined) return;
+  prefs = withLegacyHidden(prefs, s.ref);
+  writePrefs(prefsFile(), prefs, log);
 }
 
 /** The four-finger tap (macOS, where the touch add-on is built): on unless turned off in the tray, never in a headless or
- *  test run (nothing there reads the trackpad). A tap does what the tray's Hide / Show item does. */
+ *  test run (nothing there reads the trackpad). A tap does what the tray's Hide / Show line does, to every surface whose
+ *  manifest says `summon: ["tap"]`. */
 let touches: TouchAddon | undefined | null = null;
 let fourFingerTap: FourFingerTap | undefined;
 function syncFourFingerTap(): void {
@@ -1742,7 +1797,9 @@ function syncFourFingerTapUnguarded(): void {
   if (touches === null) touches = loadTouches(join(here, "native", "touches.node"), log);
   if (touches === undefined) return;
   if (fourFingerTap === undefined) {
-    fourFingerTap = new FourFingerTap(touches, () => setPillMode(pillAfterTap(pillMode, pillWants(), mainState()), "by the four-finger tap"), log);
+    fourFingerTap = new FourFingerTap(touches, () => {
+      for (const s of surfaces.values()) if (s.tap) setSurfaceMode(s, afterTap(modeOf(s), { stepsAside: s.stepsAside }, surfaceWants(s), mainState()), "by the four-finger tap");
+    }, log);
     powerMonitor.on("resume", () => fourFingerTap?.reattach());
     powerMonitor.on("unlock-screen", () => fourFingerTap?.reattach());
   }
@@ -1756,13 +1813,13 @@ function setFourFingerTap(on: boolean): void {
   prefs = { ...prefs, fourFingerTap: on };
   writePrefs(prefsFile(), prefs, log);
   syncFourFingerTap();
-  if (trayState !== undefined) tray?.show(trayState);
+  refreshTray();
   log(`touches: four-finger tap turned ${on ? "on" : "off"}`);
 }
 
 function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed() || s.wantsVisible === undefined) return;
-  const show = surfaceShown(s.pluginId, s.wantsVisible, mainState(), pillMode);
+  const show = surfaceShown({ stepsAside: s.stepsAside }, s.wantsVisible, mainState(), modeOf(s));
   if (show && invisible !== undefined && !s.win.isVisible()) showInvisible(s.win);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) s.win.hide();
@@ -1835,16 +1892,19 @@ app.on?.("before-quit", () => { for (const b of backgrounds.values()) if (!b.win
 
 function syncSurfaces(): void {
   const wanted = runtime.surfaceEntries();
-  for (const [id, s] of [...surfaces]) {
-    if (wanted.some((w) => w.id === id && w.ref === s.ref)) continue;
+  // By ref: a plugin's copy of an entry id another plugin has (a folder-installed copy of the island) is its own surface.
+  for (const [ref, s] of [...surfaces]) {
+    if (wanted.some((w) => w.ref === ref)) continue;
     clearInterval(s.poll);
-    surfaces.delete(id);
+    surfaces.delete(ref);
+    surfaceModes.delete(ref);
     if (!s.win.isDestroyed()) s.win.destroy();
+    refreshTray();
   }
   for (const w of wanted) {
-    if (surfaces.has(w.id)) continue;
-    // Only the clover tree's surfaces float above everything, on every Space (the review's ruling for 1.111.1).
-    const floats = surfaceMayFloat(w.pluginId);
+    if (surfaces.has(w.ref)) continue;
+    // A surface floats above everything, on every Space, when its plugin holds `overlay` (its OK card says so); no id decides it.
+    const floats = w.floats;
     const wayland = session_ === "wayland";
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
@@ -1861,7 +1921,7 @@ function syncSurfaces(): void {
     if (floats && !wayland && w.window.alwaysOnTop === true) win.setAlwaysOnTop(true, process.platform === "darwin" ? "status" : "floating");
     const placement = w.window.placement?.[os];
     const s: Surface = {
-      win, ref: w.ref, pluginId: w.pluginId, regions: [], ...(placement !== undefined ? { placement } : {}),
+      win, id: w.id, ref: w.ref, pluginId: w.pluginId, floats, cards: w.cards, stepsAside: w.stepsAside, tap: w.tap, regions: [], ...(placement !== undefined ? { placement } : {}),
       // macOS and Windows forward the cursor's moves to a window that ignores the mouse (`forward`).
       clicks: new ClickThrough((ignore) => {
         if (!win.isDestroyed()) win.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined);
@@ -1872,30 +1932,33 @@ function syncSurfaces(): void {
       if (mouse.type === "mouseMove" || mouse.type === "mouseEnter") s.clicks.move({ x: mouse.x, y: mouse.y });
       else if (mouse.type === "mouseLeave") s.clicks.move(undefined);
     });
-    surfaces.set(w.id, s);
+    surfaces.set(w.ref, s);
     const id = win.id;
     runtime.openWindow(id, { material: "none", surface: { id: w.id, ref: w.ref } });
     win.on("closed", () => {
       clearInterval(s.poll);
       runtime.closeWindow(id);
-      if (surfaces.get(w.id) === s) surfaces.delete(w.id);
+      if (surfaces.get(w.ref) === s) surfaces.delete(w.ref);
     });
-    place(w.id, s, win.getSize());
+    place(s, win.getSize());
+    applyLegacyHidden(s);
+    refreshTray();
     void win.loadURL(`clover-core://app/?surface=${encodeURIComponent(w.id)}`);
   }
 }
 
-function place(surface: string, s: Surface, [width, height]: number[]): void {
+function place(s: Surface, [width, height]: number[]): void {
   const display = screen.getPrimaryDisplay();
-  s.win.setBounds(surfacePlacement({ surface, ...(s.placement !== undefined ? { placement: s.placement } : {}), size: { width: width!, height: height! }, display: display.bounds, workArea: display.workArea }));
+  s.win.setBounds(surfacePlacement({ ...(s.placement !== undefined ? { placement: s.placement } : {}), size: { width: width!, height: height! }, display: display.bounds, workArea: display.workArea }));
 }
 
 function steerSurface(windowId: number, request: Record<string, unknown>): void {
   log(`surface: a request ${Object.keys(request).filter((k) => k !== "ref").join(",")}${typeof request.visible === "boolean" ? ` visible=${request.visible}` : ""}${headless ? " (headless)" : ""}`);
   const entry = [...surfaces].find(([, s]) => !s.win.isDestroyed() && s.win.id === windowId);
   if (entry === undefined) return;
-  const [id, s] = entry;
-  const trusted = surfaceMayFloat(s.pluginId);
+  const [, s] = entry;
+  const id = s.id;
+  const trusted = s.floats;
   const wayland = session_ === "wayland";
   // A whole place on the screen, kept on its display (on Wayland the compositor may ignore where).
   const display = screen.getPrimaryDisplay();
@@ -1905,8 +1968,8 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
     log(`surface: ${id} bounds ${bounds.width}x${bounds.height}`);
   } else if (request.width !== undefined || request.height !== undefined) {
     const [w, h] = s.win.getSize();
-    const size = surfaceSize(request, { width: w!, height: h! }, { trusted: surfaceMayFloat(s.pluginId), workArea: screen.getPrimaryDisplay().workArea });
-    place(id, s, [size.width, size.height]);
+    const size = surfaceSize(request, { width: w!, height: h! }, { trusted, workArea: screen.getPrimaryDisplay().workArea });
+    place(s, [size.width, size.height]);
     log(`surface: ${id} sized to ${size.width}x${size.height}`);
   }
   // On Wayland a surface is a normal window: it takes every click inside it.
@@ -2446,7 +2509,7 @@ async function smoke(): Promise<void> {
   while (Date.now() < deadline) {
     frames = await probeWindow(win);
     surfaceFacts = [];
-    for (const [id, s] of surfaces) if (!s.win.isDestroyed()) surfaceFacts.push({ id, visible: s.win.isVisible(), bounds: s.win.getBounds(), frames: await probeWindow(s.win) });
+    for (const s of surfaces.values()) if (!s.win.isDestroyed()) surfaceFacts.push({ id: s.id, visible: s.win.isVisible(), bounds: s.win.getBounds(), frames: await probeWindow(s.win) });
     const shell = frames.find((f) => f.origin === "clover-plugin://clover");
     const wanted = Number(process.env.CLOVER_SMOKE_LAYERS ?? "0");
     const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
@@ -2472,7 +2535,7 @@ async function smoke(): Promise<void> {
     // so only after its hang timeout with input waiting for that frame, and input doesn't reach a hidden window's
     // out-of-process frames, so the test raises the event itself; everything after it is the app's own path.
     const hangOn = process.env.CLOVER_SMOKE_HANG;
-    const target = hangOn === undefined ? undefined : surfaces.get(hangOn)?.win;
+    const target = hangOn === undefined ? undefined : [...surfaces.values()].find((x) => x.id === hangOn)?.win;
     const targetFact = hangOn === undefined ? undefined : surfaceFacts.find((x) => x.id === hangOn);
     const targetLayer = targetFact?.frames.find((f) => f.url.startsWith("clover-plugin://"));
     if (drawn && !hung && target !== undefined && !target.isDestroyed() && targetLayer !== undefined && targetLayer.rendered) {

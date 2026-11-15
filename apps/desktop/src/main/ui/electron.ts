@@ -405,7 +405,7 @@ export interface IpcHooks {
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
-  /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
+  /** The user's own words from a `clover` surface's part (`user.send`), after the gate. */
   userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }, active: boolean): Promise<{ seq?: number }>;
   /** The shell's press on a drag region (`shell`: the main process's own record says this is the shell in `app.root`). */
   windowDrag(windowId: number, shell: boolean): void;

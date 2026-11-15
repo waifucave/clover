@@ -170,8 +170,14 @@ describe("PillApp, the app.surface entry", () => {
   });
 
   test("the manifest names PillApp, an export of the client entry", () => {
-    for (const entry of manifest.contributes.ui) expect(typeof (client as Record<string, unknown>)[entry.component]).toBe("function");
-    // No conversation.post: its turns are the plugin's, never the user's. The pill sends through the host's user-send.
-    expect(manifest.capabilities).toEqual(["approvals", "bots.read"]);
+    // The tray line is data the menu draws (it has no component); the surface's component is an export.
+    const parts = manifest.contributes.ui.filter((e) => e.spot !== "app.tray");
+    expect(parts.map((e) => e.spot)).toEqual(["app.surface"]);
+    for (const entry of parts) expect(typeof (client as Record<string, unknown>)[entry.component!]).toBe("function");
+    // No conversation.post: its turns are the plugin's, never the user's. The pill sends through the SDK's user-send, which its OK
+    // card says ("sends messages to your bots and sessions as you, with text it chooses"); it is on top of everything, shows all the cards, and puts a line in the tray.
+    expect(manifest.capabilities).toEqual(["approvals", "approvals.all", "bots.read", "overlay", "tray", "user.send"]);
+    expect(manifest.contributes.ui.find((e) => e.spot === "app.tray")).toMatchObject({ toggles: "pill" });
+    expect(parts[0]!.window).toMatchObject({ front: "steps-aside", summon: ["tap"] });
   });
 });

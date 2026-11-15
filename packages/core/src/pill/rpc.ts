@@ -1,4 +1,4 @@
-// `pill.send` (packages/protocol/src/app.ts): the user's own words from the Dispatch pill, which the app's main process
+// `user.send` (packages/protocol/src/app.ts): the user's own words from the Dispatch pill, which the app's main process
 // carries for a `clover` surface's `useUserSend` inside the key press or click that sent (#179's review, S2). Owner:
 // lane G. The protocol lets only the `app` role call it, and only as the user (`userOnly`); the handler checks the
 // caller again, since a plugin's or a bot's call must never count as the user's (§3.1, §9.1).
@@ -16,7 +16,7 @@ import { MethodError, handler, requireUser, type MethodHandler } from "../rpc/ha
 
 const M = APP_METHODS;
 
-export interface PillMethodsDeps {
+export interface UserSendMethodsDeps {
   /** Which session is a bot's one conversation. */
   bots: { has(id: string): boolean; mainSession(id: string): string };
   /** Lane D's handlers (`sessionsMethods`): `session.send` and `session.stageImage`. */
@@ -46,14 +46,14 @@ export function withImageMarks(text: string, count: number): string {
   return out;
 }
 
-export function pillMethods(deps: PillMethodsDeps): Record<string, MethodHandler> {
+export function userSendMethods(deps: UserSendMethodsDeps): Record<string, MethodHandler> {
   const call = (name: string): MethodHandler => {
     const h = deps.sessions[name];
-    if (h === undefined) throw new MethodError(ERR.INTERNAL, `pill.send needs ${name}, which this daemon doesn't serve`);
+    if (h === undefined) throw new MethodError(ERR.INTERNAL, `user.send needs ${name}, which this daemon doesn't serve`);
     return h;
   };
   return {
-    [M.pillSend.name]: handler(M.pillSend, async ({ to, text, images, clientMessageId }, ctx) => {
+    [M.userSend.name]: handler(M.userSend, async ({ to, text, images, clientMessageId }, ctx) => {
       const caller = requireUser(ctx, "send the user's words from the pill");
       if ("target" in to) {
         const entry = deps.targets === undefined ? undefined : targetEntry(deps.targets.registry, to.target);

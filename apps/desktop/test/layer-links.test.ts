@@ -50,7 +50,7 @@ describe("a layer's connection to the core", () => {
   test("only the layer role's methods pass", async () => {
     const { links } = await setup();
     expect(LAYER_METHODS.has("terminal.write")).toBe(true);
-    for (const m of ["layer.token", "pill.send", "app.quit", "pair.quit", "plugin.auth.signIn"]) {
+    for (const m of ["layer.token", "user.send", "app.quit", "pair.quit", "plugin.auth.signIn"]) {
       expect(LAYER_METHODS.has(m)).toBe(false);
       await expect(links.call("clover/panel-terminal", m, {})).rejects.toThrow(`a layer doesn't call ${m}`);
     }

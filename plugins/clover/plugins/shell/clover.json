@@ -13,6 +13,7 @@
   },
   "capabilities": [
     "approvals",
+    "approvals.all",
     "avatar.control.all",
     "bots.read",
     "computers.read",

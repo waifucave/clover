@@ -28,7 +28,7 @@ export interface PillHost {
    * `useUserSend()` (lane B's `UiApi`): the runtime's user-send, which only the bundled `clover` tree's surfaces get. The
    * pill calls it synchronously, inside the key press or click that sent, and the runtime counts it only within that
    * frame's transient user activation, refusing any other (§5.5). The runtime carries the words to the daemon through
-   * an `app`-role method (`pill.send`, B's to pin), never a layer method, and the daemon hands them to a bot's main
+   * an `app`-role method (`user.send`, B's to pin), never a layer method, and the daemon hands them to a bot's main
    * conversation as the user's message, or to a `pill.target` entry's handler. The pill has no `conversation.post`,
    * whose turns are the plugin's, never the user's. A refusal puts the words back in the field.
    */

@@ -112,7 +112,9 @@ export function checkManifest(folder: string, options: { child: boolean; folderN
         ids.add(id);
         for (const key of Object.keys(entry)) if (!UI_KEYS.has(key) && typeof entry[key] === "object") problems.push(`ui ${id}: "${key}" is not a field of a ui entry`);
         const fills = ["component", "web", "style", "hide"].filter((k) => entry[k] !== undefined);
-        if (fills.length !== 1) problems.push(`ui ${id}: an entry has exactly one of component, web, style or hide`);
+        // A tray line is data (`toggles` or `command`): the menu draws it, no part fills it.
+        const trayLine = entry.spot === "app.tray" && fills.length === 0 && (typeof entry.toggles === "string" || typeof entry.command === "string");
+        if (fills.length !== 1 && !trayLine) problems.push(`ui ${id}: an entry has exactly one of component, web, style or hide`);
         if (entry.component !== undefined && !exports.has(entry.component as string)) {
           problems.push(`ui ${id}: ${String(entry.component)} is not an export of client.entry`);
         }

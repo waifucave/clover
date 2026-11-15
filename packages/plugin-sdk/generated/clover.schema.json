@@ -766,7 +766,7 @@
               "maxItems": 1000,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema64"
+                "$ref": "#/$defs/__schema65"
               }
             }
           ]
@@ -2027,12 +2027,37 @@
                 "minLength": 1,
                 "maxLength": 256
               }
+            },
+            "front": {
+              "type": "string",
+              "enum": [
+                "stays",
+                "steps-aside"
+              ]
+            },
+            "cards": {
+              "type": "boolean"
+            },
+            "summon": {
+              "maxItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema64"
+              }
             }
           },
           "required": [
             "type"
           ],
           "additionalProperties": false
+        },
+        "toggles": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         },
         "app": {
           "type": "boolean"
@@ -2066,6 +2091,12 @@
       ]
     },
     "__schema64": {
+      "type": "string",
+      "enum": [
+        "tap"
+      ]
+    },
+    "__schema65": {
       "type": "object",
       "propertyNames": {
         "type": "string"

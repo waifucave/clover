@@ -52,6 +52,7 @@
     "conversation.post",
     "bots.read",
     "computers.read",
-    "approvals"
+    "approvals",
+    "approvals.all"
   ]
 }

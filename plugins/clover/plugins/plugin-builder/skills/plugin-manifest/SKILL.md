@@ -160,7 +160,11 @@ Every entry above may also carry `declares` (below).
   `audio` capability;
 - the spot's own fields: plugin-catalog lists them (`title` and `icon` for `sidebar.app`, `opens` naming a `main`
   key, `title` for `settings.section`…);
-- `layout` (on `bot.tab` only), `window` (`{ type: "overlay" | "window", alwaysOnTop, transparent }` for a window spot).
+- `layout` (on `bot.tab` only), `window` (for an `app.surface` entry: `{ type: "overlay" | "window", alwaysOnTop, transparent,
+  placement, front, cards, summon }`). `alwaysOnTop` needs the `overlay` capability; `front: "steps-aside"` leaves the screen while
+  Clover's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
+  `approvals.all`); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
+  `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so.
 
 ### Your own points and spots (`declares`)
 

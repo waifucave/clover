@@ -1,7 +1,10 @@
 // The pill's client entry (spec §10): what the manifest's `ui` entry names, and its parts.
 
 export { DispatchPill, type DispatchPillProps } from "../src/ui/DispatchPill";
-export { PillApp, PillHostContext, type PillHost, type PillEntryProps, type TargetTurn } from "../src/ui/host";
+// What the manifest's entry names: the pill with its host read from the SDK's hooks (`./hosted`). `PillView` is the bare view.
+export { PillHosted as PillApp } from "../src/ui/hosted";
+export { PillApp as PillView, PillHostContext, type PillHost, type PillEntryProps, type TargetTurn } from "../src/ui/host";
+export { usePillBots } from "../src/ui/pill-bots";
 export { Shell, type ShellProps } from "../src/ui/Shell";
 export { Bar, Menu, Portrait, measureText, targetLabel, type BarProps, type BarMenu, type PillTarget } from "../src/ui/Bar";
 export { CardBody, SealedCardBody, QuestionCardBody, type CardBodyProps } from "../src/ui/Card";

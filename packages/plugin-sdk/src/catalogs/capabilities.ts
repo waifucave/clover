@@ -27,6 +27,17 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** Not in §5.4's table: added at M0 for the island's Devices tab (review S16). */
   { name: "devices.read", lets: "Read the user's devices: their names, kinds, links, which one is the main, and which are online", ok: "sees your devices", warns: false },
   { name: "approvals", lets: "Hear which cards are pending, never their text, and place their sealed frames", ok: "restyles approval cards", warns: true },
+  /** Lane G's F4 (the owner's ruling of 2026-11-15: nothing that only one plugin uses). What the island does for every card, any
+   *  plugin may do behind its OK card: with `approvals`, hear every pending card's meta (not only its own bot's, and the cards that
+   *  have no bot: a plugin's OK, a change from Settings) and place their sealed frames, with the `card.*` look of its own. The
+   *  sealed rules (the checks on a press, the page's own visibility and open-delay) do not move, and the card's words never reach it. */
+  { name: "approvals.all", lets: "Needs `approvals` too: hear the meta of every pending card, not only its own bots' (a plugin's OK card, a change from Settings), place their sealed frames in a surface of its own, and give each the look of its own `card.*` tokens; the card's words never reach it and the press stays the sealed frame's own", ok: "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them", warns: true },
+  /** The user's own words as the user: what the Dispatch pill does, behind a call any plugin's part may make. */
+  { name: "user.send", lets: "Send text the part chooses to any bot, any session (coding sessions too) or any `pill.target` entry, as the user, on any real click or key press inside its own frames (`useUserSend`); one send for one press", ok: "sends messages to your bots and sessions as you, with text it chooses, whenever you click or press a key in its window", warns: true },
+  /** A window that floats: the island's and the pill's level. */
+  { name: "overlay", lets: "Open surfaces (`app.surface` entries) that float above every other window on every desktop, over the menu bar and full-screen apps, as large as the screen (`alwaysOnTop`); without it a surface is an ordinary window level, at most 800 by 600", ok: "shows windows on top of everything else on your screen", warns: true },
+  /** A line in the menu-bar (tray) menu. */
+  { name: "tray", lets: "Add items to Clover's menu-bar (tray) menu (`app.tray` entries): one that hides and shows a surface of its own, or runs a command of its own", ok: "adds items to Clover's menu in your menu bar", warns: false },
   { name: "files", lets: "Read and write files through the folder tree, inside the fence", ok: "reads and writes files on your computers", warns: false },
   /** The controller's ruling after #345: the plugin-process fence leaves a session's project folders read-only to a
    *  plugin's hooks and stdio MCP servers; this lets them write there (never `.git/hooks`, `.git/config` or a

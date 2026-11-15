@@ -62,7 +62,10 @@ describe.if(enabled)("the island's window on macOS", () => {
     console.log(`island window read back: ${JSON.stringify(r)}`);
     expect(r.y, JSON.stringify(r)).toBe(r.display.bounds.y);
   }, 90_000);
-  test("the panel plan can become the key window (to type in), as the app's overlays are made", () => {
+  // A background-only Electron (the only one a local run may use: no window, no Dock icon, no focus taken) is never the active
+  // application, so no window of it can be focused: `isFocused()` is false whatever the plan says. The test runs where the run
+  // is CI's (a session that can give a window the key); a local run skips it for that reason.
+  test.skipIf(process.env.CI === undefined || process.env.CI === "")("the panel plan can become the key window (to type in), as the app's overlays are made", () => {
     const r = readBack(true);
     expect(r.focusable).toBe(true);
     expect(r.canBeKey, JSON.stringify(r)).toBe(true);

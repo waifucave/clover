@@ -812,12 +812,18 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(to).not.toContain(`${child.processId}:${child.routingId}`);
   });
 
-  test("only a part of the bundled clover tree sends the user's words, and is a tree part", () => {
+  test("only a part whose plugin holds user.send sends the user's words (no plugin's id decides it), and a tree part is still a tree part", () => {
     const s = setup(composerFixture());
     const shell = mountShell(s);
     expect(s.rt.treePart(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
-    expect(s.rt.userSender(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
-    // A third-party part in its own layer's document is neither.
+    // The bundled shell without the capability sends nothing: the tree's name is no key.
+    expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("user.send capability");
+    // With `user.send` in its manifest (what the build grants the pill), it does.
+    const granted = setup(composerFixture());
+    granted.rt.setRegistry(granted.rt.registry.map((p) => (p.id !== "clover/shell" ? p : { ...p, capabilities: new Set([...p.capabilities, "user.send"]) })));
+    const shell2 = mountShell(granted);
+    expect(granted.rt.userSender(shell2.shellFrame, shell2.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    // A third-party part in its own layer's document is not a tree part, and sends only if it holds the capability too.
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
     const token = new URL(composer.url).searchParams.get("mount")!;
@@ -825,7 +831,9 @@ describe("lane B's #179 hooks in the runtime", () => {
     const child = frame(composer.url, shell.shellFrame);
     s.rt.describe(child, WIN, token);
     expect(s.rt.treePart(child, composer.mount)).toBeUndefined();
-    expect(() => s.rt.userSender(child, composer.mount)).toThrow("only the composer's entry and the app's own parts");
+    // It is a composer-spot entry, so it sends to its own session only (never anywhere else).
+    s.rt.setProps(shell.shellFrame, composer.mount, { bot: { id: "alpha", name: "Alpha" }, session: "alpha:main" });
+    expect(s.rt.userSender(child, composer.mount)).toMatchObject({ pluginId: "fixture-composer", only: { session: "alpha:main" } });
   });
 });
 
@@ -1035,6 +1043,33 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.rt.closeWindow(8);
     expect(() => s.rt.describe(rootFrame, 8, undefined)).toThrow();
   });
+  test("a surface's powers are its plugin's capabilities and its manifest's fields, never its id; tray lines are the plugin's own", () => {
+    const view = (id: string, capabilities: string[], extra: Record<string, unknown> = {}) => readUiPlugins([{
+      pluginId: id, name: `Name of ${id}`, treeHash: `sha256:${"7".repeat(64)}`, layer: id, assetBase: tmpdir(), clientEntry: "c.js", capabilities, themes: [], locales: [], bots: "all",
+      ui: [
+        { spot: "app.surface", id: "island", component: "Island", window: { type: "overlay", alwaysOnTop: true, front: "steps-aside", cards: true, summon: ["tap"] } },
+        { spot: "app.tray", id: "put-away", title: "Hide me", toggles: "island" },
+        { spot: "app.tray", id: "run", title: "Run it", command: "mine.run" },
+        { spot: "app.tray", id: "stray", title: "Hide another", toggles: "not-mine" },
+        ...(extra.more as object[] | undefined ?? []),
+      ],
+    }] as never, { [id]: { enabledAt: 5, source: "installed" } })[0]!;
+    const full = view("copy-island", ["approvals", "approvals.all", "overlay", "tray"]);
+    const bare = view("plain-island", ["approvals"]);
+    const s = setup([full, bare]);
+    const mine = (id: string) => s.rt.surfaceEntries().find((e) => e.pluginId === id)!;
+    // The same manifest fields; what each may do is its capabilities (the copy under another id has what the bundled island has).
+    expect(mine("copy-island")).toMatchObject({ floats: true, cards: true, stepsAside: true, tap: true });
+    expect(mine("plain-island")).toMatchObject({ floats: false, cards: false, stepsAside: true, tap: true });
+    // Tray lines need `tray`; a toggle names the plugin's own surface that is there; each plugin has a few lines.
+    expect(s.rt.trayEntries().filter((t) => t.pluginId !== "clover/pill").map((t) => [t.pluginId, t.title, t.surface ?? t.command])).toEqual([
+      ["copy-island", "Hide me", "copy-island#island"], ["copy-island", "Run it", "mine.run"],
+    ]);
+    // The bundled pill's own line is read the same way (its manifest says so: a toggle of its own surface).
+    expect(s.rt.trayEntries().find((t) => t.pluginId === "clover/pill")).toMatchObject({ title: "Dispatch Pill", surface: "clover/pill#pill" });
+    const many = view("loud", ["tray"], { more: [1, 2, 3, 4].map((n) => ({ spot: "app.tray", id: `c${n}`, title: `C${n}`, command: `loud.c${n}` })) });
+    expect(setup([many]).rt.trayEntries().filter((t) => t.pluginId === "loud")).toHaveLength(3);
+  });
 
   test("a plugin holding `microphone`: its frames carry the flag and the runtime says its layer holds it; no other plugin's does", () => {
     const view = (capabilities: string[]) => readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-surface")), capabilities }] as never);
@@ -1138,8 +1173,9 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
     fields: { title: { type: "text", text: "Run?" } }, options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
   });
-  function placed(render = false) {
-    const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)], { render });
+  function placed(render = false, all = false) {
+    const plugins = readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never).map((p) => (all ? { ...p, capabilities: new Set([...p.capabilities, "approvals.all"]) } : p));
+    const s = setup(plugins, { render });
     const shell = mountShell(s);
     const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     if (item.kind !== "frame") throw new Error("not a frame");
@@ -1167,6 +1203,27 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     for (const id of ["card_other", "card_none"]) {
       expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own bot");
     }
+  });
+
+  test("with approvals.all a plugin places any card, another bot's and a card of no bot too, whoever it is (no id decides it)", () => {
+    const { s, docFrame, mount } = placed(false, true);
+    for (const id of ["card_own", "card_other", "card_none"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^clover-sealed:\/\/card\//);
+  });
+
+  test("approvals.all without approvals places nothing, and with both it places any card", () => {
+    const plugins = readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never).map((p) => ({ ...p, capabilities: new Set(["approvals.all"]) }));
+    const s = setup(plugins);
+    const shell = mountShell(s);
+    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    if (item.kind !== "frame") throw new Error("not a frame");
+    const token = new URL(item.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-card", token);
+    const docFrame = frame(item.url, shell.shellFrame);
+    const info = s.rt.describe(docFrame, WIN, token);
+    const store = new SealedFrames();
+    s.rt.sealed = store;
+    store.fromCore(card("card_none"));
+    expect(() => s.rt.sealedFrameOf(docFrame, info.mount, "card_none", "button:allow_once")).toThrow("approvals capability");
   });
 
   test("each ask says what came of it, with the window of the part that asked (the app's timing lines)", () => {

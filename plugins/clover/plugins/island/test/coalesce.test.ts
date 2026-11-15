@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { coalesced } from "../src/layer/clover/coalesce";
+import { coalesced } from "../src/ui/coalesce";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rect = (w: number, h: number) => [{ x: 0, y: 0, width: w, height: h }];

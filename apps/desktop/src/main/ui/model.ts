@@ -61,7 +61,7 @@ export interface UiEntry {
   /** A bot's layout file (§5.5): the core draws it in the tab, as data; its component is `LAYOUT_COMPONENT`. */
   layout?: string;
   web?: Readonly<Record<string, unknown>>;
-  window?: { type: "overlay" | "window"; alwaysOnTop?: boolean; transparent?: boolean; placement?: Readonly<Record<string, string>> };
+  window?: { type: "overlay" | "window"; alwaysOnTop?: boolean; transparent?: boolean; placement?: Readonly<Record<string, string>>; front?: "stays" | "steps-aside"; cards?: boolean; summon?: readonly "tap"[] };
   declares: Readonly<Record<string, PointDeclaration>>;
   /** The spot's own fields (title, icon, opens…). */
   fields: Readonly<Record<string, unknown>>;
@@ -229,8 +229,8 @@ export function readUiEntry(pluginId: string, raw: Readonly<Record<string, unkno
   if (raw.layout !== undefined) return undefined;
   const kind = raw.hide === true ? "hide" : typeof raw.component === "string" ? "component" : raw.web !== undefined ? "web" : typeof raw.style === "string" ? "style"
     // Data the declaring part draws itself, never mounted: a message action (`call`, validated by the daemon), a pill target
-    // (`handler`: the Dispatch pill lists it by its `title`, and the daemon runs the handler on a send).
-    : (DATA_SPOTS.has(spot) && typeof raw.call === "string") || (spot === "pill.target" && typeof raw.handler === "string") ? "data" : undefined;
+    // (`handler`: the Dispatch pill lists it by its `title`, and the daemon runs the handler on a send), a tray line (`toggles` or `command`).
+    : (DATA_SPOTS.has(spot) && typeof raw.call === "string") || (spot === "pill.target" && typeof raw.handler === "string") || (spot === "app.tray" && (typeof raw.toggles === "string" || typeof raw.command === "string")) ? "data" : undefined;
   if (kind === undefined) return undefined;
   const fields: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(raw)) if (!ENTRY_KEYS.has(k)) fields[k] = v;

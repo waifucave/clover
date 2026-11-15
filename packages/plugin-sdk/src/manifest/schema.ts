@@ -359,7 +359,19 @@ export const UiSchema = z.object({
     alwaysOnTop: z.boolean().optional(),
     transparent: z.boolean().optional(),
     placement: z.partialRecord(Os, utf16(256, 1)).optional(),
+    /** How the surface stands when the main window is in front: `stays` (the default) or `steps-aside` (it leaves the
+     *  screen and comes back when another app is in front). */
+    front: z.enum(["stays", "steps-aside"]).optional(),
+    /** The surface draws the pending cards (with `approvals` and `approvals.all`): the platform's rule is one place at a
+     *  time, so it shows them only while the main window is not in front, and the window draws them otherwise. */
+    cards: z.boolean().optional(),
+    /** How the user summons it: `tap` (a four-finger tap on the trackpad, when the add-on is there). */
+    summon: z.array(z.enum(["tap"])).max(1).optional(),
   }).optional(),
+  /** On an `app.tray` entry: the own surface (an `app.surface` entry id of this plugin) the menu item hides and shows. */
+  toggles: EntryId.optional(),
+  /** On an `app.tray` entry: a command of this plugin's (the core's `command.list`) the menu item runs. */
+  command: utf16(128, 1).optional(),
   /** In a plugin with a bot: a part beside the bot, which follows the app's rules (any spot an ordinary plugin fills,
    *  `when.bot` any bots) and has its own switch, rather than one of the bot's tab (§5.5, the owner's rule of November
    *  14). Without it, a bot's plugin fills only what Bots offers, on its own tab. */

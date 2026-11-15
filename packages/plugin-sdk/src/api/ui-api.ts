@@ -109,6 +109,8 @@ export interface SurfaceEnvironment {
   readonly os: "macos" | "windows" | "linux";
   readonly session?: "wayland" | "x11";
   readonly display: { readonly bounds: Rect; readonly workArea: Rect; readonly notch: Rect | null };
+  /** Whether Clover's main window is the front window now (a surface that `steers aside` or draws cards by that rule reads it). */
+  readonly mainFront?: boolean;
 }
 
 /** A place in the main window a part asks the app to open (the island's Usage and Devices tabs open Settings there). */
@@ -254,7 +256,7 @@ export interface UiApi {
    *  plugin's. Only the bundled `clover` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise
    *  refuses it and sends nothing, so a script can't speak as the user. The app's main process carries the words to the
-   *  daemon as `pill.send`, an `app`-role method no layer may call (#179's review, S2). */
+   *  daemon as `user.send`, an `app`-role method no layer may call (#179's review, S2). */
   useUserSend?(): ((to: UserSendTarget, message: UserSendMessage) => Promise<void>) | undefined;
 }
 

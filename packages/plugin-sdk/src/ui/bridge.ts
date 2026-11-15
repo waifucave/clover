@@ -403,7 +403,7 @@ export interface LayerBridge {
    *  from the input it saw come to the window (a key press's bytes; a paste through the paste door). */
   terminalInput(mount: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part, inside the key press or click that sends (`useUserSend`):
-   *  the core carries them to the daemon as `pill.send` only after it saw that input come to this window. */
+   *  the core carries them to the daemon as `user.send` only after it saw that input come to this window. */
   userSend(mount: string, to: UserSendTarget, message: { text: string; images?: readonly { mediaType: string; data: Uint8Array }[] }): Promise<{ seq?: number }>;
   /** Offers data for a drag from the part `mount`: a token to put in the drag's `DRAG_GRANT_TYPE`. */
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;

@@ -184,13 +184,19 @@ describe("card.pending, the layer's own list of what waits", () => {
   const layer = (pluginId: string) => conn("layer", { kind: "plugin", pluginId });
   test("a plugin sees its own bot's cards as meta only, the bundled tree sees all, another plugin none", async () => {
     const broker = new CloverApprovalBroker({ clock: new FakeClock() });
-    const m = cardMethods(() => broker);
+    const m = cardMethods(() => broker, (id) => (id === "clover/island" || id === "mirror-island" ? ["approvals", "approvals.all"] : ["approvals"]));
     const { card } = await raise(broker); // bot "luna"
     const mine = await m["card.pending"]!(layer("luna"), {}) as { cards: { id: string; fields?: unknown }[] };
     expect(mine.cards.map((c) => c.id)).toEqual([card.id]);
     expect(mine.cards[0]!.fields).toBeUndefined();
     expect((await m["card.pending"]!(layer("luna/extra"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
     expect((await m["card.pending"]!(layer("clover/island"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
+    // approvals.all without approvals sees nothing of another bot's.
+    const alone = cardMethods(() => broker, () => ["approvals.all"]);
+    expect(await alone["card.pending"]!(layer("sol"), {})).toEqual({ cards: [] });
+    // Any plugin with approvals.all sees them all, whatever its id; the tree's name without it sees none of another bot's.
+    expect((await m["card.pending"]!(layer("mirror-island"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
+    expect(await m["card.pending"]!(layer("clover/other"), {})).toEqual({ cards: [] });
     expect(await m["card.pending"]!(layer("sol"), {})).toEqual({ cards: [] });
     expect(await m["card.pending"]!(APP, {})).toEqual({ cards: [] });
   });

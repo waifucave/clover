@@ -54,6 +54,7 @@ How to read it:
 | `app.root` | single | app | — | The main window's root: the shell, which declares every other spot. |
 | `app.surface` | list | app | — | Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float. |
 | `app.background` | list | app | — | A part with no place in the window: it runs in a hidden window of its own while Clover is open and the plugin runs, outlives the main window, is never slept or slowed, and may play sound when the plugin holds `audio`. A… |
+| `app.tray` | list | app | `tray` | A line in the menu-bar (tray) menu, with the `tray` capability: `toggles` names one of the plugin's own `app.surface` entries (the line hides and shows it, and the choice is kept), or `command` names a command of the pl… |
 | `bot.tab` | keyed | app | — | Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key. |
 | `sidebar` | single | shell | — | The sidebar: the app's own, the same on every tab. A plugin may fill it for the whole app (its own component, in its own frame, reading and acting through `shell.*`); an entry tied to a bot's tab (`when.bot`, or inside… |
 | `bar` | single | shell | — | The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: "none"` there is no bar at all and the bot's own controls (`bot.… |
@@ -91,7 +92,7 @@ How to read it:
 ## Data points other plugins declared (a top-level `contributes` key each)
 
 - `webhook.ingress` (list, code, declared by clover/trigger-webhook): Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7).
-- `island.line` (list, code, declared by clover/island): A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island c…
+- `island.line` (list, code, declared by island): A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island c…
 - `avatar.formats` (list, data, declared by clover/character): A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is ha…
 - `avatar.packs` (list, data, declared by clover/character): Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).
 
@@ -108,6 +109,10 @@ How to read it:
 | `computers.control` | Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running | controls the screen and input of your computers | a warning |
 | `devices.read` | Read the user's devices: their names, kinds, links, which one is the main, and which are online | sees your devices |  |
 | `approvals` | Hear which cards are pending, never their text, and place their sealed frames | restyles approval cards | a warning |
+| `approvals.all` | Needs `approvals` too: hear the meta of every pending card, not only its own bots' (a plugin's OK card, a change from Settings), place their sealed frames in a surface of its own,… | shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them | a warning |
+| `user.send` | Send text the part chooses to any bot, any session (coding sessions too) or any `pill.target` entry, as the user, on any real click or key press inside its own frames (`useUserSen… | sends messages to your bots and sessions as you, with text it chooses, whenever you click or press a key in its window | a warning |
+| `overlay` | Open surfaces (`app.surface` entries) that float above every other window on every desktop, over the menu bar and full-screen apps, as large as the screen (`alwaysOnTop`); without… | shows windows on top of everything else on your screen | a warning |
+| `tray` | Add items to Clover's menu-bar (tray) menu (`app.tray` entries): one that hides and shows a surface of its own, or runs a command of its own | adds items to Clover's menu in your menu bar |  |
 | `files` | Read and write files through the folder tree, inside the fence | reads and writes files on your computers |  |
 | `project.write` | Let its hooks and stdio MCP servers change files in the session's project folders (never `.git/hooks`, `.git/config` or a credential file); without it, those folders are read-only… | changes files in your project folders | a warning |
 | `browser` | Drive the Clover Browser through its API | drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there | a warning |
