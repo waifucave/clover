@@ -13,7 +13,7 @@ import { startFakeAnthropic } from "./fake-anthropic";
 import { FULL_STEPS } from "./steps";
 import { CARDS_STEP } from "./cards-step";
 import {
-  ADD_CAPABILITY, BUILT_BY_ALPHA, DEVICES_LINE, DROP_ID, DROP_NAME, DROP_TOOL, dropCommand, dropFiles, GREETING, NOTIFY_LINE, PEER_ID, SECOND_REQUEST, WORKSHOP_ID, WORKSHOP_NAME, WORKSHOP_STEP,
+  ADD_CAPABILITY, BOT_ID, BOT_INSTRUCTIONS, BOT_NAME, BOT_WORDS, botFiles, BUILT_BY_ALPHA, DEVICES_LINE, DROP_ID, DROP_NAME, DROP_TOOL, dropCommand, dropFiles, GREETING, NOTIFY_LINE, PEER_ID, SECOND_REQUEST, WORKSHOP_ID, WORKSHOP_NAME, WORKSHOP_STEP,
   WORKSHOP_TOOL, answerFor, callText, reloadMiss, stepOf, waitingProblems, workshopFiles,
 } from "./workshop-step";
 
@@ -74,6 +74,24 @@ test("the plugin Alpha drops in is the tool template's under its own id and tool
   expect(dropCommand("/h/scratch/alpha/ws-dropped", "/h/plugins")).toBe('mv "/h/scratch/alpha/ws-dropped" "/h/plugins"/');
 });
 
+test("the bot Alpha makes is the bot template's with her own instructions, a valid plain bot, and her edit's old words are in them once", async () => {
+  const files = botFiles();
+  const made = templateFiles("bot", { id: BOT_ID, name: BOT_NAME });
+  if ("error" in made) throw new Error(made.error);
+  expect(Object.keys(files)).toEqual(Object.keys(made.files));
+  expect(files["bot/instructions.md"]).toBe(BOT_INSTRUCTIONS);
+  expect(count(BOT_INSTRUCTIONS, BOT_WORDS.first)).toBe(1);
+  expect(BOT_INSTRUCTIONS.replace(BOT_WORDS.first, BOT_WORDS.second)).not.toContain(BOT_WORDS.first);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lane-b-bot-")));
+  temps.push(root);
+  for (const [p, body] of Object.entries(files)) await Bun.write(join(root, BOT_ID, p), body);
+  const v = await validatePluginFolder(join(root, BOT_ID), { os: "macos" });
+  expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
+  expect(v.plugin?.class).toBe("data");
+  expect(v.plugin?.contributions.map((c) => c.point)).toEqual(["bot"]);
+  expect(JSON.parse(files["clover.json"]!).contributes.bot.name).toBe(BOT_NAME);
+});
+
 test("the peer bot's fixture is a valid plain bot with no code", async () => {
   const v = await validatePluginFolder(resolve(import.meta.dir, "fixtures", PEER_ID), { os: "macos" });
   expect(v.issues.filter((i) => i.severity === "error")).toEqual([]);
@@ -100,6 +118,11 @@ test("the scripted fake calls each of the row's tools with exactly the row's inp
       ...Object.entries(dropFiles()).map(([p, content]) => ["Write", { file_path: `${home}/scratch/alpha/${DROP_ID}/${p}`, content }, "Write"] as [string, Record<string, unknown>, string]),
       ["Bash", { command: dropCommand(`${home}/scratch/alpha/${DROP_ID}`, `${home}/plugins`), description: "Install the plugin by moving it into the plugins folder" }, "Bash"],
       [DROP_TOOL, { name: "Acceptance" }, `mcp__${DROP_ID}-tools__${DROP_TOOL}`],
+      ["PluginNew", { template: "bot", id: BOT_ID, name: BOT_NAME }, "mcp__builder__PluginNew"],
+      ...Object.entries(botFiles()).map(([p, content]) => ["Write", { file_path: `${home}/scratch/alpha/${BOT_ID}/${p}`, content }, "Write"] as [string, Record<string, unknown>, string]),
+      ["PluginValidate", { folder: BOT_ID }, "PluginValidate"],
+      ["PluginInstall", { folder: BOT_ID }, "PluginInstall"],
+      ["Edit", { file_path: `${home}/plugins/${BOT_ID}/bot/instructions.md`, old_string: BOT_WORDS.first, new_string: BOT_WORDS.second }, "Edit"],
     ];
     for (const [tool, input, name] of calls) {
       const text = callText(tool, input);
@@ -148,6 +171,6 @@ test("a reload that never came says how long the row waited and what the tree ha
 
 test("the row sits after the card-placing row, and its name says each step", () => {
   expect(FULL_STEPS.indexOf(WORKSHOP_STEP)).toBe(FULL_STEPS.indexOf(CARDS_STEP) + 1);
-  for (const part of ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "Edit in place", "capability", "answered No", "another bot", "the drop"]) expect(WORKSHOP_STEP).toContain(part);
+  for (const part of ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "Edit in place", "capability", "answered No", "another bot", "the drop", "bot template", "bot.list", "sidebar under Bots", "instructions"]) expect(WORKSHOP_STEP).toContain(part);
   expect(BUILT_BY_ALPHA).toBe("Built by Alpha. Alpha can change its code later without asking, within what this card lists.");
 });

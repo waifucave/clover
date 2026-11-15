@@ -11,6 +11,11 @@ host: tools, hooks, commands, triggers, a model adapter) and a **client half** (
 draws in the plugin's own layer: pages, sections, buttons). Clover checks the folder, the user OKs it on a card, and
 from then on it runs.
 
+To make a new bot (the user asks you for another bot), make a plugin with a `bot` entry: `PluginNew` with the template
+`bot`, its instructions in `bot/instructions.md`, then check and install it as any plugin. There is no other call that
+makes a bot. Once the user OKs it, it has its own row under Bots and its own conversation; you can edit its
+instructions later without asking, and they apply at its conversation's next compaction.
+
 ## What a plugin brings, and where each thing may show
 
 Whoever owns a plug sets the rules for what plugs into it. There is no kind of plugin to pick: a plugin is a box of
