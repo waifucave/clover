@@ -131,6 +131,12 @@ if (headless || typeof __CLOVER_TEST_BUILD__ === "string") {
 // the player (its clock and counters run), muted at Chromium's output.
 const silent = headless || typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
 if (silent) app.commandLine.appendSwitch("mute-audio");
+// A test-marked or acceptance build's microphone is Chromium's generated stream (a beep), never a real device, and Chromium's own
+// permission prompt is skipped (main's handlers decide who may ask). A real build gets neither switch.
+if (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") {
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+}
 // Every plugin origin in a process of its own (S9).
 app.commandLine.appendSwitch("site-per-process");
 // No proxy at all, from the first request: every session's own direct proxy comes too late for what Chromium does as it
@@ -294,11 +300,19 @@ async function ready(): Promise<void> {
     ...(typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? {} : { ensureMic: microphoneProblem }),
     log,
   });
+  // A plugin that holds `microphone` may open it from its own frames (their address names the layer; the runtime says what that plugin
+  // holds). On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build answers
+  // with Chromium's generated stream (the `use-fake-device-for-media-stream` switch) and never opens a real microphone or asks the system.
+  const pluginMic = (layer: string): boolean => runtime?.layerHolds(layer, "microphone") === true;
+  const testBuild = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
   ui.setPermissionRequestHandler((wc, permission, callback, details) => {
-    callback(micPermission({ permission, mediaTypes: "mediaTypes" in details ? details.mediaTypes : undefined, requestingUrl: details.requestingUrl, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME));
+    const q = { permission, mediaTypes: "mediaTypes" in details ? details.mediaTypes : undefined, requestingUrl: details.requestingUrl, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id };
+    const ok = micPermission(q, holds, LAYER_SCHEME, pluginMic);
+    if (ok && !testBuild && !q.requestingUrl.startsWith(`${LAYER_SCHEME}://clover/`)) void microphoneProblem().then((problem) => callback(problem === undefined), () => callback(false));
+    else callback(ok);
   });
   ui.setPermissionCheckHandler((wc, permission, origin, details) =>
-    micPermission({ permission, mediaTypes: details.mediaType === undefined || details.mediaType === "unknown" ? undefined : [details.mediaType], requestingUrl: details.requestingUrl ?? origin, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME));
+    micPermission({ permission, mediaTypes: details.mediaType === undefined || details.mediaType === "unknown" ? undefined : [details.mediaType], requestingUrl: details.requestingUrl ?? origin, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME, pluginMic));
 
   runtime = new UiRuntime({
     os, platform: process.platform, safeMode, log,

@@ -124,7 +124,7 @@ export const MICROPHONE_ORIGIN = `${LAYER_SCHEME}://clover`;
 /** `headers` with the microphone policy opened to `allow` (`(self)` for the clover layer's own document, the layer's origin for
  *  the core root that frames it); the iframe still needs `allow="microphone"` (root.ts), and main's permission handler
  *  still answers only while the user's press has a recording open (listen.ts). */
-export function withMicrophone(headers: Record<string, string>, allow: "(self)" | `(self "${string}")`): Record<string, string> {
+export function withMicrophone(headers: Record<string, string>, allow: "(self)" | "*" | `(self "${string}")`): Record<string, string> {
   const policy = headers["Permissions-Policy"];
   if (policy === undefined || !policy.includes("microphone=()")) return headers;
   return { ...headers, "Permissions-Policy": policy.replace("microphone=()", `microphone=${allow}`) };
@@ -160,8 +160,11 @@ export function webHeaders(): Record<string, string> {
 }
 
 /** The headers of a response on a layer's origin. A document (`text/html`) names the installed layers it may frame. */
-export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = [], wasm = false, microphone = false): Record<string, string> {
-  const h: Record<string, string> = { ...(microphone ? withMicrophone(commonHeaders(), "(self)") : commonHeaders()), "Content-Type": contentType };
+export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = [], wasm = false, microphone: boolean | "*" = false): Record<string, string> {
+  // `true`: the document's own frames may open it (a plugin that holds `microphone`); `"*"`: the app's own documents (the clover layer's),
+  // which hand it on to the frames of the plugins that hold it, whichever they are and whenever they were installed. A frame still
+  // needs its `allow` (root.ts, the SDK's Spot: set only for the clover layer's and for a plugin that holds it) and main's permission handler.
+  const h: Record<string, string> = { ...(microphone === "*" ? withMicrophone(commonHeaders(), "*") : microphone ? withMicrophone(commonHeaders(), "(self)") : commonHeaders()), "Content-Type": contentType };
   const doc = contentType.startsWith("text/html");
   if (doc) h["Content-Security-Policy"] = layerCsp(hosts, wasm);
   if (doc || contentType.startsWith("text/javascript")) h["Connection-Allowlist"] = connectionAllowlist(hosts, doc ? layers : undefined);

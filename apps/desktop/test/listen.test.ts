@@ -222,6 +222,36 @@ describe("the window's microphone permission", () => {
   });
 });
 
+describe("a plugin that holds `microphone`", () => {
+  const holds = (on: number[]) => ({ micAllowed: (w: number) => on.includes(w) });
+  const plugin = (layers: string[]) => (layer: string) => layers.includes(layer);
+  const ask = { permission: "media", mediaTypes: ["audio"], requestingUrl: "clover-plugin://acc-mic/doc/index.html?mount=a", windowId: 5 };
+  test("its own frames may open it (audio alone, in any window), no other plugin's frame may", () => {
+    expect(micPermission(ask, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(true);
+    expect(micPermission(ask, holds([]), "clover-plugin", plugin(["acc-other"]))).toBe(false);
+    expect(micPermission(ask, holds([]), "clover-plugin")).toBe(false);
+    expect(micPermission({ ...ask, requestingUrl: "clover-plugin://acc-mic--child/x" }, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(false);
+    expect(micPermission({ ...ask, requestingUrl: "clover-plugin://acc-mic.evil/x" }, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(false);
+    expect(micPermission({ ...ask, requestingUrl: "clover-sealed://acc-mic/x" }, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(false);
+  });
+  test("never a camera, a screen or anything else, even for the holder", () => {
+    for (const q of [{ mediaTypes: ["video"] }, { mediaTypes: ["audio", "video"] }, { mediaTypes: [] }, { mediaTypes: undefined }, { permission: "display-capture" }, { permission: "geolocation" }, { windowId: undefined }]) {
+      expect([q, micPermission({ ...ask, ...q }, holds([]), "clover-plugin", plugin(["acc-mic"]))]).toEqual([q, false]);
+    }
+  });
+  test("the clover layer's push-to-talk rule is unchanged: still only while its window's hold records, whoever holds `microphone`", () => {
+    const shell = { ...ask, requestingUrl: "clover-plugin://clover/doc/index.html" };
+    expect(micPermission(shell, holds([]), "clover-plugin", plugin(["clover"]))).toBe(false);
+    expect(micPermission(shell, holds([5]), "clover-plugin", plugin([]))).toBe(true);
+  });
+  test("a plugin's own document opens it to its own frames only; the app's own documents hand it down", () => {
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, true))).toContain("microphone=(self)");
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, "*"))).toContain("microphone=*");
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, false))).toContain("microphone=()");
+  });
+  const policy = (h: Record<string, string>) => h["Permissions-Policy"]!;
+});
+
 describe("the documents' microphone policy: closed everywhere but the clover layer", () => {
   const policy = (h: Record<string, string>) => h["Permissions-Policy"]!;
   test("every response of the app's schemes keeps microphone=(); only the clover layer's document and the core root that frames it open it", () => {

@@ -867,6 +867,8 @@ export class UiRuntime {
         ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
         // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
         ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
+        // A plugin holding `microphone` has its frames allowed to open it (main's permission handlers say yes for its origin only).
+        ...(m.plugin!.capabilities.has("microphone") ? { microphone: true as const } : {}),
       };
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
@@ -1059,6 +1061,10 @@ export class UiRuntime {
       }
     }
     return out;
+  /** Whether the plugin whose layer is `layer` (its origin's host, `clover-plugin://<layer>/`) holds a capability now. Main's permission
+   *  handlers judge a microphone request by it: the layer is read from the frame's own address, which only that plugin's files can have. */
+  layerHolds(layer: string, capability: string): boolean {
+    return this.plugins.some((p) => p.layer === layer && p.capabilities.has(capability));
   }
 
   /** The surface window a document may steer: the frame its window's root placed, and only that one. */

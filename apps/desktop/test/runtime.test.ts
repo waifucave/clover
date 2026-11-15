@@ -1009,6 +1009,23 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     // Closing its window drops the mount.
     s.rt.closeWindow(8);
     expect(() => s.rt.describe(rootFrame, 8, undefined)).toThrow();
+  test("a plugin holding `microphone`: its frames carry the flag and the runtime says its layer holds it; no other plugin's does", () => {
+    const view = (capabilities: string[]) => readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-surface")), capabilities }] as never);
+    const hold = setup(view(["microphone"]));
+    expect(hold.rt.layerHolds("fixture-surface", "microphone")).toBe(true);
+    expect(hold.rt.layerHolds("fixture-surface", "audio")).toBe(false);
+    expect(hold.rt.layerHolds("clover", "microphone")).toBe(false);
+    expect(hold.rt.layerHolds("someone-else", "microphone")).toBe(false);
+    const itemOf = (s: ReturnType<typeof setup>) => {
+      s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
+      const rootFrame = frame("clover-core://app/?surface=fixture");
+      const root = s.rt.describe(rootFrame, 7, undefined);
+      return s.rt.resolve(rootFrame, root.mount, "app.surface").items[0] as { microphone?: true };
+    };
+    expect(itemOf(hold).microphone).toBe(true);
+    const none = setup(view([]));
+    expect(none.rt.layerHolds("fixture-surface", "microphone")).toBe(false);
+    expect(itemOf(none).microphone).toBeUndefined();
   });
 
   test("the menu broker learns a frame's place from each document above it", () => {

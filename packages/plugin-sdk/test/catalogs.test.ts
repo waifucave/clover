@@ -16,7 +16,7 @@ describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio", "microphone",
       "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
@@ -27,6 +27,7 @@ describe("capabilities", () => {
       "sees every plugin you have, whether it's on, and when you add or remove one",
       "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
       "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
+      "hears your microphone",
       "can ask your voice providers to speak or transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
     ]);
