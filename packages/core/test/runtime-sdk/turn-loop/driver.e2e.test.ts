@@ -250,6 +250,63 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("an instructions edit reaches the next turn's prompt in a conversation of any length (a reopen resuming the transcript); the same instructions never reopen", async () => {
+    const home = tempHome();
+    const prompts: string[] = [];
+    const query: typeof sdkQuery = (args) => {
+      prompts.push(JSON.stringify((args.options as { systemPrompt?: unknown } | undefined)?.systemPrompt ?? ""));
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const ctx = context(home, "winter-test/echo");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+    try {
+      // One exchange: well inside any compaction's retention window.
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).toContain("You are Luna.");
+      // Its plugin's instructions file edited (or the user layer's): the next turn's prompt has the new words.
+      ctx.bot.instructions = "You are Luna, and you keep a herb journal.";
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]).toContain("you keep a herb journal");
+      expect(lines.filter((l) => l.includes("reopening: its instructions changed"))).toHaveLength(1);
+      // Nothing changed since: no reopen.
+      expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      expect(prompts).toHaveLength(2);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  darwinTest("an instructions edit waits while its runtime runs background work, and comes at the first turn after it ends", async () => {
+    const home = tempHome();
+    const prompts: string[] = [];
+    const query: typeof sdkQuery = (args) => {
+      prompts.push(JSON.stringify((args.options as { systemPrompt?: unknown } | undefined)?.systemPrompt ?? ""));
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const live: number[] = [];
+    const ctx = context(home, "winter-test/calls");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l), observe: { tasks: (_c, n) => live.push(n) } }));
+    try {
+      expect((await driver.turn(user('CALL Bash {"command":"sleep 4; echo finished","run_in_background":true,"description":"wait"}'), control())).reason).toBe("end_turn");
+      expect(live.at(-1)).toBe(1);
+      ctx.bot.instructions = "You are Luna, mended.";
+      await driver.turn(user("while it runs"), control());
+      expect(prompts).toHaveLength(1);
+      expect(lines.some((l) => l.includes("its instructions changed; it reopens once its background work ends"))).toBe(true);
+      for (let i = 0; i < 100 && live.at(-1) !== 0; i++) await Bun.sleep(100);
+      expect(live.at(-1)).toBe(0);
+      await driver.turn(user("after it ended"), control());
+      expect(prompts).toHaveLength(2);
+      expect(prompts[1]).toContain("You are Luna, mended.");
+    } finally {
+      await driver.stop();
+    }
+  }, 120_000);
+
   test("an effort change alone goes to the open runtime live (setEffort), with no reopen; one the runtime refuses, or can't take live, reopens with it", async () => {
     const home = tempHome();
     const run = async (setEffort: ((target: never) => unknown) | undefined) => {

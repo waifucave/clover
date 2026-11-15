@@ -38,10 +38,9 @@
 //    own, validates and installs it, with no card; its OK card names her and is pressed. Its bot is then in `bot.list`
 //    and in the sidebar under Bots; its row opens its tab (its composer), and, on the model the user gives it (the
 //    bot editor's, as step 6's peer), one turn there gets the fake's reply, drawn in the window, with her instructions
-//    in its prompt. Her edit of its instructions applies with no card: the plugin reloads, and after the conversation
-//    compacts (instructions apply at a compaction, bots/service.ts; one inside the compaction's 4-exchange retention
-//    window is refused as "nothing to compact", so the run talks with it until one takes) its next turn's prompt has
-//    the new words and not the old. The user removes the plugin, and the bot leaves bot.list (whether its sidebar row
+//    in its prompt. Her edit of its instructions applies with no card: the plugin reloads, and its very next turn's
+//    prompt has the new words and not the old (an edit reaches the next turn however short the conversation; no
+//    compaction is needed). The user removes the plugin, and the bot leaves bot.list (whether its sidebar row
 //    goes is recorded, not failed: the sidebar doesn't follow `bot_removed` yet).
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
@@ -53,7 +52,7 @@ import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { escape, fail, frames, installFromPage, leave, sleep, toAlphasTab, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { clickShown } from "./window-open";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers; a bot she makes the same way (a plugin from PluginNew's bot template, with her own instructions) lands behind its OK card naming her, and OK'd it is in bot.list and the sidebar under Bots, its tab opens and answers a turn with her instructions in its prompt; her edit of its instructions applies with no card (at its next compaction); removed, it leaves bot.list";
+export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers; a bot she makes the same way (a plugin from PluginNew's bot template, with her own instructions) lands behind its OK card naming her, and OK'd it is in bot.list and the sidebar under Bots, its tab opens and answers a turn with her instructions in its prompt; her edit of its instructions applies with no card at its next turn; removed, it leaves bot.list";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -591,7 +590,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     }, () => frames(ctx.cdp));
     said.push(`a turn on its tab: the fake's reply drawn, her instructions in its prompt`);
 
-    // Her edit of its instructions: no card; the plugin reloads; at its compaction the new words reach its prompt.
+    // Her edit of its instructions: no card; the plugin reloads; its very next turn's prompt has the new words.
     const file = join(home, "plugins", BOT_ID, "bot", "instructions.md");
     const hash = (await pluginOf(ctx, BOT_ID))?.treeHash;
     await ok(ctx, session, "Read", { file_path: file });
@@ -605,21 +604,13 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
       return (last?.state === "running" || last?.state === "enabled") && last.treeHash !== undefined && last.treeHash !== hash ? true : undefined;
     }, async () => `its state is ${last?.state ?? "gone"}; its tree hash ${last?.treeHash === hash ? "never changed" : "changed"}`);
     if (!(await listed()).some(isMine)) fail("after her edit its bot left bot.list");
-    // The user's compaction (session.compact, the app's own method). A conversation that fits the compaction's
-    // retention window (4 exchanges) is refused ("nothing to compact"), so a new bot's short one is talked with
-    // first: one more turn before each try, at most 6.
-    let more = 0;
-    let refused = "";
-    for (let i = 1; i <= 6 && more === 0; i++) {
-      await talk(`its turn ${i + 1}`);
-      await ctx.rpc.request("session.compact", { id: its }, 120_000).then(() => { more = i; }, (err: unknown) => { refused = err instanceof Error ? err.message : String(err); });
-    }
-    if (more === 0) fail(`session.compact still refused after 6 more turns: ${refused}`);
-    const second = await talk("its turn after her edit and the compaction");
-    if (!second.prompt.includes(BOT_WORDS.second)) fail(`after her edit and the compaction its prompt doesn't hold her new words ("${BOT_WORDS.second}")`);
-    if (second.prompt.includes(BOT_WORDS.first)) fail(`after her edit and the compaction its prompt still holds the old words ("${BOT_WORDS.first}")`);
+    // Its next turn, the conversation still one exchange long (inside any compaction's retention window): no
+    // compaction, and the prompt has her new words.
+    const second = await talk("its turn after her edit");
+    if (!second.prompt.includes(BOT_WORDS.second)) fail(`its next turn after her edit doesn't hold her new words in its prompt ("${BOT_WORDS.second}")`);
+    if (second.prompt.includes(BOT_WORDS.first)) fail(`its next turn after her edit still holds the old words in its prompt ("${BOT_WORDS.first}")`);
     if ((await cardsOf(ctx)).some((c) => c.pluginId === BOT_ID)) fail("a card for it is waiting after her edit applied");
-    said.push(`her Edit of its instructions: no card, reloaded; compacted after ${more} more turn(s)${refused !== "" ? " (refused before: nothing to compact)" : ""}, its next prompt has the new words, not the old`);
+    said.push("her Edit of its instructions: no card, reloaded; its very next turn's prompt has the new words, not the old (no compaction)");
 
     // Removed by the user (its removal card pressed in the window): its bot leaves bot.list.
     const r = await ctx.rpc.request<{ card?: string }>("plugin.remove", { id: BOT_ID });

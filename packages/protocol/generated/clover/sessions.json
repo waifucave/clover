@@ -353,7 +353,7 @@
       }
     },
     "bot.setUserLayer": {
-      "doc": "Sets or clears fields of a bot's user layer; a change to its instructions applies at the next compaction.",
+      "doc": "Sets or clears fields of a bot's user layer; a change to its instructions applies at its next turn.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -2258,7 +2258,7 @@
       }
     },
     "session.compact": {
-      "doc": "Compacts now, so new instructions apply at once at the cost of a cache miss (§5.6).",
+      "doc": "Compacts now: the conversation becomes a summary and the prompt's harness blocks are rebuilt (a cache miss). A conversation inside the compaction's retention window is refused as having nothing to compact; an instructions edit doesn't need it, since it reaches the next turn (§5.6).",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [

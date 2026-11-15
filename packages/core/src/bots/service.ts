@@ -12,8 +12,8 @@
 //   engine that decides when runs happen is M3's; `runSideThread` is its door.
 // * **A bot that breaks its own files** (§6.1 lets it edit its plugin folder) keeps running on its last good version,
 //   so it can still fix them; the reason is logged.
-// * **The user layer** (user-layer.ts) wins field by field over the plugin; model and effort apply at the next turn,
-//   instructions at the next compaction (§5.6, §6.3), since drivers read the bot through `current()`.
+// * **The user layer** (user-layer.ts) wins field by field over the plugin; model, effort and instructions apply at
+//   the next turn (§5.6, §6.3), since drivers read the bot through `current()` at each turn start.
 // * **The model**: the user layer's, else the plugin's default when the user has a key for it, else the user's
 //   default model (§6.1).
 // * **State** (`BotView.state`): `paused` while the pause switch is on, `thinking` while the main conversation runs a
@@ -100,9 +100,10 @@ export interface BotSessionContext {
   /** Who the session is when it calls anything, its bot named (§5.4; the controller's L-M1 answer): the runtime binds
    *  each tool call's caller from this, never from what a plugin says (R7). */
   readonly caller: Extract<Caller, { kind: "session" }>;
-  /** The bot now: a driver reads the model and effort at each turn and the instructions at each compaction. While a
-   *  turn or a compaction runs it is the bot as checked when it started (its provider the user allowed): a plugin
-   *  that changes its model then reaches the next turn, which checks it again (#311 B1). */
+  /** The bot now: a driver reads the model, effort and instructions at each turn start (an instructions edit reopens
+   *  its runtime under the new prompt). While a turn or a compaction runs it is the bot as checked when it started
+   *  (its provider the user allowed): a plugin that changes its model then reaches the next turn, which checks it
+   *  again (#311 B1). */
   current(): EffectiveBot;
   /** Whether an agent this session starts may run on `model` (#311 S1): the bot's own user-chosen provider, one granted
    *  for the bot, or the user's yes on the card now. Absent: no check. */

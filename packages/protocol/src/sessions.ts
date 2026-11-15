@@ -288,7 +288,7 @@ export const SESSIONS_METHODS = {
   botSetUserLayer: defineMethod({
     name: "bot.setUserLayer", owner: "D", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({ id: BotId, patch: UserLayerPatch }), result: ChangeResult,
-    doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at the next compaction.",
+    doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at its next turn.",
   }),
   botImportAvatar: defineMethod({
     name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
@@ -441,7 +441,7 @@ export const SESSIONS_METHODS = {
   sessionCompact: defineMethod({
     name: "session.compact", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: SessionParams, result: Ok,
-    doc: "Compacts now, so new instructions apply at once at the cost of a cache miss (§5.6).",
+    doc: "Compacts now: the conversation becomes a summary and the prompt's harness blocks are rebuilt (a cache miss). A conversation inside the compaction's retention window is refused as having nothing to compact; an instructions edit doesn't need it, since it reaches the next turn (§5.6).",
   }),
   memoryList: defineMethod({
     name: "memory.list", owner: "D", roles: ["app", "cli", "layer"], capability: "memory.read",

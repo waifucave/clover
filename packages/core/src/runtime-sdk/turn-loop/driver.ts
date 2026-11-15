@@ -440,6 +440,12 @@ export class BotSessionDriver implements SessionDriver {
   #builtCatalog: { provider: string; key: string } | undefined;
   /** The provider key a reopen was held back for (background work running), said once. */
   #catalogHeldSaid: string | undefined;
+  /** The bot's instructions the open runtime's prompt carries: the runtime takes the prompt only when it opens, so an
+   *  edit (its plugin's file, or the user layer's) reopens it at the next turn start, resuming the transcript under the
+   *  new prompt, however long or short the conversation (one cache miss per edit). */
+  #builtInstructions: string | undefined;
+  /** The instructions a reopen was held back for (background work running), said once. */
+  #instructionsHeldSaid: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   /** Plugin servers already logged as left out for a runtime-reserved name. */
   readonly #runtimeReservedSaid = new Set<string>();
@@ -863,6 +869,8 @@ export class BotSessionDriver implements SessionDriver {
     this.#builtModel = modelKey(bot);
     this.#builtCatalog = { provider: providerOfModel(bot.model), key: this.#catalogKey(providerOfModel(bot.model)) };
     this.#catalogHeldSaid = undefined;
+    this.#builtInstructions = bot.instructions;
+    this.#instructionsHeldSaid = undefined;
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -1118,10 +1126,28 @@ export class BotSessionDriver implements SessionDriver {
         }
       }
     }
-    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged && !catalogChanged) return this.#inc!;
+    // Its instructions now: an edit reaches the next turn, not only the next compaction (which refuses a conversation
+    // inside its retention window). Held back while background work runs, which a reopen would end.
+    let instructionsChanged = false;
+    if (open && this.#builtInstructions !== undefined) {
+      let now: string | undefined;
+      try {
+        now = this.#ctx.current().instructions;
+      } catch { now = undefined; }
+      if (now !== undefined && now !== this.#builtInstructions) {
+        if (this.#inc!.tasks.size > 0) {
+          if (this.#instructionsHeldSaid !== now) this.#log(`bot driver ${this.#ctx.sessionId}: its instructions changed; it reopens once its background work ends`);
+          this.#instructionsHeldSaid = now;
+        } else {
+          instructionsChanged = true;
+        }
+      }
+    }
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged && !catalogChanged && !instructionsChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
     if (catalogChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its provider ${this.#builtCatalog?.provider} changed in the model plugins`);
+    if (instructionsChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its instructions changed`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open({ settings });
