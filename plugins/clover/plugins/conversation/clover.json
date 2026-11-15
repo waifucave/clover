@@ -17,7 +17,9 @@
     "approvals",
     "approvals.all",
     "bots.read",
-    "devices.read"
+    "devices.read",
+    "user.send",
+    "audio"
   ],
   "contributes": {
     "ui": [

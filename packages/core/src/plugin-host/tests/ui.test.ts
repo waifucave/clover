@@ -178,7 +178,7 @@ describe("plugin.ui and plugin.layer.api", () => {
     const registry = { list: () => [], entries: () => [], get: (id: string) => states[id], watch: () => () => {} } as never;
     const ui = pluginUi({
       registry, router: async (call) => (routed.push(call.path), null), emit: () => {},
-      settings: { layerView: async (id, key) => (asked.push([id, key]), key === undefined ? { greeting: "hi", token: { set: true } } : "hi"), layerSet: (id, key, value) => void wrote.push([id, key, value]) },
+      settings: { layerView: async (id, key, bot) => (asked.push(bot === undefined ? [id, key] : [id, key, bot]), key === undefined ? { greeting: "hi", token: { set: true } } : "hi"), layerSet: (id, key, value, bot) => void wrote.push(bot === undefined ? [id, key, value] : [id, key, value, bot]) },
     });
     try {
       const own = ui.methods[PLUGINS_METHODS.pluginLayerCall.name]!;
@@ -192,11 +192,17 @@ describe("plugin.ui and plugin.layer.api", () => {
       // Only while on and running (or waiting): stopped, off and unknown plugins read nothing.
       for (const id of ["sol", "off", "ghost"]) expect(((await own({ call: "settings.get", args: ["greeting"] }, as(id)).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
       // One key, a string; anything else is refused before anything is read.
-      for (const args of [[1], [""], ["k".repeat(129)], ["a", "b"], [{ key: "a" }]]) expect(((await own({ call: "settings.get", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.get takes");
+      for (const args of [[1], [""], ["k".repeat(129)], ["a", "b"], [{ key: "a" }], ["a", { bot: 1 }], ["a", { bot: "alpha", id: "sol" }], ["a", { bot: "alpha" }, 1]]) expect(((await own({ call: "settings.get", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.get takes");
       expect(asked).toHaveLength(3);
+      // F2: a bot's value of its own, for the bot it names (as the host half's `settings.get(key, { bot })`).
+      await own({ call: "settings.get", args: ["nick", { bot: "alpha" }] }, as("luna"));
+      expect(asked.at(-1)).toEqual(["luna", "nick", "alpha"]);
+      asked.pop();
       // A change: its own, a key and a value; at most LAYER_SETTING_WRITES_PER_MINUTE a minute per plugin.
       expect(await own({ call: "settings.set", args: ["order", "oldest"], pluginId: "sol" }, as("luna"))).toEqual({ result: null });
-      for (const args of [["order"], [1, "x"], ["order", "x", "y"]]) expect(((await own({ call: "settings.set", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.set takes");
+      for (const args of [["order"], [1, "x"], ["order", "x", "y"], ["order", "x", { bot: "alpha", id: "sol" }]]) expect(((await own({ call: "settings.set", args }, as("luna")).catch((x: unknown) => x)) as Error).message).toContain("settings.set takes");
+      expect(await own({ call: "settings.set", args: ["nick", "Lu", { bot: "alpha" }] }, as("luna"))).toEqual({ result: null });
+      expect(wrote.at(-1)).toEqual(["luna", "nick", "Lu", "alpha"]);
       expect(((await own({ call: "settings.set", args: ["order", "x"] }, as("sol")).catch((x: unknown) => x)) as Error).message).toContain("isn't running");
       let capped: Error | undefined;
       for (let i = 0; i < LAYER_SETTING_WRITES_PER_MINUTE + 5 && capped === undefined; i++) {

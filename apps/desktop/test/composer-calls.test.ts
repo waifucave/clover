@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { routeComposer, type ComposerMount, type ComposerRoute } from "../src/main/ui/composer-calls";
 
+/** The bundled composer's capabilities (its manifest's; the build grants them): the composer spot's acts by capability (F2). */
+const BUNDLED_COMPOSER: ReadonlySet<string> = new Set(["conversation.read", "conversation.post", "bots.read", "computers.read", "commands.run", "audio", "bots.edit"]);
+
 function setup(over: Partial<ComposerRoute> & { gestures?: number } = {}) {
   const calls: string[] = [];
   const logs: string[] = [];
   let gestures = over.gestures ?? 0;
-  const mount: ComposerMount = { windowId: 1, pluginId: "clover/composer", session: "alpha:main", bot: "alpha", tree: true };
+  const mount: ComposerMount = { windowId: 1, pluginId: "clover/composer", session: "alpha:main", bot: "alpha", capabilities: BUNDLED_COMPOSER };
   const r: ComposerRoute = {
     composer: mount,
     op: "models",
@@ -74,7 +77,7 @@ describe("the composer spot's callbacks", () => {
   });
 
   test("a third-party entry in the composer spot sends with a gesture, and its bot model switch goes its own layer connection (the card)", async () => {
-    const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", tree: false };
+    const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", capabilities: new Set<string>() };
     const { r, calls } = setup({ composer: third, op: "setModel", args: { model: "a/b" }, gestures: 2 });
     expect(await routeComposer(r)).toBe("layer");
     expect(calls).toEqual(['layer:vn/composer:bot.setUserLayer:{"id":"alpha","patch":{"model":"a/b"}}']);
@@ -84,7 +87,7 @@ describe("the composer spot's callbacks", () => {
   });
 
   test("another session's model switch is session.setModel; a malformed model is refused", async () => {
-    const other: ComposerMount = { windowId: 1, pluginId: "clover/composer", session: "s_1", tree: true };
+    const other: ComposerMount = { windowId: 1, pluginId: "clover/composer", session: "s_1", capabilities: BUNDLED_COMPOSER };
     const { r, calls } = setup({ composer: other, op: "setModel", args: { model: "a/b" }, gestures: 2 });
     await routeComposer(r);
     expect(calls).toEqual(['app:session.setModel:{"id":"s_1","model":"a/b"}']);
@@ -169,11 +172,11 @@ describe("the composer spot's callbacks", () => {
     });
 
     test("a third party's composer in the spot gets neither: it can't run every plugin's command as the user", async () => {
-      const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", tree: false };
+      const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", capabilities: new Set<string>() };
       for (const op of ["commands", "runCommand"]) {
         const calls: string[] = [];
         const { r } = setup({ composer: third, op, args: { name: "tarot.draw" }, gestures: 1, asApp: lists(calls) });
-        await expect(routeComposer(r)).rejects.toThrow("only Clover's own composer");
+        await expect(routeComposer(r)).rejects.toThrow("capability");
         expect(calls).toEqual([]);
       }
     });
@@ -218,11 +221,11 @@ describe("the composer spot's callbacks", () => {
       for (const op of ["listenStatus", "listenStart", "listenStop"]) {
         // No holds (an app that can't record): the status is still a read of the core's; a start and a stop are refused.
         if (op !== "listenStatus") await expect(routeComposer(setup({ op, gestures: 1 }).r)).rejects.toThrow("can't record");
-        const agent = setup({ composer: { windowId: 1, pluginId: "clover/composer", session: "agent-1", tree: true }, op, gestures: 1, listens: h.holds });
+        const agent = setup({ composer: { windowId: 1, pluginId: "clover/composer", session: "agent-1", capabilities: BUNDLED_COMPOSER }, op, gestures: 1, listens: h.holds });
         await expect(routeComposer(agent.r)).rejects.toThrow("no bot");
-        const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", tree: false };
+        const third: ComposerMount = { windowId: 1, pluginId: "vn/composer", session: "alpha:main", bot: "alpha", capabilities: new Set<string>() };
         const t = setup({ composer: third, op, gestures: 1, listens: h.holds });
-        await expect(routeComposer(t.r)).rejects.toThrow("only Clover's own composer");
+        await expect(routeComposer(t.r)).rejects.toThrow("capability");
       }
       expect(h.log).toEqual([]);
     });

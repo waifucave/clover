@@ -16,7 +16,10 @@
     "approvals.all",
     "bots.read",
     "computers.read",
-    "conversation.read"
+    "conversation.read",
+    "account.read",
+    "app.settings",
+    "audio"
   ],
   "contributes": {
     "ui": [

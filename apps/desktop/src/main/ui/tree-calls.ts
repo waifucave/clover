@@ -1,34 +1,28 @@
-// The bundled `clover` tree's calls to the core (spec §5.5: "Only the `clover` layer changes the core's settings and the
-// user layers directly"). A part reaches the daemon on its plugin's `layer` connection, which refuses these; they go on
-// the app's own connection instead, and only these: an explicit table, per method and per part, default refuse. Who
-// qualifies is decided here from facts the page can't forge (`treePart`: bundled, in the `clover` layer, top-level
-// `clover`), never from an id or flag the page sends. Every other layer is untouched.
+// The app's door for its parts' calls to the core (spec §5.5, F2 of the general-capabilities contract: "no door checks a
+// plugin's id"). A part reaches the daemon on its plugin's `layer` connection, which refuses the core's settings, the
+// user layers and the user-only methods; the calls in this table go on the app's own connection instead, each allowed by
+// a capability the CALLING PART'S PLUGIN holds (`runtime.capabilitiesOf`, from the main process's own record of the
+// mount, never from the page), whichever plugin it is: the bundled tree's parts hold theirs because their manifests list
+// them and the build grants them, and a third party's because the user said yes on its OK card. No part id, plugin id or
+// child id decides a call here.
 //
-// This door is deliberately small. Everything a replaceable part does (read and follow a conversation, send as the user,
-// pick a model, interrupt) goes through what ANY plugin gets: the plugin API under its capabilities, and the spot's
-// own host callbacks (composer-calls.ts). What is left here is:
-//   class 1  the core's settings and the user layers, from the clover layer (ui.settings, ui.set, bot.setUserLayer from the
-//            bot editor, the layout patches the user switches off in one bot's tab from the bot editor, a plugin's own
-//            settings from the settings part);
-//   class 2  the clover shell's own pages, which the spec gives no capability and no replacement path today:
-//            plugin.list/get/ui, plugin.index.*, plugin.setEnabled (with the user's click), account.status,
-//            archive.list/history, and the model catalog for the bot editor;
-//   class 3  the Plugins page (`PLUGINS_PART`, the controller's ruling of 2026-11-11): what the user does to plugins,
-//            each by the user's own key press or click in that frame, one call per gesture, with the same user-only
-//            methods and sealed cards the terminal and the app use. A folder never comes from the page as a path: the
-//            page asks main to pick one (`ui.pick`) and gets a one-use token, which main swaps back for the path it
-//            chose (`PickTokens`). `plugin.remove` from the page always asks on a sealed card (main sets `card`). A
-//            plugin's settings may be any plugin's here, and the core cards a change that moves a plugin's host.
+// A part whose plugin lacks the capability is not let through: a method the `layer` role has (`bot.setUserLayer`,
+// `plugin.install`, `session.diff`…) goes to the layer door as before, where the core applies its own rules (and raises
+// a card where it does); any other is refused with the capability it needs. A method the table doesn't name isn't its
+// business: the layer door, as for any part.
+//
 // Dispositions:
-//   read      a read; `part` limits it to a part, none: any tree part.
-//   settings  a write of the user's own preference: only the named part.
-//   gesture   a call that counts only inside the user's own key press or click (the SendGate).
-//   held      a call that counts only while a hold the user's own press opened is live (push-to-talk's `voice.listen`: the
-//             composer's `listenStart` took the gesture, listen.ts keeps the hold, and the shell's pieces ride it).
-//   card      trust-changing (levels, devices, the main computer): never on this route.
+//   read      a read.
+//   gesture   a call that counts only inside the user's own key press or click in that frame (the SendGate), for every
+//             holder, one call per press.
+//   held      a call that counts only while a hold the user's own press opened is live (push-to-talk's `voice.listen`).
+//   card      trust-changing (levels, devices, the main computer): never on this route, whoever asks.
 //   unserved  the daemon has no such method.
-// `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
-import { TopPluginId } from "@waifucave/clover-protocol";
+// `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path. A part's OWN plugin's
+// settings are not here: every part reads and writes them through the plugin API (`settings.get`/`set`, the core's
+// `plugin.layer.call`), at every scope, as its host half does.
+import { TopPluginId, allowedMethods } from "@waifucave/clover-protocol";
+import { withImplied } from "@waifucave/clover-plugin-sdk";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { resend } from "./resend";
 import { messageAction } from "./message-action";
@@ -36,136 +30,136 @@ import type { ListenHolds } from "./listen";
 /** The bundled tree whose notices are the app's own: never muted. */
 const CLOVER_TREE = "clover";
 
-export type Disposition = "read" | "settings" | "gesture" | "held" | "card" | "unserved";
+export type Disposition = "read" | "gesture" | "held" | "card" | "unserved";
+
+/** The capabilities that gate this door (catalog: `packages/plugin-sdk/src/catalogs/capabilities.ts`). */
+export const APP_SETTINGS = "app.settings";
+export const BOTS_EDIT = "bots.edit";
+export const BOTS_AVATAR = "bots.avatar";
+export const PLUGINS_READ = "plugins.read";
+export const PLUGINS_MANAGE = "plugins.manage";
+export const TOOLS_PERMISSIONS = "tools.permissions";
+export const ACCOUNT_READ = "account.read";
+export const COMMANDS_RUN = "commands.run";
 
 export interface TreeCall {
   disposition: Disposition;
-  /** The only part whose frame may make the call (a `settings` call always names one). */
-  part?: string | readonly string[];
-  /** Also only inside the user's own key press or click: what it changes is what code runs. A list: only for those
-   *  parts. */
-  gesture?: boolean | readonly string[];
-  /** The parts that may name any plugin's id (`plugin.settings.*`); every other part is held to its own. */
-  anyId?: readonly string[];
+  /** The capability the caller's plugin must hold: one name, or a function of the params that names the one the call's
+   *  shape needs, or a list of which any one will do (the call itself then holds each to its own reach). Absent on a
+   *  `read`/`gesture`/`held` call: no capability (each such call says why). */
+  needs?: string | readonly string[] | ((params: unknown) => string | readonly string[]);
 }
 
 const READ: Disposition = "read";
+const GESTURE: Disposition = "gesture";
+const read = (needs: TreeCall["needs"]): TreeCall => ({ disposition: READ, needs });
+const press = (needs: TreeCall["needs"]): TreeCall => ({ disposition: GESTURE, needs });
 
-/** The Plugins page: the bundled plugin-index plugin's part. */
-export const PLUGINS_PART = "clover/plugin-index";
-const SETTINGS_PART = "clover/settings";
-/** What only the Plugins page does, each with the user's key press or click. */
-const PAGE = { disposition: "gesture", part: PLUGINS_PART } as const satisfies TreeCall;
-/** The bot editor: the bundled bot-editor plugin's part. */
-export const BOT_EDITOR_PART = "clover/bot-editor";
-/** The conversation view: the bundled conversation plugin's part. */
-export const CONVERSATION_PART = "clover/conversation";
+const obj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
-/** The character stage: the bundled character plugin's part. */
-export const CHARACTER_PART = "clover/character";
+/** Which of `ui.set`'s shapes a call is: a bot's tab lists (`editorListParams`), the stage's speak-replies switch
+ *  (`voiceMuteParams`), or the look (`settingsParams`). Decided from the params alone; each shape is checked again whole. */
+export function uiSetShape(params: unknown): "lists" | "voice" | "look" {
+  const keys = Object.keys(obj(obj(params).patch));
+  if (keys.length === 1 && keys[0] === "lists") return "lists";
+  if (keys.length === 1 && keys[0] === "voice") return "voice";
+  return "look";
+}
 
-/** The window's shell: the bundled shell plugin's part, the document that records for push-to-talk. */
-export const SHELL_PART = "clover/shell";
+/** The user-layer fields only an avatar section writes. */
+const AVATAR_LAYER_FIELDS: readonly string[] = ["avatar", "avatarCredit"];
 
-/** Clover Voice's part. Its parts make no call through this door today (they use the plugin API, as any plugin's do);
- *  its entries below wait for F2's capability-to-calls table to remove or class them. */
-export const VOICE_PART = "clover/voice";
+/** Whether a `bot.setUserLayer` patch is the avatar's (its two fields only). */
+function avatarPatch(params: unknown): boolean {
+  const keys = Object.keys(obj(obj(params).patch));
+  return keys.length > 0 && keys.every((k) => AVATAR_LAYER_FIELDS.includes(k));
+}
+
+/** The pick uses each capability gives. */
+export type PickUse = "plugin.install" | "plugin.dev.add" | "bot.importAvatar";
+const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
+  [PLUGINS_MANAGE]: ["plugin.install", "plugin.dev.add"],
+  [BOTS_AVATAR]: ["bot.importAvatar"],
+};
+
+/** A `plugin.settings.*` call that names a bot, from a holder of `bots.edit`, is a bot's Edit page's (its own bot's
+ *  plugin only, the bot named to the core for a per-bot value); any other is a plugin's page in Settings › Plugins (any
+ *  plugin's, with `plugins.read` / `plugins.manage`; a bot the page names is dropped there). */
+const namesBot = (params: unknown): boolean => obj(params).bot !== undefined;
+
+/** What the Plugins page's calls need: reads `plugins.read`, acts `plugins.manage` (which carries `plugins.read`). */
+const PLUGINS_READS = ["plugin.list", "plugin.get", "plugin.ui", "plugin.index.list", "plugin.index.search", "plugin.auth.list", "plugin.dev.list", "plugin.grant.list", "command.list", "notify.mutes"] as const;
+const PLUGINS_ACTS = [
+  "plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut",
+  "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "notify.setMuted", "plugin.setEnabled",
+] as const;
+/** The methods whose params are shaped as the Plugins page's (`pageParams`). */
+const PAGE_METHODS: ReadonlySet<string> = new Set<string>([...PLUGINS_READS, ...PLUGINS_ACTS, "plugin.settings.get", "plugin.settings.set"]);
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
-  // Class 1: the core's settings and the user layers.
-  "ui.settings": { disposition: READ },
-  // The Settings page's own choices, each by the user's click or key press (one call per gesture), and only the keys its
-  // controls write (`settingsParams`): the light / dark / system choice, the theme plugin, the language.
-  // The bot editor's one write: which plugins' layout patches the user switched off in that bot's tab (`tabPatchParams`),
-  // merged by main into the stored lists, the rest kept.
-  "ui.set": { disposition: "settings", part: ["clover/settings", BOT_EDITOR_PART], gesture: ["clover/settings", BOT_EDITOR_PART] },
-  // The shell's pieces of a recording the user is holding (push-to-talk): audio and whether it is the last, nothing else. Main
-  // names the bot and the utterance, numbers the pieces and refuses any with no hold open (`ListenHolds.piece`); the hold
-  // itself began with the composer's `listenStart`, inside the user's press.
-  "voice.listen": { disposition: "held", part: SHELL_PART },
-  // Clover Voice's part is still named here (see VOICE_PART): its own settings go through the plugin API now.
-  "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
-  "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
-  // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card). The avatar's two
-  // fields (`avatar`, `avatarCredit`) are the character plugin's section's alone, and the editor writes none of them
+  // Clover's own settings: the look, the theme, the language; the layout lists, read (by `bots.edit` too: a bot's tab
+  // lists are merged into them); which filler of each one-at-a-time point is active (§5.4: only the user's press in a
+  // picker changes it).
+  "ui.settings": read([APP_SETTINGS, BOTS_EDIT]),
+  // Three shapes, each by its own capability and each the user's press: the look's keys (`settingsParams`, `app.settings`),
+  // one bot's tab lists (`editorListParams`, `bots.edit`), the speak-replies switch (`voiceMuteParams`, `audio`, until
+  // the voice is re-founded).
+  "ui.set": press((p) => (uiSetShape(p) === "lists" ? BOTS_EDIT : uiSetShape(p) === "voice" ? "audio" : APP_SETTINGS)),
+  "point.active.list": read(APP_SETTINGS),
+  "point.active.set": press(APP_SETTINGS),
+  // The voice's door to the core's voice slot, behind `audio` (the OK says it hears push-to-talk and plays the bots'
+  // voices) until the Voice plugin's re-founding deletes them: the stop button, the speak button, the player's "ended".
+  "voice.stop": press("audio"),
+  "voice.speak": press("audio"),
+  "voice.played": read("audio"),
+  // The pieces of a recording the user is holding (push-to-talk): main names the bot and the utterance and refuses any
+  // with no hold open (`ListenHolds.piece`); the hold itself began on the user's press.
+  "voice.listen": { disposition: "held", needs: "audio" },
+  // Another plugin's settings (Settings › Plugins: `plugins.read` reads, `plugins.manage` writes; a secret never through
+  // a page), or the edited bot's own plugin's at bot scope (`bots.edit`: main checks the id is a bot's).
+  "plugin.settings.get": read((p) => (namesBot(p) ? [BOTS_EDIT, PLUGINS_READ] : PLUGINS_READ)),
+  "plugin.settings.set": press((p) => (namesBot(p) ? [BOTS_EDIT, PLUGINS_MANAGE] : PLUGINS_MANAGE)),
+  // A bot's user layer: the avatar's two fields with `bots.avatar`, every other field with `bots.edit`, never both at once
   // (`userLayerWhy`).
-  "bot.setUserLayer": { disposition: "gesture", part: [BOT_EDITOR_PART, CHARACTER_PART] },
-  // A model the user picked in main's own dialog, copied into the user's avatars for a bot and made its avatar. Only a
-  // pick token of that use, only an existing bot's id, only the character plugin's avatar section, one call per click
-  // (`botImport`).
-  "bot.importAvatar": { disposition: "gesture", part: CHARACTER_PART },
-  // "Try again" on a turn that ended in an error: the page names the session and nothing else; main reads that session's
-  // log, and sends the user's own message that began the failed turn again, as the user (`resend.ts`). It starts a model
-  // turn like the composer's own send, so it is the user's click, one call per click.
-  "session.resend": { disposition: "gesture", part: CONVERSATION_PART },
-  // A plugin's small button in a message's row (`conversation.message.action`, data the conversation draws): the page names
-  // the entry, the session and the message's seq; main finds the active entry and runs its own handler (`message-action.ts`).
-  // App-side only: no core method of this name. The user's click, one call per click.
-  "conversation.messageAction": { disposition: "gesture", part: CONVERSATION_PART },
-  // The session panels' reads (the core's sessions/panel-reads.ts): the diff panel's changes, and the column's outputs,
-  // context use and connectors. Read only, and only from the part that draws each.
-  "session.diff": { disposition: READ, part: "clover/panel-diff" },
-  "session.outputs": { disposition: READ, part: "clover/panel" },
-  "session.context": { disposition: READ, part: "clover/panel" },
-  "session.connectors": { disposition: READ, part: "clover/panel" },
-  // Class 2: the clover shell's own pages.
-  "account.status": { disposition: READ },
-  "archive.history": { disposition: READ },
-  "archive.list": { disposition: READ },
-  "plugin.list": { disposition: READ },
-  "plugin.get": { disposition: READ },
-  "plugin.ui": { disposition: READ },
-  "plugin.index.list": { disposition: READ },
-  "plugin.index.search": { disposition: READ },
-  "models.list": { disposition: READ, part: "clover/bot-editor" },
-  // Switching a plugin on or off changes what code runs: the user's click too.
-  "plugin.setEnabled": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART], gesture: true },
-  // Class 3: the Plugins page.
-  "plugin.logs": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART] },
-  // Settings' Tools tab: what each plugin tool may do (always allow, ask, always block) and the card rules saved for one bot.
-  // A value decides when a card is raised, so setting one or taking one back is the user's own press, in Settings alone.
-  "tool.permissions": { disposition: READ, part: SETTINGS_PART },
-  "tool.setPermission": { disposition: "settings", part: SETTINGS_PART, gesture: true },
-  "tool.takeBackRule": { disposition: "settings", part: SETTINGS_PART, gesture: true },
-  // One at a time (§5.4): Settings' pickers read every one-at-a-time point, and only the user's press in Settings picks
-  // which filler is active (no plugin's call or setting does).
-  "point.active.list": { disposition: READ, part: SETTINGS_PART },
-  "point.active.set": { disposition: "settings", part: SETTINGS_PART, gesture: true },
-  "plugin.auth.list": { disposition: READ, part: PLUGINS_PART },
-  "plugin.dev.list": { disposition: READ, part: PLUGINS_PART },
-  // The files and folders the user picked for a plugin (its page's "Files it may open"), and the computers the page lists to tick.
-  "plugin.grant.list": { disposition: READ, part: PLUGINS_PART },
-  // Read by every bundled part that shows where it is or where to send (the shell's and the sidebar's account row, the composer's
-  // "where" picker, Settings' and the panel's computers), not only the page that listed it to tick.
-  "computer.list": { disposition: READ, part: [PLUGINS_PART, SETTINGS_PART, "clover/shell", "clover/sidebar", "clover/composer", "clover/panel"] },
-  // Every command with what became of its default key (bound, or the app's, too bare, or shared): the detail's "Keys" lines.
-  "command.list": { disposition: READ, part: PLUGINS_PART },
-  // Lane D's notification mutes, per plugin: the list is a read; muting or unmuting one is the user's click.
-  "notify.mutes": { disposition: READ, part: PLUGINS_PART },
-  // main's own dialog, for the use the page names: the Plugins page's folders (an install, a development folder) and the
-  // avatar section of the character plugin (`bot.importAvatar`). The token it issues is redeemable by that one use only (`PICK_USES`).
-  "ui.pick": { disposition: "gesture", part: [PLUGINS_PART, CHARACTER_PART] },
-  // Opens the app's own key dialog (a core page) for one plugin's one secret setting: the value never passes the part.
-  "ui.secret": { disposition: "gesture", part: [PLUGINS_PART, BOT_EDITOR_PART] },
-  "plugin.install": PAGE,
-  "plugin.remove": PAGE,
-  "plugin.update": PAGE,
-  "plugin.pin": PAGE,
-  "plugin.restart": PAGE,
-  "plugin.index.add": PAGE,
-  "plugin.index.remove": PAGE,
-  "plugin.auth.signIn": PAGE,
-  "plugin.auth.signOut": PAGE,
-  "plugin.dev.add": PAGE,
-  "plugin.dev.remove": PAGE,
-  "plugin.dev.renew": PAGE,
-  // The user's own choices on a plugin's page: take a picked file or folder back, where it works (bots, agents), the computers
-  // it runs on, and that they are 18 or older (before an adult plugin is switched on).
-  "plugin.grant.remove": PAGE,
-  "plugin.setScope": PAGE,
-  "plugin.setComputers": PAGE,
-  "plugin.confirmAdult": PAGE,
-  "notify.setMuted": PAGE,
+  "bot.setUserLayer": press((p) => (avatarPatch(p) ? BOTS_AVATAR : BOTS_EDIT)),
+  // A model the user picked in main's own dialog, copied into the user's avatars for a bot and made its avatar: only a
+  // pick token of that use, only an existing bot's id (`botImport`).
+  "bot.importAvatar": press(BOTS_AVATAR),
+  // "Try again" on a turn that ended in an error: main reads that session's log and sends the user's own message that
+  // began the failed turn again, as the user (`resend.ts`): less than `user.send` (no words of the part's).
+  "session.resend": press("user.send"),
+  // A plugin's small button in a message's row: no capability. Main finds the entry among the active entries of the
+  // `conversation.message.action` spot THE CALLING PART DECLARES (none: refused) and runs that plugin's own handler, which
+  // chose to contribute it, with `{ session, seq }` only (`message-action.ts`).
+  "conversation.messageAction": { disposition: GESTURE },
+  // A session's reads: its changes, outputs, context use and connectors; the archive.
+  "session.diff": read("conversation.read"),
+  "session.outputs": read("conversation.read"),
+  "session.context": read("conversation.read"),
+  "session.connectors": read("conversation.read"),
+  "archive.history": read("conversation.read"),
+  "archive.list": read("conversation.read"),
+  // The account Clover is signed in with: its name and email.
+  "account.status": read(ACCOUNT_READ),
+  // The models a bot can be set to, with whether each provider is signed in.
+  "models.list": read("bots.read"),
+  "computer.list": read("computers.read"),
+  "plugin.logs": read("logs.read"),
+  // Settings' Tools tab: what each plugin tool may do and the card rules saved for one bot. A value decides whether a
+  // card is raised at all, so setting one or taking one back is the user's own press.
+  "tool.permissions": read(TOOLS_PERMISSIONS),
+  "tool.setPermission": press(TOOLS_PERMISSIONS),
+  "tool.takeBackRule": press(TOOLS_PERMISSIONS),
+  // Main's own dialog, for the use the page names: `plugins.manage`'s folders (an install, a development folder),
+  // `bots.avatar`'s model file. The token is redeemable by that one use only.
+  "ui.pick": press((p) => PICK_USES_FOR(obj(p).use)),
+  // The app's own key dialog for one plugin's one secret setting or `api-key` sign-in: any plugin's with
+  // `plugins.manage`, the edited bot's own plugin's settings with `bots.edit` (`secret`). The key never passes the part.
+  "ui.secret": press([PLUGINS_MANAGE, BOTS_EDIT]),
+  ...Object.fromEntries(PLUGINS_READS.map((m) => [m, read(PLUGINS_READ)])),
+  // What the user does to plugins, each by their own press; a removal, an update, a sign-out and a renewal stay on a
+  // sealed card for every holder (`pageParams` sets `card`), and an install lands behind the installed plugin's own OK card.
+  ...Object.fromEntries(PLUGINS_ACTS.map((m) => [m, press(PLUGINS_MANAGE)])),
   // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
   "device.revoke": { disposition: "card" },
@@ -174,11 +168,17 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "models.catalog": { disposition: "unserved" },
   "session.changes": { disposition: "unserved" },
   "session.createPr": { disposition: "unserved" },
-  // Session control isn't the tree's: it goes through the composer spot's callbacks (composer-calls.ts).
+  // Session control isn't this door's: it goes through the composer spot's callbacks (composer-calls.ts).
   "session.setModel": { disposition: "unserved" },
   "session.interrupt": { disposition: "unserved" },
   "session.stop": { disposition: "unserved" },
 };
+
+/** The capability a pick's use needs; an unknown use: either (the pick then refuses it). */
+function PICK_USES_FOR(use: unknown): string | readonly string[] {
+  for (const [cap, uses] of Object.entries(PICK_USES)) if (uses.some((u) => u === use)) return cap;
+  return Object.keys(PICK_USES);
+}
 
 /** Sent only by the user's gesture, through `useUserSend`'s door (`user.send`); never a bare call. */
 export const SEND_ONLY = new Set(["session.send"]);
@@ -186,39 +186,47 @@ export const SEND_ONLY = new Set(["session.send"]);
 /** Never on this route, whoever asks. */
 export const NEVER = new Set(["card.answer", "card.confirm"]);
 
+/** The methods the `layer` role has: one a part without the table's capability falls to the layer door for. */
+const LAYER_METHODS = allowedMethods("layer");
+
 export type TreeVerdict =
-  | { ok: true; call: TreeCall }
+  | { ok: true; call: TreeCall; /** The capability that let it through, if any. */ by?: string }
   | { ok: false; why: string; /** The method is the table's to refuse (not a fall-through to the layer door). */ owned: boolean };
 
-/** What the table says to a call from the tree part `partId`. Methods the table doesn't name aren't its business
- *  (`owned: false`): they go to the layer door as before, which refuses all but the `layer` role's methods. */
-export function treeVerdict(partId: string, method: string): TreeVerdict {
+/** Whether a set of granted capabilities holds `cap` (with what each implies: `plugins.manage` carries `plugins.read`). */
+export function holds(capabilities: ReadonlySet<string> | readonly string[], cap: string): boolean {
+  return withImplied([...capabilities]).includes(cap);
+}
+
+/** The capabilities a call needs, as alternatives (empty: none). */
+export function needsOf(call: TreeCall, params: unknown): readonly string[] {
+  const n = typeof call.needs === "function" ? call.needs(params) : call.needs;
+  return n === undefined ? [] : typeof n === "string" ? [n] : n;
+}
+
+/** What the table says to a call from a part whose plugin holds `capabilities`. Methods the table doesn't name aren't its
+ *  business (`owned: false`): they go to the layer door, as for any part. */
+export function treeVerdict(capabilities: ReadonlySet<string> | readonly string[], method: string, params?: unknown): TreeVerdict {
   if (NEVER.has(method)) return { ok: false, owned: true, why: `${method} is answered only on the sealed path` };
   if (SEND_ONLY.has(method)) return { ok: false, owned: true, why: "the user's words go only through the user's own send" };
-  const call = TREE_CALLS[method];
-  if (call === undefined) return { ok: false, owned: false, why: `${method} isn't one the app makes for its own parts` };
+  const call = Object.hasOwn(TREE_CALLS, method) ? TREE_CALLS[method] : undefined;
+  if (call === undefined) return { ok: false, owned: false, why: `${method} isn't one of this door's` };
   switch (call.disposition) {
     case "card": return { ok: false, owned: true, why: `${method} changes what the app may do: it needs a card` };
     case "unserved": return { ok: false, owned: true, why: `${method} isn't served by the core` };
-    default:
-      if (call.part !== undefined && ![call.part].flat().includes(partId)) return { ok: false, owned: true, why: `${method} is made only from ${[call.part].flat().join(" or ")}` };
-      return { ok: true, call };
+    default: {
+      const needs = needsOf(call, params);
+      if (needs.length === 0) return { ok: true, call };
+      const by = needs.find((c) => holds(capabilities, c));
+      if (by !== undefined) return { ok: true, call, by };
+      // Without it, as any plugin's part: the layer door for a method it has (the core's own rules), refused otherwise.
+      return { ok: false, owned: !LAYER_METHODS.has(method), why: `${method} needs the ${needs.join(" or ")} capability` };
+    }
   }
 }
 
 /** How long a picked folder's token may be redeemed. */
 export const PICK_TOKEN_MS = 5 * 60_000;
-
-/** The one call a pick's token may be redeemed by: `plugin.install`'s folder and wrapped-folder sources,
- *  `plugin.dev.add`, or the character plugin's `bot.importAvatar`. The page names its use when it asks for the pick and main
- *  issues the token for that use alone: no token works for two. */
-export type PickUse = "plugin.install" | "plugin.dev.add" | "bot.importAvatar";
-
-/** The uses each part may ask a pick for. */
-const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
-  [PLUGINS_PART]: ["plugin.install", "plugin.dev.add"],
-  [CHARACTER_PART]: ["bot.importAvatar"],
-};
 
 /** A folder or file the user chose in main's native dialog, as a token the page holds: one use, bound to the part that
  *  asked and to the calls that may redeem it, gone after `PICK_TOKEN_MS`. The path never reaches a page. */
@@ -265,6 +273,23 @@ export function settingsParams(params: unknown): { params: { patch: Record<strin
     out[k] = v;
   }
   return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
+}
+
+/** The shell's `voice.played`: a bot and an utterance, short strings, nothing else. */
+export function voicePlayedParams(params: unknown): { params: { bot: string; utterance: string } } | { why: string } {
+  const p = (params ?? {}) as { bot?: unknown; utterance?: unknown };
+  if (typeof p.bot !== "string" || p.bot === "" || p.bot.length > 128) return { why: "which bot?" };
+  if (typeof p.utterance !== "string" || p.utterance === "" || p.utterance.length > 128) return { why: "which utterance?" };
+  return { params: { bot: p.bot, utterance: p.utterance } };
+}
+
+/** The stage's `ui.set`: `voice.speakReplies` as a boolean and nothing else. */
+export function voiceMuteParams(params: unknown): { params: { patch: { voice: { speakReplies: boolean } } } } | { why: string } {
+  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
+  const voice = patch !== null && typeof patch === "object" ? (patch as { voice?: unknown }).voice : undefined;
+  const on = voice !== null && typeof voice === "object" ? (voice as { speakReplies?: unknown }).speakReplies : undefined;
+  if (typeof on !== "boolean" || Object.keys(patch as object).length !== 1 || Object.keys(voice as object).length !== 1) return { why: "the stage sets only whether replies are spoken" };
+  return { params: { patch: { voice: { speakReplies: on } } } };
 }
 
 const BOT_ID = /^[a-z][a-z0-9-]{0,80}$/;
@@ -343,7 +368,7 @@ const CALLER_KEYS = new Set(["client", "caller", "role", "origin", "by"]);
  *  folder, a development folder); `card` on a removal, a sign-out, an index's removal and an update (the core asks on a
  *  sealed card where it must); `noSecret` on a setting (a key is entered only in the app's own key dialog); an update
  *  applied only by id; and nothing that names the caller. */
-export function pageParams(method: string, params: unknown, part: string, tokens: PickTokens): { params: unknown } | { why: string } {
+export function pageParams(method: string, params: unknown, part: string, tokens: PickTokens, forBot = false): { params: unknown } | { why: string } {
   const raw = (params !== null && typeof params === "object" && !Array.isArray(params) ? params : {}) as Record<string, unknown>;
   const p = Object.fromEntries(Object.entries(raw).filter(([k]) => !CALLER_KEYS.has(k)));
   if (method === "plugin.remove") return typeof p.id === "string" ? { params: { id: p.id, card: true, ...(p.deleteData === true ? { deleteData: true } : {}) } } : { why: "which plugin?" };
@@ -372,8 +397,9 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   if (method === "plugin.settings.set") {
     if (typeof p.id !== "string" || typeof p.key !== "string") return { why: "which setting?" };
     if (!Object.hasOwn(p, "value")) return { why: "set it to what?" };
-    // The bot's Edit page sets a setting kept per bot for that bot (its plugin's id is the bot's): the one `bot` a page may name.
-    const bot = part === BOT_EDITOR_PART && typeof p.bot === "string" && p.bot === p.id ? { bot: p.bot } : {};
+    // A bot's Edit page (`bots.edit`, `editorSetting`) sets a setting kept per bot for that bot (its plugin's id is the
+    // bot's): the one `bot` a page may name.
+    const bot = forBot && typeof p.bot === "string" && p.bot === p.id ? { bot: p.bot } : {};
     return { params: { id: p.id, key: p.key, value: p.value, ...bot, noSecret: true } };
   }
   // Another 24 hours of code that reloads asks on the same card as adding it.
@@ -405,9 +431,17 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   }
 }
 
+/** The calling part as the main process holds it (`runtime.partCaller`): its window, its plugin and that plugin's
+ *  granted capabilities. Never anything the page says. */
+export interface TreeCaller {
+  windowId: number;
+  pluginId: string;
+  capabilities: ReadonlySet<string>;
+}
+
 export interface TreeRoute {
-  /** The part's window and plugin, from `runtime.treePart`: undefined for any part that isn't the bundled tree's. */
-  tree: { windowId: number; pluginId: string } | undefined;
+  /** The calling part; undefined for a mount that acts in no plugin's name (it gets only the layer door). */
+  caller: TreeCaller | undefined;
   method: string;
   params: unknown;
   /** One key press or click the main process saw come to the window, spent (the SendGate). */
@@ -485,76 +519,83 @@ export function pageSettingWhy(key: string, field: PageSettingField, value: unkn
   }
 }
 
-/** The user-layer fields only the avatar section writes. */
-const AVATAR_LAYER_FIELDS: readonly string[] = ["avatar", "avatarCredit"];
-
-/** What a part may put in a `bot.setUserLayer` patch: the character plugin's avatar section writes the avatar's two
- *  fields and nothing else; the bot editor writes every other field and neither of those. */
-function userLayerWhy(part: string, params: unknown): string | undefined {
+/** What a `bot.setUserLayer` patch may hold: the avatar's two fields alone (`bots.avatar`), or any other fields and
+ *  neither of those (`bots.edit`). The capability the shape needs is the table's; this refuses a mixture and an empty one. */
+function userLayerWhy(params: unknown): string | undefined {
   const patch = (params as { patch?: unknown } | null | undefined)?.patch;
   if (patch === null || typeof patch !== "object" || Array.isArray(patch)) return "a change to a bot's layer is an object of fields";
   const keys = Object.keys(patch);
   if (keys.length === 0) return "a change to a bot's layer names a field";
-  if (part === CHARACTER_PART) return keys.every((k) => AVATAR_LAYER_FIELDS.includes(k)) ? undefined : "the avatar section changes the avatar and its credit note only";
-  return keys.some((k) => AVATAR_LAYER_FIELDS.includes(k)) ? "the avatar is set from the avatar section, not from here" : undefined;
+  if (keys.every((k) => AVATAR_LAYER_FIELDS.includes(k))) return undefined;
+  return keys.some((k) => AVATAR_LAYER_FIELDS.includes(k)) ? "the avatar is set on its own, not with a bot's other fields" : undefined;
 }
 
-/** One call from a part, routed: the bundled tree's through the table, any other part's through the layer door. */
+/** One call from a part, routed: a call this table names by the capability the part's plugin holds (on the app's own
+ *  connection), anything else through the layer door. */
 export async function routeCall(r: TreeRoute): Promise<unknown> {
-  if (r.tree === undefined) return r.layer();
-  const verdict = treeVerdict(r.tree.pluginId, r.method);
+  if (r.caller === undefined) return r.layer();
+  const c = r.caller;
+  const part = c.pluginId;
+  const verdict = treeVerdict(c.capabilities, r.method, r.params);
   if (!verdict.ok) {
     if (!verdict.owned) return r.layer();
-    r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (${verdict.why})`);
+    r.log(`tree: ${part}: ${r.method} refused (${verdict.why})`);
     throw r.refuse(verdict.why);
   }
-  const part = r.tree.pluginId;
-  // A part's plugin settings are its own: several bundled plugins keep where a request (and so a key) goes in theirs
-  // (a cloud project, a region, an account, an origin), and the id here comes from the page. The Plugins page may name
-  // any plugin's (the core cards a change that moves a plugin's host).
-  const settingsCall = r.method === "plugin.settings.get" || r.method === "plugin.settings.set";
-  if (settingsCall && part === BOT_EDITOR_PART) {
-    if (r.method === "plugin.settings.set" && !r.takeGesture(r.tree.windowId)) {
-      r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
-      throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
-    }
-    return editorSetting(r, part);
-  }
-  if (settingsCall && !(verdict.call.anyId ?? []).includes(part)) {
-    const id = (r.params as { id?: unknown } | null | undefined)?.id;
-    if (id !== part) {
-      r.log(`tree: ${part}: ${r.method} refused (not its own settings)`);
-      throw r.refuse("a part reads and writes its own plugin's settings only");
-    }
-  }
-  // Only listing what is newer is a read; applying one is the user's click.
+  const has = (cap: string) => holds(c.capabilities, cap);
+  // Only listing what is newer is a read; applying one is the user's press.
   const listing = r.method === "plugin.update" && (r.params as { list?: unknown } | null | undefined)?.list === true;
-  if (needsGesture(verdict.call, part) && !listing && !r.takeGesture(r.tree.windowId)) {
-    r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
-    throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
-  }
-  if (r.method === "voice.listen") {
-    if (r.listens === undefined) throw r.refuse("this app can't record");
-    return r.listens.piece(r.tree.windowId, r.params);
-  }
-  if (r.method === "ui.set" && part === BOT_EDITOR_PART) {
-    const shaped = editorListParams(r.params);
-    if ("why" in shaped) {
-      r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
-      throw r.refuse(shaped.why);
-    }
-    const now = (await r.request("ui.settings", {})) as { lists?: unknown } | undefined;
-    const lists = shaped.spot === "bot.tab" ? mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden ?? []) : mergeShownList(now?.lists, shaped.spot, shaped.bot, shaped.shown ?? []);
-    return r.request("ui.set", { patch: { lists } });
-  }
+  // A call refused for what it says spends nobody's press: the shapes that can be checked without the core first.
   if (r.method === "bot.setUserLayer") {
-    const why = userLayerWhy(part, r.params);
+    const why = userLayerWhy(r.params);
     if (why !== undefined) {
       r.log(`tree: ${part}: bot.setUserLayer refused (${why})`);
       throw r.refuse(why);
     }
   }
-  if (r.method === "ui.set" && part === SETTINGS_PART) {
+  if (verdict.call.disposition === "gesture" && !listing && !r.takeGesture(c.windowId)) {
+    r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
+    throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
+  }
+  if (r.method === "voice.played") {
+    const shaped = voicePlayedParams(r.params);
+    if ("why" in shaped) throw r.refuse(shaped.why);
+    return r.request("voice.played", shaped.params);
+  }
+  if (r.method === "voice.listen") {
+    if (r.listens === undefined) throw r.refuse("this app can't record");
+    return r.listens.piece(c.windowId, r.params);
+  }
+  if (r.method === "voice.stop") {
+    const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;
+    if (typeof bot !== "string" || bot === "" || bot.length > 128) throw r.refuse("which bot?");
+    return r.request("voice.stop", { bot });
+  }
+  if (r.method === "voice.speak") {
+    const p = r.params as { session?: unknown; seq?: unknown } | null | undefined;
+    if (typeof p?.session !== "string" || p.session === "" || p.session.length > 128 || !Number.isSafeInteger(p.seq) || (p.seq as number) < 0) throw r.refuse("which reply?");
+    return r.request("voice.speak", { session: p.session, seq: p.seq });
+  }
+  if (r.method === "ui.set") {
+    const shape = uiSetShape(r.params);
+    if (shape === "voice") {
+      const shaped = voiceMuteParams(r.params);
+      if ("why" in shaped) {
+        r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
+        throw r.refuse(shaped.why);
+      }
+      return r.request("ui.set", shaped.params);
+    }
+    if (shape === "lists") {
+      const shaped = editorListParams(r.params);
+      if ("why" in shaped) {
+        r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
+        throw r.refuse(shaped.why);
+      }
+      const now = (await r.request("ui.settings", {})) as { lists?: unknown } | undefined;
+      const lists = shaped.spot === "bot.tab" ? mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden ?? []) : mergeShownList(now?.lists, shaped.spot, shaped.bot, shaped.shown ?? []);
+      return r.request("ui.set", { patch: { lists } });
+    }
     const shaped = settingsParams(r.params);
     if ("why" in shaped) {
       r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
@@ -562,18 +603,20 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     }
     return r.request("ui.set", shaped.params);
   }
-  if (r.method === "ui.pick") return pick(r, part);
+  // A bot's own plugin's settings, from its Edit page (`bots.edit`): the plugin is the bot's own, from main's bot listing.
+  if ((r.method === "plugin.settings.get" || r.method === "plugin.settings.set") && namesBot(r.params) && verdict.by === BOTS_EDIT) return editorSetting(r, part);
+  if (r.method === "ui.pick") return pick(r, part, c);
   if (r.method === "bot.importAvatar") return botImport(r, part);
   if (r.method === "session.resend") return resend(r, part);
   if (r.method === "conversation.messageAction") return messageAction(r, part);
-  if (r.method === "ui.secret") return secret(r, part);
-  if (part === PLUGINS_PART) {
+  if (r.method === "ui.secret") return secret(r, part, has(PLUGINS_MANAGE));
+  if (PAGE_METHODS.has(r.method)) {
     const shaped = pageParams(r.method, r.params, part, r.tokens ?? new PickTokens());
     if ("why" in shaped) {
       r.log(`tree: ${part}: ${r.method} refused (${shaped.why})`);
       throw r.refuse(shaped.why);
     }
-    // A key never passes through the page: main looks the field's kind up itself (the core refuses it too, `noSecret`).
+    // A key never passes through a page: main looks the field's kind up itself (the core refuses it too, `noSecret`).
     // Its value must fit the field's kind, as the manifest has it (main looks it up; the core checks again).
     if (r.method === "plugin.settings.set") {
       const s = shaped.params as { id: string; key: string; value: unknown };
@@ -608,10 +651,6 @@ function logsCapped(method: string, params: unknown): unknown {
   return { ...p, lines: n };
 }
 
-function needsGesture(call: TreeCall, part: string): boolean {
-  if (call.disposition === "gesture") return true;
-  return call.gesture === true || (Array.isArray(call.gesture) && call.gesture.includes(part));
-}
 
 /** A bot's settings from its Edit page: the plugin is the bot's own (a bot's id is its plugin's id, from main's own bot listing),
  *  never the page's word; a call naming any other plugin is refused. A write is shaped as the Plugins page's is (kind, bounds,
@@ -625,7 +664,7 @@ async function editorSetting(r: TreeRoute, part: string): Promise<unknown> {
     throw r.refuse("the Edit page reads and writes its own bot's settings only");
   }
   if (r.method === "plugin.settings.get") return r.request("plugin.settings.get", { id: bot, bot });
-  const shaped = pageParams(r.method, { ...raw, id: bot, bot }, part, r.tokens ?? new PickTokens());
+  const shaped = pageParams(r.method, { ...raw, id: bot, bot }, part, r.tokens ?? new PickTokens(), true);
   if ("why" in shaped) {
     r.log(`tree: ${part}: ${r.method} refused (${shaped.why})`);
     throw r.refuse(shaped.why);
@@ -648,12 +687,13 @@ async function editorSetting(r: TreeRoute, part: string): Promise<unknown> {
 
 /** `ui.secret`: the app's own key dialog for one plugin's secret setting (`{id, key}`) or `api-key` sign-in
  *  (`{id, index}`); the page gets only that it opened (it reads the settings or sign-ins again for whether a key is set). */
-async function secret(r: TreeRoute, part: string): Promise<{ opened: true }> {
+async function secret(r: TreeRoute, part: string, anyPlugin: boolean): Promise<{ opened: true }> {
   if (r.openKey === undefined) throw r.refuse("this app has no key dialog for a part");
   const p = (r.params ?? {}) as { id?: unknown; key?: unknown; index?: unknown };
   if (typeof p.id !== "string" || !PLUGIN_ID_RE.test(p.id)) throw r.refuse("which plugin's key?");
-  // The bot's Edit page asks for its own bot's keys only (a bot's id is its plugin's, from main's own bot listing), and a setting's key only.
-  if (part === BOT_EDITOR_PART) {
+  // Without `plugins.manage` (so with `bots.edit`): a bot's own keys only (a bot's id is its plugin's, from main's own
+  // bot listing), and a setting's key only.
+  if (!anyPlugin) {
     const listed = (await r.request("bot.list", {})) as { bots?: { id?: unknown }[] } | undefined;
     if (!(listed?.bots ?? []).some((b) => b.id === p.id) || typeof p.key !== "string") {
       r.log(`tree: ${part}: ui.secret refused (not the edited bot's own key)`);
@@ -700,14 +740,15 @@ async function avatarFilters(r: TreeRoute): Promise<{ name: string; extensions: 
 }
 
 /** `ui.pick`: main's own dialog; the page gets a token and the chosen item's name, never its path. */
-async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: string } | { cancelled: true }> {
+async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token: string; name: string } | { cancelled: true }> {
   if (r.pick === undefined || r.tokens === undefined) throw r.refuse("this app has no picker for a part");
   const p = (r.params ?? {}) as { kind?: unknown; filters?: unknown; use?: unknown };
   const kind = p.kind === "file" ? "file" : p.kind === "folder" ? "folder" : undefined;
   if (kind === undefined) throw r.refuse("pick a folder or a file");
-  const allowed = PICK_USES[part] ?? [];
+  // The uses the part's plugin's capabilities give (`PICK_USES`), never its id.
+  const allowed = Object.entries(PICK_USES).flatMap(([cap, uses]) => (holds(c.capabilities, cap) ? uses : []));
   const use = allowed.find((u) => u === p.use);
-  if (use === undefined) throw r.refuse(`${part} asks for a pick for ${allowed.join(" or ")}, and says which`);
+  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage or bots.avatar capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
   // An avatar is what the installed renderers import (the core's `bot.avatarFormats`): main sets the dialog's filter,
   // not the page.
   const filters = use === "bot.importAvatar" ? await avatarFilters(r) : Array.isArray(p.filters)
@@ -717,7 +758,7 @@ async function pick(r: TreeRoute, part: string): Promise<{ token: string; name: 
       return typeof x.name === "string" && x.name.length <= 64 && ext.length > 0 ? [{ name: x.name, extensions: ext }] : [];
     })
     : undefined;
-  const path = await r.pick(r.tree!.windowId, kind, filters, use);
+  const path = await r.pick(c.windowId, kind, filters, use);
   if (path === undefined) return { cancelled: true };
   return { token: r.tokens.issue(part, path, use), name: pickedName(path) };
 }

@@ -13,7 +13,10 @@
   },
   "capabilities": [
     "bots.read",
-    "avatar.report"
+    "avatar.report",
+    "bots.avatar",
+    "plugins.read",
+    "audio"
   ],
   "contributes": {
     "ui": [

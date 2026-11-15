@@ -129,7 +129,7 @@ export interface PluginUiOptions {
   registry: Pick<PluginRegistry, "list" | "entries" | "watch"> & Partial<Pick<PluginRegistry, "get">>;
   /** A plugin's settings as its own layer reads and changes them (`PluginSettings.layerView`, `layerSet`). Absent: both
    *  are refused. */
-  settings?: { layerView(pluginId: string, key?: string): Promise<unknown>; layerSet(pluginId: string, key: string, value: unknown): void };
+  settings?: { layerView(pluginId: string, key?: string, bot?: string): Promise<unknown>; layerSet(pluginId: string, key: string, value: unknown, bot?: string): void };
   /** The capability gate with no process check (`createApiRouter`'s): a component's call comes from the `ui` side. */
   router: ApiRouter;
   /** Sends a core event to the app (the Clover server's `coreEvent`). */
@@ -248,27 +248,33 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
   };
   const layerWindows = new Map<string, { start: number; n: number }>();
   // `settings.get` and `settings.set` from a plugin's own layer: its own settings only (the connection's plugin; a
-  // child's layer is the child's, and reaches the child's own), while it is on and running (`grantsInForce`'s rule). A
-  // read gives a secret only as `{ set }`; a change is `layerSet`'s (never a secret, a bot value or a setting written
-  // into what the plugin runs), with no card, at most LAYER_SETTING_WRITES_PER_MINUTE a minute. No capability: they
-  // are its own, as its own events are (§5.4).
+  // child's layer is the child's, and reaches the child's own), while it is on and running (`grantsInForce`'s rule), at
+  // every scope as the host half reaches them (F2: `{ bot }` names the bot of a `bot` field, any bot). A read gives a
+  // secret only as `{ set }`; a change is `layerSet`'s (never a secret or a setting written into what the plugin runs),
+  // with no card, at most LAYER_SETTING_WRITES_PER_MINUTE a minute. No capability: they are its own, as its own events
+  // are (§5.4).
   const settingWrites = new Map<string, number[]>();
   const ownSettings = async (pluginId: string, call: "settings.get" | "settings.set", args: readonly unknown[]): Promise<unknown> => {
     const key = args[0];
     const keyOk = typeof key === "string" && key.length > 0 && key.length <= 128;
-    if (call === "settings.get" ? args.length > 1 || (key !== undefined && !keyOk) : args.length !== 2 || !keyOk) {
-      throw new ContractError("invalid", call === "settings.get" ? "settings.get takes one of the plugin's setting keys, or nothing for every key" : "settings.set takes one of the plugin's setting keys and its value");
+    // The last argument may be `{ bot }`, as the host half's `settings.get(key, { bot })` and `set(key, value, { bot })`.
+    const optsAt = call === "settings.get" ? 1 : 2;
+    const opts = args[optsAt];
+    const optsOk = opts === undefined || (typeof opts === "object" && opts !== null && !Array.isArray(opts) && Object.keys(opts).every((k) => k === "bot") && ((opts as { bot?: unknown }).bot === undefined || typeof (opts as { bot?: unknown }).bot === "string"));
+    const bot = optsOk ? (opts as { bot?: string } | undefined)?.bot : undefined;
+    if (args.length > optsAt + 1 || !optsOk || (call === "settings.get" ? key !== undefined && !keyOk : args.length < 2 || !keyOk) || (call === "settings.get" && key === undefined && bot !== undefined)) {
+      throw new ContractError("invalid", call === "settings.get" ? "settings.get takes one of the plugin's setting keys (and { bot } for a bot's value), or nothing for every key" : "settings.set takes one of the plugin's setting keys, its value, and { bot } for a bot's value");
     }
     const record = o.registry.get?.(pluginId);
     if (record === undefined || !record.enabled || !RUNNING_STATES.has(record.state)) throw new ContractError("refused", `${pluginId} isn't running, so its page reaches none of its settings`);
     if (o.settings === undefined) throw new ContractError("refused", "this computer's plugin settings aren't open");
-    if (call === "settings.get") return o.settings.layerView(pluginId, key as string | undefined);
+    if (call === "settings.get") return o.settings.layerView(pluginId, key as string | undefined, bot);
     // One budget per top-level plugin: its children's pages share it.
     const top = topPluginIdOf(pluginId);
     const now = Date.now();
     const recent = (settingWrites.get(top) ?? []).filter((t) => now - t < 60_000);
     if (recent.length >= LAYER_SETTING_WRITES_PER_MINUTE) throw new ContractError("refused", `${top}'s pages changed its settings ${LAYER_SETTING_WRITES_PER_MINUTE} times this minute; try again in a moment`);
-    o.settings.layerSet(pluginId, key as string, args[1]);
+    o.settings.layerSet(pluginId, key as string, args[1], bot);
     recent.push(now);
     settingWrites.set(top, recent);
     return null;

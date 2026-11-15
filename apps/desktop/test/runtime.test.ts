@@ -813,10 +813,10 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(to).not.toContain(`${child.processId}:${child.routingId}`);
   });
 
-  test("only a part whose plugin holds user.send sends the user's words (no plugin's id decides it), and a tree part is still a tree part", () => {
+  test("only a part whose plugin holds user.send sends the user's words (no plugin's id decides it), and the door names each part by its plugin and capabilities", () => {
     const s = setup(composerFixture());
     const shell = mountShell(s);
-    expect(s.rt.treePart(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    expect(s.rt.partCaller(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
     // The bundled shell without the capability sends nothing: the tree's name is no key.
     expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("user.send capability");
     // With `user.send` in its manifest (what the build grants the pill), it does.
@@ -831,7 +831,8 @@ describe("lane B's #179 hooks in the runtime", () => {
     s.rt.serveDocument("fixture-composer", token);
     const child = frame(composer.url, shell.shellFrame);
     s.rt.describe(child, WIN, token);
-    expect(s.rt.treePart(child, composer.mount)).toBeUndefined();
+    // The door asks its capabilities, never whether it is the tree's (F2): the fixture composer holds none of the door's.
+    expect([...s.rt.partCaller(child, composer.mount)!.capabilities].filter((c) => ["app.settings", "plugins.manage", "bots.edit"].includes(c))).toEqual([]);
     // It is a composer-spot entry, so it sends to its own session only (never anywhere else).
     s.rt.setProps(shell.shellFrame, composer.mount, { bot: { id: "alpha", name: "Alpha" }, session: "alpha:main" });
     expect(s.rt.userSender(child, composer.mount)).toMatchObject({ pluginId: "fixture-composer", only: { session: "alpha:main" } });
@@ -853,7 +854,7 @@ describe("the composer spot's mount record", () => {
     // A third party's composer entry in its own layer is a composer-spot entry too, for the session its declaring document says.
     expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
     s.rt.setProps(shell.shellFrame, comp.mount, { bot: { id: "alpha", name: "Alpha" }, session: "alpha:main" });
-    expect(s.rt.composerOf(child, comp.mount)).toMatchObject({ pluginId: "fixture-composer", session: "alpha:main", bot: "alpha", windowId: WIN, tree: false });
+    expect(s.rt.composerOf(child, comp.mount)).toMatchObject({ pluginId: "fixture-composer", session: "alpha:main", bot: "alpha", windowId: WIN });
     s.rt.setProps(shell.shellFrame, comp.mount, { session: "../etc" });
     expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
   });

@@ -674,7 +674,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       });
     }
     return routeCall({
-      tree: runtime.treePart(s.frame, mount),
+      caller: runtime.partCaller(s.frame, mount),
       method,
       params: a.params,
       tokens: pickTokens,
@@ -728,7 +728,6 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
     const plugin = { id: runtime.partOf(s.frame, mount), capabilities: runtime.capabilitiesOf(s.frame, mount) };
-    if (plugin.id.split("/")[0] === "clover") throw new LayerError("the shell's own parts do not ask");
     let r;
     try {
       r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), appButtons: () => runtime.appButtons(), takeGesture: () => frameGesture(a.active, () => hooks.takeGesture(s.windowId)) });
@@ -755,8 +754,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) return;
-    // Only the app's own shell says where the window is.
-    if (runtime.partOf(s.frame, mount).split("/")[0] !== "clover") return;
+    // Only the window's shell (the part the core mounted in `app.root`, whichever plugin's) says where the window is.
+    if (runtime.mainShell(s.frame, mount) === undefined) return;
     const report = cleanReport(a.report);
     if (report === undefined) return;
     const before = JSON.stringify(shellWindows.get(s.windowId)?.state);
@@ -821,8 +820,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) return;
-    // Only the app's own shell says what the window shows.
-    if (runtime.partOf(s.frame, mount).split("/")[0] !== "clover") return;
+    // Only the window's shell (the part in `app.root`, whichever plugin's) or a part that may move the window's own parts
+    // (`shell.control`) says what the window shows.
+    if (runtime.mainShell(s.frame, mount) === undefined && !runtime.capabilitiesOf(s.frame, mount).has("shell.control")) return;
     const session = a.session === null ? null : str(a.session, 128);
     if (session !== undefined) hooks.activeSession(s.windowId, session);
   });

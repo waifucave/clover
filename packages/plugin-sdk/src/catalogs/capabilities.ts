@@ -74,6 +74,19 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** The voice providers' listening (`voices.*`, §6.6): their text back as the plugin's own data (a transcript). A voice
    *  mode has it by being one. */
   { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back", ok: "can ask your voice providers to transcribe, which may use your accounts with them", warns: true },
+  /** F2 (the app's door for its parts, by capability; the controller's rulings of 2026-11-15): what the bundled Settings,
+   *  Plugins page, bot editor, avatar section, shell and composer do, any plugin may do behind its OK card. Each write is
+   *  the user's own press in the holder's frame; what is on a sealed card today stays on one for every holder. */
+  { name: "app.settings", lets: "Read Clover's own settings (its look, theme, language, layout lists, and which plugin is active for each one-at-a-time job) and, on the user's own press in its frame, change the look, the theme, the language and which plugin does each job", ok: "reads Clover's settings, and changes its look, language and which plugin does each job when you press its controls", warns: true },
+  { name: "bots.edit", lets: "On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar, the model too), its tab's layout switches, and its own plugin's settings for that bot; open Clover's own key dialog for that bot's keys (the key never passes the plugin); read the model list and Clover's layout settings", ok: "changes your bots' settings, models and keys when you press its controls", warns: true },
+  { name: "bots.avatar", lets: "On the user's own press in its frame: set a bot's avatar from a model file the user picks in Clover's own file dialog (the path never reaches the plugin), and its avatar and credit fields", ok: "changes your bots' avatars to files you pick", warns: false },
+  { name: "plugins.read", lets: "Read every plugin's record and manifest, its settings (a secret only as set or not), sign-ins, development folders, granted files, commands and notification mutes, and the plugin indexes; it can change nothing", ok: "sees every plugin you have, its settings and what it may do", warns: true },
+  /** Carries `plugins.read` (`IMPLIED_CAPABILITIES`). */
+  { name: "plugins.manage", lets: "On the user's own press in its frame: install (each landing behind its own OK card), remove, update, pin, restart and switch plugins on and off; add and remove indexes and development folders (a folder only from Clover's own picker); sign plugins in and out (a key only in Clover's own key dialog); change any plugin's settings (never a key); take back picked files; mute a plugin's notifications. A removal, an update, a sign-out and a renewal still ask on Clover's sealed card", ok: "installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls", warns: true },
+  { name: "tools.permissions", lets: "Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block) and take back the card rules saved for a bot", ok: "changes which tools may act without asking you", warns: true },
+  { name: "account.read", lets: "Read whether Clover is signed in to an account, with which provider, and the account's id, name and email", ok: "sees the name and email of your Clover account", warns: true },
+  /** A composer's door to every plugin's commands: the command runs with the commanded plugin's own powers, never the caller's. */
+  { name: "commands.run", lets: "From the composer it fills: list every running plugin's commands and, on the user's own press, run one as the user, with that plugin's own powers (a carded action still raises its card)", ok: "runs your plugins' commands as you when you press a key in it", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
    *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from
@@ -83,8 +96,8 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
 ];
 
 /** What holding a capability also gives: `avatar.control.all` is `avatar.control` for every bot, so a plugin that
- *  declares only the first still has `avatar.cue`. The router reads a plugin's grants through `withImplied`. */
-export const IMPLIED_CAPABILITIES: Readonly<Record<string, readonly string[]>> = { "avatar.control.all": ["avatar.control"] };
+ *  declares only the first still has `avatar.cue`; `plugins.manage` reads what it manages (`plugins.read`). The router reads a plugin's grants through `withImplied`. */
+export const IMPLIED_CAPABILITIES: Readonly<Record<string, readonly string[]>> = { "avatar.control.all": ["avatar.control"], "plugins.manage": ["plugins.read"] };
 
 /** `granted` and the capabilities they imply. */
 export function withImplied(granted: readonly string[]): readonly string[] {

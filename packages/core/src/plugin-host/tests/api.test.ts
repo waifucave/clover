@@ -408,6 +408,10 @@ describe("settings", () => {
     await settings.setByUser("luna", "token", "never-shown");
     expect(await settings.layerView("luna", "token")).toEqual({ set: true });
     expect(await settings.layerView("luna", "nick")).toBeUndefined();
+    // F2: a bot's value for the bot the page names, as the host half reads it; a bot id that isn't one is refused.
+    expect(await settings.layerView("luna", "nick", "alpha")).toBe("Lu");
+    expect(await settings.layerView("luna", "nick", "beta")).toBeUndefined();
+    expect(await settings.layerView("luna", "nick", "Not A Bot!").catch((e: ContractError) => e.code)).toBe("invalid");
     const all = (await settings.layerView("luna")) as Record<string, unknown>;
     expect(all).toMatchObject({ greeting: "hello", token: { set: true } });
     expect(all).not.toHaveProperty("nick");
@@ -418,7 +422,7 @@ describe("settings", () => {
     expect(LAYER_SETTING_MAX).toBeGreaterThan(8_192);
   });
 
-  test("what the plugin's own page changes (layerSet), with no card: its own plain settings within the field; never a secret, a bot value, a templated or an unknown key", async () => {
+  test("what the plugin's own page changes (layerSet), with no card: its own plain settings within the field, a bot's for the bot it names; never a secret, a templated or an unknown key", async () => {
     const reg = registry([{ id: "ocean", manifest: manifest({
       id: "ocean", name: "Ocean", host: { entry: "host/index.js" },
       settings: {
@@ -440,13 +444,18 @@ describe("settings", () => {
     expect(changed).toEqual([{ pluginId: "ocean", key: "order" }, { pluginId: "ocean", key: "order" }]);
     const refusal = (key: string, value: unknown) => { try { settings.layerSet("ocean", key, value); return "set"; } catch (e) { return (e as ContractError).code; } };
     expect(refusal("key", "s3cret")).toBe("refused");
-    expect(refusal("nick", "Lu")).toBe("refused");
+    // A bot's value names its bot (F2: as the host half's set does).
+    expect(refusal("nick", "Lu")).toBe("invalid");
     expect(refusal("region", "us")).toBe("refused");
     expect(refusal("nope", 1)).toBe("not_found");
     for (const [k, v] of [["order", "sideways"], ["order", 3], ["size", 99], ["size", "5"]] as const) expect([k, v, refusal(k, v)]).toEqual([k, v, "invalid"]);
     expect(refusal("region", "x".repeat(LAYER_SETTING_MAX + 10))).toBe("invalid");
     // Nothing refused was written, and another plugin's keys are its own (an id is no argument at all).
     expect(changed).toHaveLength(2);
+    settings.layerSet("ocean", "nick", "Lu", "alpha");
+    expect(settings.get("ocean", "nick", "alpha")).toBe("Lu");
+    expect(changed.at(-1)).toEqual({ pluginId: "ocean", key: "nick", bot: "alpha" });
+    changed.pop();
     expect(settings.get("ocean", "region")).toBe("eu");
     expect(() => settings.layerSet("luna", "order", "oldest")).toThrow();
   });

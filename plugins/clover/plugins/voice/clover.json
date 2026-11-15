@@ -156,6 +156,10 @@
       "scope": "bot"
     }
   },
+  "capabilities": [
+    "audio",
+    "app.settings"
+  ],
   "contributes": {
     "voiceModes": [
       {

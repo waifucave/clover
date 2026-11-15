@@ -53,6 +53,9 @@
     "bots.read",
     "computers.read",
     "approvals",
-    "approvals.all"
+    "approvals.all",
+    "commands.run",
+    "audio",
+    "bots.edit"
   ]
 }

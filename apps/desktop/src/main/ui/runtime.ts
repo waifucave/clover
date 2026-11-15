@@ -1507,26 +1507,27 @@ export class UiRuntime {
   }
 
   private readsQuestions(doc: Mount): boolean {
-    // The `clover` layer is the whole tree's: it hears them when any of its parts' plugins may read conversations.
-    if (doc.plugin?.topId === "clover") return this.plugins.some((p) => p.topId === "clover" && p.capabilities.has("conversation.read"));
+    // The `clover` layer's document is shared by the bundled parts drawn in it: it hears them when any plugin drawn in
+    // that layer may read conversations. Any other document by its own plugin's capability.
+    if (doc.layer === "clover") return this.plugins.some((p) => p.layer === "clover" && p.capabilities.has("conversation.read"));
     return doc.plugin?.capabilities.has("conversation.read") === true;
   }
 
-  /** The bundled `clover` tree's part in the document `frame`, or undefined for any other (throws if it isn't in the
-   *  document). Decided here from what the main process holds, never from what the page says: the plugin came from the
-   *  app's own bundle, renders in the `clover` layer, and its top-level id is `clover`. */
-  treePart(frame: FrameRef, mountId: string): { windowId: number; pluginId: string } | undefined {
+  /** The part calling the app's door for parts (tree-calls.ts) in the document `frame` (throws if it isn't in the
+   *  document): its window, its plugin and that plugin's granted capabilities, from what the main process holds, never
+   *  from what the page says. Undefined for a mount that acts in no plugin's name. Whichever plugin it is: the door asks
+   *  for capabilities, never for an id (F2). */
+  partCaller(frame: FrameRef, mountId: string): { windowId: number; pluginId: string; capabilities: ReadonlySet<string> } | undefined {
     const part = this.actInThisLayer(frame, mountId);
-    const p = part.plugin;
-    if (p === undefined || p.topId !== "clover" || p.layer !== "clover" || p.source !== "bundled") return undefined;
-    return { windowId: part.windowId, pluginId: p.id };
+    if (part.plugin === undefined) return undefined;
+    return { windowId: part.windowId, pluginId: part.plugin.id, capabilities: part.plugin.capabilities };
   }
 
-  /** The shell the core mounted in `app.root` of the window, when `mountId` in `frame` is it (throws if the mount isn't in
-   *  the document): the bundled `clover/shell` part, from the core's own record. */
+  /** The part the core mounted in `app.root` of its window, when `mountId` in `frame` is it (throws if the mount isn't
+   *  in the document): the window's shell, whichever plugin fills the spot. */
   mainShell(frame: FrameRef, mountId: string): { windowId: number } | undefined {
     const part = this.actInThisLayer(frame, mountId);
-    if (part.spot !== "app.root" || this.treePart(frame, mountId)?.pluginId !== "clover/shell") return undefined;
+    if (part.spot !== "app.root" || part.plugin === undefined) return undefined;
     return { windowId: part.windowId };
   }
 
@@ -1548,7 +1549,7 @@ export class UiRuntime {
     const session = typeof props.session === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(props.session) ? props.session : undefined;
     if (session === undefined) return undefined;
     const bot = (props.bot as { id?: unknown } | undefined)?.id;
-    return { windowId: part.windowId, pluginId: part.plugin.id, session, ...(typeof bot === "string" ? { bot } : {}), tree: this.treePart(frame, mountId) !== undefined };
+    return { windowId: part.windowId, pluginId: part.plugin.id, session, ...(typeof bot === "string" ? { bot } : {}), capabilities: part.plugin.capabilities };
   }
 
   /** The part sending the user's own words, in the document `frame` (throws otherwise): the entry the core mounted in the

@@ -14,7 +14,9 @@
   "capabilities": [
     "bots.read",
     "approvals",
-    "approvals.all"
+    "approvals.all",
+    "bots.edit",
+    "plugins.read"
   ],
   "contributes": {
     "ui": [

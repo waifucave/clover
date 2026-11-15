@@ -4,10 +4,10 @@
 // session) and from the key press or click it saw, never from anything the frame says.
 //
 //   models      a read.
-//   setModel    on a bot's main conversation it changes a user layer, which only the `clover` layer does directly: the
-//               bundled entry's goes on the app's own connection, any other plugin's goes on its own `layer` connection,
-//               where the core turns it into the sealed card it raises for a user-layer change. On any other session it is
-//               `session.setModel`, a session's own, with the gesture.
+//   setModel    on a bot's main conversation it changes a user layer: an entry whose plugin holds `bots.edit` (its OK card
+//               says it changes your bots' settings) sends it on the app's own connection, any other plugin's goes on its
+//               own `layer` connection, where the core turns it into the sealed card it raises for a user-layer change. On
+//               any other session it is `session.setModel`, a session's own, with the gesture.
 //   interrupt   `session.interrupt`, stop: `session.stop`: the spot and the gesture.
 //   commands    a read for the slash menu: `command.list` joined with `plugin.list`, only the commands of plugins that
 //               are on, OK'd and running, each with its plugin's name and scope, the bot's own plugin's first.
@@ -18,9 +18,10 @@
 //   listenStart   the user's press: the app's shell records (listen.ts). The bot is the one the core mounted the composer for, never
 //                 the page's word; one press covers one recording (the gesture), and the recording ends when the user lets go.
 //   listenStop    the release: the shell stops, and the answer is what was heard as text for the box, or a note saying why not.
-//   `commands`, `runCommand` and the three listen ops are the bundled entry's only: the user's own door to every plugin's commands is the
-//   app's, and a third party's composer the user picked doesn't get it (it would run any plugin's command as the user
-//   on any key press).
+//   `commands` and `runCommand` need the `commands.run` capability (its OK card warns that it runs your plugins' commands as
+//   you when you press a key in it; the command runs with the commanded plugin's own powers, never the caller's); the
+//   three listen ops need `audio` (push-to-talk), until the Voice plugin's listening half replaces them. No entry gets them
+//   by its id (F2).
 // Every acting call spends one key press or click the main process saw come to the window (the SendGate).
 
 import type { ListenHolds } from "./listen";
@@ -35,8 +36,8 @@ export interface ComposerMount {
   /** The session the composer was mounted for (from the props the declaring document gave the core). */
   session: string;
   bot?: string;
-  /** The entry is a part of the bundled `clover` tree, in the `clover` layer. */
-  tree: boolean;
+  /** The entry's plugin's granted capabilities (the main process's record of the mount). */
+  capabilities: ReadonlySet<string>;
 }
 
 export interface ComposerRoute {
@@ -141,8 +142,8 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
   };
   if (op === "models") return r.asApp("models.list", { session: c.session });
   if (op === "listenStatus" || op === "listenStart" || op === "listenStop") {
-    // The bundled composer's only: a third party's composer the user picked never gets the microphone's door.
-    if (!c.tree) return refuse("only Clover's own composer records for you");
+    // Push-to-talk is `audio`'s (the OK says it hears what you say to your bots with push-to-talk).
+    if (!c.capabilities.has("audio")) return refuse("recording for you takes the audio capability");
     if (c.bot === undefined) return refuse("this conversation has no bot to talk to");
     if (op === "listenStatus") return r.asApp("voice.status", { bot: c.bot });
     if (r.listens === undefined) return refuse("this app can't record");
@@ -152,7 +153,7 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
     return r.listens.start(c.windowId, c.bot);
   }
   if (op === "commands" || op === "runCommand") {
-    if (!c.tree) return refuse("only Clover's own composer runs plugin commands as you");
+    if (!c.capabilities.has("commands.run")) return refuse("running plugins' commands as you takes the commands.run capability");
     if (op === "commands") return { commands: await commandsFor(r, c) };
     const a = isObject(r.args) ? r.args : {};
     const name = short(a.name, 128);
@@ -180,7 +181,7 @@ async function routeComposerOp(r: ComposerRoute): Promise<unknown> {
   if (op === "stop") return r.asApp("session.stop", { id: c.session });
   if (main) {
     const params = { id: c.bot, patch: { model, ...(effort !== undefined ? { effort } : {}) } };
-    return c.tree ? r.asApp("bot.setUserLayer", params) : r.asLayer(c.pluginId, "bot.setUserLayer", params);
+    return c.capabilities.has("bots.edit") ? r.asApp("bot.setUserLayer", params) : r.asLayer(c.pluginId, "bot.setUserLayer", params);
   }
   return r.asApp("session.setModel", { id: c.session, model, ...(effort !== undefined ? { effort } : {}) });
 }

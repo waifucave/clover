@@ -15,7 +15,11 @@
     "bots.read",
     "computers.read",
     "devices.read",
-    "logs.read"
+    "logs.read",
+    "app.settings",
+    "tools.permissions",
+    "plugins.manage",
+    "account.read"
   ],
   "settings": {
     "appearance.textSize": {

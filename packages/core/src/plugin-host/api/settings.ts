@@ -320,15 +320,17 @@ export class PluginSettings {
   }
 
   /** What the plugin's own UI layer reads of its settings (`plugin.layer.call`'s `settings.get`): a field's value in
-   *  effect (its stored value or the manifest's default); a `secret` field only as `{ set }`, never its value; a `bot`
-   *  field nothing (a layer call names no bot); a value over LAYER_SETTING_MAX characters of JSON nothing. With a key,
+   *  effect (its stored value or the manifest's default) at its scope, account, device or bot, as the host half reads it
+   *  (F2: a `bot` field for the bot the call names, any bot; with no bot named, a `bot` field reads as nothing); a `secret`
+   *  field only as `{ set }`, never its value; a value over LAYER_SETTING_MAX characters of JSON nothing. With a key,
    *  that field (an unknown key is `not_found`); without, every field by key. */
-  async layerView(pluginId: string, key?: string): Promise<unknown> {
+  async layerView(pluginId: string, key?: string, bot?: string): Promise<unknown> {
     if (key !== undefined) this.field(pluginId, key);
-    const views = await this.views(pluginId);
+    if (bot !== undefined && !BotId.safeParse(bot).success) throw new ContractError("invalid", "which bot?");
+    const views = await this.views(pluginId, bot);
     const seen = (v: PluginSettingView): unknown => {
       if (v.type === "secret") return { set: v.set === true };
-      if (v.scope === "bot" || v.value === undefined) return undefined;
+      if ((v.scope === "bot" && bot === undefined) || v.value === undefined) return undefined;
       let size = Infinity;
       try { size = JSON.stringify(v.value).length; } catch { /* not JSON: nothing */ }
       return size <= LAYER_SETTING_MAX ? v.value : undefined;
@@ -343,18 +345,17 @@ export class PluginSettings {
   }
 
   /** The plugin's own page changing one of its settings (`plugin.layer.call`'s `settings.set`), with no card: the
-   *  plugin API's own rule (`setByPlugin`: a setting written into what the plugin runs or reaches is refused), and
-   *  besides never a `secret` field (only the app's key dialog sets one), never a `bot` field (a page names no bot),
-   *  and nothing over LAYER_SETTING_MAX characters of JSON. The value is checked against the field's kind; `null` goes
-   *  back to the default. Its change is the plugin's own `plugin_settings_changed`. */
-  layerSet(pluginId: string, key: string, value: unknown): void {
+   *  plugin API's own rule (`setByPlugin`: a setting written into what the plugin runs or reaches is refused; a `bot`
+   *  field names its bot, any bot, as the host half's does), and besides never a `secret` field (only the app's key
+   *  dialog sets one) and nothing over LAYER_SETTING_MAX characters of JSON. The value is checked against the field's
+   *  kind; `null` goes back to the default. Its change is the plugin's own `plugin_settings_changed`. */
+  layerSet(pluginId: string, key: string, value: unknown, bot?: string): void {
     const field = this.field(pluginId, key);
     if (field.type === "secret") throw new ContractError("refused", `${key} is a key: it is entered only in Clover's own key dialog`);
-    if (field.scope === "bot") throw new ContractError("refused", `${key} has one value per bot, and a page names no bot`);
     let size = Infinity;
     try { size = JSON.stringify(value ?? null).length; } catch { /* not JSON */ }
     if (size > LAYER_SETTING_MAX) throw new ContractError("invalid", `${key}: the value is too large`);
-    this.setByPlugin(pluginId, key, value);
+    this.setByPlugin(pluginId, key, value, field.scope === "bot" ? bot : undefined);
   }
 
   watch(fn: (change: SettingChange) => void): Unsubscribe {

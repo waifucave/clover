@@ -6,7 +6,7 @@ import {
   HOOK_RETURNS, MESSAGE_KINDS, PointDeclSchema, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson,
   AVATAR_FORMATS, avatarFileProblem, catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
-  networkAllows, pluginTokenName,
+  networkAllows, pluginTokenName, withImplied,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
   reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer, describeOk,
@@ -17,7 +17,8 @@ describe("capabilities", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
       "computers.control", "devices.read", "approvals", "approvals.all", "user.send", "overlay", "tray", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio", "microphone",
-      "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
+      "voices.use", "app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run",
+      "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
       "controls the screen and input of your computers",
@@ -34,8 +35,26 @@ describe("capabilities", () => {
       "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
       "hears your microphone, also while no window of it shows",
       "can ask your voice providers to transcribe, which may use your accounts with them",
+      "reads Clover's settings, and changes its look, language and which plugin does each job when you press its controls",
+      "changes your bots' settings, models and keys when you press its controls",
+      "sees every plugin you have, its settings and what it may do",
+      "installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls",
+      "changes which tools may act without asking you",
+      "sees the name and email of your Clover account",
+      "runs your plugins' commands as you when you press a key in it",
       "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
     ]);
+  });
+
+  test("F2: the app's door for parts gates by eight capabilities any plugin may ask for, each with its line on the OK card; plugins.manage carries plugins.read", () => {
+    const eight = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+    const asks = validateManifest({ manifest: 1, id: "my-settings", name: "My Settings", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: eight }, { folderName: "my-settings" });
+    expect(asks.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const ok = describeOk(asks);
+    for (const name of eight) expect(ok).toContain(`It ${CAPABILITIES.find((c) => c.name === name)!.ok}.`);
+    expect(CAPABILITIES.filter((c) => eight.includes(c.name) && !c.warns).map((c) => c.name)).toEqual(["bots.avatar"]);
+    expect(withImplied(["plugins.manage"])).toEqual(["plugins.manage", "plugins.read"]);
+    expect(withImplied(["plugins.read"])).toEqual(["plugins.read"]);
   });
 
   test("no capability is Clover's own: any plugin may ask for the six that were (the owner, 2026-11-15), each a warning on its card", () => {
@@ -134,7 +153,9 @@ describe("the plugin API's gating", () => {
     // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
     // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call.
     // approvals.all, user.send, overlay and tray gate a window's fields, a hook and a spot (the app checks them), not a call.
-    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone"];
+    // F2's eight gate the app's door for its parts (tree-calls.ts and the composer spot's), not a plugin-API call.
+    const doorCaps = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone", ...doorCaps];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });
@@ -517,7 +538,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(34);
+    expect(c.capabilities.map((x: { name: string }) => x.name)).toEqual(CAPABILITIES.map((x) => x.name));
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

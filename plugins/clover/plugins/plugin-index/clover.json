@@ -11,7 +11,12 @@
       "client/styles.css"
     ]
   },
-  "capabilities": ["plugins.watch"],
+  "capabilities": [
+    "plugins.watch",
+    "plugins.manage",
+    "logs.read",
+    "computers.read"
+  ],
   "contributes": {
     "ui": [
       {
