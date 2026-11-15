@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService, rangeWindow, subscriptionCycle } from "../../src/usage/service";
+import { rangeWindow, subscriptionCycle } from "../../src/usage/service";
+import { UsageService } from "./sources-harness";
 import { turnModelUsageOf, type LedgerSnapshot } from "../../src/projector/terminal";
-import { probeRootIn, tempDir } from "./fixtures";
+import { tempDir } from "./fixtures";
 import { accept, assistantText, init, makeProjector, modelUsage, result } from "../projector/harness";
 
 const pricer = new UsagePricer();
@@ -17,7 +18,7 @@ function service(now: () => number) {
   const db = new UsageDb(join(home, "usage", "usage.db"));
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: false, claudeCode: false, antigravity: false, opencode: false }), codexExecutable: () => undefined, claudeExecutable: () => undefined,
-    cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), now,
+    cloverCodexWindows: () => [],  now,
   });
   return { db, svc };
 }

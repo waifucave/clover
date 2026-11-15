@@ -530,6 +530,77 @@
       }
     },
     {
+      "name": "usage.sources",
+      "shape": "list",
+      "declaredBy": "clover/usage",
+      "kind": "code",
+      "doc": "A tool of the user's installed on this computer whose usage Clover reads: its plan windows (`plan`) and the token counts its own session files hold (`ingest`), through its own program and its own folders (`host.outside`), never its sign-in. The core calls the handler on this computer only, asks no oftener than `planEveryMs`, prices the records and keeps the store; the source owns how its tool is read (§12).",
+      "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en"
+                ],
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "handler": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+            "format": "handler",
+            "description": "An export of `host.entry`: a function, or for a service (a `webhook.ingress` entry, a notifier) an object of functions, whose caller names the one it calls."
+          },
+          "provides": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "plan",
+                "usage"
+              ]
+            }
+          },
+          "planEveryMs": {
+            "type": "integer",
+            "minimum": 10000,
+            "maximum": 86400000
+          }
+        },
+        "required": [
+          "id",
+          "handler",
+          "provides"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "island.line",
       "shape": "list",
       "declaredBy": "island",

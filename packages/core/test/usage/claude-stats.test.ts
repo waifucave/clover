@@ -7,9 +7,10 @@ import { existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService, type UsageTracking } from "../../src/usage/service";
-import { CLAUDE_STATS_FALLBACK_CALIBRATION, CLAUDE_STATS_FILE, parseClaudeStats, splitByRatios } from "../../src/usage/claude-stats";
-import { SECRETS, claudeAssistant, claudeTranscriptPath, claudeUser, lines, probeRootIn, tempDir } from "./fixtures";
+import { type UsageTracking } from "../../src/usage/service";
+import { UsageService } from "./sources-harness";
+import { CLAUDE_STATS_FALLBACK_CALIBRATION, CLAUDE_STATS_FILE, parseClaudeStats, splitByRatios } from "../../../../plugins/usage-claude-code/src/claude-stats";
+import { SECRETS, claudeAssistant, claudeTranscriptPath, claudeUser, lines, tempDir } from "./fixtures";
 
 const pricer = new UsagePricer();
 const NOW = Date.UTC(2026, 9, 18, 9, 0, 0); // today (UTC) = 2026-10-18
@@ -53,8 +54,7 @@ function setup(opts: { tracking?: UsageTracking; claudeStatsMaxBytes?: number; f
   const clock = { now: NOW };
   const svc = new UsageService({
     db, pricer, tracking: () => tracking, claudeHome,
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
-    probeRoot: () => probeRootIn(home), ingestEveryMs: 0, now: () => clock.now, log: { warn: log, info: log },
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, now: () => clock.now, log: { warn: log, info: log },
     ...(opts.claudeStatsMaxBytes === undefined ? {} : { claudeStatsMaxBytes: opts.claudeStatsMaxBytes }),
     ...(opts.fileBudgetBytes === undefined ? {} : { fileBudgetBytes: opts.fileBudgetBytes }),
   });
@@ -158,11 +158,9 @@ describe("re-imports", () => {
     expect(first).toHaveLength(2);
     await svc.ingest(true);
     await svc.ingest(true);
-    expect(svc.claudeStatsParses).toBe(1);
-    // Touched (same bytes): parsed again, nothing rewritten (same row ids).
+    // Touched (same bytes): nothing rewritten (same row ids).
     utimesSync(statsPath, new Date(NOW), new Date(NOW + 5000));
     await svc.ingest(true);
-    expect(svc.claudeStatsParses).toBe(2);
     expect(synthetic(db)).toEqual(first);
     // A changed day replaces its row (never adds a second one).
     writeFileSync(statsPath, statsCache({ "2026-09-20": { [A]: 40_000 }, "2026-09-25": { [B]: 100_000 }, ...shared }));
@@ -181,7 +179,7 @@ describe("re-imports", () => {
     const before = synthetic(env.db);
     const svc2 = new UsageService({
       db: env.db, pricer, tracking: () => env.tracking, claudeHome: env.claudeHome, codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => NOW,
+      cloverCodexWindows: () => [], ingestEveryMs: 0, now: () => NOW,
     });
     await svc2.ingest(true);
     expect(synthetic(env.db)).toEqual(before);
@@ -292,8 +290,7 @@ describe("a missing, corrupt or oversized file; the tracking switch", () => {
     const { db, svc, logs } = setup();
     await svc.ingest(true);
     expect(synthetic(db)).toHaveLength(0);
-    expect(svc.claudeStatsParses).toBe(0);
-    expect(logs.filter((l) => l.includes("stats"))).toEqual([]);
+    expect(logs.filter((l) => l.includes("stats cache"))).toEqual([]);
   });
 
   test("corrupt: nothing imported, existing rows kept, one log line; a repaired file imports", async () => {
@@ -318,7 +315,6 @@ describe("a missing, corrupt or oversized file; the tracking switch", () => {
     await svc.ingest(true);
     utimesSync(statsPath, new Date(NOW), new Date(NOW + 7000));
     await svc.ingest(true);
-    expect(svc.claudeStatsParses).toBe(0);
     expect(synthetic(db)).toHaveLength(0);
     expect(logs.filter((l) => l.includes("over the size cap"))).toHaveLength(1);
   });
@@ -328,7 +324,6 @@ describe("a missing, corrupt or oversized file; the tracking switch", () => {
     writeFileSync(statsPath, statsCache({ "2026-09-20": { [A]: 100 } }));
     tracking.claudeCode = false;
     await svc.ingest(true);
-    expect(svc.claudeStatsParses).toBe(0);
     expect(synthetic(db)).toHaveLength(0);
     tracking.claudeCode = true;
     await svc.ingest(true);
@@ -336,7 +331,6 @@ describe("a missing, corrupt or oversized file; the tracking switch", () => {
     tracking.claudeCode = false;
     writeFileSync(statsPath, statsCache({ "2026-09-20": { [A]: 100 }, "2026-09-21": { [A]: 100 } }));
     await svc.ingest(true);
-    expect(svc.claudeStatsParses).toBe(1);
     expect(synthetic(db)).toHaveLength(1);
   });
 });
@@ -450,7 +444,6 @@ describe("review fixes: transcripts win whatever the stats file's state; stable 
     const before = synthetic(env.db);
     const logsBefore = env.logs.length;
     for (let d = 1; d <= 40; d++) { env.clock.now = NOW + d * 86_400_000; await env.svc.ingest(true); }
-    expect(env.svc.claudeStatsParses).toBe(1);
     expect(synthetic(env.db)).toEqual(before);
     expect(env.logs.length).toBe(logsBefore);
   });
@@ -473,7 +466,7 @@ describe("partial days: Claude Code's cleanup emptied them before Clover read th
   // partial; 09-19 on was read while all of its transcripts were still on disk.
   const A_SPLIT = { input: 1000, output: 3000, cacheRead: 5000, cacheWrite: 1000, costUsd: 0 };
   const total = (r: Row | undefined): number => (r === undefined ? 0 : r.input + r.output + r.cache_read + r.cache_write);
-  const state = (db: UsageDb): Record<string, unknown> => db.sourceState("claude-code:stats-history") ?? {};
+  const state = (db: UsageDb): Record<string, unknown> => (db.sourceState("usage-source:claude-code")?.state as Record<string, unknown> | undefined) ?? {};
 
   /** Recent complete days at half Claude Code's figure (the calibration: ½ over four shared days), one resumed session
    *  that survived with a line on 09-10, and a complete day OUTSIDE the calibration window holding a tenth. */
@@ -539,7 +532,6 @@ describe("partial days: Claude Code's cleanup emptied them before Clover read th
     const { "2026-09-12": _gone, ...rest } = cache;
     writeFileSync(statsPath, statsCache({ ...rest, "2026-09-10": { [A]: 4_000 } }));
     await svc.ingest(true);
-    expect(svc.claudeStatsParses).toBe(2);
     expect(synthetic(db)).toEqual(before);
   });
 
@@ -551,7 +543,7 @@ describe("partial days: Claude Code's cleanup emptied them before Clover read th
     const later = NOW + 10 * 86_400_000;
     const svc2 = new UsageService({
       db: env.db, pricer, tracking: () => env.tracking, claudeHome: env.claudeHome, codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => later,
+      cloverCodexWindows: () => [], ingestEveryMs: 0, now: () => later,
     });
     // Claude Code's cleanup takes the resumed session's file: its rows are Clover's already.
     rmSync(claudeTranscriptPath(env.claudeHome, "cc-resumed"));
@@ -561,15 +553,16 @@ describe("partial days: Claude Code's cleanup emptied them before Clover read th
     expect(svc2.history().claudeCodeStats?.before).toBe(noon("2026-09-19"));
   });
 
-  test("a DB from before the note: the first read is the oldest file read-state", async () => {
+  test("a DB from before the source kept its own state: the first read is the oldest file read-state it is handed", async () => {
     const env = scene();
     await env.svc.ingest(true);
-    // Back to a DB with no note, its files first read five days earlier (09-13 is then the last partial day).
-    env.db.db.run("DELETE FROM ingest_files WHERE key = 'claude-code:stats-history'");
-    env.db.db.run(`UPDATE ingest_files SET updated_at = ${NOW - 5 * 86_400_000} WHERE source = 'claude-code'`);
+    // Back to a DB from before the source held its own state: only the store's file read-states are left, the oldest first
+    // written five days earlier (09-13 is then the last partial day). The source is handed them on its first call.
+    env.db.db.run("DELETE FROM ingest_files WHERE key LIKE 'usage-source:%'");
+    env.db.db.run(`INSERT INTO ingest_files (key, source, inode, offset, state, updated_at) VALUES ('claude-code:oldfile', 'claude-code', 1, 0, '{}', ${NOW - 5 * 86_400_000})`);
     const svc2 = new UsageService({
       db: env.db, pricer, tracking: () => env.tracking, claudeHome: env.claudeHome, codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(env.home), ingestEveryMs: 0, now: () => NOW,
+      cloverCodexWindows: () => [], ingestEveryMs: 0, now: () => NOW,
     });
     await svc2.ingest(true);
     expect(state(env.db).firstPassAt).toBe(NOW - 5 * 86_400_000);

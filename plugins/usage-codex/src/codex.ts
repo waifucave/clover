@@ -1,11 +1,10 @@
 import { join } from "node:path";
-import type { UsageRecordInput } from "./db";
-import { findFiles, scanLinesBackward, timeOf, tokenCount, type FoundFile } from "./ingest-files";
-import { kindOfMinutes, percentOf, resetMs, shortStr, staleness, type PlanReading, type PlanWindow } from "./plan";
-import type { UsagePricer } from "./pricing";
-import { probeEnv, runLines } from "./spawn-lines";
+import {
+  findFiles, kindOfMinutes, percentOf, resetMs, runOutside, scanLinesBackward, shortStr, staleness, timeOf, tokenCount,
+  type FoundFile, type Outside, type PlanWindow, type UsagePlanReading, type UsageRecord,
+} from "@waifucave/clover-plugin-sdk/usage-source";
 
-// The user's own Codex install (`docs/claude/usage.md`) — READ ONLY, and only what is needed:
+// The user's own Codex install (spec §12 "Usage sources") — READ ONLY, and only what is needed:
 //
 //  - TOKENS: the CLI's and desktop app's session rollouts, `<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-*.jsonl` (and
 //    `archived_sessions/`). Only three record kinds are parsed — `session_meta` (its `id` and `model_provider`),
@@ -14,7 +13,8 @@ import { probeEnv, runLines } from "./spawn-lines";
 //  - PLAN: the same records' `rate_limits` — the newest rollout's tail only, read backwards to the last one — and,
 //    first, Codex's own app-server (`account/rateLimits/read`), which asks with Codex's own login.
 //  - NEVER `<CODEX_HOME>/auth.json` or any credential: nothing here opens a file outside `sessions/` and
-//    `archived_sessions/`.
+//    `archived_sessions/`, the only two folders the manifest names (`host.outside.read`), and the fence keeps the
+//    sign-in file unreadable inside a folder a plugin names.
 
 /** OpenAI's usage counts: `input_tokens` INCLUDES `cached_input_tokens`; `output_tokens` INCLUDES `reasoning_output_tokens`. */
 interface CodexTotals { input: number; cached: number; output: number; reasoning: number; total: number }
@@ -48,7 +48,7 @@ const nonNegative = (t: CodexTotals): boolean => t.input >= 0 && t.cached >= 0 &
  * resumed session's file can open with the old session's cumulative total); a total that went DOWN uses
  * `last_token_usage` too; an unchanged total (a repeated count) is nothing.
  */
-export function codexRecordOf(line: string, state: CodexFileState, fileId: string, pricer: UsagePricer, fallbackAt: number): UsageRecordInput | undefined {
+export function codexRecordOf(line: string, state: CodexFileState, fileId: string, fallbackAt: number): UsageRecord | undefined {
   if (!line.includes("\"session_meta\"") && !line.includes("\"turn_context\"") && !line.includes("\"token_count\"")) return undefined;
   let obj: Record<string, unknown>;
   try { obj = JSON.parse(line) as Record<string, unknown>; } catch { return undefined; }
@@ -87,14 +87,12 @@ export function codexRecordOf(line: string, state: CodexFileState, fileId: strin
   const usage = { input: delta.input - cacheRead, output: delta.output, cacheRead, cacheWrite: 0 };
   const provider = state.provider ?? "openai";
   const model = state.model ?? "unknown";
-  const priced = model === "unknown" ? undefined : pricer.price(provider, model, usage);
   const at = timeOf(obj.timestamp) ?? fallbackAt;
   const sid = state.sid ?? fileId;
   return {
     dedupe: `codex:${sid}:${total?.total ?? `${at}:${delta.total}`}`,
-    source: "codex", at, sessionId: sid, provider, model,
+    at, sessionId: sid, provider, model,
     input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: 0, reasoning: delta.reasoning,
-    ...(priced === undefined ? { costBasis: "unknown" as const } : { costUsd: priced.costUsd, costBasis: "estimate" as const, cacheSavingsUsd: priced.cacheSavingsUsd }),
   };
 }
 
@@ -140,10 +138,10 @@ function windowOf(id: string, w: unknown, at: number | undefined, now: number, m
   };
 }
 
-function creditsOf(v: unknown): PlanReading["credits"] {
+function creditsOf(v: unknown): UsagePlanReading["credits"] {
   if (typeof v !== "object" || v === null) return undefined;
   const c = v as Record<string, unknown>;
-  const out: NonNullable<PlanReading["credits"]> = {};
+  const out: NonNullable<UsagePlanReading["credits"]> = {};
   const has = c.has_credits ?? c.hasCredits;
   if (typeof has === "boolean") out.hasCredits = has;
   if (typeof c.unlimited === "boolean") out.unlimited = c.unlimited;
@@ -154,7 +152,7 @@ function creditsOf(v: unknown): PlanReading["credits"] {
 }
 
 /** PURE: a rollout record's `rate_limits` (snake_case) as a plan reading, or undefined. */
-export function planFromRolloutLine(line: string, now: number): PlanReading | undefined {
+export function planFromRolloutLine(line: string, now: number): UsagePlanReading | undefined {
   if (!line.includes("\"rate_limits\"")) return undefined;
   let obj: Record<string, unknown>;
   try { obj = JSON.parse(line) as Record<string, unknown>; } catch { return undefined; }
@@ -170,16 +168,16 @@ export function planFromRolloutLine(line: string, now: number): PlanReading | un
   const planType = shortStr(rl.plan_type, 40);
   const credits = creditsOf(rl.credits);
   return {
-    provider: "codex", source: "codex-rollout", ...(at === undefined ? {} : { at }), windows,
+    source: "codex-rollout", ...(at === undefined ? {} : { at }), windows,
     ...(planType === undefined ? {} : { planType }), ...(credits === undefined ? {} : { credits }),
   };
 }
 
 /** The newest rollouts' tails, newest first, until one carries `rate_limits` (at most `maxFiles` files). */
-export async function codexPlanFromRollouts(files: readonly FoundFile[], now: number, maxFiles = 5): Promise<PlanReading | undefined> {
+export async function codexPlanFromRollouts(files: readonly FoundFile[], now: number, maxFiles = 5): Promise<UsagePlanReading | undefined> {
   const newest = [...files].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, maxFiles);
   for (const f of newest) {
-    let found: PlanReading | undefined;
+    let found: UsagePlanReading | undefined;
     await scanLinesBackward(f.path, (line) => {
       found = planFromRolloutLine(line, now);
       return found !== undefined;
@@ -190,7 +188,7 @@ export async function codexPlanFromRollouts(files: readonly FoundFile[], now: nu
 }
 
 /** PURE: `account/rateLimits/read`'s result (camelCase, Codex app-server protocol v2) as a plan reading. */
-export function planFromAppServer(result: unknown, at: number, now: number): PlanReading | undefined {
+export function planFromAppServer(result: unknown, at: number, now: number): UsagePlanReading | undefined {
   if (typeof result !== "object" || result === null) return undefined;
   const r = result as Record<string, unknown>;
   const byId = r.rateLimitsByLimitId as Record<string, unknown> | null | undefined;
@@ -205,7 +203,7 @@ export function planFromAppServer(result: unknown, at: number, now: number): Pla
   const credits = creditsOf(snap.credits);
   const limitReached = shortStr(snap.rateLimitReachedType, 60);
   return {
-    provider: "codex", source: "codex-app-server", at, windows,
+    source: "codex-app-server", at, windows,
     ...(planType === undefined ? {} : { planType }), ...(credits === undefined ? {} : { credits }),
     ...(limitReached === undefined ? {} : { limitReached }),
   };
@@ -215,34 +213,35 @@ export const CODEX_APP_SERVER_TIMEOUT_MS = 8_000;
 
 /**
  * Ask the user's `codex app-server` (stdio JSON-RPC, Codex's own protocol — no `jsonrpc` field): `initialize`, the
- * `initialized` notification, `account/rateLimits/read`, then shut down. Codex answers with its OWN login; Clover
- * reads no Codex credential. `undefined` on any failure (timeout — the process group is killed —, an error reply,
- * a malformed reply, no binary).
+ * `initialized` notification, `account/rateLimits/read`. Codex answers with its OWN login; this reads no Codex
+ * credential. `outside.run` writes its `input` and closes the program's input, so the three messages go in one piece,
+ * in order, and the answers are read from what the program printed. `undefined` reading on any failure (its time ran
+ * out and it printed no answer, an error reply, a malformed reply, no program).
+ *
+ * UNVERIFIED against a real Codex (no test ever runs the user's own): a Codex that stops at the end of its input
+ * before answering gives no reading here, and the ladder falls to the newest rollout's `rate_limits`.
  */
-export async function codexPlanFromAppServer(executable: string, opts: { timeoutMs?: number; cwd?: string; version?: string; now: () => number; env?: Record<string, string> }):
-  Promise<{ reading?: PlanReading; failure?: string }> {
-  const outcome = await runLines(executable, {
-    args: ["app-server"], timeoutMs: opts.timeoutMs ?? CODEX_APP_SERVER_TIMEOUT_MS, ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
-    env: opts.env ?? probeEnv(["CODEX_HOME"]),
-    onStart: (io) => io.send({ id: 1, method: "initialize", params: { clientInfo: { name: "clover", title: "Clover", version: opts.version ?? "0" }, capabilities: null } }),
-    onLine: (line, io) => {
-      let msg: Record<string, unknown>;
-      // A line that is not JSON (a banner, a warning) is not the answer: only the replies to our ids are judged.
-      try { msg = JSON.parse(line) as Record<string, unknown>; } catch { return undefined; }
-      if (msg.id === 1) {
-        if (msg.error !== undefined) return { failure: "initialize-refused" };
-        io.send({ method: "initialized" });
-        io.send({ id: 2, method: "account/rateLimits/read", params: { excludeResetCreditDetails: true } });
-        return undefined;
-      }
-      if (msg.id === 2) {
-        if (msg.error !== undefined) return { failure: "read-refused" };
-        const reading = planFromAppServer(msg.result, opts.now(), opts.now());
-        return reading === undefined ? { failure: "malformed" } : { reading };
-      }
-      return undefined; // a notification or a server request: not ours
-    },
-  });
-  if (outcome.kind === "done") return outcome.value as { reading?: PlanReading; failure?: string };
-  return { failure: outcome.kind };
+export async function codexPlanFromAppServer(outside: Outside, opts: { timeoutMs?: number; version?: string; now: () => number }):
+  Promise<{ reading?: UsagePlanReading; failure?: string }> {
+  const input = [
+    { id: 1, method: "initialize", params: { clientInfo: { name: "clover", title: "Clover", version: opts.version ?? "0" }, capabilities: null } },
+    { method: "initialized" },
+    { id: 2, method: "account/rateLimits/read", params: { excludeResetCreditDetails: true } },
+  ].map((m) => JSON.stringify(m)).join("\n") + "\n";
+  const ran = await runOutside(outside, "codex", ["app-server"], { timeoutMs: opts.timeoutMs ?? CODEX_APP_SERVER_TIMEOUT_MS, input });
+  if (ran.kind === "not-installed" || ran.kind === "spawn-failed" || ran.kind === "too-large") return { failure: ran.kind };
+  for (const raw of ran.stdout.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0) continue;
+    let msg: Record<string, unknown>;
+    // A line that is not JSON (a banner, a warning) is not the answer: only the replies to our ids are judged.
+    try { msg = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+    if (msg.id === 1 && msg.error !== undefined) return { failure: "initialize-refused" };
+    if (msg.id === 2) {
+      if (msg.error !== undefined) return { failure: "read-refused" };
+      const reading = planFromAppServer(msg.result, opts.now(), opts.now());
+      return reading === undefined ? { failure: "malformed" } : { reading };
+    }
+  }
+  return { failure: ran.kind === "timeout" ? "timeout" : "exited" };
 }

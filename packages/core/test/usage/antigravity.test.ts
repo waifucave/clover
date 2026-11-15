@@ -1,29 +1,33 @@
 // The Antigravity plan (`docs/claude/usage.md`): agy's own `/usage` (FAKE executables only), the parser against the
 // live-seen shape, the guard and its latch, not installed, tracking off, the throttle.
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, readFileSync, utimesSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AGY_USAGE_ARGS, agyGroupScope, judgeAgyUsage, windowsFromAgyUsage } from "../../src/usage/antigravity";
+import { AGY_USAGE_ARGS, agyGroupScope, judgeAgyUsage, windowsFromAgyUsage } from "../../../../plugins/usage-antigravity/src/antigravity";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService, binaryKey, type UsageServiceDeps } from "../../src/usage/service";
-import { AGY_USAGE, SECRETS, fakeAgy, probeRootIn, tempDir, type FakeAgyMode } from "./fixtures";
+import { UsageService, type LegacyServiceDeps } from "./sources-harness";
+import { AGY_USAGE, SECRETS, fakeAgy, tempDir, type FakeAgyMode } from "./fixtures";
 
 const pricer = new UsagePricer();
 const NOW = Date.parse("2026-10-18T19:15:04Z");
 
-function service(over: Partial<UsageServiceDeps> & { home?: string; db?: UsageDb } = {}) {
+function service(over: Partial<LegacyServiceDeps> & { home?: string; db?: UsageDb } = {}) {
   const home = over.home ?? tempDir("home");
   const db = over.db ?? new UsageDb(join(home, "usage", "usage.db"));
   const logs: string[] = [];
   const svc = new UsageService({
     db, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-    claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), planWaitMs: 20_000, now: () => NOW,
+    claudeExecutable: () => undefined, cloverCodexWindows: () => [],  planWaitMs: 20_000, now: () => NOW,
     log: { warn: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`), info: (m, meta) => logs.push(`${m} ${JSON.stringify(meta ?? {})}`) },
     ...over,
   });
   return { home, db, svc, logs };
 }
+
+/** The source's own state, as the core keeps it between calls (`usage-plan:antigravity`): its latch and its back-off. */
+const planState = (db: UsageDb): { latched?: { version: string; reason: string }; timedOutAt?: number } =>
+  (db.sourceState("usage-plan:antigravity")?.v as { latched?: { version: string; reason: string }; timedOutAt?: number } | null | undefined) ?? {};
 
 function marks(markerPath: string): Array<{ argv: string[]; cwd: string; env: string[] }> {
   return existsSync(markerPath) ? readFileSync(markerPath, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
@@ -70,11 +74,11 @@ describe("agy's /usage, parsed", () => {
 });
 
 describe("the Antigravity plan", () => {
-  test("agy's own /usage with EXACTLY the verified invocation, in its own probe dir, nothing of its text kept; throttled to 5 min", async () => {
+  test("agy's own /usage with EXACTLY the verified invocation, nothing of its text kept; throttled to 5 min", async () => {
     const fake = fakeAgy(tempDir("bin"), "banner");
     let now = NOW;
     const { svc } = service({ agyExecutable: () => fake.path, now: () => now });
-    const plan = await svc.antigravityPlan();
+    const plan = await svc.sourcePlan("antigravity");
     expect(plan.source).toBe("agy-cli");
     expect(plan.provider).toBe("antigravity");
     expect(plan.windows.map((w) => [w.scope, w.kind, w.usedPercent])).toEqual([
@@ -85,14 +89,12 @@ describe("the Antigravity plan", () => {
     const m = marks(fake.markerPath);
     expect(m).toHaveLength(1);
     expect(m[0]!.argv).toEqual([...AGY_USAGE_ARGS]);
-    expect(m[0]!.cwd).toMatch(/\/usage\/probe-[^/]+$/);
-    expect(existsSync(m[0]!.cwd)).toBe(false);
-    expect(m[0]!.env.filter((k) => k.startsWith("CLOVER_") || k.startsWith("GEMINI_") || k.startsWith("GOOGLE_"))).toEqual([]);
+    expect(m[0]!.env.filter((k) => k.startsWith("CLOVER_"))).toEqual([]);
     now += 4 * 60_000;
-    await svc.antigravityPlan();
+    await svc.sourcePlan("antigravity");
     expect(marks(fake.markerPath)).toHaveLength(1);
     now += 2 * 60_000;
-    await svc.antigravityPlan();
+    await svc.sourcePlan("antigravity");
     expect(marks(fake.markerPath)).toHaveLength(2);
   });
 
@@ -102,15 +104,15 @@ describe("the Antigravity plan", () => {
       const home = tempDir("home");
       let now = NOW;
       const first = service({ home, agyExecutable: () => fake.path, now: () => now });
-      expect((await first.svc.antigravityPlan()).source).toBe("none");
-      expect(first.db.latch(binaryKey("agy", fake.path)!)?.reason).toBe("guard");
+      expect((await first.svc.sourcePlan("antigravity")).source).toBe("none");
+      expect(planState(first.db).latched?.reason).toBe("guard");
       expect(first.logs.filter((l) => l.includes("not asked again until Antigravity changes"))).toHaveLength(1);
       expect(first.logs.join("\n").includes("SECRET")).toBe(false);
       first.db.close();
       // A restart, an hour later: still latched.
       now += 3_600_000;
       const second = service({ home, db: new UsageDb(join(home, "usage", "usage.db")), agyExecutable: () => fake.path, now: () => now });
-      expect((await second.svc.antigravityPlan()).source).toBe("none");
+      expect((await second.svc.sourcePlan("antigravity")).source).toBe("none");
       expect(marks(fake.markerPath)).toHaveLength(1);
     });
   }
@@ -120,13 +122,13 @@ describe("the Antigravity plan", () => {
       const fake = fakeAgy(tempDir("bin"), mode);
       let now = NOW;
       const { svc, db } = service({ agyExecutable: () => fake.path, now: () => now });
-      expect((await svc.antigravityPlan()).source).toBe("none");
+      expect((await svc.sourcePlan("antigravity")).source).toBe("none");
       now += 60_000;
-      await svc.antigravityPlan();
+      await svc.sourcePlan("antigravity");
       expect(marks(fake.markerPath)).toHaveLength(1);
-      expect(db.latch(binaryKey("agy", fake.path)!)).toBeUndefined();
+      expect(planState(db).latched).toBeUndefined();
       now += 5 * 60_000;
-      await svc.antigravityPlan();
+      await svc.sourcePlan("antigravity");
       expect(marks(fake.markerPath)).toHaveLength(2);
     });
   }
@@ -135,66 +137,63 @@ describe("the Antigravity plan", () => {
     const fake = fakeAgy(tempDir("bin"), "hang");
     let now = NOW;
     const { svc, db } = service({ agyExecutable: () => fake.path, agyCliTimeoutMs: 2_000, now: () => now });
-    expect((await svc.antigravityPlan()).source).toBe("none");
-    expect(db.latch(binaryKey("agy", fake.path)!)).toBeUndefined();
+    expect((await svc.sourcePlan("antigravity")).source).toBe("none");
+    expect(planState(db).latched).toBeUndefined();
     const ran = () => marks(fake.markerPath).length;
     const first = ran();
     now += 60 * 60_000;
-    await svc.antigravityPlan();
+    await svc.sourcePlan("antigravity");
     expect(ran()).toBe(first);
     now += 5 * 3_600_000 + 60_000;
-    await svc.antigravityPlan();
+    await svc.sourcePlan("antigravity");
     expect(ran()).toBe(first + 1);
   }, 30_000);
 
-  test("the timeout back-off survives a restart (persisted with its time, per exact binary)", async () => {
+  test("the timeout back-off survives a restart (kept with its time in the source's state)", async () => {
     const fake = fakeAgy(tempDir("bin"), "hang");
     const home = tempDir("home");
     let now = NOW;
     const first = service({ home, agyExecutable: () => fake.path, agyCliTimeoutMs: 2_000, now: () => now });
-    await first.svc.antigravityPlan();
-    expect(first.db.latch(binaryKey("agy-timeout", fake.path)!)?.reason).toBe("timeout");
-    expect(first.db.latch(binaryKey("agy", fake.path)!)).toBeUndefined();
+    await first.svc.sourcePlan("antigravity");
+    expect(planState(first.db).timedOutAt).toBe(NOW);
+    expect(planState(first.db).latched).toBeUndefined();
     first.db.close();
     const ran = () => marks(fake.markerPath).length;
     const before = ran();
     // Restarted an hour later: still backing off.
     now += 3_600_000;
     const second = service({ home, db: new UsageDb(join(home, "usage", "usage.db")), agyExecutable: () => fake.path, agyCliTimeoutMs: 2_000, now: () => now });
-    expect((await second.svc.antigravityPlan()).source).toBe("none");
+    expect((await second.svc.sourcePlan("antigravity")).source).toBe("none");
     expect(ran()).toBe(before);
     second.db.close();
     // Restarted past the six hours: asked again.
     now += 5 * 3_600_000 + 60_000;
     const third = service({ home, db: new UsageDb(join(home, "usage", "usage.db")), agyExecutable: () => fake.path, agyCliTimeoutMs: 2_000, now: () => now });
-    await third.svc.antigravityPlan();
+    await third.svc.sourcePlan("antigravity");
     expect(ran()).toBe(before + 1);
   }, 30_000);
 
-  test("an updated agy (its size and mtime change) is a new binary: the latch no longer holds it back", async () => {
+  test("an updated agy (its --version changes) is a new build: the latch no longer holds it back", async () => {
     const fake = fakeAgy(tempDir("bin"), "turns");
     let now = NOW;
     const { svc, db } = service({ agyExecutable: () => fake.path, now: () => now });
-    await svc.antigravityPlan();
-    const oldKey = binaryKey("agy", fake.path)!;
-    expect(db.latch(oldKey)?.reason).toBe("guard");
+    await svc.sourcePlan("antigravity");
+    expect(planState(db).latched?.reason).toBe("guard");
     now += 3_600_000;
-    await svc.antigravityPlan();
+    await svc.sourcePlan("antigravity");
     expect(marks(fake.markerPath)).toHaveLength(1);
-    // Updated in place: same path, new contents.
-    appendFileSync(fake.path, "\n// updated\n");
-    utimesSync(fake.path, new Date(NOW + 7_200_000), new Date(NOW + 7_200_000));
-    expect(binaryKey("agy", fake.path)).not.toBe(oldKey);
+    // Updated in place: same path, a new version text.
+    writeFileSync(`${fake.path}.version`, "agy 9.9.9");
     now += 3_600_000;
-    await svc.antigravityPlan();
+    await svc.sourcePlan("antigravity");
     expect(marks(fake.markerPath)).toHaveLength(2);
   }, 30_000);
 
   test("not on this Mac: no slot; tracking off: nothing spawned", async () => {
-    expect((await service().svc.antigravityPlan()).source).toBe("not-installed");
+    expect((await service().svc.sourcePlan("antigravity")).source).toBe("not-installed");
     const fake = fakeAgy(tempDir("bin"), "ok");
     const off = service({ agyExecutable: () => fake.path, tracking: () => ({ codex: true, claudeCode: true, antigravity: false, opencode: false }) });
-    expect((await off.svc.antigravityPlan()).source).toBe("disabled");
+    expect((await off.svc.sourcePlan("antigravity")).source).toBe("disabled");
     expect(marks(fake.markerPath)).toHaveLength(0);
   });
 
@@ -202,8 +201,8 @@ describe("the Antigravity plan", () => {
     const fake = fakeAgy(tempDir("bin"), "ok");
     const { svc } = service({ agyExecutable: () => fake.path });
     const s = await svc.summary("24h");
-    expect(s.plans?.antigravity.source).toBe("agy-cli");
-    expect(s.plans?.codex.source).toBe("not-installed");
+    expect(s.plans?.antigravity!.source).toBe("agy-cli");
+    expect(s.plans?.codex!.source).toBe("not-installed");
     expect(s.tracking.antigravity).toBe(true);
   });
 });
@@ -215,14 +214,14 @@ describe("agy's last good reading is shown until a fresh one lands (user 2026-10
     let exe = ok.path;
     let now = NOW;
     const env = service({ agyExecutable: () => exe, now: () => now, agyCliEveryMs: 60_000 });
-    const fresh = await env.svc.antigravityPlan();
+    const fresh = await env.svc.sourcePlan("antigravity");
     expect(fresh.source).toBe("agy-cli");
     exe = failing.path;
     now += 61_000;
-    const kept = await env.svc.antigravityPlan();
+    const kept = await env.svc.sourcePlan("antigravity");
     expect([kept.source, kept.at]).toEqual(["agy-cli", fresh.at]);
     expect(kept.windows.map((w) => w.usedPercent)).toEqual(fresh.windows.map((w) => w.usedPercent));
     const restarted = service({ home: env.home, db: env.db, agyExecutable: () => failing.path, now: () => now });
-    expect([(await restarted.svc.antigravityPlan()).source, (await restarted.svc.antigravityPlan()).at]).toEqual(["agy-cli", fresh.at]);
+    expect([(await restarted.svc.sourcePlan("antigravity")).source, (await restarted.svc.sourcePlan("antigravity")).at]).toEqual(["agy-cli", fresh.at]);
   });
 });

@@ -27,7 +27,8 @@ export interface UsageRow {
 
 /** A plan reading from one of the user's own apps, by its own install. */
 export interface PlanReading {
-  source: UsageSource;
+  /** A `usage.sources` entry's id: the five named above, or any a plugin brings. */
+  source: UsageSource | (string & {});
   computer: string;
   plan: string;
   /** The window's name as the reader gives it: `5h`, `weekly`, `7d`, `monthly`… */

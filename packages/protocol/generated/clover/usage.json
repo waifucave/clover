@@ -196,13 +196,8 @@
               "properties": {
                 "source": {
                   "type": "string",
-                  "enum": [
-                    "clover",
-                    "codex",
-                    "claude-code",
-                    "opencode",
-                    "antigravity"
-                  ]
+                  "minLength": 1,
+                  "maxLength": 64
                 },
                 "computer": {
                   "type": "string",
@@ -413,13 +408,8 @@
             "properties": {
               "source": {
                 "type": "string",
-                "enum": [
-                  "clover",
-                  "codex",
-                  "claude-code",
-                  "opencode",
-                  "antigravity"
-                ]
+                "minLength": 1,
+                "maxLength": 64
               },
               "computer": {
                 "type": "string",

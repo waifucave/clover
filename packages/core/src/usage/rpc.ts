@@ -30,11 +30,11 @@ export function usageMethods(deps: { ledger: UsageLedger }): Record<string, Meth
   };
 }
 
-/** The plan readers `usage.plans` reads (the usage service's: each the user's own app, by its own install). */
+/** The plan readers `usage.plans` reads (the usage service's: each a `usage.sources` entry, the user's own app by its own
+ *  install). Whichever sources give a plan; none is named here. */
 export interface PlanReaders {
-  codexPlan(): Promise<ServicePlanReading>;
-  claudeCodePlan(): Promise<ServicePlanReading>;
-  antigravityPlan(): Promise<ServicePlanReading>;
+  planSources(): string[];
+  sourcePlan(id: string): Promise<ServicePlanReading>;
 }
 
 /** The sources that read nothing (the app isn't here, or the user turned it off). */
@@ -55,12 +55,8 @@ export function usagePlansMethods(deps: { readers: PlanReaders; computer(): stri
 export async function planReadings(deps: { readers: PlanReaders; computer(): string; now?(): number }): Promise<WirePlanReading[]> {
   const now = deps.now ?? (() => Date.now());
   const computer = deps.computer();
-  const read = await Promise.all([
-    // Each at the service's own pace (its throttle and its kept readings): asking never spawns an app every time.
-    deps.readers.codexPlan().catch(() => undefined),
-    deps.readers.claudeCodePlan().catch(() => undefined),
-    deps.readers.antigravityPlan().catch(() => undefined),
-  ]);
+  // Each at the service's own pace (its throttle and its kept readings): asking never runs an app every time.
+  const read = await Promise.all(deps.readers.planSources().map((id) => deps.readers.sourcePlan(id).catch(() => undefined)));
   const out: WirePlanReading[] = [];
   for (const r of read) {
     if (r === undefined || NO_READING.has(r.source)) continue;

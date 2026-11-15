@@ -1,8 +1,8 @@
-import { tokenCount } from "./ingest-files";
-import { resetMs, shortStr, staleness, type PlanReading, type PlanWindow, type PlanWindowKind } from "./plan";
-import { probeEnv, runLines } from "./spawn-lines";
+import {
+  resetMs, runOutside, shortStr, staleness, tokenCount, type Outside, type PlanWindow, type PlanWindowKind, type UsagePlanReading,
+} from "@waifucave/clover-plugin-sdk/usage-source";
 
-// The user's own Antigravity CLI (`agy`, Google's successor to the Gemini CLI; `docs/claude/usage.md`) — its plan
+// The user's own Antigravity CLI (`agy`, Google's successor to the Gemini CLI; spec §12 "Usage sources") — its plan
 // windows only, from its OWN `/usage` report: `agy -p "/usage" --output-format json --print-timeout 20s`. A print-mode
 // read-only slash command answers with a structured payload "without starting an agent turn, spending quota, or
 // leaving a conversation behind" (agy's changelog); seen live 2026-10-18: exit 0, `num_turns` 0, every `usage` count 0,
@@ -21,7 +21,7 @@ export const AGY_TIMEOUT_BACKOFF_MS = 6 * 3_600_000;
 
 /** Why a `/usage` run was refused. `guard` means it reached the model loop (a turn, tokens, another command, a
  *  conversation left behind): the caller latches the binary off. Everything else is ordinary, retried after the throttle. */
-export type AgyCliFailure = "guard" | "no-command" | "unverified" | "error" | "no-report" | "no-json" | "timeout" | "spawn-failed" | "too-large";
+export type AgyCliFailure = "guard" | "no-command" | "unverified" | "error" | "no-report" | "no-json" | "timeout" | "spawn-failed" | "too-large" | "not-installed";
 
 /** PURE: a group's name, shortly — "Gemini Models" → "Gemini", "Claude and GPT models" → "Claude & GPT"; an unknown
  *  group keeps its name (without a trailing "models"). */
@@ -73,7 +73,7 @@ export function windowsFromAgyUsage(data: unknown, at: number, now: number): Pla
  * successful answer with text and no command at all (the model answered "/usage" as a prompt). No command and no
  * answer, an error status, no groups: ordinary.
  */
-export function judgeAgyUsage(parsed: unknown, at: number): { reading?: PlanReading; failure?: AgyCliFailure } {
+export function judgeAgyUsage(parsed: unknown, at: number): { reading?: UsagePlanReading; failure?: AgyCliFailure } {
   if (!isObj(parsed)) return { failure: "no-json" };
   const turns = typeof parsed.num_turns === "number" ? parsed.num_turns : undefined;
   const usage = isObj(parsed.usage) ? parsed.usage : undefined;
@@ -89,7 +89,7 @@ export function judgeAgyUsage(parsed: unknown, at: number): { reading?: PlanRead
   if (typeof parsed.status === "string" && parsed.status !== "SUCCESS") return { failure: "error" };
   const windows = windowsFromAgyUsage(command!.data, at, at);
   if (windows.length === 0) return { failure: "no-report" };
-  return { reading: { provider: "antigravity", source: "agy-cli", at, windows } };
+  return { reading: { source: "agy-cli", at, windows } };
 }
 
 /** PURE: the JSON document in agy's stdout — the whole of it, else from the first line that opens an object (a banner
@@ -102,23 +102,19 @@ export function agyJsonOf(lines: readonly string[]): unknown {
   try { return JSON.parse(lines.slice(start).join("\n")); } catch { return undefined; }
 }
 
-/** Run the user's `agy` for its `/usage` report (stdin from /dev/null, the probes' allowlisted environment). */
-export async function antigravityPlanFromCli(executable: string, opts: { cwd: string; timeoutMs?: number; now: () => number; env?: Record<string, string> }):
-  Promise<{ reading?: PlanReading; failure?: AgyCliFailure }> {
-  const lines: string[] = [];
-  const outcome = await runLines(executable, {
-    args: [...AGY_USAGE_ARGS], cwd: opts.cwd, stdin: "ignore", timeoutMs: opts.timeoutMs ?? AGY_USAGE_TIMEOUT_MS, maxBytes: 1024 * 1024,
-    env: opts.env ?? probeEnv(),
-    onLine: (line) => { lines.push(line); return undefined; },
-  });
-  const parsed = agyJsonOf(lines);
-  lines.length = 0;
+/** Run the user's `agy` for its `/usage` report, through the program the manifest names (`api.outside.run`: no input,
+ *  the user's own environment). */
+export async function antigravityPlanFromCli(outside: Outside, opts: { timeoutMs?: number; now: () => number }):
+  Promise<{ reading?: UsagePlanReading; failure?: AgyCliFailure }> {
+  const ran = await runOutside(outside, "agy", [...AGY_USAGE_ARGS], { timeoutMs: opts.timeoutMs ?? AGY_USAGE_TIMEOUT_MS });
+  if (ran.kind === "spawn-failed" || ran.kind === "too-large" || ran.kind === "not-installed") return { failure: ran.kind };
+  const parsed = agyJsonOf(ran.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0));
   // Positive evidence of a model turn latches whatever the exit; anything else needs a clean exit to be read.
   if (parsed !== undefined) {
     const judged = judgeAgyUsage(parsed, opts.now());
     if (judged.failure === "guard") return judged;
-    if (outcome.kind === "exited" && outcome.code === 0) return judged;
+    if (ran.kind === "exited" && ran.code === 0) return judged;
   }
-  if (outcome.kind === "timeout" || outcome.kind === "spawn-failed" || outcome.kind === "too-large") return { failure: outcome.kind };
+  if (ran.kind === "timeout") return { failure: "timeout" };
   return { failure: parsed === undefined ? "no-json" : "error" };
 }

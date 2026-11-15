@@ -3733,6 +3733,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         }
         if (method === METHODS.usageAlarmsSet) {
           const p = parseParams(UsageAlarmsSetParams, params);
+          if (!usage.planSources().includes(p.provider)) throw new RpcFailure(ERR.INVALID_PARAMS, `${p.provider} has no plan windows to alarm on`);
           const alarm = usage.setAlarm(p);
           return { alarm, alarms: usage.alarms() };
         }

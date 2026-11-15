@@ -12,10 +12,10 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService } from "../../src/usage/service";
+import { UsageService, sourcePort } from "./sources-harness";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FakeProvider } from "../../src/agent/fake-provider";
-import { codexMeta, codexRolloutPath, codexTokenCount, codexTurnContext, fakeCodex, lines, tempDir, probeRootIn } from "./fixtures";
+import { codexMeta, codexRolloutPath, codexTokenCount, codexTurnContext, fakeCodex, lines, tempDir } from "./fixtures";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -72,7 +72,7 @@ describe("usage.* over the socket", () => {
     const db = new UsageDb(join(home, "usage", "usage.db"));
     const usage = new UsageService({
       db, pricer: new UsagePricer(), tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined, claudeExecutable: () => undefined,
-      cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home),
+      cloverCodexWindows: () => [], 
     });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, hub, usage, cloverHome: home });
     stop = () => { server.stop(); store.close(); db.close(); };
@@ -84,7 +84,7 @@ describe("usage.* over the socket", () => {
     const app = await TestClient.connect(socketPath);
     await app.hello(tokens.harness, "orb");
     const summary = (await app.request(METHODS.usageSummary, { range: "24h" })).result;
-    expect(summary).toMatchObject({ range: "24h", totals: { costUsd: 0 }, plans: { codex: { source: "not-installed" }, claudeCode: { source: "not-installed" } } });
+    expect(summary).toMatchObject({ range: "24h", totals: { costUsd: 0 }, plans: { codex: { source: "not-installed" }, "claude-code": { source: "not-installed" } } });
     expect((await app.request(METHODS.usageSeries, { range: "all", sources: ["codex"] })).result.buckets.length).toBeGreaterThan(0);
     expect((await app.request(METHODS.usageSummary, { range: "forever" })).error?.code).toBe(ERR.INVALID_PARAMS);
 
@@ -169,7 +169,7 @@ describe("on a real daemon", () => {
     daemon = await startDaemon({
       // A provider-backed daemon: the one shape that runs the settings.json watcher (production always has one).
       home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: { provider: new FakeProvider([]), model: "fake-1" },
-      usage: { codexHome, claudeHome: null, claudeJsonPath: null, codexExecutable: fake.path, claudeExecutable: null },
+      usage: { port: sourcePort({ db: undefined as never, pricer: new UsagePricer(), tracking: () => ({}), codexHome, codexExecutable: () => fake.path, present: ["codex"] }), catchUp: false },
     });
     expect(existsSync(join(home, "usage", "usage.db"))).toBe(true);
     const app = await TestClient.connect(daemon.socketPath);

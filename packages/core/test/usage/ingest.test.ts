@@ -7,12 +7,13 @@ import { join } from "node:path";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import { UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
-import { UsageService, type UsageTracking } from "../../src/usage/service";
-import { readNewLines } from "../../src/usage/ingest-files";
+import type { UsageTracking } from "../../src/usage/service";
+import { readNewLines } from "@waifucave/clover-plugin-sdk/usage-source";
 import { stat } from "node:fs/promises";
+import { newService } from "./sources-harness";
 import {
   SECRETS, claudeAssistant, claudeTranscriptPath, claudeUser, codexMessage, codexMeta, codexRolloutPath, codexTokenCount,
-  codexTurnContext, lines, probeRootIn, tempDir,
+  codexTurnContext, lines, tempDir,
 } from "./fixtures";
 
 const pricer = new UsagePricer();
@@ -20,16 +21,21 @@ const pricer = new UsagePricer();
 function service(opts: { codexHome?: string; claudeHome?: string; tracking?: UsageTracking; now?: () => number; fileBudgetBytes?: number; maxLineBytes?: number } = {}) {
   const home = tempDir("home");
   const db = new UsageDb(join(home, "usage", "usage.db"));
-  const svc = new UsageService({
+  const { svc } = newService({
     db, pricer, tracking: () => opts.tracking ?? { codex: true, claudeCode: true, antigravity: true, opencode: true },
     ...(opts.codexHome === undefined ? {} : { codexHome: opts.codexHome }),
     ...(opts.claudeHome === undefined ? {} : { claudeHome: opts.claudeHome }),
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
-    probeRoot: () => probeRootIn(home), ingestEveryMs: 0, ...(opts.now === undefined ? {} : { now: opts.now }),
+    ingestEveryMs: 0, ...(opts.now === undefined ? {} : { now: opts.now }),
     ...(opts.fileBudgetBytes === undefined ? {} : { fileBudgetBytes: opts.fileBudgetBytes }),
     ...(opts.maxLineBytes === undefined ? {} : { maxLineBytes: opts.maxLineBytes }),
   });
   return { home, db, svc };
+}
+
+/** A source's read cursors, from the state the core keeps for it. */
+function cursors(db: UsageDb, source: string): Array<{ offset: number }> {
+  const state = db.sourceState(`usage-source:${source}`)?.state as { files?: Record<string, { offset: number }> } | undefined;
+  return Object.values(state?.files ?? {});
 }
 
 function rows(db: UsageDb): Array<Record<string, unknown>> {
@@ -69,8 +75,7 @@ describe("Codex rollouts", () => {
     r = rows(db);
     expect(r).toHaveLength(2);
     expect(r[1]).toMatchObject({ model: "gpt-5.2", input: 500, cache_read: 100, output: 100, reasoning: 10 });
-    const state = db.db.query("SELECT offset FROM ingest_files").get() as { offset: number };
-    expect(state.offset).toBe((await stat(file)).size);
+    expect(cursors(db, "codex").map((c) => c.offset)).toEqual([(await stat(file)).size]);
   });
 
   test("a truncated file and a rotated (replaced) file are read again from the start, and dedupe keeps the counts right", async () => {
@@ -193,7 +198,7 @@ describe("a line longer than the whole per-pass budget", () => {
     const offsets: number[] = [];
     for (let i = 0; i < 20 && rows(db).length === 0; i++) {
       await svc.ingest(true);
-      offsets.push((db.db.query("SELECT offset FROM ingest_files").get() as { offset: number }).offset);
+      offsets.push(cursors(db, "claude-code")[0]!.offset);
     }
     expect(rows(db).map((r) => r.model)).toEqual(["claude-sonnet-4-5-20250929"]);
     for (let i = 1; i < offsets.length; i++) expect(offsets[i]!).toBeGreaterThan(offsets[i - 1]!);

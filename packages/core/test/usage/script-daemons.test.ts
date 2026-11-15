@@ -212,9 +212,7 @@ export function inertInjection(value: string | undefined): boolean {
   if (value === undefined) return false;
   if (value === "USAGE_INERT") return true;
   if (!value.startsWith("{")) return false;
-  const off = (key: string): boolean => /^(?:null|["']off["'])$/.test(valueOf(value, key) ?? "");
-  return valueOf(value, "background") === "false"
-    && ["codexHome", "claudeHome", "claudeJsonPath", "codexExecutable", "claudeExecutable", "agyExecutable", "opencodeExecutable"].every(off);
+  return valueOf(value, "background") === "false" && valueOf(value, "sources") === "null" && valueOf(value, "port") === undefined;
 }
 
 /** The definition of `name` nearest before `at` (a const/let/var, or a function), and every `Object.assign(name, …)`
@@ -264,9 +262,8 @@ function startDaemonCalls(code: string): string[] {
 
 describe("script and probe daemons are usage-inert", () => {
   test("USAGE_INERT and USAGE_INERT_ENV switch everything off", () => {
-    expect(USAGE_INERT).toMatchObject({ codexHome: null, claudeHome: null, claudeJsonPath: null, codexExecutable: null, claudeExecutable: null,
-      agyExecutable: null, opencodeExecutable: null, catchUp: false, background: false });
-    for (const k of ["CODEX_HOME", "CLAUDE_HOME", "CLAUDE_JSON", "CODEX_EXECUTABLE", "CLAUDE_EXECUTABLE", "AGY_EXECUTABLE", "OPENCODE_EXECUTABLE", "BACKGROUND", "CATCH_UP"]) {
+    expect(USAGE_INERT).toMatchObject({ sources: null, catchUp: false, background: false });
+    for (const k of ["SOURCES", "BACKGROUND", "CATCH_UP"]) {
       expect(USAGE_INERT_ENV[`CLOVER_USAGE_${k}`]).toBe("off");
     }
   });
@@ -277,8 +274,8 @@ describe("script and probe daemons are usage-inert", () => {
     expect(inertInjection("USAGE_INERT")).toBe(true);
     expect(inertInjection("undefined")).toBe(false);
     expect(inertInjection("{ background: false }")).toBe(false);
-    expect(inertInjection("{ codexHome: null, claudeHome: null, claudeJsonPath: null, codexExecutable: null, claudeExecutable: \"off\", agyExecutable: null, opencodeExecutable: null, background: false }")).toBe(true);
-    expect(inertInjection("{ codexHome: null, claudeHome: null, claudeJsonPath: null, codexExecutable: fake, claudeExecutable: null, agyExecutable: null, opencodeExecutable: null, background: false }")).toBe(false);
+    expect(inertInjection("{ sources: null, catchUp: false, background: false }")).toBe(true);
+    expect(inertInjection("{ sources: [\"codex\"], background: false }")).toBe(false);
     // The env named in the file but not passed to the spawn; a spawn with no env at all; one passed through a variable.
     const unused = "const env = { ...USAGE_INERT_ENV };\nspawn(x, [\"daemon\", \"run\"], { stdio: \"pipe\" });";
     expect(inertSpawn(unused, unused.slice(unused.indexOf("(x")), unused.indexOf("spawn("))).toBe(false);

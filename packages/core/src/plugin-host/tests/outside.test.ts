@@ -5,7 +5,7 @@
 // names neither is refused both. A change to the list is a change card; OK'd, a new process has the new fence. Temp homes; nothing opens a window.
 import { afterAll, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -294,4 +294,16 @@ test("an update or a bot's edit that changes what it names outside its sandbox w
     expect(updateAddsTrigger(snap(fp(before)), snap(fp(after)))).toContain("changes the programs it runs or the folders it reads outside its sandbox");
     expect(workshopAdds(snap(fp(before)), snap(fp(after)))).toContain("outside its sandbox");
   }
+});
+
+test("with no user home named, a program runs in an empty stand-in folder, never the real home", async () => {
+  const cloverHome = temp("cf-out-clover-");
+  const bin = temp("cf-out-bin-");
+  writeFileSync(join(bin, "where"), "#!/bin/sh\npwd -P\n");
+  chmodSync(join(bin, "where"), 0o755);
+  const api = outsideApi({ cloverHome, path: () => bin });
+  const ctx = { pluginId: "p", record: { manifest: { host: { outside: { programs: ["where"] } } } } } as never;
+  const r = (await api["outside.run"]!(ctx, ["where"])) as { stdout: string };
+  expect(r.stdout.trim()).toBe(realpathSync(join(tmpdir(), "clover-no-user-home")));
+  expect(r.stdout.trim()).not.toBe(realpathSync(homedir()));
 });

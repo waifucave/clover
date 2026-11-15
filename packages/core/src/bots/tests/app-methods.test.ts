@@ -347,14 +347,20 @@ describe("the archive of the previous app's sessions", () => {
   });
 });
 
+/** The service's readers over a table of source name to plan read (a source that is not in it is not a source here). */
+const readersFrom = (table: Record<string, () => Promise<PlanReading>>): PlanReaders => ({
+  planSources: () => Object.keys(table),
+  sourcePlan: (id) => table[id]!(),
+});
+
 describe("usage.plans", () => {
   test("each window of each app that answered, named for this computer; an app that isn't here or fails is left out", async () => {
     const reading = (over: Partial<PlanReading>): PlanReading => ({ provider: "codex", source: "codex-app-server", at: 1_000, windows: [], ...over });
-    const readers: PlanReaders = {
-      codexPlan: async () => reading({ planType: "pro", windows: [{ id: "a", kind: "five_hour", windowMinutes: 300, usedPercent: 42, resetsAt: 9_000, stale: false }, { id: "b", kind: "weekly", usedPercent: 7, stale: false }] }),
-      claudeCodePlan: async () => reading({ provider: "claude-code", source: "not-installed" }),
-      antigravityPlan: async () => { throw new Error("agy broke"); },
-    };
+    const readers = readersFrom({
+      codex: async () => reading({ planType: "pro", windows: [{ id: "a", kind: "five_hour", windowMinutes: 300, usedPercent: 42, resetsAt: 9_000, stale: false }, { id: "b", kind: "weekly", usedPercent: 7, stale: false }] }),
+      "claude-code": async () => reading({ provider: "claude-code", source: "not-installed" }),
+      antigravity: async () => { throw new Error("agy broke"); },
+    });
     const readings = await planReadings({ readers, computer: () => "Studio", now: () => 2_000 });
     expect(readings).toEqual([
       { source: "codex", computer: "Studio", plan: "pro", window: "five_hour", usedPercent: 42, resetsAt: 9_000, readAt: 1_000 },
@@ -368,22 +374,22 @@ describe("usage.plans", () => {
     const reading = (over: Partial<PlanReading>): PlanReading => ({ provider: "claude-code", source: "claude-cli", at: 1_000, windows: [], ...over });
     const now = 10_000;
     for (const source of ["not-installed", "disabled", "none"] as const) {
-      const readers: PlanReaders = {
-        codexPlan: async () => reading({ provider: "codex", source: "not-installed" }),
-        claudeCodePlan: async () => reading({ source, windows: [{ id: "a", kind: "five_hour", usedPercent: 1, stale: false }] }),
-        antigravityPlan: async () => reading({ provider: "antigravity", source, windows: [{ id: "a", kind: "weekly", usedPercent: 1, stale: false }] }),
-      };
+      const readers = readersFrom({
+        codex: async () => reading({ provider: "codex", source: "not-installed" }),
+        "claude-code": async () => reading({ source, windows: [{ id: "a", kind: "five_hour", usedPercent: 1, stale: false }] }),
+        antigravity: async () => reading({ provider: "antigravity", source, windows: [{ id: "a", kind: "weekly", usedPercent: 1, stale: false }] }),
+      });
       expect(await planReadings({ readers, computer: () => "Studio", now: () => now })).toEqual([]);
     }
-    const failing: PlanReaders = {
-      codexPlan: async () => { throw new Error("codex broke"); },
-      claudeCodePlan: async () => { throw new Error("claude broke"); },
-      antigravityPlan: () => Promise.reject(new Error("agy broke")),
-    };
+    const failing = readersFrom({
+      codex: async () => { throw new Error("codex broke"); },
+      "claude-code": async () => { throw new Error("claude broke"); },
+      antigravity: () => Promise.reject(new Error("agy broke")),
+    });
     expect(await planReadings({ readers: failing, computer: () => "Studio", now: () => now })).toEqual([]);
-    const ageing: PlanReaders = {
-      codexPlan: async () => reading({ provider: "codex", source: "not-installed" }),
-      claudeCodePlan: async () => reading({
+    const ageing = readersFrom({
+      codex: async () => reading({ provider: "codex", source: "not-installed" }),
+      "claude-code": async () => reading({
         planType: "max",
         windows: [
           { id: "now", kind: "five_hour", windowMinutes: 300, usedPercent: 30, resetsAt: now + 60_000, stale: false },
@@ -392,8 +398,8 @@ describe("usage.plans", () => {
         ],
       }),
       // Read long ago against a one-minute window: over by now, though its reader didn't say so then.
-      antigravityPlan: async () => reading({ provider: "antigravity", source: "agy-cli", at: 1, windows: [{ id: "old", kind: "other", windowMinutes: 0.1, usedPercent: 5, stale: false }] }),
-    };
+      antigravity: async () => reading({ provider: "antigravity", source: "agy-cli", at: 1, windows: [{ id: "old", kind: "other", windowMinutes: 0.1, usedPercent: 5, stale: false }] }),
+    });
     expect(await planReadings({ readers: ageing, computer: () => "Studio", now: () => now })).toEqual([
       { source: "claude-code", computer: "Studio", plan: "max", window: "five_hour", usedPercent: 30, resetsAt: now + 60_000, readAt: 1_000 },
     ]);

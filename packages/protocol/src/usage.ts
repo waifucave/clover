@@ -33,7 +33,8 @@ export type UsageRow = z.infer<typeof UsageRow>;
 
 /** A plan reading from one of the user's own apps, by its own install (the inherited plan usage readers). */
 export const PlanReading = z.object({
-  source: UsageSource,
+  /** The `usage.sources` entry that read it (`codex`, `claude-code`, any a plugin brings). */
+  source: utf16(64, 1),
   computer: ComputerName,
   plan: utf16(128),
   window: utf16(32),

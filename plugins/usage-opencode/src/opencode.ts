@@ -1,10 +1,6 @@
-import type { UsageRecordInput } from "./db";
-import { tokenCount } from "./ingest-files";
-import { shortStr } from "./plan";
-import type { UsagePricer } from "./pricing";
-import { probeEnv, runLines } from "./spawn-lines";
+import { runOutside, shortStr, tokenCount, type Outside, type UsageRecord } from "@waifucave/clover-plugin-sdk/usage-source";
 
-// The user's own OpenCode (`docs/claude/usage.md`) — tokens and cost only (its plan limits live on its web console, so
+// The user's own OpenCode (spec §12 "Usage sources") — tokens and cost only (its plan limits live on its web console, so
 // there is no plan slot). OpenCode reports itself: `opencode stats --standalone --days N --models --cost --json`
 // (`--standalone` runs a private server for the one command and exits; seen live 2026-10-18, each run under a second).
 // Only per-model token counts, OpenCode's own cost and the active dates are kept; the session, prompt and tool counts in
@@ -102,14 +98,14 @@ export function opencodeDifference(wide: OpencodeStats, narrow: OpencodeStats): 
 
 /** PURE: one day's rows — one per model per variant, `dedupe` = `opencode:<model>:<variant>:<YYYY-MM-DD>`, priced by
  *  OpenCode's own figure (`reported`). A model with no tokens that day has no row. */
-export function opencodeDayRecords(stats: OpencodeStats, day: string, at: number, pricer: UsagePricer): UsageRecordInput[] {
-  const out: UsageRecordInput[] = [];
+export function opencodeDayRecords(stats: OpencodeStats, day: string, at: number): UsageRecord[] {
+  const out: UsageRecord[] = [];
   for (const m of stats.models.values()) {
     if (m.input + m.output + m.cacheRead + m.cacheWrite === 0) continue;
     out.push({
-      dedupe: `opencode:${m.model}:${m.variant}:${day}`, source: "opencode", at, provider: m.provider, model: m.model,
+      dedupe: `opencode:${m.model}:${m.variant}:${day}`, at, provider: m.provider, model: m.model,
       input: m.input, output: m.output, cacheRead: m.cacheRead, cacheWrite: m.cacheWrite, reasoning: m.reasoning,
-      costUsd: m.cost, costBasis: "reported", cacheSavingsUsd: pricer.savingsFor(m.provider, m.model.slice(m.provider.length + 1), m.cacheRead),
+      costUsd: m.cost,
     });
   }
   return out;
@@ -181,23 +177,15 @@ export function sameOpencodeStats(a: OpencodeStats, b: OpencodeStats): boolean {
   return true;
 }
 
-export type OpencodeFailure = "no-json" | "exited" | "timeout" | "spawn-failed" | "too-large";
+export type OpencodeFailure = "no-json" | "exited" | "timeout" | "spawn-failed" | "too-large" | "not-installed";
 
-/** OpenCode's own home variables (its XDG dirs), which cross into its probe with the allowlist. */
-export const OPENCODE_ENV: readonly string[] = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"];
-
-/** One `opencode stats` run (stdin from /dev/null, the probes' allowlisted environment plus its XDG dirs, and ALWAYS
- *  `TZ` = `tz` — the zone Clover counts its days in, so the child's `--days` are the same days). */
-export async function runOpencodeStats(executable: string, args: readonly string[], opts: { cwd: string; tz: string; timeoutMs?: number; env?: Record<string, string> }):
+/** One `opencode stats` run through the program the manifest names (`api.outside.run`). The days are the process's local
+ *  days (`TZ` is not set by the door), the same zone every day here is counted in. */
+export async function runOpencodeStats(outside: Outside, args: readonly string[], opts: { timeoutMs?: number } = {}):
   Promise<{ stats?: OpencodeStats; failure?: OpencodeFailure }> {
-  const lines: string[] = [];
-  const outcome = await runLines(executable, {
-    args: [...args], cwd: opts.cwd, stdin: "ignore", timeoutMs: opts.timeoutMs ?? OPENCODE_STATS_TIMEOUT_MS, maxBytes: 4 * 1024 * 1024,
-    env: { ...(opts.env ?? probeEnv(OPENCODE_ENV)), TZ: opts.tz },
-    onLine: (line) => { lines.push(line); return undefined; },
-  });
-  if (outcome.kind !== "exited") return { failure: outcome.kind === "done" ? "no-json" : outcome.kind };
-  if (outcome.code !== 0) return { failure: "exited" };
-  const stats = parseOpencodeStats(lines.join("\n"));
+  const ran = await runOutside(outside, "opencode", [...args], { timeoutMs: opts.timeoutMs ?? OPENCODE_STATS_TIMEOUT_MS });
+  if (ran.kind !== "exited") return { failure: ran.kind };
+  if (ran.code !== 0) return { failure: "exited" };
+  const stats = parseOpencodeStats(ran.stdout);
   return stats === undefined ? { failure: "no-json" } : { stats };
 }

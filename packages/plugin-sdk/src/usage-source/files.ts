@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-// The shared half of the external ingests (`docs/claude/usage.md`): find JSONL files under a root, and read ONLY the
+// The shared half of the files a source reads (spec §12 "Usage sources"): find JSONL files under a root, and read ONLY the
 // bytes appended since the last read — from a stored byte offset, consuming whole lines only (a partial last line is
 // left for the next read), restarting from 0 when the file's inode changed (rotated, replaced) or it shrank below the
 // offset (truncated). Nothing here keeps a path: the read state is keyed by a hash of it (`fileKey`).
@@ -153,14 +153,59 @@ export async function scanLinesBackward(path: string, onLine: (line: string) => 
   }
 }
 
-/** PURE: an ISO timestamp (or epoch number) as epoch ms. */
-export function timeOf(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v < 1e12 ? Math.round(v * 1000) : Math.round(v);
-  if (typeof v === "string" && v.length > 0) {
-    const t = Date.parse(v);
-    return Number.isFinite(t) ? t : undefined;
-  }
-  return undefined;
+// ── a pass over a tool's files, as the state a source keeps ─────────────────────────────────────────────────────────
+
+/** What a source remembers of one file: where it read to, and the file's own parser state. */
+export interface FileCursor {
+  inode: number;
+  offset: number;
+  /** The read stopped inside an over-long line being skipped. */
+  skipping?: boolean;
+  /** What the parser needs to go on in the next bytes (a Codex rollout's running totals). */
+  state?: Record<string, unknown>;
 }
 
-export const tokenCount = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+export interface ReadFilesOptions<R> {
+  files: readonly FoundFile[];
+  /** The cursors as the source kept them, by `fileKey`; not changed. */
+  cursors: Readonly<Record<string, FileCursor>>;
+  /** The key a file's cursor is kept under (`fileKey(source, path)`). */
+  keyOf(file: FoundFile): string;
+  /** A parser of one line; `state` is the file's own, kept in its cursor. */
+  recordOf(line: string, state: Record<string, unknown>, file: FoundFile): R | undefined;
+  /** Bytes read in all (default 256 MiB), per file (64 MiB), the longest line parsed (16 MiB) and the most records
+   *  returned in one call (20,000: more stay for the next call). */
+  budgetBytes?: number;
+  fileBudgetBytes?: number;
+  maxLineBytes?: number;
+  maxRecords?: number;
+}
+
+/** Reads every file's new bytes. The cursors are the new ones (a file read to its end carries its offset), the records
+ *  are in file order, and `more` says a budget left something for the next call. */
+export async function readFiles<R>(o: ReadFilesOptions<R>): Promise<{ records: R[]; cursors: Record<string, FileCursor>; more: boolean }> {
+  const cursors: Record<string, FileCursor> = { ...o.cursors };
+  const records: R[] = [];
+  let more = false;
+  let budget = o.budgetBytes ?? 256 * 1024 * 1024;
+  const maxRecords = o.maxRecords ?? 20_000;
+  for (const file of o.files) {
+    const key = o.keyOf(file);
+    const prev = cursors[key];
+    if (prev !== undefined && prev.inode === file.inode && prev.offset === file.size) continue;
+    if (budget <= 0 || records.length >= maxRecords) { more = true; break; }
+    const reset = prev !== undefined && (prev.inode !== file.inode || file.size < prev.offset);
+    const state: Record<string, unknown> = reset || prev === undefined ? {} : { ...(prev.state ?? {}) };
+    const skipping = !reset && prev?.skipping === true;
+    const read = await readNewLines(file, prev === undefined ? undefined : { inode: prev.inode, offset: prev.offset, skipping }, (line) => {
+      const r = o.recordOf(line, state, file);
+      if (r !== undefined) records.push(r);
+    }, { budget: o.fileBudgetBytes ?? 64 * 1024 * 1024, ...(o.maxLineBytes === undefined ? {} : { maxLine: o.maxLineBytes }) });
+    budget -= read.offset - (reset || prev === undefined ? 0 : prev.offset);
+    if (read.more) more = true;
+    cursors[key] = { inode: file.inode, offset: read.offset, ...(read.skipping ? { skipping: true } : {}), ...(Object.keys(state).length === 0 ? {} : { state }) };
+    // Yield between files: a first import of a large history never holds the event loop for long.
+    await new Promise<void>((r) => setImmediate(r));
+  }
+  return { records, cursors, more };
+}

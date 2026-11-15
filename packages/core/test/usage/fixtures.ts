@@ -92,6 +92,8 @@ export function fakeExecutable(dir: string, name: string, body: string): { path:
 const fs = require("node:fs");
 const log = (o) => process.stdout.write((typeof o === "string" ? o : JSON.stringify(o)) + "\\n");
 const mark = (s) => fs.appendFileSync(${JSON.stringify(markerPath)}, s + "\\n");
+// \`--version\` is how a source tells one build of the program from another: its answer sits in \`<path>.version\`.
+if (process.argv[2] === "--version") { try { log(fs.readFileSync(${JSON.stringify(path + ".version")}, "utf8").trim()); } catch { log("fake 1.0.0"); } process.exit(0); }
 mark(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), pid: process.pid, env: Object.keys(process.env).sort() }));
 ${body}
 `);

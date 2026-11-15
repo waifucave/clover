@@ -9,12 +9,13 @@ import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type Wr
 import { USAGE_DB_SCHEMA_VERSION, UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
 import { planScopeKey, planWindowKey } from "../../src/usage/plan";
-import { FAST_BEAT_SLACK_MS, PLAN_PROVIDERS, USAGE_BACKGROUND_EVERY_MS, UsageService, fastBeatFloor, type UsageServiceDeps } from "../../src/usage/service";
+import { FAST_BEAT_SLACK_MS, USAGE_BACKGROUND_EVERY_MS, fastBeatFloor } from "../../src/usage/service";
+import { UsageService, sourcePort, type LegacyServiceDeps } from "./sources-harness";
 import type { FiredUsageAlarm } from "../../src/usage/db";
 import { createUsageService } from "../../src/usage/wiring";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { FileSecretStore } from "../../src/auth/secret-store";
-import { claudeJson, codexMeta, codexRateLimits, codexRolloutPath, codexTokenCount, codexTurnContext, fakeClaude, fakeCodex, lines, probeRootIn, tempDir } from "./fixtures";
+import { claudeJson, codexMeta, codexRateLimits, codexRolloutPath, codexTokenCount, codexTurnContext, fakeClaude, fakeCodex, lines, tempDir } from "./fixtures";
 
 const pricer = new UsagePricer();
 const sec = (ms: number) => Math.floor(ms / 1000);
@@ -23,7 +24,7 @@ const FAILING = "/usr/bin/false";
 
 interface Timer { fn: () => void; ms: number; cancelled: boolean }
 
-function service(over: Partial<UsageServiceDeps> = {}) {
+function service(over: Partial<LegacyServiceDeps> = {}) {
   const home = tempDir("alarms");
   const db = new UsageDb(join(home, "usage", "usage.db"));
   // The fired alarms waiting for an acknowledgement, read back from the DB.
@@ -32,8 +33,7 @@ function service(over: Partial<UsageServiceDeps> = {}) {
   const tracking = { codex: true, claudeCode: true, antigravity: true, opencode: true };
   const svc = new UsageService({
     db, pricer, tracking: () => tracking,
-    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
-    probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
+    codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],  ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
     setInterval: (fn, ms) => {
       const t = { fn, ms, cancelled: false };
       timers.push(t);
@@ -130,12 +130,12 @@ describe("the usage_alarms table (schema 5)", () => {
     const fake = fakeCodex(tempDir("bin"), "ok", { primary: 90, secondary: 10, resetsAtSec: sec(Date.now() + 3_600_000) });
     const { svc, db, home } = service({ codexExecutable: () => fake.path });
     const a = svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 80 });
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     db.close();
     const again = new UsageDb(join(home, "usage", "usage.db"));
     const svc2 = new UsageService({
       db: again, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-      claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home),
+      
     });
     expect(svc2.firedAlarms().map((f) => [f.id, f.usedPercent])).toEqual([[a.id, 90]]);
     expect(svc2.ackAlarm(a.id)).toBe(true);
@@ -160,29 +160,19 @@ describe("the window key", () => {
     expect(planWindowKey({ kind: "weekly_scoped", scope: "Claude Opus 4.5" })).toBe("weekly_scoped:opus");
   });
 
-  test("Claude Code's /usage and its ~/.claude.json cache name the same per-model window by one key — an alarm set under one fires under the other", async () => {
-    let now = Date.now();
-    const home = tempDir("keys");
-    const jsonPath = join(home, "claude.json");
-    // The CLI names the limit by its display name ("Fable"); the cache by its key's suffix (`seven_day_fable`).
+  test("Claude Code's /usage names a per-model window by its display name, and a key suffix names it the same", async () => {
+    const now = Date.now();
     const cli = fakeClaude(tempDir("bin"), "ok");
-    const { svc: viaCli } = service({ claudeExecutable: () => cli.path, now: () => now });
-    const cliKey = (await viaCli.claudeCodePlan()).windows.find((w) => w.kind === "weekly_scoped")?.windowKey;
-    claudeJson(jsonPath, now + 1_000, { seven_day_fable: { utilization: 85, resets_at: new Date(now + 3 * 86_400_000).toISOString() } });
-    const { svc: viaCache, fired } = service({ claudeExecutable: () => FAILING, claudeJsonPath: jsonPath, now: () => now });
-    viaCache.setAlarm({ provider: "claude-code", windowKey: cliKey!, thresholdPercent: 80 });
-    now += 2_000;
-    const cached = await viaCache.claudeCodePlan();
-    expect(cached.source).toBe("claude-cache");
+    const { svc } = service({ claudeExecutable: () => cli.path, now: () => now });
+    const cliKey = (await svc.sourcePlan("claude-code")).windows.find((w) => w.kind === "weekly_scoped")?.windowKey;
     expect(cliKey).toBe("weekly_scoped:fable");
-    expect(cached.windows.find((w) => w.kind === "weekly_scoped")?.windowKey).toBe(cliKey);
-    expect(fired().map((f) => f.windowKey)).toEqual(["weekly_scoped:fable"]);
+    expect(planWindowKey({ kind: "weekly_scoped", scope: "seven_day_fable" })).toBe(cliKey!);
   });
 
   test("every answered window carries it", async () => {
     const fake = fakeCodex(tempDir("bin"), "ok");
     const { svc } = service({ codexExecutable: () => fake.path });
-    const r = await svc.codexPlan();
+    const r = await svc.sourcePlan("codex");
     expect(r.windows.map((w) => w.windowKey)).toEqual(["five_hour", "weekly"]);
   });
 });
@@ -195,7 +185,7 @@ describe("firing", () => {
     const { svc, fired } = service({ codexExecutable: () => fake.path });
     const a = svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 85 });
     svc.setAlarm({ provider: "codex", windowKey: "weekly", thresholdPercent: 41 });
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     expect(fired()).toHaveLength(1);
     expect(fired()[0]).toMatchObject({ id: a.id, provider: "codex", windowKey: "five_hour", kind: "five_hour", windowMinutes: 300, thresholdPercent: 85, usedPercent: 85, resetsAt: resetsAtSec * 1000 });
     // Not met (40 < 41): it stays.
@@ -206,19 +196,19 @@ describe("firing", () => {
     const fake = fakeCodex(tempDir("bin"), "ok", { primary: 90, secondary: 40, resetsAtSec });
     const { svc, fired } = service({ codexExecutable: () => fake.path, codexAppServerEveryMs: 0 });
     svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 80 });
-    await svc.codexPlan();
-    await svc.codexPlan();
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
+    await svc.sourcePlan("codex");
+    await svc.sourcePlan("codex");
     expect(fired()).toHaveLength(1);
     expect(svc.alarms()).toEqual([]);
   });
 
   test("concurrent reads fire it exactly once (single-flight)", async () => {
     const fake = fakeCodex(tempDir("bin"), "ok", { primary: 90, secondary: 95, resetsAtSec });
-    const { svc, fired } = service({ codexExecutable: () => fake.path });
+    const { svc, fired } = service({ codexExecutable: () => fake.path, codexAppServerEveryMs: 60_000 });
     svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 80 });
     svc.setAlarm({ provider: "codex", windowKey: "weekly", thresholdPercent: 90 });
-    await Promise.all(Array.from({ length: 6 }, () => svc.codexPlan()));
+    await Promise.all(Array.from({ length: 6 }, () => svc.sourcePlan("codex")));
     await Promise.all(Array.from({ length: 6 }, () => svc.summary("24h", ["winter"])));
     expect(fired().map((f) => f.windowKey).sort()).toEqual(["five_hour", "weekly"]);
     expect(spawns(fake.markerPath)).toBe(1);
@@ -233,7 +223,7 @@ describe("firing", () => {
     const { svc, db, fired } = service({ codexHome, codexExecutable: () => FAILING });
     // Set BEFORE the record, so the freshness rule alone would not hold it back: only staleness does.
     db.addAlarm({ id: "a-old", provider: "codex", windowKey: "five_hour", thresholdPercent: 90, createdAt: old - 1 });
-    const r = await svc.codexPlan();
+    const r = await svc.sourcePlan("codex");
     expect(r.source).toBe("codex-rollout");
     expect(r.windows.find((w) => w.kind === "five_hour")).toMatchObject({ usedPercent: 95, stale: true });
     expect(fired()).toEqual([]);
@@ -244,13 +234,13 @@ describe("firing", () => {
     let now = Date.now();
     const fake = fakeCodex(tempDir("bin"), "ok", { primary: 85, secondary: 40, resetsAtSec });
     const { svc, fired } = service({ codexExecutable: () => fake.path, now: () => now, codexAppServerEveryMs: 60_000 });
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     now += 1_000;
     svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 80 });
-    await svc.codexPlan(); // the cached reading, measured a second before the alarm
+    await svc.sourcePlan("codex"); // the cached reading, measured a second before the alarm
     expect(fired()).toEqual([]);
     now += 61_000;
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     expect(fired()).toHaveLength(1);
   });
 
@@ -259,15 +249,15 @@ describe("firing", () => {
     let exe: string | undefined;
     const { svc, fired, tracking } = service({ codexExecutable: () => exe });
     svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 50 });
-    expect((await svc.codexPlan()).source).toBe("not-installed");
+    expect((await svc.sourcePlan("codex")).source).toBe("not-installed");
     exe = fake.path;
     tracking.codex = false;
-    expect((await svc.codexPlan()).source).toBe("disabled");
+    expect((await svc.sourcePlan("codex")).source).toBe("disabled");
     expect(spawns(fake.markerPath)).toBe(0);
     expect(fired()).toEqual([]);
     expect(svc.alarms()).toHaveLength(1);
     tracking.codex = true;
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     expect(fired()).toHaveLength(1);
   });
 
@@ -276,7 +266,7 @@ describe("firing", () => {
     // A read that stops waiting at once answers before the spawn lands: the landing itself fires the alarm.
     const { svc, fired } = service({ claudeExecutable: () => fake.path, planWaitMs: 0 });
     svc.setAlarm({ provider: "claude-code", windowKey: "weekly_scoped:fable", thresholdPercent: 80 });
-    await svc.claudeCodePlan();
+    await svc.sourcePlan("claude-code");
     const end = Date.now() + 10_000;
     while (fired().length === 0 && Date.now() < end) await Bun.sleep(20);
     expect(fired()).toHaveLength(1);
@@ -323,7 +313,7 @@ describe("the background beats", () => {
     let exe = low.path;
     const { svc, live, fired } = service({ codexExecutable: () => exe, now: () => now, codexAppServerEveryMs: 60_000 });
     svc.startBackground();
-    await svc.codexPlan();
+    await svc.sourcePlan("codex");
     svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 50 });
     const beat = live().find((t) => t.ms === 60_000)!;
     // Just under a period since the last read: the throttle alone would answer the cache.
@@ -336,7 +326,7 @@ describe("the background beats", () => {
     expect(fired()).toHaveLength(1);
     expect(svc.beating).toEqual([]);
     expect(beat.cancelled).toBe(true);
-    expect(PLAN_PROVIDERS).toEqual(["codex", "claude-code", "antigravity"]);
+    expect(svc.planSources()).toEqual(["codex", "claude-code", "antigravity"]);
   });
 
   test("a fast tick's spawn floor is the period less 5 s (never under half): one /usage per period, not two", () => {
@@ -412,7 +402,7 @@ describe("on a real daemon", () => {
     const fake = fakeCodex(tempDir("bin"), "ok", { primary: 72, secondary: 30, resetsAtSec: sec(Date.now() + 3_600_000) });
     const boot = () => startDaemon({
       home, secrets: new FileSecretStore(join(home, "test-secrets")),
-      usage: { codexHome: null, claudeHome: null, claudeJsonPath: null, codexExecutable: fake.path, claudeExecutable: null, agyExecutable: null, opencodeExecutable: null, catchUp: false },
+      usage: { port: sourcePort({ db: undefined as never, pricer, tracking: () => ({}), codexExecutable: () => fake.path, present: ["codex"] }), catchUp: false },
     });
     daemon = await boot();
     const connect = async (): Promise<TestClient> => {

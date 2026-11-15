@@ -1,7 +1,4 @@
-import type { UsageRecordInput } from "./db";
-import { tokenCount } from "./ingest-files";
-import { shortStr } from "./plan";
-import type { UsagePricer } from "./pricing";
+import { shortStr, tokenCount, type UsageRecord } from "@waifucave/clover-plugin-sdk/usage-source";
 
 // Claude Code's own long-term usage cache (`docs/claude/usage.md`): `<claude config dir>/stats-cache.json`, the file
 // behind its `/stats` command. Claude Code deletes old transcripts (30 days by default); this cache keeps per-day,
@@ -269,32 +266,90 @@ export function refreshEstimates(prev: ReadonlyMap<string, StatsEstimate>, input
  * all-time ratios; the cost is the catalog's list price of the split (the same basis as every transcript row), else —
  * for a model the catalog cannot price — Claude Code's own cost per token if it kept one, else unknown.
  */
-export function statsRows(estimates: ReadonlyMap<string, StatsEstimate>, coverage: StatsCoverage, real: ReadonlyMap<string, number>, pricer: UsagePricer): UsageRecordInput[] {
-  const out: UsageRecordInput[] = [];
+export function statsRows(estimates: ReadonlyMap<string, StatsEstimate>, coverage: StatsCoverage, real: ReadonlyMap<string, number>): UsageRecord[] {
+  const out: UsageRecord[] = [];
   for (const [key, e] of [...estimates].sort(([a], [b]) => a.localeCompare(b))) {
     const day = keyDay(key);
     if (!isPartialDay(coverage, day)) continue;
     const model = keyModel(key);
     const tokens = Math.round(e.raw * e.cal) - (real.get(key) ?? 0);
     if (tokens <= 0) continue;
-    const base = {
-      dedupe: `ccstats:${model}:${day}`, source: "claude-code" as const, at: utcNoon(day), provider: "anthropic", model, synthetic: true,
-    };
+    const base = { dedupe: `ccstats:${model}:${day}`, at: utcNoon(day), provider: "anthropic", model, synthetic: true as const };
     const split = e.split === undefined ? undefined
       : splitByRatios(tokens, { input: e.split[0], output: e.split[1], cacheRead: e.split[2], cacheWrite: e.split[3], costUsd: 0 });
     if (split === undefined) {
       // No all-time ratios for this model: the tokens stay visible (as input), with no price — never a guess.
-      out.push({ ...base, input: tokens, output: 0, cacheRead: 0, cacheWrite: 0, costBasis: "unknown" });
+      out.push({ ...base, input: tokens, output: 0, cacheRead: 0, cacheWrite: 0, noPrice: true });
       continue;
     }
-    const priced = pricer.price("anthropic", model, split)
-      ?? (e.usdPerToken !== undefined ? { costUsd: e.usdPerToken * tokens, cacheSavingsUsd: 0 } : undefined);
-    out.push(priced === undefined
-      ? { ...base, ...split, costBasis: "unknown" }
-      : { ...base, ...split, costUsd: priced.costUsd, costBasis: "estimate", cacheSavingsUsd: priced.cacheSavingsUsd });
+    // Priced by the catalog (the core), else Claude Code's own cost per token if it kept one, else unknown.
+    out.push({ ...base, ...split, ...(e.usdPerToken === undefined ? {} : { usdPerToken: e.usdPerToken }) });
   }
   return out;
 }
 
 /** The overlap window's first day for `now`. */
 export const overlapFrom = (now: number): string => utcDay(now - CLAUDE_STATS_OVERLAP_DAYS * DAY_MS);
+
+// ── the history's own state, kept by the core between calls (`state`) ───────────────────────────────────────────────
+
+/** A complete read's time is written at most this often (a gap is measured in weeks). */
+export const PASS_NOTE_EVERY_MS = 6 * 3_600_000;
+
+export interface ClaudeStatsHistory {
+  firstPassAt?: number;
+  lastPassAt?: number;
+  gaps: Array<[string, string]>;
+  estimates: Map<string, StatsEstimate>;
+  /** The estimates were made at least once: until then the rows already stored are left alone. */
+  planned: boolean;
+}
+
+const finiteNum = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+
+/** PURE: the stored state, validated — anything malformed is dropped, never trusted. */
+export function parseStatsHistory(state: Record<string, unknown> | undefined): ClaudeStatsHistory {
+  const firstPassAt = finiteNum(state?.firstPassAt);
+  const lastPassAt = finiteNum(state?.lastPassAt);
+  const gaps: Array<[string, string]> = [];
+  if (Array.isArray(state?.gaps)) {
+    for (const g of state.gaps) {
+      if (!Array.isArray(g)) continue;
+      const a = statsDate(g[0]);
+      const b = statsDate(g[1]);
+      if (a !== undefined && b !== undefined && a <= b) gaps.push([a, b]);
+    }
+  }
+  const estimates = new Map<string, StatsEstimate>();
+  const stored = state?.estimates;
+  if (typeof stored === "object" && stored !== null && !Array.isArray(stored)) {
+    for (const [key, v] of Object.entries(stored)) {
+      if (statsDate(key.slice(0, 10)) === undefined || key[10] !== ":" || key.length < 12 || typeof v !== "object" || v === null) continue;
+      const e = v as Record<string, unknown>;
+      const raw = finiteNum(e.raw);
+      const cal = finiteNum(e.cal);
+      const days = finiteNum(e.days);
+      if (raw === undefined || raw < 0 || cal === undefined || cal < 0 || cal > 1 || days === undefined || days < 0) continue;
+      const split = Array.isArray(e.split) && e.split.length === 4 && e.split.every((x) => finiteNum(x) !== undefined && (x as number) >= 0)
+        ? e.split as [number, number, number, number] : undefined;
+      const usdPerToken = finiteNum(e.usdPerToken);
+      estimates.set(key, { raw, cal, days, ...(split === undefined ? {} : { split }), ...(usdPerToken !== undefined && usdPerToken > 0 ? { usdPerToken } : {}) });
+    }
+  }
+  return {
+    ...(firstPassAt === undefined ? {} : { firstPassAt }), ...(lastPassAt === undefined ? {} : { lastPassAt }),
+    gaps, estimates, planned: state?.planned === true,
+  };
+}
+
+/** PURE: `gaps` with the span [a, b] added, overlapping or touching spans merged; undefined when it adds nothing. */
+export function addGap(gaps: ReadonlyArray<readonly [string, string]>, a: string, b: string): Array<[string, string]> | undefined {
+  if (gaps.some(([x, y]) => x <= a && b <= y)) return undefined;
+  const next = (d: string): string => utcDay(Date.parse(`${d}T00:00:00Z`) + 86_400_000);
+  const out: Array<[string, string]> = [];
+  for (const [x, y] of [...gaps.map(([x, y]) => [x, y] as [string, string]), [a, b] as [string, string]].sort(([x], [y]) => x.localeCompare(y))) {
+    const last = out[out.length - 1];
+    if (last !== undefined && x <= next(last[1])) { if (y > last[1]) last[1] = y; } else out.push([x, y]);
+  }
+  return out;
+}
