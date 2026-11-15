@@ -962,12 +962,21 @@ export class BotSessionDriver implements SessionDriver {
         if (event.type === "assistant_message" && typeof event.text === "string") {
           const text = await this.#hooks.messageOut(this.#hookSession, event.text).catch(() => event.text as string);
           ctl.record({ ...event, text });
+          this.#heard(text);
         } else ctl.record(event);
       });
       t.pending = this.#recordChain;
       return;
     }
     t.ctl.record(event);
+    if (event.type === "assistant_message" && typeof event.text === "string") this.#heard(event.text);
+  }
+
+  /** A reply stored: the `message.out` hooks that only observe hear it (with the bot and the session), never awaited. */
+  #heard(text: string): void {
+    try {
+      this.#hooks.hearReply?.(this.#hookSession, text);
+    } catch { /* an observer never fails the turn */ }
   }
 
   #accept(inc: Incarnation, msg: Record<string, unknown>): void {

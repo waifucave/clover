@@ -1518,6 +1518,9 @@
         "scope": {
           "$ref": "#/$defs/__schema34"
         },
+        "observe": {
+          "type": "boolean"
+        },
         "declares": {
           "$ref": "#/$defs/__schema27"
         }

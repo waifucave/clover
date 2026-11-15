@@ -1198,15 +1198,22 @@ export function hookOkLines(reports: readonly ManifestReport[]): string[] {
     const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
     return !Array.isArray(hooks) || hooks.every((h) => ((h as { scope?: unknown }).scope ?? scopeOf(r) ?? scopeOf(top)) === "own-bot");
   });
+  // The events a hook that may change something is on (an `observe` hook only hears them).
+  const changes = new Set<string>();
+  for (const r of reports) {
+    const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
+    if (!Array.isArray(hooks)) continue;
+    for (const h of hooks) if ((h as { observe?: unknown }).observe !== true) for (const e of (h as { on?: unknown }).on instanceof Array ? (h as { on: unknown[] }).on : []) if (typeof e === "string") changes.add(e);
+  }
   const sees: string[] = [];
   if (events.has("message.in")) sees.push("your messages");
   if (events.has("message.out")) sees.push("the bots' replies");
   if (events.has("tool.before")) sees.push("each tool call before it runs");
   if (events.has("tool.after")) sees.push("what each tool returns");
   const can: string[] = [];
-  if (events.has("message.in") || events.has("message.out")) can.push("change messages");
-  if (events.has("tool.before")) can.push("change or refuse a tool call (never approve one)");
-  if (events.has("tool.after")) can.push("change what a tool returns");
+  if (changes.has("message.in") || changes.has("message.out")) can.push("change messages");
+  if (changes.has("tool.before")) can.push("change or refuse a tool call (never approve one)");
+  if (changes.has("tool.after")) can.push("change what a tool returns");
   // An external coding agent's own session is its own: the hooks see only what it asks Clover about (Clover's rule).
   const agents = `Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session${events.has("tool.before") ? "; they can refuse starting one" : ""}.`;
   if (sees.length === 0) return [own ? "Its hooks run when its own bot's turns start, end or are compacted, and see no other bot." : "Its hooks run when a conversation's turns start, end or are compacted.", agents];

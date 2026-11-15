@@ -108,8 +108,9 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
 - **`agents`** (list): a Markdown file path, or `{ id, name, backend, model, effort, instructions, computer, root,
   plugins: { only, except }, scope }` (`scope: "own-bot"`: a definition only the plugin's bot may start).
 - **`hooks`** (list): `{ id, on: [<events>], tools: ["Bash", "mcp__*"], handler | command + args, timeoutMs,
-  scope: "bots" | "agents" | "both" | "own-bot" }`. Events and what each may return: plugin-catalog. `own-bot`
-  limits it to the sessions of this tree's own bots (and the OK card says so).
+  scope: "bots" | "agents" | "both" | "own-bot", observe: true }`. Events and what each may return: plugin-catalog.
+  `own-bot` limits it to the sessions of this tree's own bots (and the OK card says so). `observe` only hears: its
+  answer is ignored and it holds nothing up (a `message.out` observer hears each stored reply; replies keep streaming).
 - **`commands`** (list): `{ name, description, args (JSON Schema), handler, runsOn, scope }`: the user runs them from
   the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
   only that one. `key` is a default shortcut (building-plugins, "Limits today").

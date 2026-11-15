@@ -735,9 +735,13 @@ interface McpServer {
 interface Hook { id: string; on: ("tool.before" | "tool.after" | "message.in" | "message.out" | "turn.start" | "turn.end"
                                   | "compact.before" | "compact.after")[];
                  tools?: string[]; handler?: string; command?: string; args?: string[]; timeoutMs?: number;
-                 scope?: Scope | "own-bot" }   // [P] own-bot: only the sessions of the bots its tree contributes (their
+                 scope?: Scope | "own-bot";   // [P] own-bot: only the sessions of the bots its tree contributes (their
                                                // conversations, side threads, delegations), held by the host; the OK
                                                // card says "only what its own bot does"; a change to it asks again
+                 observe?: boolean }           // [P] only hears its events: its answer is ignored, it holds nothing
+                                               // up and refuses nothing; a message.out observer hears each bot's
+                                               // reply once stored (with the bot and the session), so replies keep
+                                               // streaming; the OK says it sees, never that it changes
 interface AgentBackend { id: string; name: Text; protocol: "acp" | "cloud"; command?: string; args?: string[]; handler?: string }
 interface AgentDef { id: string; name: Text; backend: string; model?: string; effort?: string; instructions?: Path;
                      computer?: string; root?: string; plugins?: { only?: string[]; except?: string[] } }

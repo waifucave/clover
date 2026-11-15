@@ -219,6 +219,10 @@ export const HookSchema = z.strictObject({
   /** `own-bot`: only the sessions of the bots this plugin's tree contributes (their conversations, side threads and
    *  the agents they start), enforced by the host before a hook is called; the OK card says so. */
   scope: PartScope.optional(),
+  /** Only hears its events: what it answers is ignored, and it holds nothing up. A `message.out` observer is told each
+   *  bot's reply once it is stored (with the bot and the session), so the replies keep streaming as they would with no
+   *  hook (a hook that may rewrite a reply holds it until it ran). The OK says it sees and never says it changes. */
+  observe: z.boolean().optional(),
   ...declares,
 });
 
