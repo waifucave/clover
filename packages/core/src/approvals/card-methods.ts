@@ -49,7 +49,7 @@ function usersOwn(conn: CloverConn, method: string): void {
   if (!isTheUsersOwn(conn.caller)) throw new CloverRpcError(CLOVER_ERR.NOT_THE_USER, `${method} is read for the user alone`);
 }
 
-export function cardMethods(broker: () => CardBroker | undefined): Record<string, CloverHandler> {
+export function cardMethods(broker: () => CardBroker | undefined, capabilitiesOf: (pluginId: string) => readonly string[] | undefined = () => undefined): Record<string, CloverHandler> {
   const up = (): CardBroker => {
     const b = broker();
     if (!b) throw notRunning();
@@ -73,12 +73,12 @@ export function cardMethods(broker: () => CardBroker | undefined): Record<string
         ...(r.resolvedAt === undefined ? {} : { resolvedAt: r.resolvedAt }),
       };
     },
-    // A layer's own list of what waits, scoped like the events it hears: its plugin's bot's cards (the bundled `clover`
-    // tree: all), ids and places, never a card's text. A caller that is no plugin hears none.
+    // A layer's own list of what waits, scoped like the events it hears: its plugin's bot's cards (a plugin with `approvals.all`:
+    // all), ids and places, never a card's text. A caller that is no plugin hears none.
     [APPROVALS_METHODS.cardPending.name]: async (conn) => {
       const mine = conn.caller.kind === "plugin" ? conn.caller.pluginId : undefined;
       if (mine === undefined) return { cards: [] };
-      return { cards: up().cards().filter((c) => cardAudience(c.bot)(mine)).map(cardMetaOf) };
+      return { cards: up().cards().filter((c) => cardAudience(c.bot)(mine, capabilitiesOf(mine) ?? [])).map(cardMetaOf) };
     },
     [APPROVALS_METHODS.cardFrame.name]: async (_conn, params) => {
       const { id } = params as { id: string };

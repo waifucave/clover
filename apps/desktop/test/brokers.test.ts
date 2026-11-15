@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -90,11 +90,10 @@ describe("surface windows", () => {
   const display = { x: 0, y: 0, width: 1512, height: 982 };
   const workArea = { x: 0, y: 33, width: 1512, height: 949 };
 
-  test("the island at the top centre, the pill at the bottom centre, others centred, or where the entry says", () => {
-    expect(surfacePlacement({ surface: "island", size: { width: 400, height: 80 }, display, workArea })).toEqual({ x: 556, y: 0, width: 400, height: 80 });
-    expect(surfacePlacement({ surface: "pill", size: { width: 400, height: 60 }, display, workArea })).toEqual({ x: 556, y: 898, width: 400, height: 60 });
-    expect(surfacePlacement({ surface: "x", size: { width: 400, height: 300 }, display, workArea })).toEqual({ x: 556, y: 358, width: 400, height: 300 });
-    expect(surfacePlacement({ surface: "x", placement: "top-center", size: { width: 400, height: 80 }, display, workArea }).y).toBe(0);
+  test("where the entry says (top-center, bottom-center), else centred; no surface's name decides", () => {
+    expect(surfacePlacement({ placement: "top-center", size: { width: 400, height: 80 }, display, workArea })).toEqual({ x: 556, y: 0, width: 400, height: 80 });
+    expect(surfacePlacement({ placement: "bottom-center", size: { width: 400, height: 60 }, display, workArea })).toEqual({ x: 556, y: 898, width: 400, height: 60 });
+    expect(surfacePlacement({ size: { width: 400, height: 300 }, display, workArea })).toEqual({ x: 556, y: 358, width: 400, height: 300 });
   });
 
   test("click regions: rects inside the window, checked; the cursor's place decides", () => {
@@ -108,12 +107,6 @@ describe("surface windows", () => {
 
 describe("surfaces outside the clover tree", () => {
   const workArea = { width: 1512, height: 949 };
-  test("only the clover tree's surfaces float above everything", () => {
-    expect(surfaceMayFloat("clover/island")).toBe(true);
-    expect(surfaceMayFloat("fixture-surface")).toBe(false);
-    expect(surfaceMayFloat("cloverx/island")).toBe(false);
-  });
-
   test("sizes stay inside the work area, and a third party's inside a smaller box", () => {
     expect(surfaceSize({ width: 5000, height: 5000 }, { width: 100, height: 100 }, { trusted: true, workArea })).toEqual({ width: 1512, height: 949 });
     expect(surfaceSize({ width: 5000, height: 5000 }, { width: 100, height: 100 }, { trusted: false, workArea })).toEqual(THIRD_PARTY_SURFACE_MAX);

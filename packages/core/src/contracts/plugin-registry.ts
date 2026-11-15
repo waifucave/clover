@@ -47,8 +47,8 @@
 //   is built by the registry into a cached ES module whose only bare imports are `CLIENT_BARE_IMPORTS`, rebuilt when
 //   the tree hash changes, and the view's `clientEntry` names that module; a build that fails leaves the plugin
 //   `invalid` with the bundler's message.
-// * Entry ids and titles a spot reserves (`island.tab`'s Needs you) and always-on-top surfaces are the bundled
-//   `clover` tree's alone (lane G's review, R12): another plugin's such entry is refused.
+// * Entry ids and titles a spot reserves (`island.tab`'s Needs you) are the bundled `clover` tree's alone (lane G's review, R12):
+//   another plugin's such entry is refused. An always-on-top surface is any plugin's with the `overlay` capability (F4).
 import type { PluginProvenance, PluginState, PluginSummary, ValidationIssue } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 import type { CoreEntries, Manifest, PointDecl } from "./sdk-types";

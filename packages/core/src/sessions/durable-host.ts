@@ -569,7 +569,7 @@ export class DurableSessionHost implements SessionHost {
   }
 
   /** The record a user message with this `clientMessageId` became in this session, when this computer's host has it:
-   *  a resend of it would return that `seq` and record nothing. `pill.send` asks before staging a resend's pictures
+   *  a resend of it would return that `seq` and record nothing. `user.send` asks before staging a resend's pictures
    *  again (they would only be left over). Undefined for a session or an id this host doesn't know. */
   sentAs(id: string, clientMessageId: string): { seq: number } | undefined {
     const seen = this.#sessions.get(id)?.clientIds.get(clientMessageId);

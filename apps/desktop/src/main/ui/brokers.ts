@@ -173,10 +173,10 @@ export function mayClaim(type: string, capabilities: ReadonlySet<string>): boole
   return needs === null || (needs !== undefined && capabilities.has(needs));
 }
 
-/** Where a surface window sits on its display (`window.placement`, else by the surface: the island at the top centre
- *  (at the notch, where there is one), the pill at the bottom centre, anything else centred). */
-export function surfacePlacement(input: { surface: string; placement?: string; size: { width: number; height: number }; display: Rect; workArea: Rect }): Rect {
-  const where = input.placement ?? (input.surface === "island" ? "top" : input.surface === "pill" ? "bottom" : "center");
+/** Where a surface window sits on its display: where its manifest's `window.placement` says (`top-center`: at the top, at the notch
+ *  where there is one; `bottom-center`), else centred. Nothing here names a surface. */
+export function surfacePlacement(input: { placement?: string; size: { width: number; height: number }; display: Rect; workArea: Rect }): Rect {
+  const where = input.placement ?? "center";
   const { width, height } = input.size;
   const w = input.workArea;
   const x = Math.round(input.display.x + (input.display.width - width) / 2);
@@ -249,16 +249,10 @@ export class ClickThrough {
   }
 }
 
-/** Surfaces the `clover` tree ships may float above everything, on every Space (the island, the pill); in 1.111.1 any
- *  other plugin's surface is an ordinary window level (the E-M1 review's ruling). */
-export function surfaceMayFloat(pluginId: string): boolean {
-  return pluginId.split("/")[0] === "clover";
-}
-
-/** The largest surface a plugin outside the `clover` tree may have. */
+/** The largest surface a plugin without the `overlay` capability may have. */
 export const THIRD_PARTY_SURFACE_MAX = { width: 800, height: 600 } as const;
 
-/** A surface's size, as asked, kept to the display's work area, and for a plugin outside the `clover` tree to
+/** A surface's size, as asked, kept to the display's work area, and for a plugin without `overlay` (`trusted: false`) to
  *  `THIRD_PARTY_SURFACE_MAX`; each side at least 40 by 24. A side not asked keeps `current`'s. */
 export function surfaceSize(asked: { width?: unknown; height?: unknown }, current: { width: number; height: number }, input: { trusted: boolean; workArea: { width: number; height: number } }): { width: number; height: number } {
   const maxW = Math.max(40, input.trusted ? input.workArea.width : Math.min(THIRD_PARTY_SURFACE_MAX.width, input.workArea.width));
@@ -336,7 +330,7 @@ export function frameGesture(active: unknown, take: () => boolean): boolean {
   return active === true && take();
 }
 
-/** A `pill.send` target, checked: a bot, a session, or a `pill.target` entry by its ref. */
+/** A `user.send` target, checked: a bot, a session, or a `pill.target` entry by its ref. */
 export function sendTarget(v: unknown): { bot: string } | { session: string } | { target: string } | undefined {
   if (v === null || typeof v !== "object") return undefined;
   const t = v as Record<string, unknown>;

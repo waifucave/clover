@@ -61,7 +61,7 @@ export interface CoreEventOptions {
   to?(conn: CloverConn): boolean;
   /** Of the plugins' connections (a layer, a host half), only those whose plugin this lets through; the app's and the
    *  other roles are untouched. An approval card's events use it: a plugin hears its own bot's cards. */
-  forPlugin?(pluginId: string): boolean;
+  forPlugin?(pluginId: string, capabilities: readonly string[]): boolean;
 }
 
 /** The plugin a plugin connection speaks for: a layer's own, an own host's, `clover` for the bundled tree's host; a
@@ -110,7 +110,7 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
     if (opts.to !== undefined && !opts.to(conn)) continue;
     if (opts.forPlugin !== undefined && PLUGIN_ROLES.includes(conn.role)) {
       const who = pluginOf(conn);
-      if (who === undefined || !opts.forPlugin(who)) continue;
+      if (who === undefined || !opts.forPlugin(who, r.pluginCapabilities?.(who) ?? [])) continue;
     }
     try {
       conn.notify(CORE_EVENT_NOTIFICATION, PLUGIN_ROLES.includes(conn.role) ? forPlugins : parsed.data);

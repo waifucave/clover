@@ -3,10 +3,16 @@
 // approval, with ids, computers and option kinds but never words. Empty options fall back to the island's own
 // approve-and-deny pair. Question text stays with the core (a question for B), so only sealed kinds map.
 //
-// Types only from the protocol: no value imports at all, so the desktop's unit tests load this without the island
-// bundle (whose `@clover-child/island` name resolves only for the layer build). Compatibility with the island's own
-// `IslandCard` is checked where the wrapper hands the strip over (the layer build).
-import type { CardMeta } from "@waifucave/clover-protocol";
+// No imports at all: a pending card's meta is read structurally (what `useApprovals()` hands a part), so a copy of the island
+// installed from a folder builds with the SDK alone.
+/** What a pending card's meta carries that the strip reads. */
+export interface CardMeta {
+  id: string;
+  kind: string;
+  computer: string | null;
+  issuedAt: number;
+  options: readonly { id: string; kind: "approve" | "deny"; remember?: "always" }[];
+}
 
 /** A pending card as the island draws it: a subset of the island's `IslandCard`, kept in sync by the layer build. */
 export type IslandStripCard =

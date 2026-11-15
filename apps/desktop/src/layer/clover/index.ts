@@ -24,7 +24,7 @@ import * as usage from "@clover-child/usage";
 import * as voice from "@clover-child/voice";
 import * as devices from "@clover-child/devices";
 import * as vrm from "@clover-child/vrm";
-import { IslandHosted, Live2dAvatarHosted, PillHosted, VrmAvatarHosted } from "./hosts";
+import { Live2dAvatarHosted, VrmAvatarHosted } from "./hosts";
 import type { CloverChildId } from "./ids";
 
 export const modules: Record<CloverChildId, Record<string, unknown>> = {
@@ -42,8 +42,8 @@ export const modules: Record<CloverChildId, Record<string, unknown>> = {
   "clover/archive": archive,
   "clover/bot-editor": botEditor,
   "clover/plugin-index": pluginIndex,
-  "clover/island": { ...island, IslandApp: IslandHosted },
-  "clover/pill": { ...pill, PillApp: PillHosted },
+  "clover/island": island,
+  "clover/pill": pill,
   "clover/usage": usage,
   // Clover Voice's Settings › Voice section (its host half is the bundled voice mode).
   "clover/voice": voice,

@@ -841,7 +841,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const before = count();
     await sleep(IDLE_MS);
     const idle = count() - before;
-    if (idle > IDLE_MAX) fail(`${idle} surface requests in ${IDLE_MS / 1000} s with nothing happening (at most ${IDLE_MAX}) [apps/desktop/src/layer/clover/hosts.tsx coalesced, plugins/clover/plugins/island/src/ui/IslandSurface.tsx]`);
+    if (idle > IDLE_MAX) fail(`${idle} surface requests in ${IDLE_MS / 1000} s with nothing happening (at most ${IDLE_MAX}) [plugins/clover/plugins/island/src/ui/coalesce.ts, plugins/clover/plugins/island/src/ui/IslandSurface.tsx]`);
     let said = "";
     await ctx.cardTurn(async (card) => {
       // The island's own part draws in a frame of the island's surface page; its card is the element that carries the card's id.
@@ -2730,8 +2730,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("the hooks' first answers", 20_000, async () => ((await attrOf("approvals")) !== "" && (await attrOf("questions")) !== "" ? true : undefined), async () => `page said ${JSON.stringify((await find('[data-acceptance-window="page"]'))?.attrs)}`);
       const listsSaid = `useApprovals gave a list (${await attrOf("approvals")}), useQuestions gave a list (${await attrOf("questions")})`;
       if (Number.isNaN(Number(await attrOf("approvals"))) || Number.isNaN(Number(await attrOf("questions")))) fail(`the hooks gave no list: ${JSON.stringify(page.attrs)}`);
+      // useUserSend is a function for any part now (the app refuses a send from a part without the `user.send` capability, which this
+      // plugin does not declare; the runtime tests cover the refusal); useComposerHost stays undefined outside the composer spot.
       const absent = [await attrOf("usersend"), await attrOf("composerhost")];
-      if (absent.join(",") !== "undefined,undefined") fail(`useUserSend / useComposerHost for a third party's page should be undefined, were ${absent.join(", ")}`);
+      if (absent.join(",") !== "function,undefined") fail(`useUserSend should be a function (refused on use without user.send) and useComposerHost undefined for a third party's page, were ${absent.join(", ")}`);
       // useViewFrame: the hook was given the probe's box element; what the frame measured of it is compared with the harness's own
       // measurement of the same element in the real window (its box and the viewport), and main's answer to the hook's report is in the app log
       // (this plugin has no `browser` capability, so main refuses to place a view for it, and says so).

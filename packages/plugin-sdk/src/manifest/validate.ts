@@ -428,6 +428,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   const capabilities = Array.isArray(top.capabilities) ? top.capabilities.filter((c): c is string => typeof c === "string") : [];
   capabilities.forEach((c, i) => {
     if (!isCapability(c)) f.error("plugin", "capability_unknown", ["capabilities", i], `"${c}" is not a capability (see the catalog)`);
+    else if (c === "approvals.all" && !capabilities.includes("approvals")) f.error("plugin", "capability_needs", ["capabilities", i], "`approvals.all` needs `approvals` too");
     else if (capabilities.indexOf(c) !== i) f.warn("capability_duplicate", ["capabilities", i], `"${c}" is listed twice`);
   });
 
@@ -534,7 +535,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     for (const [key, value] of Object.entries(rawContributes)) {
       const at: Seg[] = ["contributes", key];
       if ((CORE_CONTRIBUTION_KEYS as string[]).includes(key)) {
-        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, botName, topId, id, namespace, bundled: opts.bundled === true, seenDecl, declared, refusedPathUnder });
+        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, botName, topId, capabilities, id, namespace, bundled: opts.bundled === true, seenDecl, declared, refusedPathUnder });
         if (result !== undefined) kept[key] = result;
       } else if (DOTTED_POINT_NAME_RE.test(key)) {
         const result = checkPluginPointValue(f, key, value, at, { hasHost });
@@ -728,6 +729,8 @@ interface CoreCtx {
   /** The bot's name, for the refusals' words. */
   botName?: string | undefined;
   topId: string | undefined;
+  /** This manifest's own capabilities (`window` fields and `app.tray` ask for some). */
+  capabilities: readonly string[];
   id: string | undefined;
   /** The plugin's namespace (its top-level plugin's, for a child). */
   namespace: string | undefined;
@@ -1021,7 +1024,9 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   }
   // A pill target is data too: the Dispatch pill draws its row from `title`, and the user's words go to `handler`.
   const targetOnly = e.spot === "pill.target" && typeof e.handler === "string" && kinds.length === 0;
-  if (kinds.length !== 1 && !actionOnly && !targetOnly) {
+  // A tray line is data as well: its `title` is the line, `toggles` or `command` what it does.
+  const trayOnly = e.spot === "app.tray" && kinds.length === 0;
+  if (kinds.length !== 1 && !actionOnly && !targetOnly && !trayOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
@@ -1059,9 +1064,33 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     return false;
   }
   const bundledTree = ctx.topId === BUNDLED_ROOT_PLUGIN;
-  if (isObject(e.window) && e.window.alwaysOnTop === true && !bundledTree) {
-    f.error("entry", "ui_always_on_top", [...at, "window", "alwaysOnTop"], "only the plugins Clover ships open always-on-top surfaces");
+  if (isObject(e.window)) {
+    // What a surface may do is what its plugin's OK card says (F4, the owner's ruling of 2026-11-15): no door checks a plugin's id.
+    const needs = (field: string, cap: string, why: string): boolean => {
+      if (ctx.capabilities.includes(cap)) return true;
+      f.error("entry", "ui_window_capability", [...at, "window", field], `${why} needs the \`${cap}\` capability`);
+      return false;
+    };
+    if (e.window.alwaysOnTop === true && !needs("alwaysOnTop", "overlay", "an always-on-top surface")) return false;
+    if (e.window.cards === true && !needs("cards", "approvals.all", "a surface that draws the pending cards")) return false;
+    if (e.window.cards === true && !ctx.capabilities.includes("approvals")) {
+      f.error("entry", "ui_window_capability", [...at, "window", "cards"], "a surface that draws the pending cards needs the `approvals` capability");
+      return false;
+    }
+  }
+  if ((e.toggles !== undefined || e.command !== undefined) && spotName !== "app.tray") {
+    f.error("entry", "ui_tray_field", [...at, e.toggles !== undefined ? "toggles" : "command"], "`toggles` and `command` are for `app.tray` entries");
     return false;
+  }
+  if (spotName === "app.tray" && e.hide !== true) {
+    if (!ctx.capabilities.includes("tray")) {
+      f.error("entry", "ui_window_capability", [...at], "an `app.tray` entry needs the `tray` capability");
+      return false;
+    }
+    if ((e.toggles === undefined) === (e.command === undefined)) {
+      f.error("entry", "ui_tray_field", [...at], "an `app.tray` entry has either `toggles` (the id of one of the plugin's own surfaces) or `command` (one of its own commands)");
+      return false;
+    }
   }
   if (spot?.reserved && !bundledTree) {
     const id = typeof e.id === "string" ? e.id : spotName;

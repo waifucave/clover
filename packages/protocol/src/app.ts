@@ -317,11 +317,11 @@ export const APP_METHODS = {
     result: z.object({ speaking: z.boolean(), note: utf16(500).optional() }),
     doc: "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
   }),
-  pillSend: defineMethod({
-    /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree
-     *  surface's `useUserSend` inside the key press or click that sends (its transient user activation), so a script
-     *  can't speak as the user. A layer's own sends are `conversation.send`, whose turns are the plugin's. */
-    name: "pill.send", owner: "G", roles: ["app"], userOnly: true,
+  userSend: defineMethod({
+    /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a part's `useUserSend`
+     *  (a composer entry's own session, or any part whose plugin holds the `user.send` capability) inside the key press or click
+     *  that sends (its transient user activation), so a script can't speak as the user. A layer's own sends are `conversation.send`, whose turns are the plugin's. */
+    name: "user.send", owner: "G", roles: ["app"], userOnly: true,
     params: z.object({
       /** A bot's main conversation, a session, or a `pill.target` entry by its ref (`<plugin-id>#<entry-id>`). */
       to: z.union([

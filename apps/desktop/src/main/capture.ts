@@ -66,7 +66,7 @@ export interface CaptureDeps {
 
 const MAX_PNG_BYTES = 5_000_000;
 
-/** A surface's name: its entry id (`clover/island#island` → `island`). */
+/** A surface's name: its entry id (`<plugin>#island` → `island`). */
 export function surfaceName(id: string): string {
   return id.includes("#") ? id.slice(id.lastIndexOf("#") + 1) : id;
 }

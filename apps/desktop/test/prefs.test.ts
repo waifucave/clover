@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_PREFS, readPrefs, writePrefs } from "../src/main/prefs";
+import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs } from "../src/main/prefs";
 
 const dir = mkdtempSync(join(tmpdir(), "clv-prefs-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -28,6 +28,20 @@ describe("the app's own choices", () => {
     expect(readPrefs(file).soundMuted).toBe(false);
     writePrefs(file, { ...DEFAULT_PREFS, soundMuted: true });
     expect(readPrefs(file).soundMuted).toBe(true);
+  });
+  test("surfaces put away are kept by ref; the old pillHidden applies once to the surface a tray toggle names, then clears", () => {
+    const file = join(dir, "prefs2.json");
+    writePrefs(file, { ...DEFAULT_PREFS, hiddenSurfaces: ["clover/pill#pill"] });
+    expect(readPrefs(file).hiddenSurfaces).toEqual(["clover/pill#pill"]);
+    // A file from before (only `pillHidden`) hides the surface that carries a toggle, whatever plugin that is, and no other.
+    writeFileSync(join(dir, "old.json"), JSON.stringify({ pillHidden: true, fourFingerTap: true }));
+    const old = readPrefs(join(dir, "old.json"));
+    expect(old.hiddenSurfaces).toEqual([]);
+    expect(withLegacyHidden(old, "some-pill#pill")).toMatchObject({ pillHidden: false, hiddenSurfaces: ["some-pill#pill"] });
+    expect(withLegacyHidden(withLegacyHidden(old, "a#x"), "b#y").hiddenSurfaces).toEqual(["a#x"]); // the old switch is spent once
+    expect(withLegacyHidden(DEFAULT_PREFS, "a#x")).toBe(DEFAULT_PREFS);
+    writeFileSync(join(dir, "junk.json"), JSON.stringify({ hiddenSurfaces: ["ok#x", 3, null] }));
+    expect(readPrefs(join(dir, "junk.json")).hiddenSurfaces).toEqual(["ok#x"]);
   });
   test("a write that can't happen is logged, never thrown", () => {
     const lines: string[] = [];
