@@ -446,7 +446,7 @@ export function writeBackground(root: string, id: string, o: { audio: boolean })
     ].join("\n"),
   });
 }
-/** The microphone plugins (window row 28): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer) and
+/** The microphone plugins (window row 29): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer) and
  *  `app.background`; `acc-mic-quiet` fills `composer.action` and doesn't hold it. Each part, on its own as it mounts, asks for
  *  `getUserMedia({ audio: true })` and reads one second and a bit of it through a track processor (no audio context, so nothing
  *  needs a press), then says what came of it in its DOM: the samples read and the loudest of them, or the error's name and words.

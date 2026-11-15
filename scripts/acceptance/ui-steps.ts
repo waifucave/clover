@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
-import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeOfficePanels } from "./manifest-fields-step";
+import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, MIC_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeMicrophone, writeOfficePanels } from "./manifest-fields-step";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
 export interface UiRow { name: string; status: UiStatus; detail: string }
@@ -47,6 +47,7 @@ export const UI_STEPS = [
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
   "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
   "a plugin keeps a part running in the background (`app.background`, the owner, November 15): it is mounted in a hidden window of its own while the app is open, keeps counting at its real rate while hidden and through the main window being closed and opened again, plays a generated tone with no press when its plugin holds `audio` (made and measured in the page, muted at the app's output), gets no sound without it, and goes when the plugin is turned off",
+  "a plugin that holds `microphone` opens the microphone from its own frames (the owner, November 15): its composer.action button and its background part each record about a second from the test build's generated stream and report the samples and their level, and a second plugin without the capability is refused with a plain message",
 ] as const;
 
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
@@ -3257,6 +3258,65 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("its background part gone", 30_000, async () => ((await part(BACKGROUND_IDS.sound)) === undefined && ctx.appLog().includes(`background: ${BACKGROUND_IDS.sound}#ticker stopped`) ? true : undefined), () => dumpFrames(cdp));
       if ((await part(BACKGROUND_IDS.quiet)) === undefined) fail("turning one plugin off took the other plugin's background part with it");
       said.push("turned off, its background part was gone and the other plugin's stayed");
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
+      return said.join("; ");
+    } finally {
+      for (const id of ids) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  // 29: the microphone (`microphone`, the owner, November 15). Two ordinary plugins, each with a `composer.action` part (Alpha's composer)
+  // that asks for `getUserMedia({ audio: true })` as it mounts and reads a second and a bit of it: `acc-mic` holds the capability (and
+  // keeps a background part that does the same), `acc-mic-quiet` doesn't. The build's microphone is Chromium's generated stream, so no
+  // device is opened and the system is never asked. The holder's two parts report the samples read and a level above zero; the other
+  // plugin's part is refused with Chromium's words, not a stream.
+  await step(29, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const parent = mkdtempSync(join(tmpdir(), "clover-mic-"));
+    const ids = [MIC_IDS.holder, MIC_IDS.other];
+    const said: string[] = [];
+    const part = async (id: string, kind: string): Promise<Record<string, string> | undefined> => {
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
+        const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acc-mic="${kind}"]'); return e ? JSON.stringify(Object.fromEntries([...e.attributes].map((a) => [a.name, a.value]))) : ''; })()`).catch(() => "");
+        if (typeof v === "string" && v !== "") return JSON.parse(v) as Record<string, string>;
+      }
+      return undefined;
+    };
+    const finished = (id: string, kind: string, what: string) =>
+      until(`${id}'s ${kind} part ${what}`, 60_000, async () => { const a = await part(id, kind); return a !== undefined && a["data-state"] !== "recording" ? a : undefined; }, () => dumpFrames(cdp));
+    const install = async (id: string) => {
+      const folder = writeMicrophone(parent, id, { mic: id === MIC_IDS.holder });
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined),
+        async () => `plugin.get: ${JSON.stringify(await rpc.request("plugin.get", { id }).catch((e: unknown) => String(e))).slice(0, 600)}`);
+    };
+    try {
+      for (const id of ids) await install(id);
+      // Alpha's tab, where the composer's action parts are drawn.
+      await escape();
+      const at = await until("Alpha in the sidebar", 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(600);
+      for (const [id, kind] of [[MIC_IDS.holder, "composer"], [MIC_IDS.holder, "background"]] as const) {
+        const a = await finished(id, kind, "finished recording");
+        if (a["data-state"] !== "done") fail(`${id}'s ${kind} part got no microphone: ${a["data-error"]}`);
+        if (Number(a["data-samples"]) < 40_000 || !(Number(a["data-level"]) > 0.01)) fail(`${id}'s ${kind} part read ${a["data-samples"]} samples at level ${a["data-level"]}: not a stream`);
+        said.push(`${id}'s ${kind} part recorded ${a["data-samples"]} samples from the generated stream (level ${a["data-level"]})`);
+      }
+      const refused = await finished(MIC_IDS.other, "composer", "answered");
+      if (refused["data-state"] !== "refused") fail(`the plugin without the capability got a microphone (${JSON.stringify(refused)})`);
+      if (!/NotAllowedError|denied|not allowed/i.test(refused["data-error"] ?? "")) fail(`its refusal wasn't a plain message: ${refused["data-error"]}`);
+      said.push(`${MIC_IDS.other}'s part was refused: ${refused["data-error"]}`);
+      if (/permission|microphone.*system/i.test(ctx.appLog().split("\n").filter((l) => /system.*microphone|askForMediaAccess/i.test(l)).join(""))) fail("the system was asked for the microphone in a test build");
       if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
       return said.join("; ");
     } finally {
