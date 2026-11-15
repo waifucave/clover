@@ -117,6 +117,9 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
 - **`voices`** (list): `{ id, name, speak, listen, auth, handler }`.
 - **`voiceModes`** (list, at most one): `{ id, name, handler }`: a voice mode for the voice slot (Settings › Voice);
   the active one speaks the bots' replies and plays sound as their voices through its one queue.
+- **`turns`** (list): `{ name, doc }`: one of the plugin's own one-at-a-time turns (`<plugin id>/<name>`) that other
+  plugins may take too (plugin-host, "Turns"). Its own turns need no entry; another plugin's take of one it doesn't list
+  is refused.
 - **`computerProviders`**, **`computer`**, **`agentBackends`**, **`relays`**, **`notifiers`**, **`companions`**:
   Clover's own services use these; a bot building a plugin for a user rarely needs them. Their fields are in the SDK's
   schema (`ServiceSchema`: `{ id, name, handler, runsOn }`).

@@ -92,6 +92,9 @@ whole thing; plugin-host, "Tools that drive a page", says what the tools may do.
   runs as the plugin, and nothing else the host module exports is reachable from here.
 - `api.host.on("<event>", (data) => …)` hears what the host half sends with `api.ui.send("<event>", data)`.
 - `api.storage.synced.get` / `keys` read the synced store from a component; only the host half writes it.
+- `api.turns.take(name, opts)` works in a component too (plugin-host, "Turns"): the same queue as the host halves'.
+  A component's turn ends when its frame goes (the part removed, its page reloaded or asleep), so a part that must
+  keep a turn while it is out of sight takes it in its host half.
 
 ## Points: what other plugins add to yours, and calling their handlers
 

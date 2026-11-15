@@ -704,12 +704,14 @@ interface CoreCtx {
 const LIST_KEYS = new Set<CoreContributionKey>([
   "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes", "computerProviders",
   "relays", "notifiers", "companions", "themes", "locales", "ui",
+  "turns",
 ]);
 
 /** The field each list point's entries are unique by within one plugin (§5.1 "Entry ids"). */
 const UNIQUE_BY: Partial<Record<CoreContributionKey, string>> = {
   models: "provider", agentBackends: "id", hooks: "id", commands: "name", triggers: "type", voices: "id", voiceModes: "id",
   computerProviders: "id", relays: "id", notifiers: "id", companions: "id", themes: "id", locales: "lang",
+  turns: "name",
 };
 
 function entrySchemaOf(key: CoreContributionKey): z.ZodType {

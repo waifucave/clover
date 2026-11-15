@@ -46,6 +46,8 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
     doc: "Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes.", shipsWith: "Fish Audio" },
   { name: "voiceModes", side: "daemon", shape: "list", uniqueBy: "id", kind: "code", runsOn: "the computer the user is talking on",
     doc: "The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears push-to-talk. The others neither speak nor hear.", shipsWith: "Clover Voice" },
+  { name: "turns", side: "daemon", shape: "list", kind: "data", runsOn: "data",
+    doc: "Names of the plugin's own one-at-a-time turns that another plugin may take (`<plugin id>/<name>`, §5.4 \"Turns\"); its own need no entry.", shipsWith: "—" },
   { name: "computerProviders", side: "daemon", shape: "keyed", uniqueBy: "id", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
     doc: "Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2).", shipsWith: "Google Cloud, Hetzner" },
   { name: "computer", side: "daemon", shape: "single", kind: "data", runsOn: "data",

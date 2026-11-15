@@ -327,6 +327,15 @@
       "shipsWith": "Clover Voice"
     },
     {
+      "name": "turns",
+      "side": "daemon",
+      "shape": "list",
+      "kind": "data",
+      "runsOn": "data",
+      "doc": "Names of the plugin's own one-at-a-time turns that another plugin may take (`<plugin id>/<name>`, §5.4 \"Turns\"); its own need no entry.",
+      "shipsWith": "—"
+    },
+    {
       "name": "computerProviders",
       "side": "daemon",
       "shape": "keyed",
@@ -4372,6 +4381,28 @@
     "voices.feed": {
       "capability": "voices.use",
       "where": "host"
+    },
+    "turns.take": {
+      "where": "both"
+    },
+    "turns.done": {
+      "where": "both"
+    },
+    "turns.extend": {
+      "where": "both"
+    },
+    "turns.state": {
+      "where": "both"
+    },
+    "turns.watch": {
+      "where": "both"
     }
-  }
+  },
+  "deviceTurns": [
+    {
+      "name": "device/speech",
+      "capability": "audio",
+      "doc": "One voice at a time on this device: a plugin takes it before its sound starts and says done when the sound has ended."
+    }
+  ]
 }

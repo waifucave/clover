@@ -141,6 +141,8 @@ export class HostRuntime {
   /** The open call an MCP server's code runs inside (R7). */
   readonly #scope = new AsyncLocalStorage<string | undefined>();
   #apiSeq = 0;
+  /** Watch values that came before the answer naming their subscription (`#listen` hands them over). */
+  readonly #early = new Map<string, unknown[]>();
   /** The plugins' `net.fetch` across the link (fetch-worker.ts). */
   readonly #fetches: WorkerFetches;
 
@@ -153,7 +155,17 @@ export class HostRuntime {
     p.handle("pluginHost.invoke", (x: InvokeParams) => this.#invoke(x));
     p.handle("pluginHost.cancel", (x: { callId: string }) => this.#cancel(x.callId));
     p.handle("pluginHost.feed", (x: { callId: string; seq: number; value?: unknown; end?: boolean }) => this.#feed(x));
-    p.handle("pluginHost.deliver", (x: { pluginId: string; subscription: string; value: unknown }) => this.#running.get(x.pluginId)?.subs.get(x.subscription)?.(x.value));
+    p.handle("pluginHost.deliver", (x: { pluginId: string; subscription: string; value: unknown }) => {
+      const fn = this.#running.get(x.pluginId)?.subs.get(x.subscription);
+      if (fn !== undefined) return fn(x.value);
+      // A value given while the watch opened (a turn granted at once) can come before the answer that names its
+      // subscription: it waits for it, a few at most.
+      const key = `${x.pluginId}\u0000${x.subscription}`;
+      const kept = this.#early.get(key) ?? [];
+      if (kept.length < 16) kept.push(x.value);
+      this.#early.set(key, kept);
+      if (this.#early.size > 64) this.#early.delete(this.#early.keys().next().value!);
+    });
     p.handle("pluginHost.mcpOpen", (x: { pluginId: string; server: string; channel: string }) => this.#mcpOpen(x));
     p.handle("pluginHost.mcpMessage", (x: { channel: string; message: Record<string, unknown> }) => this.#mcpMessage(x));
     p.handle("pluginHost.mcpClose", (x: { channel: string }) => this.#mcpClose(x.channel));
@@ -354,6 +366,111 @@ export class HostRuntime {
     return { stop: () => { stopped = true; void it.return?.(); }, done };
   }
 
+  /** A watch's listener, once its subscription is known: the values that came before it first. */
+  #listen(pluginId: string, subscription: string, listener: (v: unknown) => void): void {
+    this.#running.get(pluginId)?.subs.set(subscription, listener);
+    const key = `${pluginId}\u0000${subscription}`;
+    const kept = this.#early.get(key);
+    if (kept === undefined) return;
+    this.#early.delete(key);
+    for (const v of kept) listener(v);
+  }
+
+  /** `turns.take` from a host half (§5.4 "Turns"): the take is a watch on the wire, its listener here; the answer is the
+   *  `Turn` once the grant comes. `done` says so to the daemon, then ends the watch; the watch ending without it (this
+   *  process exits) is the daemon's "gone". A refusal, or the take ended before its turn, rejects. */
+  #turnTake(pluginId: string, inside: string | undefined, args: unknown[]): Promise<unknown> {
+    const peer = this.#o.peer;
+    const name = args[0];
+    const given = (args[1] ?? {}) as { limitMs?: unknown; note?: unknown; signal?: AbortSignal };
+    const onEvent = typeof args[2] === "function" ? (args[2] as (e: unknown) => void) : undefined;
+    const signal = given.signal;
+    const opts = { ...(given.limitMs !== undefined ? { limitMs: given.limitMs } : {}), ...(given.note !== undefined ? { note: given.note } : {}) };
+    const api = (call: string, a: unknown[]) => peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args: a, ...(inside === undefined ? {} : { invocation: inside }) })
+      .then((r) => (r as { result: unknown }).result, (err: unknown) => { throw apiFailure(err, call); });
+    return new Promise((resolve, reject) => {
+      let subscription: string | undefined;
+      let over = false;
+      let granted: { id: string; until: number } | undefined;
+      let lostWith: (loss: "limit" | "stopped") => void = () => {};
+      const lost = new Promise<"limit" | "stopped">((r) => { lostWith = r; });
+      const unwatch = () => {
+        if (subscription === undefined) return;
+        this.#running.get(pluginId)?.subs.delete(subscription);
+        void peer.request("pluginHost.unwatch", { pluginId, subscription }).catch(() => {});
+        subscription = undefined;
+      };
+      const finish = () => {
+        over = true;
+        signal?.removeEventListener("abort", abort);
+        unwatch();
+      };
+      const turn = {
+        get id() { return granted!.id; },
+        get until() { return granted!.until; },
+        lost,
+        done: async () => {
+          if (over || granted === undefined) return;
+          const id = granted.id;
+          over = true;
+          signal?.removeEventListener("abort", abort);
+          // Done first, then the watch's end: the other way round the daemon would hear the holder go, not finish.
+          try {
+            await api("turns.done", [id]);
+          } finally {
+            unwatch();
+          }
+        },
+        extend: async (ms: number) => {
+          if (granted === undefined) throw apiFailure(new ContractError("refused", "the take is still waiting"), "turns.extend");
+          const until = (await api("turns.extend", [granted.id, ms])) as number;
+          granted.until = until;
+          return until;
+        },
+      };
+      const listener = (raw: unknown) => {
+        const e = raw as { type?: string; id?: string; until?: number; reason?: string };
+        if (e.type === "granted" && typeof e.id === "string" && typeof e.until === "number") {
+          granted = { id: e.id, until: e.until };
+          resolve(turn);
+        } else if (e.type === "extended" && granted !== undefined && typeof e.until === "number") granted.until = e.until;
+        else if (e.type === "ended") {
+          finish();
+          if (granted === undefined) reject(apiFailure(new ContractError("cancelled", `${String(name)}: the take ended before its turn (its plugin stopped, or Clover closed)`), "turns.take"));
+          else if (e.reason === "limit" || e.reason === "stopped") lostWith(e.reason);
+        }
+        try {
+          onEvent?.(raw);
+        } catch {
+          // the plugin's own listener
+        }
+      };
+      const abort = () => {
+        if (over) return;
+        if (granted !== undefined) void turn.done().catch(() => {});
+        else {
+          finish();
+          reject(apiFailure(new ContractError("cancelled", `${String(name)}: the take was aborted before its turn`), "turns.take"));
+        }
+      };
+      if (signal?.aborted) return abort();
+      signal?.addEventListener("abort", abort);
+      void peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call: "turns.take", args: [name, opts, { [LISTENER_ARG]: true }], ...(inside === undefined ? {} : { invocation: inside }) }).then(
+        (r) => {
+          const sub = ((r as { result?: { subscription?: string } }).result ?? {}).subscription;
+          if (sub === undefined) return;
+          subscription = sub;
+          if (over) return unwatch();
+          this.#listen(pluginId, sub, listener);
+        },
+        (err: unknown) => {
+          finish();
+          reject(apiFailure(err, "turns.take"));
+        },
+      );
+    });
+  }
+
   /** The plugin API for one plugin: every call, at any depth, goes to the daemon by its dotted path, stamped with this
    *  plugin and the open call it is made inside (see the file's header). */
   #apiFor(pluginId: string, invocation?: string, live?: () => boolean): PluginApi {
@@ -380,6 +497,8 @@ export class HostRuntime {
           if (call === "net.fetch") return this.#fetches.fetch(pluginId, inside, args).catch((err: unknown) => { throw apiFailure(err, call); });
           // `audio.play` answers `{ stop, done }`, and its audio may be a stream: it crosses a piece at a time.
           if (call === "audio.play") return this.#audioPlay(pluginId, inside, args);
+          // `turns.take` answers a `Turn` once the turn comes: a watch on the wire, whose events make it.
+          if (call === "turns.take") return this.#turnTake(pluginId, inside, args);
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));
           const params = { pluginId, callId: `api_${++this.#apiSeq}`, call, args: wire, ...(inside === undefined ? {} : { invocation: inside }) };
@@ -393,7 +512,7 @@ export class HostRuntime {
               subscription = ((r as { result?: { subscription?: string } }).result ?? {}).subscription;
               if (subscription === undefined) return;
               if (stopped) return void peer.request("pluginHost.unwatch", { pluginId, subscription }).catch(() => {});
-              this.#running.get(pluginId)?.subs.set(subscription, listener);
+              this.#listen(pluginId, subscription, listener);
             },
             () => {},
           );

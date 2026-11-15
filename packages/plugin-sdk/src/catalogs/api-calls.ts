@@ -6,6 +6,7 @@ import type {
   ApprovalsApi, AudioApi, SpeechApi, VoicesApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
+  TurnsApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import type { AvatarApi } from "./avatar-cues";
@@ -23,7 +24,8 @@ export type ApiCallPath =
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}` | `speech.${FnKeys<SpeechApi>}` | `voices.${FnKeys<VoicesApi>}`
-  | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`;
+  | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`
+  | `turns.${FnKeys<TurnsApi>}`;
 
 /** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
  *  together). */
@@ -146,6 +148,10 @@ export const API_CALLS = {
   "speech.piece": { where: "host" }, "speech.play": { where: "host" }, "speech.stop": { where: "host" }, "speech.modes": both(),
   "voices.providers": both("voices.use"), "voices.speak": { capability: "voices.use", where: "host" }, "voices.listen": { capability: "voices.use", where: "host" },
   "voices.feed": { capability: "voices.use", where: "host" },
+  /** One-at-a-time queues (§5.4 "Turns"), in both halves, with no capability of their own: the name decides. A plugin's
+   *  own (`<its id>/<name>`) is open to it; another plugin's only if that plugin's manifest lists the name
+   *  (`contributes.turns`); a device turn (`device/speech`) needs the capability the turns catalog names (`audio`). */
+  "turns.take": both(), "turns.done": both(), "turns.extend": both(), "turns.state": both(), "turns.watch": both(),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't
