@@ -60,6 +60,7 @@ import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, se
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
+import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
 import { LISTEN_REQUEST_MS, ListenHolds, micPermission } from "./ui/listen";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
@@ -305,6 +306,8 @@ async function ready(): Promise<void> {
     onGone: (mount) => {
       views.drop(mount);
       webViews.drop(mount);
+      // The watches the frame left open end with it (a turn it took included, §5.4 "Turns").
+      for (const w of frameWatches.gone(mount)) void layerLinks.call(w.pluginId, "plugin.layer.unwatch", { watch: w.watch }).catch(() => undefined);
     },
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
     // The acceptance's tab-flash row (a headless test-marked or acceptance build only, compiled out of a release; the
@@ -356,6 +359,7 @@ async function ready(): Promise<void> {
   const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
     listens: holds,
+    frameWatches,
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     shellState: (id, state) => shellStates.set(id, state),
     rootCommand: (_id, name) => {
@@ -1953,6 +1957,8 @@ function clickThrough(s: Surface): void {
 const menus = new MenuGate();
 
 /** Each plugin layer's own connection to the core (its plugin API). */
+/** The watches each frame opened on its plugin's connection: a frame's going ends them (ui/frame-watches.ts). */
+const frameWatches = new FrameWatches();
 const layerLinks = new LayerLinks({
   appClient: () => pair?.client,
   dial: () => dialDaemon(daemonEndpoint(home)),

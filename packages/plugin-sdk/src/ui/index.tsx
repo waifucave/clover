@@ -1096,6 +1096,92 @@ async function layerAudioPlay(mount: string, audio: { format: string; data: Uint
   return { stop: () => { stopped = true; void it.return?.(); }, done };
 }
 
+/** `turns.take` from a component (§5.4 "Turns"): the take is a watch on the part's own plugin's connection (its events
+ *  the listener's), and the `Turn` is made from its grant. `done` says so to the core, then ends the watch; the watch
+ *  ending without it (this frame gone, the app quit) is the core's "gone". A refusal, or the take ended before its turn,
+ *  rejects. */
+function layerTurnTake(mount: string, pluginId: string, name: string, given?: { limitMs?: number; note?: string; signal?: AbortSignal }, onEvent?: (e: unknown) => void): Promise<unknown> {
+  const opts = { ...(given?.limitMs !== undefined ? { limitMs: given.limitMs } : {}), ...(given?.note !== undefined ? { note: given.note } : {}) };
+  const signal = given?.signal;
+  return new Promise((resolve, reject) => {
+    let over = false;
+    let granted: { id: string; until: number } | undefined;
+    let lostWith: (loss: "limit" | "stopped") => void = () => {};
+    const lost = new Promise<"limit" | "stopped">((r) => { lostWith = r; });
+    let stop: (() => void) | undefined;
+    const finish = () => {
+      over = true;
+      signal?.removeEventListener("abort", abort);
+      stop?.();
+    };
+    const turn = {
+      get id() { return granted!.id; },
+      get until() { return granted!.until; },
+      lost,
+      done: async () => {
+        if (over || granted === undefined) return;
+        const id = granted.id;
+        over = true;
+        signal?.removeEventListener("abort", abort);
+        // Done first, then the watch's end: the other way round the core would hear the holder go, not finish.
+        try {
+          await layerCall(mount, "turns.done", [id]);
+        } finally {
+          stop?.();
+        }
+      },
+      extend: async (ms: number) => {
+        if (granted === undefined) throw new Error("the take is still waiting");
+        const until = (await layerCall(mount, "turns.extend", [granted.id, ms])) as number;
+        granted.until = until;
+        return until;
+      },
+    };
+    const listener = (raw: unknown) => {
+      const e = raw as { type?: string; id?: string; until?: number; reason?: string };
+      if (e.type === "granted" && typeof e.id === "string" && typeof e.until === "number") {
+        granted = { id: e.id, until: e.until };
+        resolve(turn);
+      } else if (e.type === "extended" && granted !== undefined && typeof e.until === "number") granted.until = e.until;
+      else if (e.type === "ended") {
+        finish();
+        if (granted === undefined) reject(new Error(`${name}: the take ended before its turn`));
+        else if (e.reason === "limit" || e.reason === "stopped") lostWith(e.reason);
+      }
+      try {
+        onEvent?.(raw);
+      } catch {
+        // the plugin's own listener
+      }
+    };
+    const abort = () => {
+      if (over) return;
+      if (granted !== undefined) void turn.done().catch(() => {});
+      else {
+        finish();
+        reject(new Error(`${name}: the take was aborted before its turn`));
+      }
+    };
+    if (signal?.aborted) return abort();
+    signal?.addEventListener("abort", abort);
+    const w = layerWatch(mount, pluginId, "turns.take", [name, opts, listener], 2);
+    stop = w.stop;
+    if (over) w.stop();
+    w.opened.catch((err: unknown) => {
+      if (over) return;
+      over = true;
+      signal?.removeEventListener("abort", abort);
+      reject(err);
+    });
+    void w.stop.ended.then((why) => {
+      if (over) return;
+      finish();
+      if (granted === undefined) reject(new Error(`${name}: the take ended before its turn (${why})`));
+      else lostWith("stopped");
+    });
+  });
+}
+
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the core checks it as that
  *  plugin from the `ui` side, with the same capability, fence and limits as its host half's: every member the catalog
  *  gives components (`catalogMembers`), with these laid over them where a component's own path serves it (the pickers,
@@ -1107,6 +1193,9 @@ export function usePluginApi(): PluginApi {
   return useMemo(() => {
     const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
     return layOver(catalogMembers(part.mount, part.entry.pluginId), {
+      turns: {
+        take: (name: string, opts?: { limitMs?: number; note?: string; signal?: AbortSignal }, onEvent?: (e: unknown) => void) => layerTurnTake(part.mount, part.entry.pluginId, name, opts, onEvent),
+      } as unknown as Partial<PluginApi["turns"]>,
       terminal: terminalApi(part.mount, part.entry.pluginId),
       shell: shellApi(part.mount),
       conversation: {

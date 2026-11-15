@@ -155,7 +155,7 @@ describe("points and spots", () => {
   test("the core's points are §5.3's, and every daemon point is a manifest key", () => {
     expect(CORE_POINTS.map((p) => p.name)).toEqual([
       "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes",
-      "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "app.background", "bot.tab", "locales",
+      "turns", "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "app.background", "bot.tab", "locales",
     ]);
     for (const p of CORE_POINTS) if (p.side === "daemon" || p.name === "themes" || p.name === "locales") expect(CORE_CONTRIBUTION_KEYS).toContain(p.name as never);
     expect(CORE_POINTS.filter((p) => p.uniqueBy).map((p) => `${p.name}.${p.uniqueBy}`)).toEqual([

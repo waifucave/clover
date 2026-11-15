@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type {
   AgentBackendSchema, AgentDefSchema, AuthSchema, BotSchema, CommandSchema, ComputerProviderSchema, ComputerSchema,
   ContributionsSchema, DeclaresSchema, HookSchema, LocaleEntrySchema, ManifestSchema, McpServerSchema, ModelSchema,
-  PointDeclSchema, ServiceSchema, SettingSchema, ThemeEntrySchema, TriggerSchema, UiSchema, VoiceModeSchema, VoiceSchema,
+  PointDeclSchema, ServiceSchema, SettingSchema, ThemeEntrySchema, TriggerSchema, UiSchema, VoiceModeSchema, VoiceSchema, TurnEntrySchema,
 } from "./schema";
 
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -23,6 +23,7 @@ export type Command = z.infer<typeof CommandSchema>;
 export type Trigger = z.infer<typeof TriggerSchema>;
 export type Voice = z.infer<typeof VoiceSchema>;
 export type VoiceMode = z.infer<typeof VoiceModeSchema>;
+export type TurnEntry = z.infer<typeof TurnEntrySchema>;
 export type ComputerProvider = z.infer<typeof ComputerProviderSchema>;
 export type Computer = z.infer<typeof ComputerSchema>;
 export type Service = z.infer<typeof ServiceSchema>;
@@ -43,6 +44,7 @@ export interface CoreEntries {
   triggers: Trigger;
   voices: Voice;
   voiceModes: VoiceMode;
+  turns: TurnEntry;
   computerProviders: ComputerProvider;
   computer: Computer;
   relays: Service;

@@ -51,6 +51,8 @@ export interface ApiChannel {
 export function apiChannel(o: ApiChannelOptions): ApiChannel {
   const M = PLUGINS_METHODS;
   const subs = new Map<string, { pluginId: string; stop: () => void }>();
+  /** Subscriptions whose call is still opening its source. */
+  const opening = new Set<string>();
   const methods: Record<string, MethodHandler> = {
     [M.pluginHostApi.name]: handler(M.pluginHostApi, async (p) => {
       const caller = o.invocations.callerFor(p.pluginId, p.invocation);
@@ -60,11 +62,19 @@ export function apiChannel(o: ApiChannelOptions): ApiChannel {
         if (!isListenerArg(a)) return a;
         if (subscription !== undefined) throw new ContractError("invalid", "a call takes one listener");
         const id = (subscription = `sub_${randomUUID()}`);
+        // A value the source gives while it opens (a turn granted at once) goes too: the host keeps it for the
+        // subscription its answer names.
+        opening.add(id);
         return (value: unknown) => {
-          if (subs.has(id)) o.deliver(p.pluginId, id, value);
+          if (subs.has(id) || opening.has(id)) o.deliver(p.pluginId, id, value);
         };
       });
-      const result = await o.router({ pluginId: p.pluginId, process: o.process, path: p.call, args, caller });
+      let result: unknown;
+      try {
+        result = await o.router({ pluginId: p.pluginId, process: o.process, path: p.call, args, caller });
+      } finally {
+        if (subscription !== undefined) opening.delete(subscription);
+      }
       if (subscription === undefined) return { result };
       if (typeof result !== "function") throw new ContractError("failed", `${p.call} took a listener but opened no watch`);
       subs.set(subscription, { pluginId: p.pluginId, stop: result as () => void });

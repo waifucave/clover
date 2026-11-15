@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Os, Platform, RunsOn, Scope, SemverVersion, SessionKind, TopPluginId, COMPUTER_NAME_RE, utf16 } from "@waifucave/clover-protocol";
 import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
 import { avatarFileProblem } from "../catalogs/avatars";
+import { TURN_LOCAL_NAME } from "../catalogs/turns";
 import {
   ComponentName, EntryId, HandlerName, JsonSchema, KEY_CHORD_RE, COMMAND_NAME_RE, LangTag, NAMESPACE_RE, Path, PathGlob,
   LinkUrl, PointName, Program, SecretName, SettingKey, Text, TOOL_NAME_RE, Url,
@@ -261,6 +262,12 @@ export const VoiceModeSchema = z.strictObject({
   ...declares,
 });
 
+/** One of a plugin's own turns that another plugin may take (§5.4 "Turns"): `<plugin id>/<name>`. */
+export const TurnEntrySchema = z.strictObject({
+  name: utf16(64, 1).regex(TURN_LOCAL_NAME),
+  doc: Text,
+});
+
 export const ComputerProviderSchema = z.strictObject({
   id: EntryId,
   name: Text,
@@ -359,6 +366,7 @@ export const CORE_CONTRIBUTION_SCHEMAS = {
   triggers: z.array(TriggerSchema).max(64),
   voices: z.array(VoiceSchema).max(64),
   voiceModes: z.array(VoiceModeSchema).max(1),
+  turns: z.array(TurnEntrySchema).max(64),
   computerProviders: z.array(ComputerProviderSchema).max(16),
   computer: ComputerSchema,
   relays: z.array(ServiceSchema).max(16),
@@ -387,6 +395,7 @@ export const ContributionsSchema = z.object({
   triggers: CORE_CONTRIBUTION_SCHEMAS.triggers.optional(),
   voices: CORE_CONTRIBUTION_SCHEMAS.voices.optional(),
   voiceModes: CORE_CONTRIBUTION_SCHEMAS.voiceModes.optional(),
+  turns: CORE_CONTRIBUTION_SCHEMAS.turns.optional(),
   computerProviders: CORE_CONTRIBUTION_SCHEMAS.computerProviders.optional(),
   computer: CORE_CONTRIBUTION_SCHEMAS.computer.optional(),
   relays: CORE_CONTRIBUTION_SCHEMAS.relays.optional(),

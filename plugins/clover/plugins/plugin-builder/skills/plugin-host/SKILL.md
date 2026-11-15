@@ -100,6 +100,31 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
 
 Calls marked NOT SERVED YET in plugin-catalog fail with "isn't available yet": don't use them.
 
+### Turns: one at a time
+
+When two plugins or two bots must not do a thing at once (speak, move one figure, drive one tab), take a turn first.
+The platform runs the queue, first come first served, one holder per name, the same queue for host halves and
+components of every plugin:
+
+```ts
+const turn = await api.turns.take("my-plugin/deck", { limitMs: 30_000, note: "a reading" });
+try {
+  // ...the work, one at a time...
+} finally {
+  await turn.done();
+}
+```
+
+- Names: `<your plugin id>/<name>` is yours (no declaration). Another plugin can take it only if your manifest lists
+  `<name>` in `contributes.turns` (plugin-manifest). `device/speech` is one voice at a time on this device, behind the
+  `audio` capability.
+- The turn ends when you call `done()`, when its limit passes (default 60 s, `turn.extend(ms)` up to 10 minutes from the
+  grant), or when its holder goes (its host process exits, its plugin stops, a component's frame goes). `turn.lost`
+  resolves `"limit"` or `"stopped"` when the platform ended it: stop the work then. Never hold a turn across a wait for
+  the user.
+- `api.turns.state(name)` and `api.turns.watch(name, listener)`: who holds it and how many wait. A take still waiting
+  leaves the queue with an `AbortSignal` (`{ signal }`), or when its holder goes.
+
 ## Picked files
 
 The page hands the host half the tokens the user's picks gave it (plugin-ui, "Files and media"); with the `files`

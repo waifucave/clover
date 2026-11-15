@@ -30,7 +30,9 @@ import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import { guardApiRouter, hostProcessFor, isCrashStop, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
-import { grantsInForce, type PluginRecord, type PluginRegistry } from "../contracts/plugin-registry";
+import { grantsInForce, RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../contracts/plugin-registry";
+import { TurnQueues } from "../turns/queue";
+import { turnsApi } from "../turns/api";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
 import { AvatarService } from "./api/avatar";
@@ -488,6 +490,18 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const areas = o.areas !== undefined ? areasParts({ home: o.home, ...o.areas }) : undefined;
   // `logs.*`: a plugin's own tree's log files, as `pluginLog` writes them.
   const logs = logsApi({ home: o.home, granted: (id) => grantsInForce(o.registry.get(id)) });
+  // Turns (§5.4): the one-at-a-time queues, one set for both halves of every plugin. A plugin that stops loses its turns
+  // and its waiting takes; a host half that stops or restarts loses those its host process made.
+  const turns = new TurnQueues({ clock: o.clock ?? new SystemClock(), log });
+  const offTurnsRegistry = o.registry.watch((c) => {
+    if (c.type === "removed") return turns.endPlugin(c.id, "its plugin was removed");
+    if (c.type !== "plugin") return;
+    const r = o.registry.get(c.id);
+    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) turns.endPlugin(c.id, `its plugin is ${r === undefined ? "gone" : r.enabled ? r.state : "off"}`);
+  });
+  const offTurnsHost = host.watch((s) => {
+    if (s.state === "stopped" || s.state === "restarting" || s.state === "idle") turns.endPlugin(s.pluginId, `its host half is ${s.state}`, (side) => side !== "ui");
+  });
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home), { changed: storeChanged })),
@@ -497,6 +511,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     keysApi({ secrets: o.secrets }),
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),
+    turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     ...(o.handlers ?? []),
     {
@@ -789,6 +804,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       offSettingsEvents();
       offPointEvents();
       offHost();
+      offTurnsRegistry();
+      offTurnsHost();
+      turns.close();
       const running = o.registry.list().map((p) => p.id);
       await Promise.allSettled(running.map((id) => host.stop(id, "Clover is stopping")));
       for (const p of processes.values()) p.kill();

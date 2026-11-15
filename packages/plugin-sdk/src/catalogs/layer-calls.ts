@@ -55,6 +55,10 @@ export const LISTENER_ARGS = {
   "audio.onRecording": { at: 0 },
   "voices.speak": { at: 2 },
   "voices.listen": { at: 2 },
+  // A take is a watch on the wire (its events are its listener's; ending the watch leaves the queue or ends the turn),
+  // whose `Turn` the SDK's own `take` makes in both halves.
+  "turns.take": { at: 2 },
+  "turns.watch": { at: 1 },
 } as const satisfies Partial<Record<ApiCallPath, ListenerArg>>;
 
 /** The members whose arguments include a function, by the API's own signatures. */

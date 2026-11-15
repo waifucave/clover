@@ -2,6 +2,7 @@
 // serve the core root and the layers, the IPC the preload's bridge speaks, and the crash census. Spike S9's measured
 // design, with decision 94 (stock Electron) and the E-M0 review: the WebRTC UDP policy on every window, no PAC.
 import { readFileSync } from "node:fs";
+import type { FrameWatches } from "./frame-watches";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
@@ -382,6 +383,8 @@ export interface IpcHooks {
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
   /** A part's plugin-API call, on its plugin's own connection to the core. */
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
+  /** The watches each frame opened, so its going ends them (frame-watches.ts). */
+  frameWatches?: FrameWatches;
   /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
   takeGesture(windowId: number): boolean;
   /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
@@ -681,7 +684,22 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
       request: hooks.treeRequest,
       entries: (spot) => runtime.entries(s.frame, mount, spot),
-      layer: () => hooks.api(pluginId, method, a.params),
+      layer: () => {
+        const got = hooks.api(pluginId, method, a.params);
+        // A frame's watch is the frame's: noted, so the frame's going ends it (frame-watches.ts).
+        const fw = hooks.frameWatches;
+        if (fw === undefined) return got;
+        if (method === "plugin.layer.unwatch") {
+          const w = (a.params as { watch?: unknown } | undefined)?.watch;
+          if (typeof w === "string") fw.forget(mount, w);
+        }
+        if (method !== "plugin.layer.watch") return got;
+        return got.then((r) => {
+          const w = (r as { watch?: unknown } | undefined)?.watch;
+          if (typeof w === "string") fw.add(mount, pluginId, w);
+          return r;
+        });
+      },
       log,
       refuse: (why) => new LayerError(why),
     });

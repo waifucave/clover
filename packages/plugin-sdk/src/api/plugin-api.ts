@@ -874,6 +874,69 @@ export interface AudioApi {
 }
 
 // -------------------------------------------------------------------------------------------------
+// Turns (§5.4 "Turns"): a one-at-a-time queue the platform runs
+// -------------------------------------------------------------------------------------------------
+
+/** How the platform ended a turn its holder hadn't said was done: its limit passed, or its holder went (its frame, its
+ *  host process, its plugin, or the app). */
+export type TurnLoss = "limit" | "stopped";
+
+/** A take's own events: its place while it waits, the grant, an extension, and the end. */
+export type TurnEvent =
+  | { type: "waiting"; ahead: number }
+  | { type: "granted"; id: string; until: number }
+  | { type: "extended"; until: number }
+  | { type: "ended"; reason: "done" | TurnLoss };
+
+export interface TurnOptions {
+  /** How long it may be held before the platform ends it (`lost` resolves `"limit"`): default 60 s, at most 10 minutes. */
+  limitMs?: number;
+  /** A few words for the daemon's log and the turn's `state` (at most 200 characters). */
+  note?: string;
+  /** Aborted: a take still waiting leaves the queue (its promise rejects), a held turn ends as with `done`. */
+  signal?: AbortSignal;
+}
+
+/** A held turn. */
+export interface Turn {
+  readonly id: string;
+  /** When the platform ends it unless it is done or extended first (epoch ms). */
+  readonly until: number;
+  /** Ends it; the next taker's turn begins. */
+  done(): Promise<void>;
+  /** Moves `until` on by `ms`, never past 10 minutes from the grant; the new `until`. */
+  extend(ms: number): Promise<number>;
+  /** Settles only if the platform ended it: `"limit"` or `"stopped"`. Never after `done`. */
+  readonly lost: Promise<TurnLoss>;
+}
+
+/** A turn's queue now. */
+export interface TurnState {
+  name: string;
+  /** Who holds it: the plugin, its take's note, since and until when (epoch ms). */
+  holder?: { plugin: string; note?: string; since: number; until: number };
+  /** How many takes wait behind the holder. */
+  waiting: number;
+}
+
+/** One-at-a-time queues (§5.4 "Turns"), in both halves. A name is `<plugin id>/<name>` (the plugin's own; another
+ *  plugin's only if its manifest lists the name in `contributes.turns`), or a device turn (`device/speech`, behind
+ *  `audio`). First come, first served; one holder per name. The platform ends a turn when its holder says done, when its
+ *  limit passes, when the holder's frame is gone, its host process exits, its plugin stops, or the app quits (for a
+ *  frame); a take still waiting leaves the queue the same ways. */
+export interface TurnsApi {
+  /** Waits for the caller's turn, then resolves with it. Refused (`refused`) for a name the caller may not take. */
+  take(name: string, options?: TurnOptions, onEvent?: (event: TurnEvent) => void): Promise<Turn>;
+  /** Ends the caller's own turn (or takes its waiting take out of the queue) by its id; an id already ended is a no-op. */
+  done(id: string): Promise<void>;
+  /** `Turn.extend` by the turn's id: the new `until`. */
+  extend(id: string, ms: number): Promise<number>;
+  state(name: string): Promise<TurnState>;
+  /** Hears each change of the queue (a grant, an end, a take joining or leaving), from now on. */
+  watch(name: string, listener: (state: TurnState) => void): Unsubscribe;
+}
+
+// -------------------------------------------------------------------------------------------------
 // The object
 // -------------------------------------------------------------------------------------------------
 
@@ -947,4 +1010,6 @@ export interface PluginApi {
   readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */
   readonly desktop?: DesktopNotifications;
+  /** One-at-a-time queues the platform runs (§5.4 "Turns"): its own turns, another plugin's it offers, the device's. */
+  readonly turns: TurnsApi;
 }

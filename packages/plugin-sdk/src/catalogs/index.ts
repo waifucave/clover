@@ -9,6 +9,7 @@ import type { PointDecl } from "../manifest/types";
 import { CORE_POINTS, DATA_POINTS, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "./points";
 import { SPOTS, spotInfo } from "./spots";
 import { TOKENS } from "./tokens";
+import { DEVICE_TURNS } from "./turns";
 
 export * from "./api-calls";
 export * from "./api-signatures";
@@ -20,6 +21,7 @@ export * from "./layer-calls";
 export * from "./points";
 export * from "./spots";
 export * from "./tokens";
+export * from "./turns";
 
 const schema = (s: z.ZodType) => z.toJSONSchema(s, { target: "draft-2020-12", io: "input", unrepresentable: "any" });
 
@@ -61,5 +63,6 @@ export function catalogJson() {
     })),
     tokens: TOKENS,
     apiCalls: API_CALLS,
+    deviceTurns: DEVICE_TURNS,
   };
 }
