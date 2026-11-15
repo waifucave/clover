@@ -111,3 +111,23 @@ folded into `app.settings`; `bots.avatar` left out until F6; `account.read` fold
 bot"). They take `{ bot }` as the host half's `settings.get(key, { bot })` / `set(key, value, { bot })` do (`#slot`:
 a valid bot id), keeping the layer's limits. Then `VOICE_PART` and `BOT_EDITOR_PART`'s own-settings entries leave the
 tree door, which `lane/a-voice-refound` waits for.
+
+## 6. Ruled and built (the controller, 2026-11-15)
+
+All eight new capabilities as proposed, with these words: `app.settings` warns ("reads Clover's settings, and changes its
+look, language and which plugin does each job when you press its controls"); `plugins.read` warns ("sees every plugin you
+have, its settings and what it may do"), separate; `plugins.manage` carries `plugins.read` (`IMPLIED_CAPABILITIES`);
+`account.read` warns; `bots.avatar` now, no warning. Section 2 as proposed; `runtime.composerOf` stays (backlog).
+
+What the build changed against the table above:
+- `ui.settings` is `app.settings` OR `bots.edit` (the bot editor merges a bot's tab lists into the stored lists).
+- `plugin.settings.*` naming a bot is `bots.edit` (the edited bot's own plugin) or, for a holder of `plugins.read` /
+  `plugins.manage` without `bots.edit`, the Plugins page's path (the bot dropped).
+- `ui.set`'s shape is decided by its one key: `lists` alone is `bots.edit`, `voice` alone is `audio`, anything else the
+  look (`app.settings`, unknown keys dropped).
+- The composer holds `bots.edit` (its model picker on a bot's main conversation goes on the app's connection), `commands.run`
+  and `audio` (push-to-talk until F1's listening half).
+- A part without the capability: a method the `layer` role has goes to the layer door (the core's own rules and cards);
+  any other is refused, naming the capability.
+- Opening a place in the main window (`clover:open`) is `shell.control`'s; the window's shell (`shell-report`, the drag,
+  `active-session`) is the part the core mounted in `app.root`.

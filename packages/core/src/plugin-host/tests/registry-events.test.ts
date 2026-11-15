@@ -154,7 +154,8 @@ describe("who hears them, over the real routing", () => {
   const routing = (conns: CloverConn[]) => ({ connections: () => conns, pluginCapabilities: (id: string) => grantsInForce(reg.get(id)), pluginRunning: (id: string) => { const r = reg.get(id); return r !== undefined && r.enabled && (r.state === "running" || r.state === "waiting"); } });
 
   test("the Plugins page's layer (clover/plugin-index holds plugins.watch) hears ids and states only; another part and a third-party layer hear nothing; the app and the terminal hear all", () => {
-    expect(grantsInForce(reg.get("clover/plugin-index"))).toEqual(["plugins.watch"]);
+    // Its events are plugins.watch's; F2's door calls are plugins.manage's, logs.read's and computers.read's.
+    expect(grantsInForce(reg.get("clover/plugin-index"))).toEqual(["plugins.watch", "plugins.manage", "logs.read", "computers.read"]);
     const page = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/plugin-index" });
     const composer = conn("layer", ["plugins"], { kind: "plugin", pluginId: "clover/composer" });
     const tarot = conn("layer", ["plugins"], { kind: "plugin", pluginId: "tarot" });
