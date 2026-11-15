@@ -1,11 +1,11 @@
 // Plan alarms (`docs/claude/usage.md`): the `usage_alarms` table (schema 5) and its CRUD, the stable window key, the
 // firing rule (met, not met, stale, measured before the alarm, not installed, tracking off), one-shot and single-flight
-// firing, the background beats (the 30-min one and each alarmed plan's fast one), the env switch, and the island's
+// firing, the background beats (the 30-min one and each alarmed plan's fast one), the env switch, and the
 // notification on a real daemon — FAKE executables and temp dirs only.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, CLIENT_CAPABILITY_ISLAND, type WritableSocket } from "@waifucave/clover-protocol";
+import { LineDecoder, encodeLine, METHODS, PROTOCOL_VERSION, ConnWriter, type WritableSocket } from "@waifucave/clover-protocol";
 import { USAGE_DB_SCHEMA_VERSION, UsageDb } from "../../src/usage/db";
 import { UsagePricer } from "../../src/usage/pricing";
 import { planScopeKey, planWindowKey } from "../../src/usage/plan";
@@ -26,16 +26,14 @@ interface Timer { fn: () => void; ms: number; cancelled: boolean }
 function service(over: Partial<UsageServiceDeps> = {}) {
   const home = tempDir("alarms");
   const db = new UsageDb(join(home, "usage", "usage.db"));
-  // The fired notices as the island would read them back on each change (from the DB).
-  const fired: FiredUsageAlarm[] = [];
-  const counts = { notices: 0 };
+  // The fired alarms waiting for an acknowledgement, read back from the DB.
+  const fired = (): FiredUsageAlarm[] => db.firedAlarms();
   const timers: Timer[] = [];
   const tracking = { codex: true, claudeCode: true, antigravity: true, opencode: true };
   const svc = new UsageService({
     db, pricer, tracking: () => tracking,
     codexExecutable: () => undefined, claudeExecutable: () => undefined, cloverCodexWindows: () => [],
     probeRoot: () => probeRootIn(home), ingestEveryMs: 0, planWaitMs: 20_000, fallbackEveryMs: 0,
-    onAlarmNotices: () => { counts.notices++; fired.splice(0, fired.length, ...db.firedAlarms()); },
     setInterval: (fn, ms) => {
       const t = { fn, ms, cancelled: false };
       timers.push(t);
@@ -44,7 +42,7 @@ function service(over: Partial<UsageServiceDeps> = {}) {
     ...over,
   });
   const live = () => timers.filter((t) => !t.cancelled);
-  return { home, db, svc, fired, counts, timers, live, tracking };
+  return { home, db, svc, fired, timers, live, tracking };
 }
 
 function spawns(markerPath: string): number {
@@ -135,17 +133,14 @@ describe("the usage_alarms table (schema 5)", () => {
     await svc.codexPlan();
     db.close();
     const again = new UsageDb(join(home, "usage", "usage.db"));
-    let told = 0;
     const svc2 = new UsageService({
       db: again, pricer, tracking: () => ({ codex: true, claudeCode: true, antigravity: true, opencode: true }), codexExecutable: () => undefined,
-      claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home), onAlarmNotices: () => { told++; },
+      claudeExecutable: () => undefined, cloverCodexWindows: () => [], probeRoot: () => probeRootIn(home),
     });
     expect(svc2.firedAlarms().map((f) => [f.id, f.usedPercent])).toEqual([[a.id, 90]]);
     expect(svc2.ackAlarm(a.id)).toBe(true);
-    expect(told).toBe(1);
     expect(svc2.firedAlarms()).toEqual([]);
     expect(svc2.ackAlarm(a.id)).toBe(false);
-    expect(told).toBe(1);
     again.close();
   });
 });
@@ -181,7 +176,7 @@ describe("the window key", () => {
     expect(cached.source).toBe("claude-cache");
     expect(cliKey).toBe("weekly_scoped:fable");
     expect(cached.windows.find((w) => w.kind === "weekly_scoped")?.windowKey).toBe(cliKey);
-    expect(fired.map((f) => f.windowKey)).toEqual(["weekly_scoped:fable"]);
+    expect(fired().map((f) => f.windowKey)).toEqual(["weekly_scoped:fable"]);
   });
 
   test("every answered window carries it", async () => {
@@ -201,8 +196,8 @@ describe("firing", () => {
     const a = svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 85 });
     svc.setAlarm({ provider: "codex", windowKey: "weekly", thresholdPercent: 41 });
     await svc.codexPlan();
-    expect(fired).toHaveLength(1);
-    expect(fired[0]).toMatchObject({ id: a.id, provider: "codex", windowKey: "five_hour", kind: "five_hour", windowMinutes: 300, thresholdPercent: 85, usedPercent: 85, resetsAt: resetsAtSec * 1000 });
+    expect(fired()).toHaveLength(1);
+    expect(fired()[0]).toMatchObject({ id: a.id, provider: "codex", windowKey: "five_hour", kind: "five_hour", windowMinutes: 300, thresholdPercent: 85, usedPercent: 85, resetsAt: resetsAtSec * 1000 });
     // Not met (40 < 41): it stays.
     expect(svc.alarms().map((x) => x.windowKey)).toEqual(["weekly"]);
   });
@@ -214,7 +209,7 @@ describe("firing", () => {
     await svc.codexPlan();
     await svc.codexPlan();
     await svc.codexPlan();
-    expect(fired).toHaveLength(1);
+    expect(fired()).toHaveLength(1);
     expect(svc.alarms()).toEqual([]);
   });
 
@@ -225,7 +220,7 @@ describe("firing", () => {
     svc.setAlarm({ provider: "codex", windowKey: "weekly", thresholdPercent: 90 });
     await Promise.all(Array.from({ length: 6 }, () => svc.codexPlan()));
     await Promise.all(Array.from({ length: 6 }, () => svc.summary("24h", ["winter"])));
-    expect(fired.map((f) => f.windowKey).sort()).toEqual(["five_hour", "weekly"]);
+    expect(fired().map((f) => f.windowKey).sort()).toEqual(["five_hour", "weekly"]);
     expect(spawns(fake.markerPath)).toBe(1);
   });
 
@@ -241,7 +236,7 @@ describe("firing", () => {
     const r = await svc.codexPlan();
     expect(r.source).toBe("codex-rollout");
     expect(r.windows.find((w) => w.kind === "five_hour")).toMatchObject({ usedPercent: 95, stale: true });
-    expect(fired).toEqual([]);
+    expect(fired()).toEqual([]);
     expect(svc.alarms()).toHaveLength(1);
   });
 
@@ -253,10 +248,10 @@ describe("firing", () => {
     now += 1_000;
     svc.setAlarm({ provider: "codex", windowKey: "five_hour", thresholdPercent: 80 });
     await svc.codexPlan(); // the cached reading, measured a second before the alarm
-    expect(fired).toEqual([]);
+    expect(fired()).toEqual([]);
     now += 61_000;
     await svc.codexPlan();
-    expect(fired).toHaveLength(1);
+    expect(fired()).toHaveLength(1);
   });
 
   test("not installed, or tracking off: no check, no firing — the alarms stay", async () => {
@@ -269,11 +264,11 @@ describe("firing", () => {
     tracking.codex = false;
     expect((await svc.codexPlan()).source).toBe("disabled");
     expect(spawns(fake.markerPath)).toBe(0);
-    expect(fired).toEqual([]);
+    expect(fired()).toEqual([]);
     expect(svc.alarms()).toHaveLength(1);
     tracking.codex = true;
     await svc.codexPlan();
-    expect(fired).toHaveLength(1);
+    expect(fired()).toHaveLength(1);
   });
 
   test("Claude Code: a per-model weekly limit fires by its scope; it is judged as the spawn lands, too", async () => {
@@ -283,9 +278,9 @@ describe("firing", () => {
     svc.setAlarm({ provider: "claude-code", windowKey: "weekly_scoped:fable", thresholdPercent: 80 });
     await svc.claudeCodePlan();
     const end = Date.now() + 10_000;
-    while (fired.length === 0 && Date.now() < end) await Bun.sleep(20);
-    expect(fired).toHaveLength(1);
-    expect(fired[0]).toMatchObject({ provider: "claude-code", kind: "weekly_scoped", scope: "Fable", thresholdPercent: 80, usedPercent: 80 });
+    while (fired().length === 0 && Date.now() < end) await Bun.sleep(20);
+    expect(fired()).toHaveLength(1);
+    expect(fired()[0]).toMatchObject({ provider: "claude-code", kind: "weekly_scoped", scope: "Fable", thresholdPercent: 80, usedPercent: 80 });
   });
 });
 
@@ -336,9 +331,9 @@ describe("the background beats", () => {
     exe = high.path;
     beat.fn();
     const end = Date.now() + 10_000;
-    while (fired.length === 0 && Date.now() < end) await Bun.sleep(20);
+    while (fired().length === 0 && Date.now() < end) await Bun.sleep(20);
     expect(spawns(high.markerPath)).toBe(1);
-    expect(fired).toHaveLength(1);
+    expect(fired()).toHaveLength(1);
     expect(svc.beating).toEqual([]);
     expect(beat.cancelled).toBe(true);
     expect(PLAN_PROVIDERS).toEqual(["codex", "claude-code", "antigravity"]);
@@ -412,7 +407,7 @@ describe("on a real daemon", () => {
   let daemon: RunningDaemon | undefined;
   afterEach(async () => { await daemon?.stop(); daemon = undefined; });
 
-  test("an alarm set over the socket fires on the next read; its notice waits in island.activity across a restart until usage.alarms.ack", async () => {
+  test("an alarm set over the socket fires on the next read; its fired row waits across a restart until usage.alarms.ack", async () => {
     const home = tempDir("daemon");
     const fake = fakeCodex(tempDir("bin"), "ok", { primary: 72, secondary: 30, resetsAtSec: sec(Date.now() + 3_600_000) });
     const boot = () => startDaemon({
@@ -422,36 +417,24 @@ describe("on a real daemon", () => {
     daemon = await boot();
     const connect = async (): Promise<TestClient> => {
       const c = await TestClient.connect(daemon!.socketPath);
-      await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: daemon!.tokens.harness, clientName: "orb", capabilities: [CLIENT_CAPABILITY_ISLAND] });
+      await c.request(METHODS.hello, { protocolVersion: PROTOCOL_VERSION, role: "harness", token: daemon!.tokens.harness, clientName: "orb" });
       return c;
     };
     let app = await connect();
     const set = (await app.request(METHODS.usageAlarmsSet, { provider: "codex", windowKey: "five_hour", thresholdPercent: 70 })).result;
     expect(set.alarms).toHaveLength(1);
-    expect((await app.request(METHODS.islandActivity, {})).result.usageAlarms).toEqual([]);
     const summary = (await app.request(METHODS.usageSummary, { range: "24h", sources: ["winter"] })).result;
     expect(summary.plans.codex.windows[0]).toMatchObject({ windowKey: "five_hour", usedPercent: 72 });
     expect(summary.alarms).toEqual([]);
-    const activity = (await app.request(METHODS.islandActivity, {})).result;
-    expect(activity.usageAlarms).toEqual([expect.objectContaining({ id: set.alarm.id, provider: "codex", kind: "five_hour", thresholdPercent: 70, usedPercent: 72 })]);
-    const end = Date.now() + 2_000;
-    while (!app.notifications.includes("island.activityChanged") && Date.now() < end) await Bun.sleep(20);
-    expect(app.notifications).toContain("island.activityChanged");
+    // Fired: no longer armed.
     expect((await app.request(METHODS.usageAlarmsList, {})).result.alarms).toEqual([]);
     app.close();
 
-    // The daemon restarts before anyone saw it: the notice is still there.
+    // The daemon restarts before anyone saw it: the fired row is still there, so acknowledging it works once.
     await daemon!.stop();
     daemon = await boot();
     app = await connect();
-    expect((await app.request(METHODS.islandActivity, {})).result.usageAlarms.map((a: { id: string }) => a.id)).toEqual([set.alarm.id]);
-    // Acknowledged (✕, ↗, or shown its full time): gone, and the island is told.
-    const heard = app.notifications.length;
     expect((await app.request(METHODS.usageAlarmsAck, { id: set.alarm.id })).result).toEqual({ acked: true });
-    expect((await app.request(METHODS.islandActivity, {})).result.usageAlarms).toEqual([]);
-    const until = Date.now() + 2_000;
-    while (app.notifications.length === heard && Date.now() < until) await Bun.sleep(20);
-    expect(app.notifications.slice(heard)).toContain("island.activityChanged");
     expect((await app.request(METHODS.usageAlarmsAck, { id: set.alarm.id })).result).toEqual({ acked: false });
     app.close();
   }, 30_000);

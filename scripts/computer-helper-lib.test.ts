@@ -219,14 +219,12 @@ describe("the helper protocol number is the same everywhere (apple/ComputerUse/P
     return Number(m[1]);
   };
 
-  test("the spec, the helper, the daemon, WinterKit and the live-test clients all speak one number", () => {
+  test("the spec, the helper, the daemon and the live-test clients all speak one number", () => {
     const spec = one(read("apple", "ComputerUse", "PROTOCOL.md"), /^\*\*Protocol version: (\d+)\*\*$/m, "PROTOCOL.md");
     const helper = one(read("apple", "ComputerUse", "WinterComputerUse", "Sources", "WinterComputerUseShell", "JSONRPC.swift"),
       /public static let protocolVersion = (\d+)/, "RPCWire.protocolVersion");
-    const kit = one(read("apple", "WinterKit", "Sources", "WinterKit", "ComputerUseHelperClient.swift"),
-      /public static let version = (\d+)/, "ComputerUseHelperProtocol.version");
     const probe = one(read("scripts", "cu-live", "swift", "ViewProbe", "Core.swift"), /static let protocolVersion = (\d+)/, "the view probe");
-    expect({ helper, daemon: HELPER_PROTOCOL, kit, probe }).toEqual({ helper: spec, daemon: spec, kit: spec, probe: spec });
+    expect({ helper, daemon: HELPER_PROTOCOL, probe }).toEqual({ helper: spec, daemon: spec, probe: spec });
   });
 
   test("no client hard-codes a hello protocol beside its constant", () => {

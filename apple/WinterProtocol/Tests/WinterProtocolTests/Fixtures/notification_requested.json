@@ -1,9 +1,0 @@
-{
-  "type": "notification_requested",
-  "sessionId": "s_1",
-  "threadId": "t_1",
-  "seq": 33,
-  "ts": 1700000000023,
-  "title": "Winter",
-  "message": "Long-running migration finished — 12,004 rows updated."
-}

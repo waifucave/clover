@@ -1,9 +1,8 @@
 import { fstatSync, readdirSync, statSync } from "node:fs";
 import { isatty } from "node:tty";
 
-// The Clover island (`docs/claude/island.md`): a terminal client tells the daemon its controlling terminal in its
-// hello (`HelloParams.tty`), so the Mac app can tell whether THIS exact terminal window or tab is in front before it
-// shows one of this session's cards on top. Node has no `ttyname(3)`; the device number of the first terminal among
+// A terminal client tells the daemon its controlling terminal in its hello (`HelloParams.tty`), so a session's hosts
+// name THIS exact terminal window or tab. Node has no `ttyname(3)`; the device number of the first terminal among
 // stdin/stdout/stderr is matched against the `/dev` entries instead (no process is spawned).
 
 /** What `controllingTtyName` reads; tests hand in fakes. */

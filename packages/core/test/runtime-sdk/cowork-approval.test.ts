@@ -1,6 +1,6 @@
 // Cowork approvals projected into the real approval bridge, behind the refusal, with fakes: the six policies x the guest tool
 // classes, the shared-instruction-edit column, unknown classes, the separate connector row, narrowing, the cards the clients
-// already understand, the island and pending surfaces, unattended turns, and the proofs that nothing else is touched.
+// already understand, the pending surface, unattended turns, and the proofs that nothing else is touched.
 import { afterEach, expect, jest, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -10,7 +10,6 @@ import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
 import type { ConnectorPermissionSource, ConnectorPermissionTable } from "../../src/agent/mcp/connector-permissions";
 import { QuestionBroker } from "../../src/agent/questions";
-import { IslandRegistry } from "../../src/island/registry";
 import { canUseToolFor, DISPATCH_CHILD_APPROVAL_TIMEOUT_MS, NO_PARK_TIMEOUT_MS, type BridgeLogger } from "../../src/runtime-sdk/approval-bridge";
 import { coworkDeniedMessage, projectCoworkCall, type CoworkApprovalPorts } from "../../src/runtime-sdk/cowork-approval";
 import { CoworkPolicyTransitionMachine, type CoworkPolicyState, type CoworkTransitionPorts } from "../../src/cowork/policy-transition";
@@ -411,7 +410,7 @@ test("a card is the existing approval_requested: it names the workspace, source 
   expect(summary).toContain("Cowork workspace ws-7"); expect(summary).toContain("source revision 12"); expect(summary).toContain("agent sub-agent-3");
   expect(summary).toContain("write");
   expect((requested as { options?: unknown }).options).toBeUndefined();   // no rule-bearing option: a saved rule is never host authority
-  // The pending surface (what `approval.list` and the island read) holds it.
+  // The pending surface (what `approval.list` reads) holds it.
   expect(h.approvals.list(SESSION)).toHaveLength(1);
   expect(h.approvals.list(SESSION)[0]).toMatchObject({ toolName: "write" });
   h.approvals.resolve(SESSION, "tu1", true, "mac");
@@ -437,22 +436,6 @@ test("a human denial of a Cowork card interrupts like Code's; nobody answering i
   const pending = h.canUse(...WRITE, ctx()); await tick();
   h.approvals.resolve(SESSION, "tu1", false, "mac");
   expect(await pending).toMatchObject({ behavior: "deny", interrupt: true, decisionClassification: "user_reject" });
-});
-
-test("the island and pending surfaces list the Cowork card and drop it when answered", async () => {
-  const h = build(state("ask"));
-  const registry = new IslandRegistry({
-    pending: { approval: (s, id) => h.approvals.pendingMeta(s, id) !== undefined, question: () => false, elicitation: () => false },
-    facts: () => ({ mode: "cowork" } as never), hosts: () => [],
-  });
-  const pending = h.canUse(...BASH, ctx()); await tick();
-  for (const e of h.events) registry.observe({ ...e, seq: 1, ts: 1 } as never);
-  const items = registry.list();
-  expect(items.map(i => [i.kind, i.sessionId, i.answerSessionId])).toEqual([["approval", SESSION, SESSION]]);
-  expect((items[0]!.event as { summary: string }).summary).toContain("Cowork workspace ws-7");
-  h.approvals.resolve(SESSION, "tu1", true, "island"); await pending;
-  for (const e of h.events.slice(1)) registry.observe({ ...e, seq: 2, ts: 2 } as never);
-  expect(registry.list()).toEqual([]);
 });
 
 test("AskUserQuestion and ExitPlanMode keep their own bridges in a Cowork session", async () => {

@@ -24,11 +24,6 @@ export type ApprovalPolicy = z.infer<typeof ApprovalPolicy>;
 export const CLIENT_CAPABILITY_MAX_LENGTH = 64;
 export const CLIENT_CAPABILITIES_MAX = 32;
 export const CLIENT_TTY_MAX_LENGTH = 64;
-/** The Clover island (the Mac app's surface at the camera housing, `docs/claude/island.md`): this client shows
- *  every pending approval, question and request across sessions, the desktop-switch prompt included. While one is
- *  connected the daemon does not ask the Winter Computer Use helper to show its own desktop-switch panel. */
-export const CLIENT_CAPABILITY_ISLAND = "island";
-
 export const HelloParams = z.object({
   protocolVersion: z.number().int(),
   role: Role,
@@ -39,12 +34,12 @@ export const HelloParams = z.object({
   // TokenAuthority — ipc/server.ts routes role "plugin" through SessionStore.verifyPluginToken
   // instead; a missing pluginId (or one with no minted/matching token) fails closed.
   pluginId: z.string().min(1).optional(),
-  /** What this CLIENT can do that the daemon should know (the mirror of `HelloResult.features`): e.g.
-   *  `CLIENT_CAPABILITY_ISLAND`. Unknown names are ignored; an older daemon strips the key. */
+  /** What this CLIENT can do that the daemon should know (the mirror of `HelloResult.features`): a
+   *  name a later client may advertise. Unknown names are ignored; an older daemon strips the key. */
   capabilities: z.array(utf16(CLIENT_CAPABILITY_MAX_LENGTH, 1)).max(CLIENT_CAPABILITIES_MAX).optional(),
   /** The controlling terminal of a terminal client (the CLI/TUI), as its device path (`/dev/ttys004`) — so a
-   *  local surface can tell whether that exact terminal window or tab is in front (`island.pending`'s
-   *  `hosts`). Absent for a client with no terminal. Never used for anything but that. */
+   *  local surface can tell whether that exact terminal window or tab is in front (a session's hosts). Absent for a
+   *  client with no terminal. Never used for anything but that. */
   tty: utf16(CLIENT_TTY_MAX_LENGTH).regex(/^\/dev\/[A-Za-z0-9._-]+$/).optional(),
 });
 export const HelloResult = z.object({
@@ -495,146 +490,6 @@ export const ElicitationUrlParams = z.object({
 export const ElicitationUrlResult = z.object({ url: z.string().min(1) });
 export const ELICITATION_NOT_ACTIVE = "elicitation_not_active";
 
-/** The Clover island (`docs/claude/island.md`): every approval, question and URL-mode elicitation still pending
- *  in ANY session, for the Mac app's "Needs you" surface. HARNESS role only (never remote, never a plugin): the
- *  phone has its own per-session `approval.list`. Pending-ness is the brokers' (an answered, timed-out or cancelled
- *  card is never listed); the payload is the request event itself, as the session's log holds it. A Dispatch child's
- *  card mirrored onto the coordinator appears ONCE, as the child's. The daemon pushes a bare
- *  `ISLAND_CHANGED_NOTIFICATION` (params `{}`) to every island client whenever this set, or the hosts of a session
- *  in it, may have changed; the client then asks again. */
-export const IslandPendingParams = z.object({});
-/** Who is attached to a session right now: the connection's hello `clientName`, its role, and its terminal. */
-export const IslandHostSchema = z.object({
-  clientName: z.string(),
-  role: z.string().optional(),
-  tty: z.string().optional(),
-});
-export const IslandPendingItemSchema = z.object({
-  /** The session whose log holds `event` (for a Dispatch child's card, the child). */
-  sessionId: z.string().min(1),
-  /** The session an answer goes to (`approval.respond` / `ask_user.respond` / `elicitation.respond`'s `sessionId`). */
-  answerSessionId: z.string().min(1),
-  kind: z.enum(["approval", "question", "elicitation"]),
-  /** The `approval_requested` / `question_asked` / `elicitation_requested` event. */
-  event: SessionEvent,
-  /** The answer session's facts, for routing: its mode (absent = code), origin, coordinator and generated title. */
-  session: z.object({
-    mode: z.string().optional(),
-    origin: z.string().optional(),
-    parentSessionId: z.string().optional(),
-    title: z.string().optional(),
-  }),
-  /** Every connection attached to the answer session now (for a Dispatch child, the child's own). */
-  hosts: z.array(IslandHostSchema),
-});
-export const IslandPendingResult = z.object({ items: z.array(IslandPendingItemSchema) });
-/** The daemon → island-client notification: the pending set (or a pending session's hosts) may have changed — params
- *  `{}` — and/or a turn started or ended in some session — params `{working: true}` (with `pending: true` when both
- *  happened in one burst): the island's working count then re-lists `session.list`. */
-export const ISLAND_CHANGED_NOTIFICATION = "island.changed";
-/** The island client says it SHOWS these cards (their `callId` / `elicitationId`) — sent after each `island.pending`
- *  it applies. The desktop-switch prompt waits ~2 s for it before asking the Computer Use helper as well (a Clover.app
- *  that is connected but hung shows nothing). HARNESS role only. */
-export const IslandShownParams = z.object({ ids: z.array(utf16(256, 1)).max(256) });
-export const IslandShownResult = z.object({ ok: z.literal(true) });
-
-/** The Clover island's ACTIVITY (phase 2, `docs/claude/island.md`): what the Mac's island shows besides the cards
- *  that wait for an answer, across every session — the sessions driving ComputerV2 now (`computerUse`), the turns
- *  that just ended with their session idle (`results`, the last assistant text cut short), and every armed
- *  ComputerV2 wake trigger (`watches`; disarm through `computerUse.wakes.cancel`). HARNESS role only, never remote.
- *  The daemon pushes a bare `ISLAND_ACTIVITY_CHANGED_NOTIFICATION` (params `{}`) to every island client when it may
- *  have changed; the client then asks again. */
-export const IslandActivityParams = z.object({});
-const IslandActivitySessionFacts = z.object({
-  mode: z.string().optional(),
-  origin: z.string().optional(),
-  parentSessionId: z.string().optional(),
-  title: z.string().optional(),
-});
-export const IslandComputerUseItemSchema = z.object({
-  sessionId: z.string().min(1),
-  /** Epoch ms: the turn's first ComputerV2 call, and its latest event. */
-  startedAt: z.number().int().nonnegative(),
-  lastAt: z.number().int().nonnegative(),
-  /** A script runs right now (false between two scripts of the same turn). */
-  running: z.boolean(),
-  /** The latest script's `title`, when it sent one. */
-  title: utf16(80).optional(),
-  /** The apps and sites the latest script opens, as names. */
-  apps: z.array(utf16(40)).max(3),
-  session: IslandActivitySessionFacts,
-  hosts: z.array(IslandHostSchema),
-});
-export const IslandResultItemSchema = z.object({
-  /** Stable per turn end. */
-  id: z.string().min(1),
-  sessionId: z.string().min(1),
-  /** The turn's last assistant text, on one line, cut short. */
-  summary: utf16(240),
-  /** Epoch ms of the turn's end. */
-  at: z.number().int().nonnegative(),
-  session: IslandActivitySessionFacts,
-  hosts: z.array(IslandHostSchema),
-});
-export const IslandWatchItemSchema = z.object({
-  sessionId: z.string().min(1),
-  wakeId: z.string().min(1),
-  /** `wake_armed`'s condition kind (clicked, submitted, navigated, appeared, gone, changed, titled). */
-  condition: z.string().min(1),
-  targetLabel: z.string(),
-  elementLabel: z.string().optional(),
-  /** Epoch ms. */
-  armedAt: z.number().int().nonnegative(),
-  expiresAt: z.number().int().nonnegative(),
-  session: IslandActivitySessionFacts,
-});
-/** A plan alarm that just fired (`docs/claude/usage.md`): the island's notification pill. No session behind it. */
-export const IslandUsageAlarmItemSchema = z.object({
-  /** The alarm's own id (it fires once). */
-  id: z.string().min(1),
-  provider: z.enum(["codex", "claude-code", "antigravity"]),
-  windowKey: z.string().min(1),
-  /** The window's kind, scope and length, so the client names it as its plan lines do. */
-  kind: z.string().min(1),
-  scope: z.string().optional(),
-  windowMinutes: z.number().optional(),
-  thresholdPercent: z.number().int().min(1).max(100),
-  /** The used share (0…100) that met it. */
-  usedPercent: z.number(),
-  /** Epoch ms. */
-  resetsAt: z.number().optional(),
-  /** Epoch ms: when it fired. */
-  at: z.number().int().nonnegative(),
-});
-export const IslandActivityResult = z.object({
-  computerUse: z.array(IslandComputerUseItemSchema),
-  results: z.array(IslandResultItemSchema),
-  watches: z.array(IslandWatchItemSchema),
-  usageAlarms: z.array(IslandUsageAlarmItemSchema),
-});
-/** The daemon → island-client notification: the island's activity may have changed — ask `island.activity` again. */
-export const ISLAND_ACTIVITY_CHANGED_NOTIFICATION = "island.activityChanged";
-
-/** The island's Sessions tab (`docs/claude/island.md`): who is attached to each session right now, for every session
- *  with at least one attachment — where a click on a row moves the user's view (a Clover window, or the EXACT terminal
- *  through its `tty`). `session.list` carries no hosts. HARNESS role only (never remote, never a plugin). */
-export const IslandHostsParams = z.object({});
-export const IslandHostsResult = z.object({
-  sessions: z.array(z.object({ sessionId: z.string().min(1), hosts: z.array(IslandHostSchema) })),
-});
-
-/** One provider usage window the runtime reported (the agent SDK's `rate_limit_event`, subscription-shaped: a plan's
- *  five-hour or seven-day window). `utilization` is the runtime's own number, passed through (a fraction or a percent —
- *  the client normalises); `resetsAt` is epoch ms; `at` is when it was reported. */
-export const IslandUsageWindowSchema = z.object({
-  rateLimitType: z.string().optional(),
-  status: z.string(),
-  utilization: z.number().optional(),
-  resetsAt: z.number().optional(),
-  at: z.number(),
-  sessionId: z.string(),
-  provider: z.string().optional(),
-});
 /** Usage and cost tracking (`docs/claude/usage.md`) — HARNESS role only, local clients; never remote, never plugins.
  *  `range`: last hour, 24 h, 7 days, 30 days, all time. `sources`: Clover's own sessions, the user's Codex CLI/app,
  *  the user's Claude Code and OpenCode (default all four). Costs are USD; `costBasis` says whether a figure is the
@@ -681,7 +536,7 @@ export const UsageAlarmsSetParams = z.object({
 });
 export const UsageAlarmsRemoveParams = z.object({ id: utf16(64, 1) });
 /** A fired alarm's notice was acknowledged — dismissed, opened, or shown its full time: the daemon forgets it (until
- *  then `island.activity` lists it, across restarts). */
+ *  then the fired row waits in the usage database, across restarts). */
 export const UsageAlarmsAckParams = z.object({ id: utf16(64, 1) });
 export const UsageAlarmSchema = z.object({
   id: z.string(),
@@ -690,39 +545,6 @@ export const UsageAlarmSchema = z.object({
   thresholdPercent: z.number().int(),
   /** Epoch ms. */
   createdAt: z.number(),
-});
-
-/** The island's Usage tab: what the daemon already knows about usage and limits, nothing estimated. `windows` — the
- *  latest report per provider and window kind (each tagged with its `provider`) since the daemon started; `subscription` — Clover's background jobs' subscription
- *  quota snapshot (the codex-oauth ledger); `background` — those jobs' backoff and token counts since start (the same
- *  numbers as `quota.state`); `session` — one session's token counts summed from its `turn_completed` events since
- *  the daemon started, its last measured context size, and its model's context window when the catalog knows it.
- *  HARNESS role only. */
-export const IslandUsageParams = z.object({ sessionId: z.string().min(1).optional() });
-export const IslandUsageResult = z.object({
-  windows: z.array(IslandUsageWindowSchema),
-  subscription: z.object({
-    status: z.string().optional(),
-    rateLimitType: z.string().optional(),
-    utilization: z.number().optional(),
-    resetsAt: z.number().optional(),
-    at: z.number(),
-  }).optional(),
-  background: z.object({
-    kind: z.enum(["ok", "limited"]),
-    resumeAt: z.number().optional(),
-    inputTokens: z.number(),
-    outputTokens: z.number(),
-  }),
-  session: z.object({
-    sessionId: z.string(),
-    turns: z.number(),
-    inputTokens: z.number(),
-    outputTokens: z.number(),
-    contextTokens: z.number().optional(),
-    contextWindow: z.number().optional(),
-    model: z.string().optional(),
-  }).optional(),
 });
 
 /** ComputerV2 (2026-10-08) — Settings → Computer Use's daemon doors. LOCAL ROLE ONLY: never in
@@ -3590,13 +3412,6 @@ export const METHODS = {
   approvalList: "approval.list",
   elicitationRespond: "elicitation.respond",
   elicitationUrl: "elicitation.url",
-  // The Clover island (Mac app): every pending card across sessions. HARNESS role only.
-  islandPending: "island.pending",
-  islandShown: "island.shown",
-  islandActivity: "island.activity",
-  // The island's Sessions and Usage tabs. HARNESS role only.
-  islandHosts: "island.hosts",
-  islandUsage: "island.usage",
   // Usage and cost tracking (`docs/claude/usage.md`): the Usage tab and the Usage window. HARNESS role only.
   usageSummary: "usage.summary",
   usageSeries: "usage.series",

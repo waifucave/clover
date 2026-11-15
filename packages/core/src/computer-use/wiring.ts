@@ -33,7 +33,6 @@ import { HEADLESS_NAME, HeadlessPool, sweepHeadless, type HeadlessPoolDeps } fro
 import { processSatisfiesRequirement } from "./helper-verify";
 import { DiffBases } from "./diff-base";
 import { HelperClient, type HelperLauncher, type HelperTransport, type HelperVerifier } from "./helper-client";
-import { ISLAND_SHOWN_ACK_MS, type IslandPresence } from "../island/registry";
 import { ComputerPolicy, DEFAULT_APP_EXCEPTIONS, defaultAppException, type DesktopVisitPanel } from "./policy";
 import { HelperRpcError, HelperUnavailableError, type DesktopVisitPromptResult, type HelperPermissions } from "./protocol";
 import { RecentApps } from "./recent-apps";
@@ -95,9 +94,6 @@ export interface ComputerUseRuntimeDeps {
   /** Wake triggers, Dispatch: is a turn of this child followed now; follow its wake turn (`DispatchChildren`). */
   followedNow?(sessionId: string): boolean;
   followWake?(sessionId: string, text: string): (() => void) | undefined;
-  /** The Clover island: whether an island client (Clover.app) is connected and shows the desktop-switch card — then
-   *  the prompt is the app's and the helper's own panel is only the fallback (`islandAwareDesktopPanel`). */
-  island?: IslandPresence;
   inject?: ComputerUseInjection;
   log?(line: string): void;
 }
@@ -142,8 +138,6 @@ export interface ComputerUseControl {
   /** Wake triggers: how many the session has armed (the session list's mark), and the Mac's [Stop waiting]. */
   wakesArmed?(sessionId: string): number;
   wakesCancel?(sessionId: string, wakeId: string): boolean;
-  /** Every armed trigger across sessions (the Mac island's Watches tab). */
-  wakesList?(): { sessionId: string; wakeId: string; condition: string; targetLabel: string; elementLabel?: string; armedAt: number; expiresAt: number }[];
 }
 
 export interface ComputerUseRuntime {
@@ -236,53 +230,6 @@ export function helperDesktopPanel(helper: Pick<HelperClient, "request">, log: (
   };
 }
 
-/**
- * The Clover island (`docs/claude/island.md`): while Clover.app is connected with an island (its hello advertised
- * `CLIENT_CAPABILITY_ISLAND`), the desktop-switch prompt's on-screen half is the APP's — it shows the session's own
- * card (`approval_requested`, `onTimeout: "allow"`) in the island, answered through `approval.respond` like any card,
- * the first answer winning in the broker. The helper's own panel stays the fallback, asked (with the same deadline,
- * its answer chained) when there is no island client at the prompt, when the last one LEAVES before an answer (the app
- * quit or crashed mid-prompt), or when none says it shows the card within `ackMs` (`island.shown`; an app that is
- * connected but hung). `close()` closes whichever is up.
- */
-export function islandAwareDesktopPanel(
-  helperPanel: DesktopVisitPanel, island: IslandPresence | undefined, log: (line: string) => void, ackMs = ISLAND_SHOWN_ACK_MS,
-): DesktopVisitPanel {
-  return {
-    show(p) {
-      if (island === undefined || !island.hasClient()) return helperPanel.show(p);
-      log(`computer-use: the desktop-switch prompt ${p.promptId} is shown by Clover's island`);
-      let closed = false;
-      let inner: ReturnType<DesktopVisitPanel["show"]> | undefined;
-      let settle!: (a: "switch" | "refuse" | "expired" | undefined) => void;
-      const answer = new Promise<"switch" | "refuse" | "expired" | undefined>((resolve) => { settle = resolve; });
-      const fallBack = (why: string): void => {
-        if (closed || inner !== undefined) return;
-        log(`computer-use: the desktop-switch prompt ${p.promptId} goes to the helper too (${why})`);
-        try {
-          inner = helperPanel.show(p);
-        } catch {
-          return;
-        }
-        inner.answer.then(settle, () => settle(undefined));
-      };
-      const unsubscribe = island.onAllClientsGone(() => fallBack("Clover's island left"));
-      const ackWait = new AbortController();
-      void island.waitShown(p.promptId, ackMs, ackWait.signal).then((shown) => { if (!shown) fallBack("Clover's island did not show it"); });
-      return {
-        answer,
-        close: () => {
-          closed = true;
-          ackWait.abort(); // the 2 s ack timer goes with the prompt
-          unsubscribe();
-          try { inner?.close(); } catch { /* already gone */ }
-          settle(undefined);
-        },
-      };
-    },
-  };
-}
-
 export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): ComputerUseRuntime {
   const log = (line: string): void => deps.log?.(line);
   let written: { basis: Settings | null | undefined; next: Settings } | undefined;
@@ -347,7 +294,7 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
       try { if (deps.store.meta(sessionId).mode === "dispatch") return false; } catch { return false; }
       return deps.hub.attachedHarnesses(sessionId).some((h) => h.role !== "remote" && h.clientName !== "iphone-gateway");
     },
-    desktopPanel: islandAwareDesktopPanel(helperDesktopPanel(helper, log), deps.island, log),
+    desktopPanel: helperDesktopPanel(helper, log),
     log,
   });
 
@@ -580,7 +527,6 @@ export function createComputerUseRuntime(deps: ComputerUseRuntimeDeps): Computer
     },
     wakesArmed: (sessionId) => wakeRegistry.countFor(sessionId),
     wakesCancel: (sessionId, wakeId) => wakeRegistry.cancel(sessionId, wakeId, "user"),
-    wakesList: () => wakeRegistry.listAll(),
   };
 
   return {

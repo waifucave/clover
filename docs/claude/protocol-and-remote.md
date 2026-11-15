@@ -10,15 +10,12 @@ A new or changed **`SessionEvent` variant**, in order:
 
 1. `packages/protocol/src/events.ts` — the zod schema.
 2. `packages/protocol/scripts/generate.ts` — a canonical fixture.
-3. `pnpm protocol:generate` — schema + fixtures, synced into `apple/WinterProtocol`'s test bundle.
+3. `pnpm protocol:generate` — schema + fixtures (`packages/protocol/generated/`).
 4. `packages/core/src/projector/event-coverage.ts` — BOTH `satisfies` maps (`SUBAGENT_TRANSCRIPT_INCLUDE`, `PROJECTED_EVENT_COVERAGE`); core's `tsc` fails until updated.
-5. `apple/WinterProtocol` — mirror the Swift type; `RoundTripTests.swift` asserts the exact fixture count.
-6. `apple/WinterKit` — `WinterClient.swift`'s `seq`/`sessionId` switches are exhaustive: a new variant breaks compilation THERE, not in WinterProtocol.
-7. Build WinterKit AND the app; WinterProtocol's `swift test` never catches 6.
 
-- A new **RPC method** skips 2–3 and 5 (`generate.ts` reads only `events.ts`): schema in `methods.ts`, handler in `packages/core/src/ipc/server.ts`, a Swift call site if needed, the four remote mirrors below if remote-reachable.
-- **A new FIELD trips no compile-time trap**: sweep its PRODUCERS by meaning in both languages (`WinterChatKit`'s `ChatEngine` is a second producer, via `sync.push`) and ask whether a consumer's fallback silently accepts the old shape.
-- The hello's client `capabilities` (`CLIENT_CAPABILITY_ISLAND`) and `tty`, and `island.pending`/`island.changed`/`island.shown`/`island.hosts`/`island.usage`/`island.activity`/`island.activityChanged`, are local-only ([island](./island.md)): no event changed, nothing remote. So are `usage.summary`/`usage.series`/`usage.subscriptions.*`/`usage.setTracking`/`usage.alarms.*` ([usage](./usage.md)).
+- A new **RPC method** skips 2–3 (`generate.ts` reads only `events.ts`): schema in `methods.ts`, handler in `packages/core/src/ipc/server.ts`, the four remote mirrors below if remote-reachable.
+- **A new FIELD trips no compile-time trap**: sweep its PRODUCERS by meaning and ask whether a consumer's fallback silently accepts the old shape.
+- The hello's client `capabilities` and `tty` are local-only: no event changed, nothing remote. (The old island's `island.*` methods and `CLIENT_CAPABILITY_ISLAND` were removed with the old Mac app.) So are `usage.summary`/`usage.series`/`usage.subscriptions.*`/`usage.setTracking`/`usage.alarms.*` ([usage](./usage.md)).
 - A new **transient** goes in `TRANSIENT_EVENT_TYPES`, which `REMOTE_STREAM_EVENT_TYPES` spreads. Left out, remote clients never see it; the parity tests pin "exactly the current set" and cannot catch that.
 
 ## Remote allowlists

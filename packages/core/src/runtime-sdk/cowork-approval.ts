@@ -19,7 +19,7 @@
 // event, an allow is silent, an ask is `approval_requested` / `approval_resolved` answered by `approval.respond` (plain
 // Allow/Deny - a saved rule never becomes host authority). The card's summary leads with the workspace, the source revision
 // and the requesting agent ("Approval cards belong to the target conversation and identify its workspace, operation,
-// source revision and requesting agent"). Island and `approval.list` read the same broker, so they show it unchanged.
+// source revision and requesting agent"). `approval.list` reads the same broker, so it shows it unchanged.
 
 import { posix } from "node:path";
 import type { ApprovalPolicy } from "@waifucave/clover-protocol";

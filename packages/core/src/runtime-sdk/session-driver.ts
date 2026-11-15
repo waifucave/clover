@@ -401,7 +401,7 @@ export interface CloverLegDeps {
    * child before the call resolves) is swallowed at the call site, never surfaced here.
    */
   onSupportedAgents?: (sessionId: string, agents: import("@waifucave/clover-agent-sdk").AgentInfo[]) => void;
-  /** The island's Usage tab: a session's `rate_limit_event` report (the projector's `onRateLimit`). */
+  /** A session's `rate_limit_event` report (a plan window's status and reset) (the projector's `onRateLimit`). */
   onRateLimit?: (sessionId: string, info: Record<string, unknown>) => void;
   /** The usage DB (`docs/claude/usage.md`): each model's share of a projected turn (the projector's `onTurnUsage`). */
   onTurnUsage?: (sessionId: string, usage: { sourceId: string; rows: import("../projector/terminal").TurnModelUsageRow[] }) => void;

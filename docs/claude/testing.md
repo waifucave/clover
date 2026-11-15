@@ -35,7 +35,7 @@ Each builds a real binary; none runs under `bun test`: `verify:workflow` (sandbo
 
 ## Swift
 
-`swift test` in `apple/WinterProtocol` (fixture round-trip, exact count), `apple/WinterKit`, `apple/ComputerUse/WinterComputerUse` (helper shell), `apple/ComputerUse/WinterCUCore` (engine; `WinterCUPresentation` beside it). App: `cd apple/Winter && xcodegen generate && xcodebuild -project Winter.xcodeproj -scheme Winter -destination 'platform=macOS' build`.
+`swift test` in `apple/ComputerUse/WinterComputerUse` (helper shell), `apple/ComputerUse/WinterCUCore` (engine; `WinterCUPresentation` beside it), `apple/ComputerUse/WinterBrowserHost`. The old Mac app's kits and app target are not in this repo (see [architecture](./architecture.md)).
 
 ## Idle wakeups
 

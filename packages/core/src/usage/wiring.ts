@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { IslandUsageRegistry } from "../island/usage";
+import type { PlanWindowReports } from "./codex-windows";
 import { usageTrackingFrom, type Settings } from "../settings";
 import { UsageDb } from "./db";
 import { UsagePricer } from "./pricing";
@@ -111,11 +111,10 @@ export function createUsageService(opts: {
    *  on its default home, undefined for any other, which then reads no app at all unless one is named explicitly. */
   userHome: string | undefined;
   settings: () => Settings | null | undefined;
-  islandUsage?: IslandUsageRegistry;
+  /** The plan windows Codex sessions reported while they ran: the Codex plan's fallback reading. */
+  codexWindows?: PlanWindowReports;
   version?: string;
   injection?: UsageInjection;
-  /** The fired alarms waiting for an acknowledgement changed (the island's notifications). */
-  onAlarmNotices?: () => void;
   log?: { warn?: (msg: string, meta?: Record<string, unknown>) => void; info?: (msg: string, meta?: Record<string, unknown>) => void };
 }): { service: UsageService; sources: UsageSources; close(): void } | undefined {
   const env = process.env;
@@ -156,7 +155,7 @@ export function createUsageService(opts: {
     claudeExecutable: executables.claude,
     agyExecutable: executables.agy,
     opencodeExecutable: executables.opencode,
-    cloverCodexWindows: () => (opts.islandUsage?.windowsFor("codex-oauth") ?? []).map((w) => ({
+    cloverCodexWindows: () => (opts.codexWindows?.windowsFor("codex-oauth") ?? []).map((w) => ({
       ...(w.rateLimitType === undefined ? {} : { rateLimitType: w.rateLimitType }), status: w.status,
       ...(w.resetsAt === undefined ? {} : { resetsAt: w.resetsAt }), at: w.at,
     })),
@@ -167,7 +166,6 @@ export function createUsageService(opts: {
     probeEnv: (extra) => (user === undefined ? { ...probeEnv([]), HOME: opts.home } : { ...probeEnv(extra), HOME: user }),
     ...(opts.version === undefined ? {} : { version: opts.version }),
     ...(inj.now === undefined ? {} : { now: inj.now }),
-    ...(opts.onAlarmNotices === undefined ? {} : { onAlarmNotices: opts.onAlarmNotices }),
     ...(inj.backgroundEveryMs === undefined ? {} : { backgroundEveryMs: inj.backgroundEveryMs }),
     ...(inj.alarmBeatMs === undefined ? {} : { alarmBeatMs: inj.alarmBeatMs }),
     log: opts.log ?? {

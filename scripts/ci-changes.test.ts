@@ -85,15 +85,15 @@ describe("ci-changes", () => {
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
     // An apple/ change: the Swift kits on demand only, and the scripts' tests on Linux, never the macos job (its
     // scripts step runs only the scripts' own macOS tests, for a change to scripts/).
-    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual([]);
-    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"], "workflow_dispatch")).toEqual(["swift"]);
-    expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).not.toContain("scriptsmac");
+    expect(macJobs(["apple/ComputerUse/WinterBrowserHost/Sources/Host.swift"])).toEqual([]);
+    expect(macJobs(["apple/ComputerUse/WinterBrowserHost/Sources/Host.swift"], "workflow_dispatch")).toEqual(["swift"]);
+    expect(on(["apple/ComputerUse/WinterBrowserHost/Sources/Host.swift"])).not.toContain("scriptsmac");
     expect(macJobs(["scripts/embed-runtimes.sh"])).toEqual(["macos"]);
     expect(on(["scripts/embed-runtimes.sh"])).toEqual(expect.arrayContaining(["scripts", "scriptsmac"]));
     expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
     // A pull request takes no hosted macOS runner, whatever it changes.
-    for (const change of ["packages/core/src/daemon.ts", ".github/workflows/ci.yml", "apple/WinterKit/Sources/WinterKit/Client.swift", "scripts/embed-runtimes.sh", "plugins/clover/plugins/shell/src/a.tsx"]) {
+    for (const change of ["packages/core/src/daemon.ts", ".github/workflows/ci.yml", "apple/ComputerUse/WinterBrowserHost/Sources/Host.swift", "scripts/embed-runtimes.sh", "plugins/clover/plugins/shell/src/a.tsx"]) {
       expect(macJobs([change], "pull_request")).toEqual([]);
     }
   });
@@ -186,18 +186,15 @@ describe("ci-changes", () => {
     expect(on(["packages/test-harness/src/workers.ts"])).not.toContain("core");
   });
 
-  test("the Swift kits run for apple/, the protocol's generated fixtures and the core, and not for the rest of the protocol or the CLI", () => {
-    expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["scripts", "swift"]);
-    expect(on(["apple/WinterProtocol/Tests/WinterProtocolTests/Fixtures/x.json"])).toEqual(["scripts", "codegen", "swift"]);
-    expect(on(["packages/protocol/generated/fixtures/x.json"])).toContain("swift");
+  test("the Swift tests run for apple/ and CI's own definition, and not for the protocol or the CLI", () => {
+    expect(on(["apple/ComputerUse/WinterBrowserHost/Sources/Host.swift"])).toEqual(["scripts", "swift"]);
+    expect(on(["packages/protocol/generated/fixtures/x.json"])).not.toContain("swift");
     expect(on(["packages/protocol/src/methods.ts"])).not.toContain("swift");
     expect(on(["packages/cli/src/main.ts"])).not.toContain("swift");
-    // Only apple/, the root Package.swift, the generated fixtures and CI's own definition run the Swift kits: not the
-    // core (main's push run still covers WinterKit's daemon tests), not the toolchain or a lockfile.
+    // Only apple/ and CI's own definition run them: not the core, the toolchain or a lockfile.
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("swift");
     for (const g of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([g]), g).not.toContain("swift");
     expect(on(["scripts/ci-changes.ts"])).toContain("swift");
-    expect(on(["Package.swift"])).toContain("swift");
   });
 
   test("CI itself runs every area but the installers; the toolchain, the root manifest or a lockfile every area but the Swift kits and the installers; so does no diff", () => {

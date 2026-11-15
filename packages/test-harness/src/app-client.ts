@@ -1,7 +1,7 @@
 // A fake app client: what the Electron app will be to the daemon (spec §3.1) — a local client that says hello,
 // calls methods and receives every event — so a test can drive a daemon the way the app does, with no window.
 // It speaks the daemon's JSON-RPC 2.0 over NDJSON on the socket and records what arrives.
-import { CLIENT_CAPABILITY_ISLAND, encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION } from "@waifucave/clover-protocol";
+import { encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION } from "@waifucave/clover-protocol";
 
 export interface RpcError extends Error {
   rpc: { code: number; message: string; data?: unknown };
@@ -18,7 +18,7 @@ export interface FakeAppClientOptions {
   /** Today's local-client role, the one the retired Mac app used; lane B's protocol may pin an app role. */
   role?: "harness" | "admin";
   clientName?: string;
-  /** Hello capabilities. Default: the island's, as a desktop app's surface shows every pending card. */
+  /** Hello capabilities. Default: none. */
   capabilities?: string[];
   timeoutMs?: number;
 }
@@ -52,7 +52,7 @@ export class FakeAppClient {
       role: opts.role ?? "harness",
       token: opts.token,
       clientName: opts.clientName ?? "clover-app (fake)",
-      capabilities: opts.capabilities ?? [CLIENT_CAPABILITY_ISLAND],
+      ...(opts.capabilities === undefined ? {} : { capabilities: opts.capabilities }),
     })) as { features?: string[] };
     client.features = hello.features ?? [];
     return client;

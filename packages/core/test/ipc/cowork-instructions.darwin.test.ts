@@ -37,7 +37,6 @@ test("real Unix RPC keeps missing backing unavailable and all guidance methods M
  const f = await fixture(); expect((await f.client.request("workspace.instructions.get", { workspaceId: f.workspaceId })).error.data.code).toBe(process.platform === "darwin" && process.arch === "arm64" ? "recovery_required" : "unsupported_topology");
  for (const method of ["workspace.instructions.get", "workspace.instructions.provenance", "workspace.instructions.update"] as const) { expect((COWORK_REMOTE_METHODS as readonly string[]).includes(method)).toBe(false); const params = method === "workspace.instructions.update" ? { workspaceId: f.workspaceId, requestId: "remote-valid", expectedInstructionRevision: 1, expectedDigest: "a".repeat(64), content: "valid remote proposal" } : { workspaceId: f.workspaceId }; expect(COWORK_RPC[method].params.safeParse(params).success).toBe(true); expect((await f.remote.request(method, params)).error.code).toBe(ERR.UNAUTHORIZED); }
  expect((await f.client.request("workspace.instructions.get", { workspaceId: f.workspaceId, path: "/outside" })).error.data.code).toBe("invalid_request");
- const gateway = readFileSync(join(import.meta.dir, "../../../../apple/WinterKit/Sources/WinterKit/Gateway/Gateway.swift"), "utf8"); expect(gateway).not.toContain('"workspace.instructions.');
 });
 const native = process.platform === "darwin" && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
 native("real Unix RPC reads/updates content and enforces size/revision/digest/replay", async () => {

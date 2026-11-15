@@ -41,7 +41,7 @@ export interface PlanReaders {
 const NO_READING = new Set(["none", "disabled", "not-installed"]);
 
 /** `usage.plans` (§12 "Usage"): the latest reading of each of the user's apps' plan windows on this computer, as the
- *  Usage tab and the island show them. A source that can't answer is left out, never an error.
+ *  Usage tab shows them. A source that can't answer is left out, never an error.
  *
  *  It covers THIS computer only: the readers read the apps installed here, and `computer` names this one. Another
  *  computer's plans are that computer's own `usage.plans`; nothing here asks a peer or merges its readings. */
