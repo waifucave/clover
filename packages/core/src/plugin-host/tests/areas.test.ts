@@ -108,9 +108,10 @@ describe("the API's areas", () => {
     expect(await w.call("terminal.open", [{ computer: "Studio", cols: 80, rows: 24 }], { process: "ui" })).toEqual({ terminalId: "t_1" });
     // Opened as the call's caller: the plugin, a layer's call included.
     expect(w.treeCalls).toEqual([{ open: { kind: "plugin", pluginId: "tarot" } }]);
-    await w.call("terminal.input", ["t_1", { data: "ls\r" }], { process: "ui", caller: USER });
-    await w.call("terminal.input", ["t_1", { type: "paste", text: "echo hi" }], { process: "ui", caller: USER });
-    expect(w.written).toEqual([{ id: "t_1", data: "ls\r" }, { id: "t_1", data: "echo hi", paste: true }]);
+    // F5: no plugin call writes to it, a key's bytes or a paste: only the app hands over the user's own (terminal.write).
+    expect((await failure(w.call("terminal.input", ["t_1", { data: "ls\r" }], { process: "ui", caller: USER })))?.message).toContain("only the user's own key presses and pastes");
+    expect((await failure(w.call("terminal.input", ["t_1", { type: "paste", text: "echo hi" }], { process: "ui", caller: USER })))?.code).toBe("refused");
+    expect(w.written).toEqual([]);
     // Another plugin can't reach it.
     expect((await failure(w.call("terminal.input", ["t_1", { data: "x" }], { pluginId: "other", process: "ui", caller: USER })))?.code).toBe("not_found");
     for (const fn of w.outputs) fn({ terminalId: "t_1", data: "file.txt\r\n" });
@@ -247,7 +248,6 @@ describe("the API's areas", () => {
     expect(w.opened[0]).toMatchObject({ cols: 1000, rows: 2 });
     await w.call("terminal.resize", ["t_1", -5, 99.6], { process: "ui" });
     expect(w.opened.at(-1)).toEqual({ resize: ["t_1", 2, 100] });
-    expect((await failure(w.call("terminal.input", ["t_1", { data: "x".repeat(64 * 1024 + 1) }], { process: "ui" })))?.code).toBe("invalid");
     await w.call("terminal.open", [{ computer: "Studio" }], { process: "ui" });
     await w.forget("tarot");
     expect(w.closed.sort()).toEqual(["t_1", "t_3"]); // ids count the fake's calls

@@ -19,6 +19,9 @@
         "tools": {
           "Browser": "preload"
         },
+        "browserTools": [
+          "Browser"
+        ],
         "instructions": "instructions.md",
         "perComputer": true
       }

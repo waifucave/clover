@@ -15,10 +15,11 @@
 //   (#334's review). `conversation.*` and `bots.*` reach every bot once granted: there is no per-bot grant yet.
 // * `bots.*`, `devices.*`: the services' own views; a watch gets each changed view (a removal carries none).
 // * Limits: a plugin has at most WATCHES_PER_PLUGIN watches open across the areas; a note or message is at most
-//   MESSAGE_MAX characters; `files.grep` returns at most GREP_LIMIT_MAX matches; terminal input is at most
-//   TERMINAL_INPUT_MAX characters a call, and a size is 2 to 1000 columns and rows.
+//   MESSAGE_MAX characters; `files.grep` returns at most GREP_LIMIT_MAX matches; a terminal's size is 2 to 1000 columns
+//   and rows.
 // * `computers.*`, `files.*`: J's adapters (`computers/api.ts`); files are always the plugin's, fenced by the tree.
-// * `terminal.*`: a terminal opened by a plugin is that plugin's, and only it writes to, resizes, reads or closes it.
+// * `terminal.*`: a terminal opened by a plugin is that plugin's, and only it resizes, reads or closes it. Nothing the
+//   plugin chooses is written to it: its input is the user's own key presses and pastes, which the app hands over.
 //   Its output reaches a component as the `terminal_output` core event for the app, carrying the opener's `pluginId`
 //   so the app delivers it to that plugin's layer only (a listener can't cross the layer path), and a host half's
 //   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
@@ -667,16 +668,13 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       for (const o of held) handle(o);
       return { terminalId };
     },
-    // The bytes a keydown makes, or a paste's text (the app's runtime turns the DOM event into these, lane E).
+    // F5: no plugin call writes to a terminal. What reaches one is only the user's own key press or paste, which the app's
+    // main process saw come to the frame and hands over itself (`terminal.write` on the plugin's connection, a call the
+    // general door never passes: layer-links.ts `MAIN_ONLY`). This member is the component SDK's name for that path; a
+    // call that reaches the core here, with bytes of the plugin's own choosing, is refused.
     "terminal.input": async (ctx, args) => {
-      const id = stringArg(args, 0, "the terminal");
-      own(ctx, id);
-      const e = opt(args[1]);
-      const text = e.type === "paste" ? e.text : e.data;
-      if (typeof text === "string" && text.length > TERMINAL_INPUT_MAX) throw new ContractError("invalid", `terminal input is at most ${TERMINAL_INPUT_MAX} characters a call`);
-      if (e.type === "paste" && typeof e.text === "string") return node().terminals.write(id, e.text, { paste: true });
-      if (typeof e.data === "string") return node().terminals.write(id, e.data);
-      throw new ContractError("invalid", "terminal input is { data } for keys, or { type: \"paste\", text }");
+      own(ctx, stringArg(args, 0, "the terminal"));
+      throw new ContractError("refused", "a terminal takes only the user's own key presses and pastes, which the app hands over itself; a plugin's call writes nothing to it");
     },
     "terminal.onData": (ctx, args) => {
       const id = stringArg(args, 0, "the terminal");

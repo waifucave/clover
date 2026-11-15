@@ -1,11 +1,10 @@
-// The bundled Browser tool through a bot's approval check: looking verbs are reads (no card at any level), acting verbs
+// A Browser tool (any plugin's `browserTools`, while it holds `browser`; F5) through a bot's approval check: looking verbs are reads (no card at any level), acting verbs
 // (click, type, key, select) are screen control that cards once per bot and site, are remembered per bot and site,
 // card every call at "ask", run at automatic, and are refused at read-only.
 import { expect, test } from "bun:test";
 import type { Card, Level } from "@waifucave/clover-protocol";
 import { botApprovalCheck, BROWSER_ACTING_VERBS, BROWSER_LOOKING_VERBS } from "../../src/approvals/bot-check";
 import { CloverApprovalBroker } from "../../src/approvals/broker";
-import { bundledToolKind } from "../../src/approvals/bundled-tools";
 import type { BotSessionContext } from "../../src/bots/service";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 
@@ -32,12 +31,6 @@ function setup(level: () => Level, site: () => string | undefined = () => "examp
 test("the verbs are split into looking and acting, with none in both", () => {
   expect([...BROWSER_ACTING_VERBS].sort()).toEqual(["click", "key", "select", "type"]);
   for (const v of BROWSER_ACTING_VERBS) expect(BROWSER_LOOKING_VERBS.has(v)).toBe(false);
-});
-
-test("only the staged bundled browser plugin's Browser tool is the browser kind", () => {
-  const lookup = { servers: [{ server: "browser", plugin: "clover/browser", tools: [{ name: "Browser" }, { name: "Other" }] }, { server: "evil", plugin: "acme/browser", tools: [{ name: "Browser" }] }], record: () => undefined, staged: undefined };
-  expect(bundledToolKind(lookup, TOOL)).toBeUndefined(); // no staged copy: judged as any tool
-  expect(bundledToolKind(lookup, "mcp__evil__Browser")).toBeUndefined();
 });
 
 test("looking verbs raise no card at any level, read-only included", async () => {

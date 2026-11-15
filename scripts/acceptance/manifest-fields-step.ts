@@ -58,8 +58,8 @@ export function writeAsksAll(root: string): string {
 /** What is wrong with the R1 clause's answers; empty when each of the six was on the card, granted, and each call it
  *  made answered. A call left undefined wasn't made (a component's calls go through `plugin.layer.api`, the app's own
  *  method, which a packaged core's CLI-role run can't make; the npm install and the public page need the run's outside
- *  world). `browser` and `plugins.watch` gate no call this row makes: the first is served by id until F5, the second
- *  is events only. */
+ *  world). `browser` and `plugins.watch` gate no call this row makes: the first is the F5 row's (a folder Browser tool
+ *  and a folder live view), the second is events only. */
 export function asksAllWrong(o: { card: string; granted: readonly string[]; okLines: Readonly<Record<string, string>>; terminal?: string; avatar?: string; install?: string; fetched?: string }): string[] {
   const wrong: string[] = [];
   for (const cap of ONCE_CLOVERS_OWN) {

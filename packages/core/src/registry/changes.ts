@@ -162,8 +162,8 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   // The same for the display-only tools (`contained`), which run without a card too.
   const contained = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.contained ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.contained)].sort() }));
   // The same for the web tools (`webSearch`, `webFetch`), which the approvals judge as a search or a page fetch.
-  const web = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.webSearch ?? []).length > 0 || (s.webFetch ?? []).length > 0)
-    .map(([name, s]) => ({ name, search: [...new Set(s.webSearch ?? [])].sort(), fetch: [...new Set(s.webFetch ?? [])].sort() }));
+  const web = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.webSearch ?? []).length > 0 || (s.webFetch ?? []).length > 0 || (s.browserTools ?? []).length > 0)
+    .map(([name, s]) => ({ name, search: [...new Set(s.webSearch ?? [])].sort(), fetch: [...new Set(s.webFetch ?? [])].sort(), ...((s.browserTools ?? []).length > 0 ? { browser: [...new Set(s.browserTools ?? [])].sort() } : {}) }));
   return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}), ...(contained.length > 0 ? { contained } : {}), ...(web.length > 0 ? { web } : {}) });
 }
 

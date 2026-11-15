@@ -104,7 +104,8 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
 - **`mcpServers`** (by name: letters, digits, `_`, `-`): `type` `host` (the host half's `mcp.<name>` export) or
   `stdio` (`command`, `args`, `env`) or `http` (a remote server: `url`, `headers`). `tools`: per tool `preload` or `on-demand`, `"*"` the
   default (on-demand when unsaid). `readOnly` / `contained` / `webSearch` / `webFetch`: tools the approvals judge as
-  their list says (plugin-cards); `needs`: `{ "<tool>": "<capability>" }`, a tool offered only while the plugin holds
+  their list says (plugin-cards); `browserTools`: tools that take the Browser tool's verbs (`input.verb`) and drive the
+  calling bot's own tab through `api.browser` (the plugin holds `browser`), judged as the Browser tool; `needs`: `{ "<tool>": "<capability>" }`, a tool offered only while the plugin holds
   that capability. `instructions`
   (a Markdown file, about 4 KB at most), `perComputer`, `scope` (its own, over the plugin's: `own-bot` keeps the
   server's tools inside the plugin's bot), `when: { os }`. A session sees a tool as `mcp__<server>__<tool>`.

@@ -169,6 +169,12 @@ export const McpServerSchema = z.strictObject({
    *  budget; any other asks, and "Always allow" holds for its site). The plugin must hold `network:public`. Never a tool
    *  on another of these lists; a change to the list asks for the OK again. */
   webFetch: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(16).optional(),
+  /** The tools of this server that drive the calling bot's own tab of the Clover Browser with the Browser tool's verbs
+   *  (`input.verb`; F5: what the core once knew only of its own Browser tool's plugin): named on the OK card with a
+   *  warning, a call to one is judged as the Browser tool's (looking verbs run without a card; click, type, key and
+   *  select ask for the site, "Always allow" kept per bot and site). The plugin must hold `browser`. Never a tool on
+   *  another of these lists; a change to the list asks for the OK again. */
+  browserTools: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(16).optional(),
   /** A tool offered only while its plugin holds a capability (`{ "WebFetch": "network:public" }`): one that could only
    *  refuse without it isn't listed. Each capability must be one the plugin declares. */
   needs: z.record(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/), utf16(512, 1)).optional(),

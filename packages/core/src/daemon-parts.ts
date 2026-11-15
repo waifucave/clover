@@ -570,7 +570,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       closers.push(() => br.shutdown());
       browser = br;
-      Object.assign(input.handlers, browserAppHandlers(() => br.service), browserRpcHandlers(() => br.service, (id) => (input.bots === false ? undefined : input.bots)?.registry.get(id)?.source === "bundled"));
+      Object.assign(input.handlers, browserAppHandlers(() => br.service), browserRpcHandlers(() => br.service, (id) => grantsInForce((input.bots === false ? undefined : input.bots)?.registry.get(id)).includes("browser")));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
