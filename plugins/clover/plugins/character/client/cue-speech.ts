@@ -37,7 +37,8 @@ const DEFAULT_CENTROID = 1_500;
 /** Released levels kept for a renderer that subscribes mid-speech (this long behind now). */
 const REPLAY_MS = 120;
 
-interface Level { t: number; rms: number; centroid: number }
+/** A mouth level, and the plugin that sent it (a `cut` drops only its sender's). */
+interface Level { t: number; rms: number; centroid: number; from: string }
 
 export interface CueSpeechClock {
   /** Epoch milliseconds. */
@@ -114,19 +115,20 @@ export class CueSpeech implements SpeechFeed {
     return () => this.#speakingListeners.delete(listener);
   }
 
-  /** A speech cue from the core (`{ frames, cut? }`; read again here: only finite numbers in range are kept). */
-  accept(raw: unknown): void {
+  /** A speech cue from the core (`{ frames, cut? }`; read again here: only finite numbers in range are kept), from the
+   *  plugin `from`: its `cut` drops only that plugin's own levels. */
+  accept(raw: unknown, from = ""): void {
     if (this.#closed || raw === null || typeof raw !== "object") return;
     const c = raw as { frames?: unknown; cut?: unknown };
     const now = this.#clock.now();
-    if (c.cut === true) this.#cut(now);
+    if (c.cut === true) this.#cut(now, from);
     const list = Array.isArray(c.frames) ? (c.frames as unknown[]) : [];
     const fresh: Level[] = [];
     for (const f of list.slice(0, 4_096)) {
       const r = f as { t?: unknown; rms?: unknown; centroid?: unknown } | null;
       if (r === null || typeof r !== "object" || !num(r.t) || !num(r.rms)) continue;
       if (r.t < now - KEEP_PAST_MS || r.t > now + AHEAD_MAX_MS) continue;
-      fresh.push({ t: r.t, rms: Math.min(1, Math.max(0, r.rms)), centroid: num(r.centroid) ? Math.min(24_000, Math.max(0, r.centroid)) : DEFAULT_CENTROID });
+      fresh.push({ t: r.t, rms: Math.min(1, Math.max(0, r.rms)), centroid: num(r.centroid) ? Math.min(24_000, Math.max(0, r.centroid)) : DEFAULT_CENTROID, from });
     }
     this.stats.batches += 1;
     this.stats.levels += fresh.length;
@@ -173,11 +175,17 @@ export class CueSpeech implements SpeechFeed {
     return { t: (l.t - this.#origin) / 1000, rms: l.rms, centroid: l.centroid };
   }
 
-  #cut(now: number): void {
-    this.#queue = [];
-    this.#start = undefined;
-    this.#end = undefined;
-    this.#set(false, now);
+  #cut(now: number, from: string): void {
+    this.#queue = this.#queue.filter((l) => l.from !== from);
+    const last = this.#queue.at(-1);
+    if (last === undefined) {
+      this.#start = undefined;
+      this.#end = undefined;
+      this.#set(false, now);
+      return;
+    }
+    // Another sender's speech goes on: its own last level now ends it.
+    this.#end = last.t + SPEAKING_HOLD_MS;
   }
 
   #set(speaking: boolean, now: number): void {

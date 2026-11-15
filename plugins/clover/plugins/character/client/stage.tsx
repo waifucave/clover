@@ -80,10 +80,11 @@ function useCueSpeech(bot: string): { feed: CueSpeech; speaking: boolean } {
     feed.reopen();
     const offSpeaking = feed.onSpeaking((now) => { setSpeaking(now); if (show) publish(feed.stats); });
     const off = api.host.on("clover.avatar.cue", (value) => {
-      const v = value as { bot?: unknown; cue?: unknown } | null;
+      const v = value as { bot?: unknown; cue?: unknown; from?: unknown } | null;
       const cue = v?.bot === bot ? (v.cue as { type?: unknown } | null) : undefined;
       if (cue?.type !== "speech") return;
-      feed.accept(cue);
+      // Keyed by the sending plugin: a `cut` drops only its own levels.
+      feed.accept(cue, typeof v?.from === "string" ? v.from : "");
       if (show) publish(feed.stats);
     });
     return () => {

@@ -121,7 +121,7 @@ describe("speech: the mouth's levels", () => {
     h["avatar.report"]!(ctx("clover/character"), ["alpha", report()]);
     events.length = 0;
     expect(h["avatar.cue"]!(ctx("alpha"), [{ type: "speech", frames: [{ t: now + 500.4, rms: 7, centroid: -5 }, { t: now + 520, rms: -1 }] }])).toEqual({ ok: true });
-    expect(events).toEqual([{ type: "plugin_ui_message", pluginId: "clover/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "speech", frames: [{ t: now + 500, rms: 1, centroid: 0 }, { t: now + 520, rms: 0 }] } } }]);
+    expect(events).toEqual([{ type: "plugin_ui_message", pluginId: "clover/character", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "speech", frames: [{ t: now + 500, rms: 1, centroid: 0 }, { t: now + 520, rms: 0 }] }, from: "alpha" } }]);
     // A renderer without lipsync is told so, plainly; a bot nothing draws likewise.
     h["avatar.report"]!(ctx("clover/character"), ["luna", report({ capabilities: ["expressions"] })]);
     expect(h["avatar.cue"]!(ctx("luna"), [{ type: "speech", frames: levels(2) }])).toMatchObject({ ok: false, reason: "unsupported", message: expect.stringContaining("lip-sync") });

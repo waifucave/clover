@@ -237,6 +237,26 @@ describe("streams: the hub", () => {
     expect(await code(Promise.resolve().then(() => opening(ui("tarot"), "")))).toBe("invalid");
   });
 
+  test("a points stream counts toward its caller's cap only: callers can't fill a contributor's", async () => {
+    const { hub, accepting, opening } = rig();
+    // Many callers each read a stream of the same contributor's handler: it has none of its own open.
+    for (let i = 0; i < STREAMS_OPEN_PER_PLUGIN; i++) hub.openPoint({ pluginId: `caller${i}`, side: "shared", listener: () => {} }, { pluginId: "voicebox", onAbort: () => {} }, `p${i}`);
+    accepting(host("voicebox"), "own");
+    expect(() => opening(ui("voicebox"), "own")).not.toThrow();
+    // A caller's own cap still holds.
+    for (let i = 1; i < STREAMS_OPEN_PER_PLUGIN; i++) hub.openPoint({ pluginId: "caller0", side: "shared", listener: () => {} }, { pluginId: "voicebox", onAbort: () => {} }, `q${i}`);
+    expect(await message(Promise.resolve().then(() => hub.openPoint({ pluginId: "caller0", side: "shared", listener: () => {} }, { pluginId: "voicebox", onAbort: () => {} }, "one-more")))).toContain(`${STREAMS_OPEN_PER_PLUGIN} streams open`);
+  });
+
+  test("a cancel's reason reaches the log line and the other end with its control characters, separators and bidi overrides each run to one space", () => {
+    const { hub, lines, accepting, opening } = rig();
+    const reader = accepting(host("tarot"), "deck");
+    const w = opening(ui("tarot"), "deck");
+    hub.cancel(w.id, ui("tarot"), "\u0007 bad\u001b[31m\u2028line\u202e\u2066x\u0085y\u007f ");
+    expect(reader.events.at(-1)).toEqual({ type: "aborted", id: w.id, reason: "the writer cancelled: bad [31m line x y" });
+    expect(lines.at(-1)).toContain("ended (the writer cancelled: bad [31m line x y)");
+  });
+
   test("a stream connects one plugin's own halves: no acceptor on the other side is a refusal naming why; another plugin can't open, write, acknowledge or cancel", async () => {
     const { hub, accepting, opening } = rig();
     accepting(host("tarot"), "deck");

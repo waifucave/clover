@@ -55,6 +55,8 @@ interface Stream {
   written: number;
   sent: number;
   producerEnded: boolean;
+  /** A points stream: it counts toward its reader's (the caller's) cap only. */
+  point?: true;
   writer?: { bytes: Uint8Array; resolve(): void; reject(err: unknown): void };
   openedAt: number;
   pumping: boolean;
@@ -133,7 +135,8 @@ export class StreamHub {
   openPoint(reader: { pluginId: string; side: HostProcess | "ui"; listener: (event: StreamEvent) => void }, writer: { pluginId: string; onAbort(reason: string): void }, name: string): { id: string; stop: Unsubscribe } {
     const consumer: Endpoint = { pluginId: reader.pluginId, side: reader.side, listener: reader.listener };
     const producer: Endpoint = { pluginId: writer.pluginId, side: "host", listener: (e) => void (e.type === "aborted" && writer.onAbort(e.reason)) };
-    const s = this.#create(name, producer, consumer, {});
+    // It counts toward the caller's cap only: a caller can't fill a contributor's.
+    const s = this.#create(name, producer, consumer, {}, true);
     return { id: s.id, stop: () => void this.#abort(s, "the reader went: its watch ended", consumer) };
   }
 
@@ -184,7 +187,8 @@ export class StreamHub {
     const asConsumer = same(s.consumer, who);
     if (!asProducer && !asConsumer) throw new ContractError("not_found", `no stream ${id} of ${who.pluginId}'s`);
     const by = asConsumer ? "reader" : "writer";
-    const why = `the ${by} cancelled${reason !== undefined && reason !== "" ? `: ${reason.slice(0, 500)}` : ""}`;
+    const plain = reason === undefined ? "" : plainReason(reason);
+    const why = `the ${by} cancelled${plain !== "" ? `: ${plain}` : ""}`;
     this.#abort(s, why, asConsumer ? s.consumer : s.producer);
   }
 
@@ -231,15 +235,15 @@ export class StreamHub {
     return [...this.#acceptors.values()].reduce((n, l) => n + l.length, 0);
   }
 
-  #create(name: string, producer: Endpoint, consumer: Endpoint, meta: StreamMeta): Stream {
-    for (const pluginId of new Set([producer.pluginId, consumer.pluginId])) {
+  #create(name: string, producer: Endpoint, consumer: Endpoint, meta: StreamMeta, point = false): Stream {
+    for (const pluginId of point ? [consumer.pluginId] : [...new Set([producer.pluginId, consumer.pluginId])]) {
       let open = 0;
-      for (const s of this.#streams.values()) if (s.producer.pluginId === pluginId || s.consumer.pluginId === pluginId) open++;
+      for (const s of this.#streams.values()) if (chargedTo(s, pluginId)) open++;
       if (open >= STREAMS_OPEN_PER_PLUGIN) throw new ContractError("refused", `${pluginId} has ${STREAMS_OPEN_PER_PLUGIN} streams open, the most a plugin may; end one first`);
     }
     const s: Stream = {
       id: `strm_${randomUUID()}`, name, producer, consumer, buffer: [], buffered: 0, inFlight: 0, written: 0, sent: 0, producerEnded: false,
-      openedAt: this.#now(), pumping: false, again: false,
+      openedAt: this.#now(), pumping: false, again: false, ...(point ? { point: true } : {}),
     };
     this.#streams.set(s.id, s);
     this.#o.log?.(`streams: ${name} (${s.id.slice(5, 13)}) opened, ${producer.pluginId} (${sideText(producer.side)}) writing to ${consumer.pluginId} (${sideText(consumer.side)})`);
@@ -312,6 +316,7 @@ export class StreamHub {
   /** The stream ends without the writer's say: the writer's pending write fails, and each end but `except` (the one that
    *  caused it, which knows) is told `reason`. */
   #abort(s: Stream, reason: string, except?: Endpoint): void {
+    reason = plainReason(reason) || "ended";
     if (!this.#streams.delete(s.id)) return;
     this.#remember(s.id, reason);
     this.#o.log?.(`streams: ${s.name} (${s.id.slice(5, 13)}) ended (${reason}): ${s.written} bytes written, ${s.sent} sent, in ${seconds(this.#now() - s.openedAt)}`);
@@ -356,4 +361,16 @@ export function checkMeta(meta: unknown): StreamMeta {
   }
   if (new TextEncoder().encode(text).length > STREAM_META_MAX_BYTES) throw new ContractError("invalid", `a stream's meta is at most ${STREAM_META_MAX_BYTES} bytes`);
   return JSON.parse(text) as StreamMeta;
+}
+
+/** The plugins a stream counts against: a points stream its caller (the reader) only; a plugin's own, its plugin. */
+function chargedTo(s: { producer: { pluginId: string }; consumer: { pluginId: string }; point?: true }, pluginId: string): boolean {
+  return s.point === true ? s.consumer.pluginId === pluginId : s.producer.pluginId === pluginId || s.consumer.pluginId === pluginId;
+}
+
+/** A close or cancel reason as it may reach the log: control characters (C0, DEL, C1), line and paragraph separators and
+ *  bidi overrides (U+202A to U+202E, U+2066 to U+2069) each run to one space, trimmed, at most 500 characters. */
+export function plainReason(reason: string): string {
+  // eslint-disable-next-line no-control-regex
+  return reason.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").trim().slice(0, 500);
 }
