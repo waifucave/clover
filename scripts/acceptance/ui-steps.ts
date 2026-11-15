@@ -47,7 +47,7 @@ export const UI_STEPS = [
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
   "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
   "a plugin keeps a part running in the background (`app.background`, the owner, November 15): it is mounted in a hidden window of its own while the app is open, keeps counting at its real rate while hidden and through the main window being closed and opened again, plays a generated tone with no press when its plugin holds `audio` (made and measured in the page, muted at the app's output), gets no sound without it, and goes when the plugin is turned off",
-  "a plugin that holds `microphone` opens the microphone from its own frames (the owner, November 15): its composer.action button and its background part each record about a second from the test build's generated stream and report the samples and their level, and a second plugin without the capability is refused with a plain message",
+  "a plugin that holds `microphone` opens the microphone from its own frames (the owner, November 15): its composer.action button and its background part see the microphone granted for their frame (a test build opens no device and asks no system), and a second plugin without the capability sees it denied",
 ] as const;
 
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
@@ -3267,10 +3267,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   });
 
   // 29: the microphone (`microphone`, the owner, November 15). Two ordinary plugins, each with a `composer.action` part (Alpha's composer)
-  // that asks for `getUserMedia({ audio: true })` as it mounts and reads a second and a bit of it: `acc-mic` holds the capability (and
-  // keeps a background part that does the same), `acc-mic-quiet` doesn't. The build's microphone is Chromium's generated stream, so no
-  // device is opened and the system is never asked. The holder's two parts report the samples read and a level above zero; the other
-  // plugin's part is refused with Chromium's words, not a stream.
+  // that reads the page's own view of the microphone as it mounts: `acc-mic` holds the capability (and keeps a background part that does
+  // the same), `acc-mic-quiet` doesn't. A test build opens no device and never asks the system (the macOS question would show a prompt),
+  // so nothing calls getUserMedia: the holder's parts see the permission granted and their frame allowed; the other plugin's part sees
+  // it denied and its frame blocked.
   await step(29, async () => {
     if (ctx.pressCard === undefined) fail("this run can't press a card");
     const parent = mkdtempSync(join(tmpdir(), "clover-mic-"));
@@ -3284,7 +3284,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return undefined;
     };
     const finished = (id: string, kind: string, what: string) =>
-      until(`${id}'s ${kind} part ${what}`, 60_000, async () => { const a = await part(id, kind); return a !== undefined && a["data-state"] !== "recording" ? a : undefined; }, async () => `${id}'s ${kind} part: ${JSON.stringify(await part(id, kind))}; its documents: ${(await cdp.documents()).filter((x) => x.url.includes("acc-mic")).map((x) => x.url.slice(0, 60)).join(" | ")}; log: ${ctx.appLog().split("\n").filter((l) => /acc-mic|microphone|media/i.test(l)).slice(-5).join(" // ")}`);
+      until(`${id}'s ${kind} part ${what}`, 60_000, async () => { const a = await part(id, kind); return a !== undefined && a["data-state"] !== "asking" ? a : undefined; }, async () => `${id}'s ${kind} part: ${JSON.stringify(await part(id, kind))}; its documents: ${(await cdp.documents()).filter((x) => x.url.includes("acc-mic")).map((x) => x.url.slice(0, 60)).join(" | ")}; log: ${ctx.appLog().split("\n").filter((l) => /acc-mic|microphone|media/i.test(l)).slice(-5).join(" // ")}`);
     const install = async (id: string) => {
       const folder = writeMicrophone(parent, id, { mic: id === MIC_IDS.holder });
       const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
@@ -3307,16 +3307,15 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await cdp.click(at.session, at.c.x, at.c.y);
       await sleep(600);
       for (const [id, kind] of [[MIC_IDS.holder, "composer"], [MIC_IDS.holder, "background"]] as const) {
-        const a = await finished(id, kind, "finished recording");
-        if (a["data-state"] !== "done") fail(`${id}'s ${kind} part got no microphone: ${a["data-error"]}`);
-        if (Number(a["data-samples"]) < 40_000 || !(Number(a["data-level"]) > 0.01)) fail(`${id}'s ${kind} part read ${a["data-samples"]} samples at level ${a["data-level"]}: not a stream`);
-        said.push(`${id}'s ${kind} part recorded ${a["data-samples"]} samples from the generated stream (level ${a["data-level"]})`);
+        const a = await finished(id, kind, "answered");
+        if (a["data-state"] !== "done") fail(`${id}'s ${kind} part couldn't ask: ${a["data-error"]}`);
+        if (a["data-perm"] !== "granted" || a["data-policy"] !== "allowed") fail(`${id}'s ${kind} part sees the microphone as ${a["data-perm"]} (frame policy ${a["data-policy"]}), not granted`);
+        said.push(`${id}'s ${kind} part sees the microphone granted and its frame allowed`);
       }
       const refused = await finished(MIC_IDS.other, "composer", "answered");
-      if (refused["data-state"] !== "refused") fail(`the plugin without the capability got a microphone (${JSON.stringify(refused)})`);
-      if (!/NotAllowedError|denied|not allowed/i.test(refused["data-error"] ?? "")) fail(`its refusal wasn't a plain message: ${refused["data-error"]}`);
-      said.push(`${MIC_IDS.other}'s part was refused: ${refused["data-error"]}`);
-      if (/permission|microphone.*system/i.test(ctx.appLog().split("\n").filter((l) => /system.*microphone|askForMediaAccess/i.test(l)).join(""))) fail("the system was asked for the microphone in a test build");
+      if (refused["data-state"] !== "done" || refused["data-perm"] === "granted" || refused["data-policy"] === "allowed") fail(`the plugin without the capability may use the microphone (${JSON.stringify(refused)})`);
+      said.push(`${MIC_IDS.other}'s part sees it ${refused["data-perm"]} and its frame ${refused["data-policy"]}`);
+      if (/system.*microphone|askForMediaAccess/i.test(ctx.appLog())) fail("the system was asked for the microphone in a test build");
       if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
       return said.join("; ");
     } finally {

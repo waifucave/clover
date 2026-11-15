@@ -446,11 +446,10 @@ export function writeBackground(root: string, id: string, o: { audio: boolean })
     ].join("\n"),
   });
 }
-/** The microphone plugins (window row 29): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer; the other plugin takes `attach`, since two plugins on one key leave one) and
- *  `app.background`; `acc-mic-quiet` fills `composer.action` and doesn't hold it. Each part, on its own as it mounts, asks for
- *  `getUserMedia({ audio: true })` and reads one second and a bit of it through a track processor (no audio context, so nothing
- *  needs a press), then says what came of it in its DOM: the samples read and the loudest of them, or the error's name and words.
- *  A test build's microphone is Chromium's generated stream (a beep each second), never a device. */
+/** The microphone plugins (window row 29): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer; the other plugin takes `level`, since two plugins on one key leave one) and
+ *  `app.background`; `acc-mic-quiet` fills `composer.action` and doesn't hold it. Each part reads
+ *  the page's own view of the microphone as it mounts (the permission state, which Chromium asks the app's check handler, and its
+ *  frame's policy, the iframe's `allow`) and says it in its DOM. No device is opened: a test build never asks the system. */
 export const MIC_IDS = { holder: "acc-mic", other: "acc-mic-quiet" } as const;
 export function writeMicrophone(root: string, id: string, o: { mic: boolean }): string {
   return writePlugin(join(root, id), {
@@ -458,7 +457,7 @@ export function writeMicrophone(root: string, id: string, o: { mic: boolean }): 
     ...(o.mic ? { capabilities: ["microphone"] } : {}),
     contributes: {
       ui: [
-        { spot: "composer.action", key: o.mic ? "model" : "attach", id: "mic", component: "MicButton", title: "Acceptance microphone" },
+        { spot: "composer.action", key: o.mic ? "model" : "level", id: "mic", component: "MicButton", title: "Acceptance microphone" },
         ...(o.mic ? [{ spot: "app.background", id: "listener", component: "Listener" }] : []),
       ],
     },
@@ -493,34 +492,21 @@ export function writeMicrophone(root: string, id: string, o: { mic: boolean }): 
       "  }, []);",
       "  return jsx(\"div\", { \"data-acc-background\": \"\", \"data-started\": String(startedAt), \"data-ticks\": String(s.ticks), \"data-ctx\": s.ctx, \"data-rms\": s.rms.toFixed(4), \"data-time\": s.time.toFixed(3), \"data-vis\": s.vis, children: \"background\" });",
       "}",
-      "async function record() {",
-      "  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });",
-      "  const track = stream.getAudioTracks()[0];",
-      "  const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();",
-      "  let samples = 0, level = 0, rate = 0;",
-      "  const until = Date.now() + 6000;",
-      "  while (Date.now() < until) {",
-      "    const { value, done } = await reader.read();",
-      "    if (done || value === undefined) break;",
-      "    rate = value.sampleRate;",
-      "    const buf = new Float32Array(value.numberOfFrames);",
-      "    value.copyTo(buf, { planeIndex: 0, format: \"f32-planar\" });",
-      "    for (const v of buf) level = Math.max(level, Math.abs(v));",
-      "    samples += value.numberOfFrames;",
-      "    value.close();",
-      "    if (samples >= rate * 1.2) break;",
-      "  }",
-      "  track.stop();",
-      "  return { samples, level, rate };",
+      "async function probe() {",
+      "  // No device is opened here: a test build never asks the system for the microphone. The page's own view of the permission",
+      "  // (Chromium asks the app's check handler) and of its frame's policy (the iframe's `allow`) is the proof.",
+      "  const q = await navigator.permissions.query({ name: \"microphone\" });",
+      "  const policy = document.permissionsPolicy || document.featurePolicy;",
+      "  return { perm: q.state, policy: policy && policy.allowsFeature ? (policy.allowsFeature(\"microphone\") ? \"allowed\" : \"blocked\") : \"unavailable\" };",
       "}",
       "function Part({ kind }) {",
-      "  const [s, set] = useState({ state: \"recording\", samples: 0, level: 0, error: \"\" });",
+      "  const [s, set] = useState({ state: \"asking\", perm: \"\", policy: \"\", error: \"\" });",
       "  useEffect(() => {",
       "    let live = true;",
-      "    record().then((r) => live && set({ state: \"done\", samples: r.samples, level: r.level, error: \"\" }), (e) => live && set({ state: \"refused\", samples: 0, level: 0, error: `${e && e.name}: ${e && e.message}` }));",
+      "    probe().then((r) => live && set({ state: \"done\", perm: r.perm, policy: r.policy, error: \"\" }), (e) => live && set({ state: \"failed\", perm: \"\", policy: \"\", error: `${e && e.name}: ${e && e.message}` }));",
       "    return () => { live = false; };",
       "  }, []);",
-      "  return jsx(\"div\", { \"data-acc-mic\": kind, \"data-state\": s.state, \"data-samples\": String(s.samples), \"data-level\": s.level.toFixed(4), \"data-error\": s.error, children: `mic ${kind}` });",
+      "  return jsx(\"div\", { \"data-acc-mic\": kind, \"data-state\": s.state, \"data-perm\": s.perm, \"data-policy\": s.policy, \"data-error\": s.error, children: `mic ${kind}` });",
       "}",
       "export const MicButton = () => jsx(Part, { kind: \"composer\" });",
       "export const Listener = () => jsx(Part, { kind: \"background\" });",
