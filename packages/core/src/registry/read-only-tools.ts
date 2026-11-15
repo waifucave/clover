@@ -17,6 +17,9 @@
 // The web tools (`webSearch`, `webFetch`): a call is judged as a web search or a page fetch, as Clover's own web plugin's
 // are. They hold for a top-level plugin on the tree the user OK'd (the card names them, with a warning), or for the
 // build's copy; never a dev folder.
+//
+// None of the lists holds for a tree that names programs it runs outside its sandbox (`host.outside.programs`, P5),
+// the build's copy's included (`treeRunsOutside`): every tool of it asks as any tool does.
 import { containedToolsHold, readOnlyReachesNetwork } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import type { PluginRegistry } from "../contracts/plugin-registry";
@@ -28,10 +31,23 @@ type DeclaredList = "readOnly" | "contained" | "webSearch" | "webFetch";
  *  folder, its source `bundled`): its manifest's claims hold as an OK's would. Absent: none is. */
 export type BuiltCopy = (pluginId: string) => boolean;
 
+/** Whether `pluginId`'s tree names programs of the user's it runs outside its sandbox (`host.outside.programs`, P5):
+ *  then none of its tools runs without a card, the build's copy's included. Its tools are its code, which can run those
+ *  programs with what a bot hands them. By the manifests, never by an id. */
+export function treeRunsOutside(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string): boolean {
+  const top = topPluginIdOf(pluginId);
+  const names = (m: unknown) => {
+    const p = (m as { host?: { outside?: { programs?: unknown } } } | undefined)?.host?.outside?.programs;
+    return Array.isArray(p) && p.length > 0;
+  };
+  return names(registry.get(top)?.manifest) || registry.list().some((x) => topPluginIdOf(x.id) === top && names(x.manifest));
+}
+
 /** A tool of a plugin of the build's copy on `list` of its server (any plugin of the copy, a child too): the build
- *  granted it, with no card and no network condition. */
-function builtTool(registry: Pick<PluginRegistry, "get">, pluginId: string, server: string, tool: string, list: DeclaredList, built: BuiltCopy | undefined): boolean {
+ *  granted it, with no card and no network condition, unless its tree runs programs outside its sandbox. */
+function builtTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, list: DeclaredList, built: BuiltCopy | undefined): boolean {
   if (built === undefined || !built(pluginId)) return false;
+  if (treeRunsOutside(registry, pluginId)) return false;
   const r = registry.get(pluginId);
   if (r === undefined || r.dev || r.state !== "running") return false;
   const s = (r.manifest?.contributes as { mcpServers?: Record<string, Partial<Record<DeclaredList, readonly string[]>>> } | undefined)?.mcpServers?.[server];
@@ -47,6 +63,8 @@ function builtTool(registry: Pick<PluginRegistry, "get">, pluginId: string, serv
 function declaredTool(registry: Pick<PluginRegistry, "get" | "list">, pluginId: string, server: string, tool: string, list: DeclaredList):
   { server: { type?: unknown; url?: unknown }; capabilities: string[]; wrappedNetwork: boolean } | undefined {
   if (topPluginIdOf(pluginId) !== pluginId) return undefined;
+  // A tree that runs programs outside its sandbox has no tool that skips the card (P5): its card says they still ask.
+  if (treeRunsOutside(registry, pluginId)) return undefined;
   const r = registry.get(pluginId);
   if (r === undefined || r.dev || r.state !== "running" || r.okHash === undefined || r.okHash !== r.treeHash) return undefined;
   const s = (r.manifest?.contributes as { mcpServers?: Record<string, { type?: unknown; url?: unknown } & Partial<Record<DeclaredList, readonly string[]>>> } | undefined)?.mcpServers?.[server];

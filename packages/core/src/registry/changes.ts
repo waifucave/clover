@@ -451,6 +451,16 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   return "applies";
 }
 
+/** What a fingerprint's `runs` names outside the sandbox (`host.outside`, P5), as canonical JSON: a change to either
+ *  list asks again, an update's too. */
+function outsideListsOf(fp: PluginFingerprint): string {
+  try {
+    return canonicalJson((JSON.parse(fp.runs) as { host?: { outside?: unknown } }).host?.outside ?? null);
+  } catch {
+    return fp.runs;
+  }
+}
+
 /** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON, with its web tools when it
  *  has any (they run without a card too). */
 function readOnlyOf(fp: PluginFingerprint): string {
@@ -486,6 +496,7 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (after.adult && !before.adult) return `${who} has adult content`;
     if (reachesMore(before, after)) return `${who} sends its keys or calls somewhere else`;
     if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
+    if (outsideListsOf(after) !== outsideListsOf(before)) return `${who} changes the programs it runs or the folders it reads outside its sandbox`;
     if (after.label !== before.label) return `${who} changes its name or its author`;
     if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
     if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;

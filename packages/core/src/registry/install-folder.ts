@@ -11,6 +11,7 @@
 //   the others the tree hash leaves out) aren't copied.
 // * The id is the manifest's `id`, else the source folder's name, and the folder is named by it. An id that's already
 //   installed here is refused (removing it first is the user's own act), and so is one from Clover's bundled plugins.
+import { homesOf } from "./outside-homes";
 import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -168,7 +169,7 @@ export function newStage(stagingDir: string): { dir: string; done(): void } {
  *  `clover plugin validate` runs, and renames it into the plugins folder under its id. */
 export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string; version?: string; check?: (id: string, treeHash: string) => void; from?: Partial<PluginProvenance> } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
   chmodSync(staged, 0o755);
-  const v = await validatePluginFolder(staged, ...(o.os ? [{ os: o.os }] : []));
+  const v = await validatePluginFolder(staged, { ...(o.os ? { os: o.os } : {}), homes: homesOf(o.pluginsDir) });
   if (!v.ok || v.plugin === undefined || v.treeHash === undefined) {
     const errors = v.issues.filter((i) => i.severity === "error").slice(0, 5).map((i) => `${i.file ? `${i.file}: ` : ""}${i.message}`);
     throw new ContractError("invalid", `the plugin isn't valid${errors.length > 0 ? `: ${errors.join("; ")}` : ""}`);
@@ -197,7 +198,7 @@ export async function installStaged(staged: string, o: InstallTarget, expect: { 
  *  the new one can't go in. The registry then judges the change against the user's last OK, as any edit. */
 export async function replaceStaged(staged: string, o: Pick<InstallTarget, "pluginsDir" | "os">, id: string): Promise<{ id: string; folder: string; treeHash: string }> {
   chmodSync(staged, 0o755);
-  const v = await validatePluginFolder(staged, ...(o.os ? [{ os: o.os }] : []));
+  const v = await validatePluginFolder(staged, { ...(o.os ? { os: o.os } : {}), homes: homesOf(o.pluginsDir) });
   if (!v.ok || v.plugin === undefined || v.treeHash === undefined) {
     const errors = v.issues.filter((i) => i.severity === "error").slice(0, 5).map((i) => `${i.file ? `${i.file}: ` : ""}${i.message}`);
     throw new ContractError("invalid", `the plugin isn't valid${errors.length > 0 ? `: ${errors.join("; ")}` : ""}`);

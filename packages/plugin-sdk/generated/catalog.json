@@ -3993,6 +3993,9 @@
     "host.on": {
       "where": "ui"
     },
+    "outside.run": {
+      "where": "host"
+    },
     "ui.send": {
       "where": "host"
     },

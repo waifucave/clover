@@ -477,6 +477,16 @@ export const ManifestSchema = z.strictObject({
      *  picked for it, its tree's network proxy, nothing more of the user's). Only with `process: "own"`; the OK card
      *  says so. */
     programs: z.literal(true).optional(),
+    /** Programs and folders of the user's outside the plugin sandbox (P5; the owner, 2026-11-15: "Yes, named on the
+     *  card"). `programs`: what its host half runs OUTSIDE the sandbox through `api.outside.run`, with the user's own
+     *  access (their sign-ins, their Keychain, their files, their network), each a bare name found on the user's PATH or
+     *  an absolute path; only these leave the sandbox. `read`: folders of the user's (`~/…` or an absolute path) its
+     *  host process reads, read only. The OK card names every one with a warning; a change to either list asks for the
+     *  OK again. A top-level plugin's only. */
+    outside: z.strictObject({
+      programs: z.array(utf16(1024, 1)).max(16).optional(),
+      read: z.array(utf16(1024, 1)).max(16).optional(),
+    }).optional(),
     /** Starts at once there (§5.2); otherwise only when needed. */
     start: RunsOn.optional(),
     /** Points the host serves (§5.4). */

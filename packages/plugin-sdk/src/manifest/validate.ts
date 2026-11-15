@@ -84,6 +84,9 @@ export interface ManifestReport {
   /** Its host half runs in a process of its own that runs programs (`host.programs`), fenced to its own folders and
    *  the files the user picks: the OK says so. */
   hostPrograms: boolean;
+  /** Programs of the user's its host half runs outside the sandbox, and folders of the user's it reads
+   *  (`host.outside`, P5), as its manifest names them: the OK names each with a warning. */
+  outside: { programs: string[]; read: string[] };
   addons: boolean;
   adult: boolean;
   bot: boolean;
@@ -345,7 +348,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], webTools: [], envSecrets: [], ownPrograms: false, hostPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], readOnlyTools: [], containedTools: [], webTools: [], envSecrets: [], ownPrograms: false, hostPrograms: false, outside: { programs: [], read: [] }, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -453,6 +456,23 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   // The OK card that says so is the top plugin's: a child's host may not run programs.
   if (isChild && isObject(top.host) && top.host.programs === true) {
     f.error("plugin", "host_programs_top_only", ["host", "programs"], "only a top-level plugin's host runs programs; move it to the top plugin");
+  }
+  // P5: programs and folders of the user's outside the sandbox, each named (the OK card lists them).
+  const outsideField = isObject(top.host) && isObject(top.host.outside) ? top.host.outside : undefined;
+  if (outsideField !== undefined && isChild) {
+    f.error("plugin", "outside_top_only", ["host", "outside"], "only a top-level plugin names programs and folders outside its sandbox; move it to the top plugin");
+  }
+  // Its own process: the folders it reads go in that process's fence alone, never a shared one's.
+  if (outsideField !== undefined && isObject(top.host) && top.host.process !== "own") {
+    f.error("plugin", "outside_own_process", ["host", "outside"], "a host half that names programs or folders outside its sandbox runs in a process of its own: add `\"process\": \"own\"` beside it");
+  }
+  if (outsideField !== undefined) {
+    (Array.isArray(outsideField.programs) ? outsideField.programs as unknown[] : []).forEach((p, i) => {
+      if (typeof p !== "string" || !outsideProgramOk(p)) f.error("plugin", "outside_program_invalid", ["host", "outside", "programs", i], `"${String(p)}" isn't a program: a name found on the PATH (letters, digits, ".", "_", "+", "-") or an absolute path, with no ".."`);
+    });
+    (Array.isArray(outsideField.read) ? outsideField.read as unknown[] : []).forEach((p, i) => {
+      if (typeof p !== "string" || !outsideFolderOk(p)) f.error("plugin", "outside_folder_invalid", ["host", "outside", "read", i], `"${String(p)}" isn't a folder it may read: "~/" and a folder, or an absolute path below the disk's top folders (not "/Users" or "/Volumes" themselves, nothing under "/System"), with no ".."; never the whole home or the whole disk`);
+    });
   }
 
   // A built plugin (`built: true`) names JavaScript modules only: TypeScript would mean the build didn't run.
@@ -664,6 +684,10 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   const ownPrograms = isObject(top.helper)
     || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const hostPrograms = !isChild && isObject(top.host) && top.host.programs === true && top.host.process === "own";
+  const outside = {
+    programs: [...new Set(outsideField !== undefined && Array.isArray(outsideField.programs) ? (outsideField.programs as unknown[]).filter((p): p is string => typeof p === "string") : [])],
+    read: [...new Set(outsideField !== undefined && Array.isArray(outsideField.read) ? (outsideField.read as unknown[]).filter((p): p is string => typeof p === "string") : [])],
+  };
   const ok = !f.refusesPlugin();
   return {
     ok,
@@ -686,6 +710,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     envSecrets,
     ownPrograms,
     hostPrograms,
+    outside,
     addons: top.addons !== undefined,
     adult: top.adult === true,
     bot: kept.bot !== undefined,
@@ -1451,10 +1476,16 @@ export function describeOk(
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
   // Lane C's ask: what this card shows is what may run without an approval card at the default level, nothing else.
   // A server that can reach the network gets no skip (`readOnlyReachesNetwork`), and the card says its tools still ask.
-  const treeNet = { capabilities: opts.treeCapabilities ?? report.capabilities, wrappedNetwork: opts.wrappedNetwork === true || opts.networkOpen === true, fenced: opts.sandboxed !== false };
-  for (const r of report.readOnlyTools ?? []) lines.push(...readOnlyOkLines(r, readOnlyReachesNetwork(r, treeNet)));
-  for (const r of report.containedTools ?? []) lines.push(...containedOkLines(r, containedToolsHold(r, treeNet)));
-  for (const w of report.webTools ?? []) lines.push(...webToolOkLines(w));
+  // A plugin that names programs of the user's it runs outside its sandbox (P5) gets no tool that runs without a card:
+  // a tool is its own code, which could run them with what a bot hands it. Its card says its tools still ask.
+  const runsOutside = (report.outside?.programs.length ?? 0) > 0;
+  const treeNet = { capabilities: opts.treeCapabilities ?? report.capabilities, wrappedNetwork: opts.wrappedNetwork === true || opts.networkOpen === true, fenced: opts.sandboxed !== false, runsOutside };
+  if (runsOutside) lines.push(...outsideToolsOkLines(report));
+  else {
+    for (const r of report.readOnlyTools ?? []) lines.push(...readOnlyOkLines(r, readOnlyReachesNetwork(r, treeNet)));
+    for (const r of report.containedTools ?? []) lines.push(...containedOkLines(r, containedToolsHold(r, treeNet)));
+    for (const w of report.webTools ?? []) lines.push(...webToolOkLines(w));
+  }
   if (report.envSecrets.length > 0) {
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }
@@ -1463,9 +1494,56 @@ export function describeOk(
   // elsewhere the line below says they run without the sandbox.
   if (report.hostPrograms === true) lines.push(opts.sandboxed === false ? HOST_PROGRAMS_OK_LINE_UNFENCED : HOST_PROGRAMS_OK_LINE);
   if (opts.sandboxed === false && report.class === "code") lines.push("Its programs run without Clover's sandbox on this computer.");
+  lines.push(...outsideOkLines(report.outside ?? { programs: [], read: [] }));
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   return lines;
+}
+
+/** A program a manifest may name outside the sandbox: a bare name found on the PATH, or an absolute path with no `..`. */
+export function outsideProgramOk(p: string): boolean {
+  if (/[\u0000-\u001f\u007f]/.test(p)) return false;
+  if (p.startsWith("/")) return p.length > 1 && !p.split("/").includes("..") && !p.endsWith("/");
+  return /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(p);
+}
+
+/** A folder a manifest may name to read outside the sandbox: `~/` and a folder, or an absolute path below `/`, with no
+ *  `..`; never the whole home or the whole disk. */
+export function outsideFolderOk(p: string): boolean {
+  if (/[\u0000-\u001f\u007f]/.test(p)) return false;
+  const rest = p.startsWith("~/") ? p.slice(2) : p.startsWith("/") ? p.slice(1) : undefined;
+  if (rest === undefined) return false;
+  const parts = rest.split("/").filter((s) => s !== "");
+  if (parts.length === 0 || parts.includes("..") || parts.includes(".")) return false;
+  // An absolute path names a folder below the disk's top folders, never one of them (`/Users`, `/home`, `/Volumes`,
+  // `/private` hold every home), and nothing of the system's own (`/System` reaches the homes another way). The core
+  // also refuses any folder that holds the user's home or Clover's.
+  // Case-folded: the disk is case-insensitive by default, so `/system` is `/System`.
+  if (p.startsWith("/")) return parts.length >= 2 && parts[0]!.toLowerCase() !== "system";
+  return true;
+}
+
+/** The OK card's lines for what a plugin names outside its sandbox (P5), each a warning: every program it runs with the
+ *  user's own access, and every folder of the user's it reads. */
+export function outsideOkLines(o: { programs: readonly string[]; read: readonly string[] }): string[] {
+  const lines: string[] = [];
+  // One line a program: what it is (any arguments the plugin chooses, the user's own access) is the whole of the risk.
+  for (const program of o.programs) lines.push(`${OUTSIDE_PROGRAM_LINE}: ${program}.`);
+  if (o.read.length > 0) lines.push(`It reads ${o.read.length === 1 ? "this folder" : "these folders"} of yours outside its sandbox: ${o.read.join(", ")}.`);
+  return lines;
+}
+
+/** The start of the OK card's line for each program a plugin runs outside its sandbox (P5); the program follows. */
+export const OUTSIDE_PROGRAM_LINE = "It runs this program of yours outside Clover's sandbox, with whatever arguments it chooses and your own access (your sign-ins, your Keychain, your files and your network)";
+
+/** The OK card's lines for the tools of a plugin that runs programs outside its sandbox (P5): each server that says its
+ *  tools only read, only change its display or search or read the web, one line saying they still ask (its tools are
+ *  its own code, which can run those programs with what a bot hands them). */
+export function outsideToolsOkLines(report: Pick<ManifestReport, "readOnlyTools" | "containedTools" | "webTools">): string[] {
+  const servers = new Map<string, number>();
+  for (const r of [...(report.readOnlyTools ?? []), ...(report.containedTools ?? [])]) servers.set(r.server, (servers.get(r.server) ?? 0) + r.tools.length);
+  for (const w of report.webTools ?? []) servers.set(w.server, (servers.get(w.server) ?? 0) + w.search.length + w.fetch.length);
+  return [...servers].map(([server, n]) => `Its server ${server} says ${n === 1 ? "one tool needs" : `${n} tools need`} no asking, but this plugin runs programs of yours outside its sandbox, so ${n === 1 ? "it still asks" : "they still ask"} before running.`);
 }
 
 /** The OK card's line for a host half that runs programs (`host.programs`), where the plugin fence holds them. */
@@ -1492,9 +1570,11 @@ function serverReachesNetwork(s: { type?: unknown; url?: unknown }): boolean {
  *  bot puts in its arguments. The call-time check (`pluginToolReadOnly`) and the OK card read this same rule. */
 export function readOnlyReachesNetwork(
   server: { type?: unknown; url?: unknown; network?: boolean } | undefined,
-  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean },
+  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean; runsOutside?: boolean },
 ): boolean {
-  return server === undefined || server.network === true || serverReachesNetwork(server) || !tree.fenced || tree.wrappedNetwork
+  // A tree that names programs it runs outside its sandbox (P5, `host.outside.programs`): its code reaches what they
+  // reach, the network included, with what a bot hands a tool.
+  return server === undefined || server.network === true || serverReachesNetwork(server) || !tree.fenced || tree.wrappedNetwork || tree.runsOutside === true
     || tree.capabilities.some((c) => typeof c === "string" && c.startsWith("network:"));
 }
 
@@ -1529,7 +1609,7 @@ export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
  *  (`pluginToolContained`) and the OK card read this same rule. */
 export function containedToolsHold(
   server: { type?: unknown; url?: unknown; network?: boolean } | undefined,
-  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean },
+  tree: { capabilities: readonly string[]; wrappedNetwork: boolean; fenced: boolean; runsOutside?: boolean },
 ): boolean {
   return !readOnlyReachesNetwork(server, tree) && tree.capabilities.every((c) => typeof c === "string" && CONTAINED_TOOL_CAPABILITIES.includes(c));
 }

@@ -47,6 +47,10 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 - `process: "own"`: a process of its own under Bun too. Needed for `secrets.get` (plugin-host).
 - `programs: true` (with `process: "own"`, in a top-level plugin only): the host half may run programs on the computer,
   such as ffmpeg, within its own folders and the files the user picks (plugin-host, "Programs"). The OK card says so.
+- `outside: { programs, read }` (with `process: "own"`, in a top-level plugin only): programs of the user's its host half
+  runs outside the sandbox with the user's own access (`api.outside.run`), and folders of the user's it reads (plugin-host,
+  "Outside the sandbox"). The OK card names each with a warning; a change to either list asks again. Naming a program
+  means none of its tools skips the card (`readOnly`, `contained`, `webSearch`, `webFetch` don't hold).
 - `start`: `each`, `main` or `chosen`: start at once on those computers; without it the host half starts when
   something needs it (a tool call, a component's `host.call`). `chosen` is the computer the plugin is added on, and
   `main` moves with the main computer. The OK card says it runs in the background, and where.
