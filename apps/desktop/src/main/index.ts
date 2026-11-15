@@ -2605,6 +2605,12 @@ async function smoke(): Promise<void> {
             // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
             log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
+            // The covered run's own fact: whether the button had been reported visible BEFORE the cover went on (the page's last
+            // verdict), so the press below waits for the verdict to flip, never for a delay.
+            let coverToken: string | null = null;
+            try { coverToken = new URL(frame.url).searchParams.get("token"); } catch { coverToken = null; }
+            const visibleBeforeCover = cover === true && coverToken !== null && sealed.isTokenVisible(coverToken);
+            const coverAt = Date.now();
             if (cover === true) {
               await frame.executeJavaScript(`(() => {
                 const b = document.querySelector('.seal-button');
@@ -2628,6 +2634,17 @@ async function smoke(): Promise<void> {
             // sleep, and the page refuses presses it hasn't seen yet (its 500 ms visible gate starts at the verdict,
             // so a seen verdict waits out a further beat). Caps at ~10 s; a button that never reports (covered,
             // dimmed) still gets its press on timeout, which the page refuses.
+            if (cover === true && coverToken !== null) {
+              // A button the page had already reported visible keeps that verdict until its next IOv2 report: the press waits for the report
+              // that the cover hides it (the app's own record of what covers a sealed card), up to 10 s, and says how long it took.
+              if (visibleBeforeCover) {
+                const stop = Date.now() + 10_000;
+                while (sealed.isTokenVisible(coverToken) && Date.now() < stop) await new Promise((r) => setTimeout(r, 50));
+                log(`sealed-click: cover verdict ${sealed.isTokenVisible(coverToken) ? "never flipped" : "not visible"} after ${Date.now() - coverAt} ms (was visible before the cover)`);
+              } else {
+                log(`sealed-click: cover verdict never visible (not reported visible before the cover)`);
+              }
+            }
             await new Promise((r) => setTimeout(r, 800));
             let seenToken: string | null = null;
             try {
