@@ -68,10 +68,12 @@ export async function ingest(args: UsageIngestArgs, ctx: Pick<HandlerContext, "a
   const settleMs = everyMs / 2;
   let budget = o.spawnBudget ?? 40;
   let more = false;
+  let missing = false;
   let allRun: OpencodeStats | undefined;
   const run = async (a: readonly string[]): Promise<OpencodeStats | undefined> => {
     budget -= 1;
     const r = await runOpencodeStats(outside, a, o.timeoutMs === undefined ? {} : { timeoutMs: o.timeoutMs });
+    if (r.failure === "not-installed") missing = true;
     if (r.stats === undefined) log.push(`opencode stats gave no reading: ${r.failure ?? "no-json"}`);
     return r.stats;
   };
@@ -79,7 +81,7 @@ export async function ingest(args: UsageIngestArgs, ctx: Pick<HandlerContext, "a
   const days = (k: number): Promise<OpencodeStats | undefined> => run(opencodeDaysArgs(k));
   // Today's latest run: every pair is judged against the one before it and the one after it.
   let current = await days(1);
-  if (current === undefined) return { log };
+  if (current === undefined) return { ...(missing ? { notInstalled: true as const } : {}), log };
   let failed = false;
   if (!listed) {
     const a = await all();

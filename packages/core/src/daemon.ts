@@ -1587,7 +1587,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): Clover's own turns as they end, the user's Codex and
   // Claude Code usage ingested ON DEMAND. Its own SQLite file (`<home>/usage/usage.db`), never runtime-state.db.
   const usage = createUsageService({
-    home: cloverHome, settings: () => settings, codexWindows, version: CORE_VERSION,
+    home: cloverHome, settings: () => settings, codexWindows,
     // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
     // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
     userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
@@ -3940,6 +3940,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The registry's load-time build of a TypeScript client entry (a plugin with the user's OK for its tree): the view
     // names the module once it lands.
     clientBuilds = new ClientBuilds({ cloverHome, registry: opened.registry, log: (line) => console.error(`[plugins] ${line}`) });
+    // The `usage.sources` entries (a plugin's tool readers): the usage service asks them through the host, only now it is up.
+    const usageHost = pluginHost;
+    usage?.attach({
+      port: {
+        entries: () => opened.registry.entries("usage.sources").flatMap((c) => {
+          const v = c.value as { id?: unknown; name?: unknown; handler?: unknown; provides?: unknown; planEveryMs?: unknown };
+          if (c.state !== "active" || typeof v.id !== "string" || typeof v.handler !== "string" || !Array.isArray(v.provides)) return [];
+          const provides = v.provides.filter((p): p is "plan" | "usage" => p === "plan" || p === "usage");
+          return [{ pluginId: c.pluginId, id: v.id, name: typeof v.name === "string" ? v.name : v.id, handler: v.handler, provides, ...(typeof v.planEveryMs === "number" ? { planEveryMs: v.planEveryMs } : {}) }];
+        }),
+        call: (e, method, args, timeoutMs) => usageHost.host.invoke({ pluginId: e.pluginId, handler: e.handler, method, args, caller: { kind: "core" }, timeoutMs }),
+      },
+      // A fired plan alarm goes out through the general notify door, as the Usage plugin's own notice.
+      notify: (n) => { notifyService?.send(`${BUNDLED_ROOT_PLUGIN}/usage`, n); },
+    });
     const hostSettings = pluginHost.settings;
     pluginUiParts = pluginUi({
       registry: opened.registry, router: pluginHost.gate, settings: { layerView: (id, key) => hostSettings.layerView(id, key), layerSet: (id, key, value) => hostSettings.layerSet(id, key, value) }, emit: (event) => void cloverServer?.coreEvent(event), builds: clientBuilds,

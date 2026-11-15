@@ -139,6 +139,8 @@ export interface UsageIngestArgs {
 }
 
 export interface UsageIngestReply {
+  /** The tool is not on this computer: the Usage settings do not offer its switch. */
+  notInstalled?: true;
   /** New records to add (a record the store knows is skipped). */
   records?: readonly UsageRecord[];
   /** Spans whose records are REPLACED as a whole (a day's total that grows through the day); written only when they

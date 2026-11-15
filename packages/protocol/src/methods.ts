@@ -496,16 +496,17 @@ export const ELICITATION_NOT_ACTIVE = "elicitation_not_active";
  *  runtime's own list price, Clover's list-price estimate (a subscription's tokens, another app's usage), the other
  *  app's own figure (`reported`, OpenCode) or unknown. */
 export const UsageRangeSchema = z.enum(["1h", "24h", "7d", "30d", "all"]);
-export const UsageSourceSchema = z.enum(["winter", "codex", "claude-code", "opencode"]);
+/** A usage source is a name a `usage.sources` entry holds (`codex`, `claude-code`, any a plugin brings) or `winter` (Clover's own). */
+export const UsageSourceSchema = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 export const UsageSummaryParams = z.object({
   range: UsageRangeSchema.default("24h"),
-  sources: z.array(UsageSourceSchema).max(4).optional(),
+  sources: z.array(UsageSourceSchema).max(32).optional(),
   /** Read the plans too (default true). */
   plans: z.boolean().optional(),
 });
 export const UsageSeriesParams = z.object({
   range: UsageRangeSchema.default("7d"),
-  sources: z.array(UsageSourceSchema).max(4).optional(),
+  sources: z.array(UsageSourceSchema).max(32).optional(),
 });
 export const UsageSubscriptionInput = z.object({
   id: utf16(64, 1).optional(),
@@ -516,7 +517,7 @@ export const UsageSubscriptionInput = z.object({
   cadence: z.enum(["monthly", "yearly"]),
   renewalDay: z.number().int().min(1).max(31),
   renewalMonth: z.number().int().min(1).max(12).optional(),
-  covers: z.array(z.string().regex(/^(codex|claude-code|opencode|winter|winter:[a-z0-9-]{1,40})$/)).max(8).default([]),
+  covers: z.array(z.string().regex(/^([a-z][a-z0-9-]{0,39}|winter:[a-z0-9-]{1,40})$/)).max(8).default([]),
 });
 export const UsageSubscriptionsSetParams = z.object({ subscription: UsageSubscriptionInput });
 /** Writes `settings.usage.<app>.enabled` (live: the next ask honours it, no restart). */
@@ -527,7 +528,7 @@ export const UsageSubscriptionsRemoveParams = z.object({ id: utf16(64, 1) });
 /** The user's one-shot plan alarms: a plan, one of its windows by its STABLE key (the plan reading's `windowKey` — its
  *  kind and scope), a whole-percent threshold. A fired alarm is deleted. `set` answers the alarm (one already set for the
  *  same window and threshold is answered instead) and the whole list; `list` and `remove` the list. */
-export const UsageAlarmProviderSchema = z.enum(["codex", "claude-code", "antigravity"]);
+export const UsageAlarmProviderSchema = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 export const UsageAlarmsListParams = z.object({});
 export const UsageAlarmsSetParams = z.object({
   provider: UsageAlarmProviderSchema,

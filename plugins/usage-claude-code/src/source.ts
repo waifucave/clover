@@ -254,5 +254,5 @@ export async function ingest(args: UsageIngestArgs, o: ClaudeSourceOptions = {})
     }
     history = { claudeCodeStats: { from: span.first, before: utcNoon(before) } };
   }
-  return { records: read.records, more: read.more, state, ...(estimates === undefined ? {} : { estimates }), ...(history === undefined ? {} : { history }), log };
+  return { records: read.records, more: read.more, state, ...(estimates === undefined ? {} : { estimates, history: history ?? {} }), log };
 }

@@ -1,42 +1,28 @@
-import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { PlanWindowReports } from "./codex-windows";
 import { usageTrackingFrom, type Settings } from "../settings";
 import { UsageDb } from "./db";
 import { UsagePricer } from "./pricing";
 import { UsageService } from "./service";
-import { probeEnv, resolveExecutable } from "./spawn-lines";
+import { SOURCE_ID, type UsageSourceEntry, type UsageSourcePort } from "./sources";
 
-// Boot wiring for usage tracking (`docs/claude/usage.md`). Whose apps: the daemon's `userHome` — the user's home folder
-// for the daemon on its default home (`isDefaultCloverHome`), NONE for any other (a temp-home or test daemon): then
-// nothing below falls back to a home folder, `$CODEX_HOME`, `$CLAUDE_CONFIG_DIR`, the install places or `$PATH`, and
-// only an explicit `CLOVER_USAGE_*` or an injection names a root or an executable. Where the user's apps keep their
-// files, for a daemon that has a `userHome`:
-//  - Codex: `$CLOVER_USAGE_CODEX_HOME` (tests) → `$CODEX_HOME` → `<userHome>/.codex`;
-//  - Claude Code: `$CLOVER_USAGE_CLAUDE_HOME` (tests) → `$CLAUDE_CONFIG_DIR` → `<userHome>/.claude`, and its
-//    `.claude.json` (`$CLOVER_USAGE_CLAUDE_JSON` → `$CLAUDE_CONFIG_DIR/.claude.json` → `<userHome>/.claude.json`);
-//  - the executables: `$CLOVER_USAGE_CODEX_EXECUTABLE` / `$CLOVER_USAGE_CLAUDE_EXECUTABLE` /
-//    `$CLOVER_USAGE_AGY_EXECUTABLE` / `$CLOVER_USAGE_OPENCODE_EXECUTABLE` (authoritative: a missing path or "off" means none) → the usual install places
-//    → `$PATH`.
-// Both test preloads point every `CLOVER_USAGE_*` at nothing, so no test daemon ever reads or spawns the real ones, and
-// switch the background plan checks off (`CLOVER_USAGE_BACKGROUND=off`).
+// Boot wiring for usage tracking (spec §12 "Usage sources"). The core reads no app: a tool's usage is a `usage.sources`
+// entry's, a plugin's, called through the plugin host once it is up (`attach`; the host starts after this service does).
+// Whose apps: the daemon's `userHome` — the user's home folder for the daemon on its default home (`isDefaultCloverHome`),
+// NONE for any other (a temp-home or test daemon): such a daemon calls NO entry unless one is named, because a plugin
+// runs the user's own programs with the user's own access (`api.outside`). Named by `injection.sources` (a list of source
+// names; `null` = none) or `$CLOVER_USAGE_SOURCES` (a comma list; `off` = none).
+// Both test preloads set `CLOVER_USAGE_SOURCES=off`, so no test daemon ever reads or runs the real ones, and switch the
+// background plan checks off (`CLOVER_USAGE_BACKGROUND=off`).
 
-/** What a usage service reads (diagnostics and tests): its roots, and the executables it would run now. */
+/** What a usage service may call (diagnostics and tests): the entries it would ask now. */
 export interface UsageSources {
-  codexHome?: string;
-  claudeHome?: string;
-  claudeJsonPath?: string;
-  executables(): { codex?: string | undefined; claude?: string | undefined; agy?: string | undefined; opencode?: string | undefined };
+  entries(): Array<{ id: string; pluginId: string }>;
 }
 
 export interface UsageInjection {
-  codexHome?: string | null;
-  claudeHome?: string | null;
-  claudeJsonPath?: string | null;
-  codexExecutable?: string | null;
-  claudeExecutable?: string | null;
-  agyExecutable?: string | null;
-  opencodeExecutable?: string | null;
+  /** The source names this daemon may call (a test or a fixture); `null` = none; absent = by the user home. */
+  sources?: readonly string[] | null;
   now?: () => number;
   /** The background catch-up: false = off (tests); its timings. */
   catchUp?: boolean;
@@ -45,78 +31,61 @@ export interface UsageInjection {
   /** The background plan checks and the alarms' fast beats (`UsageService.startBackground`): false = off; its timings. */
   background?: boolean;
   backgroundEveryMs?: number;
-  alarmBeatMs?: { codex?: number; "claude-code"?: number; antigravity?: number };
-}
-
-// The usual absolute install places, tried before `$PATH` (Homebrew, /usr/local, ~/.local, npm-global, the app bundle).
-// Functions, never module constants: every process of the `clover-core` binary loads this module — the sandboxed
-// automation worker too, whose environment has no HOME and whose seatbelt refuses the user lookup, so a `homedir()`
-// at load throws there and the worker never starts.
-export const codexInstalls = (home: string): string[] => [
-  "/opt/homebrew/bin/codex", "/usr/local/bin/codex", join(home, ".local/bin/codex"), join(home, ".npm-global/bin/codex"),
-  "/Applications/Codex.app/Contents/Resources/codex",
-];
-export const claudeInstalls = (home: string): string[] => [
-  "/opt/homebrew/bin/claude", "/usr/local/bin/claude", join(home, ".local/bin/claude"), join(home, ".claude/local/claude"),
-  join(home, ".npm-global/bin/claude"),
-];
-/** Antigravity's CLI (Homebrew installs it as `agy`). */
-export const agyInstalls = (home: string): string[] => [
-  "/opt/homebrew/bin/agy", "/usr/local/bin/agy", join(home, ".local/bin/agy"), join(home, ".npm-global/bin/agy"),
-];
-/** OpenCode (Homebrew, its own install script's `~/.opencode/bin`, npm). */
-export const opencodeInstalls = (home: string): string[] => [
-  "/opt/homebrew/bin/opencode", "/usr/local/bin/opencode", join(home, ".opencode/bin/opencode"), join(home, ".local/bin/opencode"),
-  join(home, ".npm-global/bin/opencode"),
-];
-
-/** The JS package managers' global bins (bun, volta, pnpm, every nvm node): a CLI installed through one of them is
- *  still "on this Mac" when the app's `$PATH` is the bare launchd one. */
-export function packageManagerBins(name: string, home: string): string[] {
-  const out = [join(home, ".bun/bin", name), join(home, ".volta/bin", name), join(home, "Library/pnpm", name)];
-  try {
-    for (const v of readdirSync(join(home, ".nvm/versions/node"))) out.push(join(home, ".nvm/versions/node", v, "bin", name));
-  } catch { /* no nvm */ }
-  return out;
+  alarmBeatMs?: Record<string, number>;
 }
 
 /**
- * A daemon that must never read or spawn the user's own apps — every one booted OUTSIDE the tests and the real
- * daemon (the probes, the verify gates, the live and e2e suites, `check:idle-wakeups`): every root and executable is
- * none, the background plan beat and the catch-up off. `test/usage/script-daemons.test.ts` pins every such entry.
+ * A daemon that must never read or run the user's own apps — every one booted OUTSIDE the tests and the real daemon (the
+ * probes, the verify gates, the live and e2e suites, `check:idle-wakeups`): no source is called, the background plan beat
+ * and the catch-up off. `test/usage/script-daemons.test.ts` pins every such entry.
  */
-export const USAGE_INERT: UsageInjection = Object.freeze({
-  codexHome: null, claudeHome: null, claudeJsonPath: null, codexExecutable: null, claudeExecutable: null, agyExecutable: null,
-  opencodeExecutable: null, catchUp: false, background: false,
-});
+export const USAGE_INERT: UsageInjection = Object.freeze({ sources: null, catchUp: false, background: false });
 
 /** The same for a daemon spawned as a process (`clover daemon run`, a compiled `clover-core`): its environment. */
 export const USAGE_INERT_ENV: Readonly<Record<string, string>> = Object.freeze({
-  CLOVER_USAGE_CODEX_HOME: "off", CLOVER_USAGE_CLAUDE_HOME: "off", CLOVER_USAGE_CLAUDE_JSON: "off",
-  CLOVER_USAGE_CODEX_EXECUTABLE: "off", CLOVER_USAGE_CLAUDE_EXECUTABLE: "off", CLOVER_USAGE_AGY_EXECUTABLE: "off",
-  CLOVER_USAGE_OPENCODE_EXECUTABLE: "off", CLOVER_USAGE_BACKGROUND: "off", CLOVER_USAGE_CATCH_UP: "off",
+  CLOVER_USAGE_SOURCES: "off", CLOVER_USAGE_BACKGROUND: "off", CLOVER_USAGE_CATCH_UP: "off",
 });
 
-function pick(injected: string | null | undefined, env: string | undefined, fallback: () => string | undefined): string | undefined {
-  if (injected !== undefined) return injected ?? undefined;
-  // "off" names no directory (as for the executables): authoritative, never a fall-through.
-  if (env === "off") return undefined;
-  if (env !== undefined && env.length > 0) return env;
-  return fallback();
+/** Which source names a daemon may call: undefined = every one (the user's own computer), a set = only those. */
+export function allowedSources(opts: { userHome: string | undefined; injection?: UsageInjection; env?: Readonly<Record<string, string | undefined>> }): Set<string> | "all" | "none" {
+  const inj = opts.injection?.sources;
+  if (inj === null) return "none";
+  if (inj !== undefined) return new Set(inj.filter((s) => SOURCE_ID.test(s)));
+  const env = (opts.env ?? process.env).CLOVER_USAGE_SOURCES;
+  if (env === "off") return "none";
+  if (env !== undefined && env.length > 0) return new Set(env.split(",").map((s) => s.trim()).filter((s) => SOURCE_ID.test(s)));
+  return opts.userHome === undefined ? "none" : "all";
+}
+
+/** The port the usage service calls through. The plugin host starts after the service, so it is bound late (`attach`);
+ *  until then, and for a daemon that may call no source, it has no entries. */
+export class LateUsagePort implements UsageSourcePort {
+  private real: UsageSourcePort | undefined;
+  constructor(private readonly allowed: () => Set<string> | "all" | "none") {}
+  attach(real: UsageSourcePort | undefined): void { this.real = real; }
+  entries(): UsageSourceEntry[] {
+    const allowed = this.allowed();
+    if (this.real === undefined || allowed === "none") return [];
+    const all = this.real.entries();
+    return allowed === "all" ? all : all.filter((e) => allowed.has(e.id));
+  }
+  async call(entry: UsageSourceEntry, method: "plan" | "ingest", args: unknown, timeoutMs: number): Promise<unknown> {
+    if (this.real === undefined || !this.entries().some((e) => e.pluginId === entry.pluginId && e.id === entry.id)) throw new Error("usage source is not available");
+    return this.real.call(entry, method, args, timeoutMs);
+  }
 }
 
 export function createUsageService(opts: {
   home: string;
-  /** Whose apps it reads (`<userHome>/.codex`, `/.claude`, their install places): the user's home folder for the daemon
-   *  on its default home, undefined for any other, which then reads no app at all unless one is named explicitly. */
+  /** Whose apps it reads: the user's home folder for the daemon on its default home, undefined for any other, which then
+   *  calls no source unless one is named explicitly. */
   userHome: string | undefined;
   settings: () => Settings | null | undefined;
-  /** The plan windows Codex sessions reported while they ran: the Codex plan's fallback reading. */
+  /** The plan windows Codex sessions reported while they ran: handed to every source as data (`reports["codex-oauth"]`). */
   codexWindows?: PlanWindowReports;
-  version?: string;
   injection?: UsageInjection;
   log?: { warn?: (msg: string, meta?: Record<string, unknown>) => void; info?: (msg: string, meta?: Record<string, unknown>) => void };
-}): { service: UsageService; sources: UsageSources; close(): void } | undefined {
+}): { service: UsageService; sources: UsageSources; attach(host: { port?: UsageSourcePort; notify?: (notice: { title: string; body: string }) => void }): void; close(): void } | undefined {
   const env = process.env;
   const inj = opts.injection ?? {};
   let db: UsageDb;
@@ -126,45 +95,19 @@ export function createUsageService(opts: {
     console.error(`[usage] usage.db unavailable: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
-  // No user home (a temp-home or test daemon): no fallback at all, the env's pointers into a home included.
-  const user = opts.userHome;
-  const claudeConfigDir = user !== undefined && env.CLAUDE_CONFIG_DIR !== undefined && env.CLAUDE_CONFIG_DIR.length > 0 ? env.CLAUDE_CONFIG_DIR : undefined;
-  const codexHome = pick(inj.codexHome, env.CLOVER_USAGE_CODEX_HOME, () => user === undefined ? undefined : env.CODEX_HOME || join(user, ".codex"));
-  const claudeHome = pick(inj.claudeHome, env.CLOVER_USAGE_CLAUDE_HOME, () => user === undefined ? undefined : claudeConfigDir ?? join(user, ".claude"));
-  const claudeJsonPath = pick(inj.claudeJsonPath, env.CLOVER_USAGE_CLAUDE_JSON, () => user === undefined ? undefined : claudeConfigDir !== undefined ? join(claudeConfigDir, ".claude.json") : join(user, ".claude.json"));
-  // An executable named explicitly is used (or "off"); otherwise it is looked for only with a user home: its install
-  // places and `$PATH`. Without one, none is looked for.
-  const explicit = (injected: string | null | undefined, envValue: string | undefined): string | undefined =>
-    injected !== undefined ? (injected ?? "off") : envValue ?? (user === undefined ? "off" : undefined);
-  const installs = (own: (home: string) => string[], name: string): string[] => (user === undefined ? [] : [...own(user), ...packageManagerBins(name, user)]);
-  const executables = {
-    codex: () => resolveExecutable("codex", explicit(inj.codexExecutable, env.CLOVER_USAGE_CODEX_EXECUTABLE), installs(codexInstalls, "codex")),
-    claude: () => resolveExecutable("claude", explicit(inj.claudeExecutable, env.CLOVER_USAGE_CLAUDE_EXECUTABLE), installs(claudeInstalls, "claude")),
-    agy: () => resolveExecutable("agy", explicit(inj.agyExecutable, env.CLOVER_USAGE_AGY_EXECUTABLE), installs(agyInstalls, "agy")),
-    opencode: () => resolveExecutable("opencode", explicit(inj.opencodeExecutable, env.CLOVER_USAGE_OPENCODE_EXECUTABLE), installs(opencodeInstalls, "opencode")),
-  };
-  const probeRoot = join(opts.home, "usage");
+  const port = new LateUsagePort(() => allowedSources({ userHome: opts.userHome, injection: inj }));
+  let notify: ((notice: { title: string; body: string }) => void) | undefined;
   const pricer = new UsagePricer();
   const service = new UsageService({
-    db, pricer,
+    db, pricer, sources: port,
     tracking: () => usageTrackingFrom(opts.settings()),
-    ...(codexHome === undefined ? {} : { codexHome }),
-    ...(claudeHome === undefined ? {} : { claudeHome }),
-    ...(claudeJsonPath === undefined ? {} : { claudeJsonPath }),
-    codexExecutable: executables.codex,
-    claudeExecutable: executables.claude,
-    agyExecutable: executables.agy,
-    opencodeExecutable: executables.opencode,
-    cloverCodexWindows: () => (opts.codexWindows?.windowsFor("codex-oauth") ?? []).map((w) => ({
-      ...(w.rateLimitType === undefined ? {} : { rateLimitType: w.rateLimitType }), status: w.status,
-      ...(w.resetsAt === undefined ? {} : { resetsAt: w.resetsAt }), at: w.at,
-    })),
-    probeRoot: () => probeRoot,
-    // A probe's environment: with a user home, the allowlist and the tool's own home variables, HOME being that home;
-    // without one (a temp-home or test daemon running an explicitly named executable), HOME is the daemon's own home
-    // and no tool-home variable (CODEX_HOME, CLAUDE_CONFIG_DIR, XDG_*) crosses (#386's review).
-    probeEnv: (extra) => (user === undefined ? { ...probeEnv([]), HOME: opts.home } : { ...probeEnv(extra), HOME: user }),
-    ...(opts.version === undefined ? {} : { version: opts.version }),
+    reports: () => ({
+      "codex-oauth": (opts.codexWindows?.windowsFor("codex-oauth") ?? []).map((w) => ({
+        ...(w.rateLimitType === undefined ? {} : { rateLimitType: w.rateLimitType }), status: w.status,
+        ...(w.resetsAt === undefined ? {} : { resetsAt: w.resetsAt }), at: w.at,
+      })),
+    }),
+    notify: (n) => notify?.(n),
     ...(inj.now === undefined ? {} : { now: inj.now }),
     ...(inj.backgroundEveryMs === undefined ? {} : { backgroundEveryMs: inj.backgroundEveryMs }),
     ...(inj.alarmBeatMs === undefined ? {} : { alarmBeatMs: inj.alarmBeatMs }),
@@ -185,17 +128,13 @@ export function createUsageService(opts: {
     every.unref?.();
     timers.push(first, every);
   }
-  // The background plan checks (user 2026-10-18): every installed and tracked plan every 30 min, and a plan with an
-  // alarm on its own throttle. Unref'd; off with the env switch (both test preloads) or the injection.
+  // The background plan checks (user 2026-10-18): every plan every 30 min, and a plan with an alarm on its own throttle.
+  // Unref'd; off with the env switch (both test preloads) or the injection.
   if (inj.background !== false && env.CLOVER_USAGE_BACKGROUND !== "off") service.startBackground();
   return {
     service,
-    sources: {
-      ...(codexHome === undefined ? {} : { codexHome }),
-      ...(claudeHome === undefined ? {} : { claudeHome }),
-      ...(claudeJsonPath === undefined ? {} : { claudeJsonPath }),
-      executables: () => ({ codex: executables.codex(), claude: executables.claude(), agy: executables.agy(), opencode: executables.opencode() }),
-    },
+    sources: { entries: () => port.entries().map((e) => ({ id: e.id, pluginId: e.pluginId })) },
+    attach: (host) => { if (host.port !== undefined) port.attach(host.port); if (host.notify !== undefined) notify = host.notify; },
     close: () => {
       service.stopBackground();
       for (const t of timers) clearTimeout(t);
