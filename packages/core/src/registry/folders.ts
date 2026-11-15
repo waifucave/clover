@@ -8,12 +8,13 @@
 import { shownCode } from "../approvals/strings";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, backgroundOkLines, catalogPointDecl, describeOk, fillsOkLines, hookOkLines, parseJsonc, treeHash, validateTree, type FillsDecl, type FillsOf, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { canonicalJson, topPluginIdOf } from "@waifucave/clover-protocol";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
 import type { Manifest } from "../contracts/sdk-types";
-import { classifyChange, codeFieldsFrom, okSnapshot, updateAddsTrigger, workshopAdds, type CodeFieldsOf, type OkSnapshot } from "./changes";
+import { classifyChange, codeFieldsFrom, fillsAdded, okSnapshot, updateAddsTrigger, workshopAdds, type CodeFieldsOf, type OkSnapshot } from "./changes";
 import type { Leftovers } from "./leftovers";
 
 /** The code fields of the catalog's points; a point the catalog doesn't declare counts as code whole. */
@@ -130,6 +131,8 @@ export interface PluginFoldersOptions {
   apiVersion?: string;
   /** The fields of a plugin point whose format is `program` or `code`. */
   codeFieldsOf?: CodeFieldsOf;
+  /** The `fills` line of a point a plugin declares, as the registry knows it now (its fillers' OK cards show it). */
+  fillsOf?: FillsOf;
   settleMs?: number;
   /** How often the catch-up look runs (`CATCH_UP_MS`; 0: never). */
   catchUpMs?: number;
@@ -153,7 +156,7 @@ const firstError = (issues: readonly ValidationIssue[]) => issues.find((i) => i.
 /** Reads a top-level plugin folder. */
 export async function readPluginFolder(
   folder: string,
-  opts: { source: PluginSource; dev?: boolean; bundled?: boolean; apiVersion?: string; codeFieldsOf?: CodeFieldsOf; provenance?: PluginProvenance },
+  opts: { source: PluginSource; dev?: boolean; bundled?: boolean; apiVersion?: string; codeFieldsOf?: CodeFieldsOf; fillsOf?: FillsOf; provenance?: PluginProvenance },
 ): Promise<ReadFolder> {
   const name = basename(folder);
   const base = { source: opts.source, folder, ...(opts.dev ? { dev: true } : {}), ...(opts.provenance ? { provenance: opts.provenance } : {}) };
@@ -202,7 +205,10 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = treeOk ? { ...okSnapshot(hash, entries, tree, ownPointsFirst(tree, opts.codeFieldsOf ?? catalogCodeFields), loader.inside), okLines: treeOkLines(folder, tree) } : undefined;
+  // The `fills` lines are what the points it fills give it, in their declarers' words: one it didn't show at its OK asks
+  // again, on an edit, an update, or the declarer's change of its words (`classifyChange`).
+  const fills = treeOk ? fillsOkLines([tree.top, ...tree.children.map((c) => c.report)], opts.fillsOf) : [];
+  const snapshot = treeOk ? { ...okSnapshot(hash, entries, tree, ownPointsFirst(tree, opts.codeFieldsOf ?? catalogCodeFields), loader.inside), okLines: treeOkLines(folder, tree, opts.fillsOf), fills } : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
@@ -221,10 +227,29 @@ interface Source {
  *  it came from: the lines an update may not add or alter without a new OK (`updateAddsTrigger`). Left out on purpose:
  *  the source line and the wrapper's lines (the install record's, never the tree's; wrappers don't
  *  update), and the per-computer lines (non-macOS logins, no sandbox here, host code held), which follow the class. */
-export function treeOkLines(folder: string, tree: TreeReport): string[] {
+/** A point's `fills` (`FillsOf`) as the registry knows it now: from the active declaration of a point a plugin declares,
+ *  named by its declarer's own name and titled by the declaration's `title` (else the point's name); undefined for a
+ *  point with none, or none declared here. The core's points' come from the catalog (`fillsOkLines`). */
+export function fillsFrom(registry: Pick<RegistryCore, "points" | "get">, point: string): FillsDecl | undefined {
+  const p = registry.points().find((x) => x.name === point && x.active && x.declaredBy !== "core");
+  const fills = p?.decl?.fills;
+  if (p === undefined || p.declaredBy === "core" || fills === undefined) return undefined;
+  const id = p.declaredBy.pluginId;
+  const textOf = (t: unknown): string | undefined => (typeof t === "string" ? t : typeof t === "object" && t !== null && typeof (t as { en?: unknown }).en === "string" ? (t as { en: string }).en : undefined);
+  return {
+    by: textOf(registry.get(id)?.manifest?.name) ?? id,
+    title: textOf(p.decl?.title) ?? point,
+    ok: fills.ok,
+    ...(fills.warns === true ? { warns: true } : {}),
+    tree: topPluginIdOf(id),
+  };
+}
+
+export function treeOkLines(folder: string, tree: TreeReport, fillsOf?: FillsOf): string[] {
   const all = [tree.top, ...tree.children.map((c) => c.report)];
   return [
     ...describeOk(tree.top, { restylesCards: tree.restylesCards, treeCapabilities: all.flatMap((m) => m.capabilities) }),
+    ...fillsOkLines(all, fillsOf),
     ...hookOkLines(all),
     ...backgroundOkLines(all),
     ...agentEnvLines(folder, tree),
@@ -340,6 +365,34 @@ export class PluginFolders {
     for (const r of reads) if (r.snapshot) this.#current.set(r.id, r.snapshot);
     this.#o.core.putAll(reads.flatMap((r) => r.inputs), removed);
     this.#armExpiry();
+    await this.#fillsMoved();
+  }
+
+  /** The `fills` lines points declare, by point, as last seen (`#fillsMoved`). */
+  #fillsSeen = new Map<string, string>();
+
+  /** A declarer that added, changed or dropped a point's `fills` line: its fillers are read again, so their OK cards say
+   *  the new words and an OK given without them asks again (`classifyChange`). Also after the first scan, whose fillers
+   *  were read before their declarers were known. */
+  async #fillsMoved(): Promise<void> {
+    if (this.#o.fillsOf === undefined) return;
+    const now = new Map<string, string>();
+    for (const p of this.#o.core.points()) {
+      if (!p.active || p.declaredBy === "core" || p.decl?.fills === undefined) continue;
+      now.set(p.name, canonicalJson({ fills: p.decl.fills, title: p.decl.title ?? null, by: p.declaredBy.pluginId }));
+    }
+    const moved = [...new Set([...now.keys(), ...this.#fillsSeen.keys()])].filter((name) => now.get(name) !== this.#fillsSeen.get(name));
+    this.#fillsSeen = now;
+    const fillers = new Set<string>();
+    for (const point of moved) {
+      const declarer = this.#o.core.points().find((p) => p.name === point && p.declaredBy !== "core")?.declaredBy;
+      const tree = declarer !== undefined && declarer !== "core" ? topPluginIdOf(declarer.pluginId) : undefined;
+      for (const c of this.#o.core.entries(point)) if (topPluginIdOf(c.pluginId) !== tree) fillers.add(topPluginIdOf(c.pluginId));
+    }
+    for (const id of fillers) {
+      const folder = this.#byFolder.get(id);
+      if (folder !== undefined) await this.refresh(folder);
+    }
   }
 
   /** A bot's session made `name` in the plugins folder (its file tools' write, or a shell call it ran): the folder's
@@ -562,6 +615,8 @@ export class PluginFolders {
     const removed = was !== undefined && was !== r.id ? [was] : [];
     for (const id of removed) this.#wentAway(id);
     this.#o.core.putAll(r.inputs, [...removed, ...this.#staleChildren(r)]);
+    // A point's `fills` line it declares may have changed: its fillers are read again (not awaited: they may be many).
+    void this.#fillsMoved().catch((err: unknown) => this.#o.log?.(`plugins: reading the fillers of ${r.id}'s points again failed: ${(err as Error)?.message ?? String(err)}`));
     // The workshop rule (§5.6, the controller's ruling): a bot's in-place change that asks for more stops the plugin and
     // puts its sealed OK card before the user at once, as an install does; a later change while it waits replaces that
     // card (the core keeps one per plugin).
@@ -601,6 +656,8 @@ export class PluginFolders {
           treeCapabilities: [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities),
           wrappedNetwork: r.provenance.wrapped?.network !== undefined,
         }),
+        // What the points it fills give it, in their declarers' words (a point's `fills`).
+        ...fillsOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)], this.#o.fillsOf),
         // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
         ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         // What it runs without being asked: its routine triggers, and where its host code runs in the background.
@@ -747,6 +804,7 @@ export class PluginFolders {
       ...(s.dev ? { dev: true } : {}),
       ...(this.#o.apiVersion ? { apiVersion: this.#o.apiVersion } : {}),
       ...(this.#o.codeFieldsOf ? { codeFieldsOf: this.#o.codeFieldsOf } : {}),
+      ...(this.#o.fillsOf ? { fillsOf: this.#o.fillsOf } : {}),
     });
     // A tree new to the records, found on disk (copied in by hand, or there at start): what an earlier plugin under its
     // id left is kept for the same tree or source, else forgotten first; a forget that fails leaves this one unread.
@@ -797,9 +855,17 @@ export class PluginFolders {
           ?? "its code changed, and its OK covers only the tree it was given for";
       this.#o.log?.(`${r.id}: asks again: ${why.replace(/[\r\n]+/g, " ")}`);
     }
+    // Its OK card gained a point's `fills` line (its declarer's new words, or an entry it added): the same tree asks
+    // again, since the OK covered a card without it. Not a bundled tree or a development folder (OK'd as they are).
+    const gained = ok && r.snapshot && !s.bundled && !s.dev ? fillsAdded(ok, r.snapshot) : undefined;
+    if (gained !== undefined && stored?.okHash !== undefined && this.#askedSaid.get(r.id) !== `fills:${gained}`) {
+      this.#askedSaid.set(r.id, `fills:${gained}`);
+      this.#o.log?.(`${r.id}: asks again: its OK card now says: ${gained}`);
+    }
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
+      if (gained !== undefined) input.asksAgain = true;
       if (workshop) input.workshop = true;
     }
     this.#byFolder.set(r.id, resolve(s.folder));

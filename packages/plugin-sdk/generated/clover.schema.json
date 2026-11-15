@@ -363,6 +363,7 @@
             "memory": {
               "$ref": "#/$defs/__schema1"
             },
+            "voice": {},
             "declares": {
               "$ref": "#/$defs/__schema27"
             }
@@ -897,6 +898,23 @@
           },
           "title": {
             "$ref": "#/$defs/__schema0"
+          },
+          "fills": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "warns": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "ok"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

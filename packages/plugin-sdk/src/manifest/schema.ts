@@ -36,8 +36,12 @@ export const PointDeclSchema = z.strictObject({
   /** One filler at a time (§5.4 "One at a time"): the platform keeps which entry is active, the user's choice in
    *  Settings or the default (the first bundled filler, else the first installed); `points.active` reads it. */
   oneAtATime: z.boolean().optional(),
-  /** The point's own title: Settings' picker for a one-at-a-time point is titled by it ("Voice", "Stage"). */
+  /** The point's own title: Settings' picker for a one-at-a-time point is titled by it ("Voice", "Stage"), and a
+   *  `fills` line names the point by it. */
   title: Text.optional(),
+  /** The line its fillers' OK cards show (`fillsOkLines`): what a plugin that fills this point is given or does, in the
+   *  declarer's words, shown as plain text and attributed to the declarer. `warns`: shown as a caution. */
+  fills: z.strictObject({ ok: utf16(300, 1), warns: z.boolean().optional() }).optional(),
 });
 
 export const DeclaresSchema = z.record(PointName, PointDeclSchema);
@@ -111,6 +115,9 @@ export const BotSchema = z.strictObject({
   greeting: Path.optional(),
   /** Starter memories, copied once into the bot's memory folder. */
   memory: Path.optional(),
+  /** Retired: a bot's voice is no longer set here (the validator warns, and nothing reads it). A plugin gives its bot
+   *  a default voice on Clover Voice's point `clover.voice.defaults`. Accepted so an older bot still loads. */
+  voice: z.unknown().optional(),
   ...declares,
 });
 

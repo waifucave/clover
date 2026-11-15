@@ -324,6 +324,20 @@ describe("contributes", () => {
     expect(r.ok).toBe(true);
     expect(r.issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:theme_ref"]);
   });
+
+  test("an older bot's voice still loads: it only warns, and is ignored", () => {
+    const r = validateManifest({ ...min(), contributes: { bot: { name: "Luna", instructions: "i.md", voice: { provider: "fish-audio", voice: "v1" } } } });
+    expect(r.ok).toBe(true);
+    expect(r.issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:bot_voice"]);
+    expect((r.manifest?.contributes?.bot as Record<string, unknown>).voice).toBeUndefined();
+  });
+
+  test("a point declares the line its fillers' OK cards show (fills): bounded, and it needs no title", () => {
+    const decl = (fills: unknown) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", declares: { "luna.voices": { shape: "list", fields: { type: "object", properties: { id: { type: "string" } } }, fills } } } }, { folderName: "luna" });
+    expect(decl({ ok: "it is given what your bots say", warns: true }).issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(decl({ ok: "x".repeat(301) }).ok).toBe(false);
+    expect(decl({ ok: "fine", loud: true }).ok).toBe(false);
+  });
 });
 
 describe("servers, tools and interpolation", () => {

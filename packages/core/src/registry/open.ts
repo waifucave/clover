@@ -10,7 +10,7 @@ import { ContractError } from "../contracts/common";
 import type { SecretStore } from "../contracts/secret-store";
 import { codeFieldsFrom } from "./changes";
 import { RegistryCore, thisPlatform } from "./core";
-import { PluginFolders } from "./folders";
+import { PluginFolders, fillsFrom } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
 import { pluginFenceAvailable } from "./plugin-fence";
 import { fileRegistryStore, type RegistryStore } from "./state";
@@ -132,6 +132,8 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     core: registry, store, pluginsDir: join(o.cloverHome, "plugins"),
     // A point's code fields from the catalog's declaration, or its declarer's; none at all counts as code whole.
     codeFieldsOf: (point) => codeFieldsFrom(catalogPointDecl(point) ?? registry.points().find((p) => p.name === point)?.decl),
+    // A point's `fills` line, from its declarer, named by the declarer's own name (its fillers' OK cards show it).
+    fillsOf: (point) => fillsFrom(registry, point),
     ...(o.bundledDirs ? { bundledDirs: o.bundledDirs } : {}),
     ...(o.settleMs === undefined ? {} : { settleMs: o.settleMs }),
     ...(o.now ? { now: o.now } : {}),

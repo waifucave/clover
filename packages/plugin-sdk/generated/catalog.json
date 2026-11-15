@@ -314,7 +314,11 @@
       "kind": "code",
       "runsOn": "the computer the user is talking on",
       "doc": "Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover Voice's own point (`clover.voice.providers`).",
-      "shipsWith": "Fish Audio"
+      "shipsWith": "Fish Audio",
+      "title": "Voice listening",
+      "fills": {
+        "ok": "plugins you allow can ask it to transcribe, using your account with it"
+      }
     },
     {
       "name": "voiceModes",
@@ -326,7 +330,10 @@
       "doc": "The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listening half until it is re-founded); a mode that speaks the replies also offers its `reply` on Clover Voice's own point (`clover.voice.modes`).",
       "shipsWith": "Clover Voice",
       "oneAtATime": true,
-      "title": "Voice"
+      "title": "Voice",
+      "fills": {
+        "ok": "when you choose it in Settings, it hears what you say with push-to-talk"
+      }
     },
     {
       "name": "turns",

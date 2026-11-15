@@ -14,7 +14,7 @@ import {
 import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
-import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
+import { CORE_POINTS, CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
 import { OWN_PANEL_KEY_RE, SAME_ON_EVERY_TAB, SPOT_NAMES, botsOffer, foldTitle, isOwnPanelKey, isReservedPluginName, spotInfo } from "../catalogs/spots";
 import { holdsBot, marksAppParts, pluginParts, skillItem } from "./parts";
 import { treePathProblem } from "../formats/tree-hash";
@@ -550,6 +550,13 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   if (isObject(kept.bot) && typeof kept.bot.theme === "string") {
     const themes = Array.isArray(kept.themes) ? (kept.themes as { id: string }[]).map((t) => t.id) : [];
     if (!themes.includes(kept.bot.theme)) f.warn("theme_ref", ["contributes", "bot", "theme"], `"${kept.bot.theme}" is none of this plugin's themes; the tab uses the base theme`);
+  }
+
+  // A bot's voice was once set here: an older bot still loads, the field ignored (a plugin gives its bot a default voice
+  // on Clover Voice's point instead).
+  if (isObject(kept.bot) && kept.bot.voice !== undefined) {
+    f.warn("bot_voice", ["contributes", "bot", "voice"], "a bot's voice is no longer set here and this is ignored; give your bot a default voice with `clover.voice.defaults` (Clover Voice's point), which the user's own choice overrides");
+    delete (kept.bot as Record<string, unknown>).voice;
   }
 
   // Tool names are unique within a top-level plugin and contain no `__` (§5.9, §6.7).
@@ -1300,12 +1307,55 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   return lines;
 }
 
-/** A voice mode's lines on its OK card (§6.6, push-to-talk): it hears push-to-talk only when the user chooses it, and
- *  it uses the voice providers' listening (`voices.use`, which it holds by being a voice mode). */
-export const VOICE_MODE_OK_LINE = "It can replace Clover's voice: when you choose it in Settings › Voice, it hears what you say with push-to-talk.";
+/** A voice mode uses the voice providers' listening (`voices.use`, which it holds by being a voice mode). What it is
+ *  given as a voice mode, and a provider's line, are the `fills` lines of their core points (`fillsOkLines`). */
 export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it asks them to transcribe, which may use your accounts with them.";
-/** A voice provider's line (`voices`): its entry is an endpoint other plugins may call. */
-export const VOICE_PROVIDER_OK_LINE = "Plugins you allow can ask it to transcribe, using your account with it.";
+
+/** A point's `fills` line as its declarer wrote it, with who declared it and its title (§5.4): the core's points'
+ *  from `CORE_POINTS` (declared by Clover), a plugin's from its declaration. `tree`: the declarer's top-level id (its
+ *  own tree's entries get no line). */
+export interface FillsDecl { by: string; title: string; ok: string; warns?: boolean; tree?: string }
+/** The `fills` of a point a plugin declares, as the registry knows it now (undefined: none, or not declared here). */
+export type FillsOf = (point: string) => FillsDecl | undefined;
+
+/** The most a `fills` line's parts may run to once made plain. */
+export const FILLS_OK_MAX = 300;
+const FILLS_NAME_MAX = 80;
+
+/** Text as one plain line: control, line-break and direction-override characters to one space, runs of space to one,
+ *  trimmed and cut to `max`. A declarer's words are shown as text, never as markup. */
+export function plainLine(s: string, max: number): string {
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** One filler's line for a point with `fills`, attributed to its declarer so it can't pass as Clover's words. */
+export function fillsLine(f: FillsDecl): string {
+  const ok = plainLine(f.ok, FILLS_OK_MAX).replace(/[.!?]$/, "");
+  const line = `Fills ${plainLine(f.by, FILLS_NAME_MAX)}'s "${plainLine(f.title, FILLS_NAME_MAX)}": ${ok}.`;
+  return f.warns === true ? `Careful: ${line}` : line;
+}
+
+/** The core point's `fills`, from the catalog. */
+function coreFills(point: string): FillsDecl | undefined {
+  const p = CORE_POINTS.find((x) => x.name === point);
+  return p?.fills === undefined ? undefined : { by: "Clover", title: p.title ?? p.name, ok: p.fills.ok, ...(p.fills.warns === true ? { warns: true } : {}) };
+}
+
+/** The `fills` lines of a tree's OK card (§5.4, §5.6): one per point with a `fills` line that the tree's plugins fill
+ *  (a core point's from the catalog; another plugin's through `declared`), the cautions first. A point the tree
+ *  declares itself, and a point with no `fills`, show nothing. */
+export function fillsOkLines(reports: readonly ManifestReport[], declared?: FillsOf): string[] {
+  const top = reports.find((r) => r.id !== undefined && !r.id.includes("/"))?.id;
+  const points = new Set<string>();
+  for (const r of reports) for (const c of r.contributions) if (c.entries > 0) points.add(c.point);
+  const decls: FillsDecl[] = [];
+  for (const point of points) {
+    const f = coreFills(point) ?? (point.includes(".") ? declared?.(point) : undefined);
+    if (f === undefined || (f.tree !== undefined && top !== undefined && f.tree === top)) continue;
+    decls.push(f);
+  }
+  return [...decls.filter((d) => d.warns === true), ...decls.filter((d) => d.warns !== true)].map(fillsLine);
+}
 
 /** A plugin that fills the island's `island.line` point (the owner's ruling, 2026-11-14): the card says it puts words on the
  *  island, so the user has seen that before it can. */
@@ -1420,11 +1470,7 @@ export function describeOk(
   lines.push(...ownPanelLines(report.manifest));
   if (report.contributions.some((c) => c.point === "island.line")) lines.push(ISLAND_LINE_OK_LINE);
   if ((report.manifest?.contributes?.ui ?? []).some((e) => (e as { spot?: string; hide?: boolean }).spot === "app.background" && (e as { hide?: boolean }).hide !== true)) lines.push(BACKGROUND_OK_LINE);
-  if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0) {
-    lines.push(VOICE_MODE_OK_LINE);
-    if (!report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);
-  }
-  if ((report.manifest?.contributes?.voices?.length ?? 0) > 0) lines.push(VOICE_PROVIDER_OK_LINE);
+  if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0 && !report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);
   for (const cap of report.capabilities) {
     if (parseCapability(cap)?.kind === "network") continue;
     const text = capabilityOkText(cap);

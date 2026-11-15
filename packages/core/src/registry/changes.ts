@@ -67,6 +67,11 @@ export interface OkSnapshot {
    *  at the OK: an update that adds or alters one asks again (the controller's principle: every line the card shows is
    *  covered). Absent in older snapshots: read as changed. */
   okLines?: string[];
+  /** The OK card's `fills` lines (`fillsOkLines`): what the points it fills give it, in their declarers' words, as they
+   *  read at the OK. A line it didn't show then asks again, whatever changed: an edit that adds an entry to such a point,
+   *  an update, or the declarer's change of its words (the fillers are read again, `PluginFolders.#fillsMoved`).
+   *  Absent in older snapshots: none were shown. */
+  fills?: string[];
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -420,6 +425,8 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
 
 /** What the change from the OK'd tree to `now` does. */
 export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
+  // A `fills` line the OK didn't show: before the tree's own hash, since the declarer's words change with no change here.
+  if (fillsAdded(ok, now) !== undefined) return "asks-again";
   if (now.okHash === ok.okHash) return "applies";
   const was = new Map(ok.files.map((f) => [f.path, f]));
   const is = new Map(now.files.map((f) => [f.path, f]));
@@ -449,6 +456,11 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   if ((now.skin ?? "") !== (ok.skin ?? "")) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";
+}
+
+/** The first `fills` line `now` shows that the OK didn't, or undefined. */
+export function fillsAdded(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  return (now.fills ?? []).find((l) => !(ok.fills ?? []).includes(l));
 }
 
 /** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON, with its web tools when it
