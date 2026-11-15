@@ -36,8 +36,8 @@ How to read it:
 | `hooks` | list | code | Calls them in the turn loop; a hook can block or adjust, never replace the runtime or skip approvals. |
 | `commands` | list | code | Runs a plugin's public functions for any client at once, with no model turn (§5.4). |
 | `triggers` | keyed | code | Arms them for routine files (§7). |
-| `voices` | list | code | Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes. |
-| `voiceModes` | list | code | The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears p… |
+| `voices` | list | code | Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover… |
+| `voiceModes` | list | code | Push-to-talk's voice mode (§6.6, the listening half until it is re-founded): one is active (Settings › Voice, Clover Voice's `active` setting) and hears push-t… |
 | `turns` | list | data | Names of the plugin's own one-at-a-time turns that another plugin may take (`<plugin id>/<name>`, §5.4 "Turns"); its own need no entry. |
 | `computerProviders` | keyed | code | Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2). |
 | `computer` | single | data | A cloud computer, created after the user's OK (§9.2). |
@@ -125,7 +125,7 @@ How to read it:
 | `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | reports your bots' figures | Clover's own plugins only |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
 | `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one… | hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices | a warning |
-| `voices.use` | Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back | can ask your voice providers to speak or transcribe, which may use your accounts with them | a warning |
+| `voices.use` | Ask the voice providers (`voices` entries) to transcribe audio, getting the text back | can ask your voice providers to transcribe, which may use your accounts with them | a warning |
 | `call:<plugin-id>` | Run that plugin's commands | runs commands of {plugin} |  |
 | `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards | Clover's own plugins only |
 | `network:<host>` | Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host | connects to {host} |  |
@@ -134,7 +134,7 @@ How to read it:
 
 `where`: `host` a host half, `ui` a component, `both` either, `own` a host half in a process of its own (`host.process: "own"`), `clover` Clover's own process only.
 
-- **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (clover), `desktop.show` (clover), `host.call` (ui), `host.on` (ui), `keys.delete` (clover), `keys.open` (clover), `keys.publicKey` (clover), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `points.call` (both), `points.entries` (both), `points.stream` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `speech.modes` (both), `speech.piece` (host), `speech.play` (host), `speech.stop` (host), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `streams.accept` (both), `streams.ack` (both), `streams.cancel` (both), `streams.end` (both), `streams.open` (both), `streams.write` (both), `t` (ui), `turns.done` (both), `turns.extend` (both), `turns.state` (both), `turns.take` (both), `turns.watch` (both), `ui.send` (host)
+- **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (clover), `desktop.show` (clover), `host.call` (ui), `host.on` (ui), `keys.delete` (clover), `keys.open` (clover), `keys.publicKey` (clover), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `points.call` (both), `points.entries` (both), `points.stream` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `streams.accept` (both), `streams.ack` (both), `streams.cancel` (both), `streams.end` (both), `streams.open` (both), `streams.write` (both), `t` (ui), `turns.done` (both), `turns.extend` (both), `turns.state` (both), `turns.take` (both), `turns.watch` (both), `ui.send` (host)
 - **call:***: `commands.run` (both)
 - **network:***: `net.fetch` (both)
 - **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both), `conversation.watch` (both)
@@ -155,8 +155,8 @@ How to read it:
 - **avatar.control**: `avatar.cue` (both)
 - **avatar.read**: `avatar.box` (both), `avatar.catalogue` (both), `avatar.watch` (both)
 - **avatar.report**: `avatar.report` (ui)
-- **audio**: `audio.onRecording` (both), `audio.play` (both)
-- **voices.use**: `voices.feed` (host), `voices.listen` (host), `voices.providers` (both), `voices.speak` (host)
+- **audio**: `audio.onRecording` (both)
+- **voices.use**: `voices.feed` (host), `voices.listen` (host), `voices.providers` (both)
 
 ## Hook events (`contributes.hooks[].on`) and what a hook may return on each
 

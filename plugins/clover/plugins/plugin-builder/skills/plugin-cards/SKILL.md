@@ -1,6 +1,6 @@
 ---
 name: plugin-cards
-description: What makes Clover ask the user about a plugin - the OK card at install, what an edit or update asks again for, tool calls and the read-only and display-only lists, a plugin's own confirm card, the model and voice cards - and how to design a plugin that asks for the least. Read it before choosing a plugin's capabilities, hosts or hooks.
+description: What makes Clover ask the user about a plugin - the OK card at install, what an edit or update asks again for, tool calls and the read-only and display-only lists, a plugin's own confirm card, the model card - and how to design a plugin that asks for the least. Read it before choosing a plugin's capabilities, hosts or hooks.
 ---
 
 # Cards: what asks the user, and how to ask for the least
@@ -66,7 +66,6 @@ Never put a tool that changes anything outside the plugin's display on either li
 
 - A plugin whose bot picks its own model (`bot.model.default`): the user gets a card before the bot first uses that
   provider. Leave `model` out to use the user's default model and skip it.
-- A plugin whose bot has a `voice`: a card before that voice first speaks.
 - `required` settings and sign-ins (`auth`): not cards, but the plugin waits until the user fills them in.
 
 ## Asking for the least

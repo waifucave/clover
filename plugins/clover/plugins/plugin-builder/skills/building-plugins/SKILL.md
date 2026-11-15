@@ -33,7 +33,7 @@ A plugin that brings a bot (a `bot` entry) holds two kinds of things:
 | how the user turns it off | with the bot (the plugin's own switch) | one switch for all of them ("its parts beyond the bot's tab"), so the user can keep the bot and turn the rest off |
 
 **What Bots offers a bot, on its own tab only:** everything inside the tab (`bot.tab`, `bot.header`,
-`bot.header.action`, `bot.stage`, `bot.side`, `bot.controls`, `conversation`, `conversation.message`,
+`bot.header.action`, `bot.stage`, `bot.stage.action`, `bot.side`, `bot.controls`, `conversation`, `conversation.message`,
 `conversation.message.extra`, `conversation.message.action`, `tool.result`, `composer`, `composer.action`, `avatar`,
 `file.preview`); the top bar, which it may restyle or replace (`bar`, `chrome.title`, `chrome.action`,
 `chrome.actions`, `chrome.sidebar`, `chrome.drag`); and the right panels (`panel` keyed `browser` or `agent`, or a panel of its own under any other key, which needs a `title`,

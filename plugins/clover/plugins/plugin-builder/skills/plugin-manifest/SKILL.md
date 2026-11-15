@@ -91,8 +91,8 @@ Each key below is one of the core's points. A key with a dot (`alpha.scenes`) is
 spot is never a key here, it goes in `ui`. plugin-catalog lists every point and spot.
 
 - **`bot`** (one): `name`, `instructions` (a Markdown file), and optionally `model: { default: "<qualified id>",
-  effort }`, `avatar: { file, format: "vrm" | "live2d" | a renderer plugin's format, portrait }`, `voice: { provider,
-  voice, model, listen }`, `theme` (one of this plugin's theme ids), `layout` (a layout file for its tab), `greeting`
+  effort }`, `avatar: { file, format: "vrm" | "live2d" | a renderer plugin's format, portrait }`, `theme` (one of this
+  plugin's theme ids), `layout` (a layout file for its tab), `greeting`
   (Markdown), `memory` (a folder of starter memories).
 - **`models`** (list): `provider` (an entry id), `name`, `terms`, `catalog` (a path to rows, or the rows), `auth`
   (sign-ins, may be `[]`), and either `endpoint: { protocol: "openai-chat" | "openai-responses" |
@@ -115,9 +115,12 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
   only that one. `key` is a default shortcut (building-plugins, "Limits today").
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
-- **`voices`** (list): `{ id, name, speak, listen, auth, handler }`.
-- **`voiceModes`** (list, at most one): `{ id, name, handler }`: a voice mode for the voice slot (Settings › Voice);
-  the active one speaks the bots' replies and plays sound as their voices through its one queue.
+- **`voices`** (list): `{ id, name, speak, listen, auth, handler }`: a provider's listening, for push-to-talk (its
+  `listen`). To speak for the bots, fill Clover Voice's own point instead: `"clover.voice.providers": [{ id, name,
+  speak }]`, whose `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes (`points.stream`).
+- **`voiceModes`** (list, at most one): `{ id, name, handler }`: push-to-talk's voice mode (Settings › Voice); the chosen
+  one hears push-to-talk. To speak the replies your own way when chosen, add `"clover.voice.modes": [{ id, name,
+  reply }]` and play in a background part of your own, taking `device/speech` (plugin-host, "Turns").
 - **`turns`** (list): `{ name, doc }`: one of the plugin's own one-at-a-time turns (`<plugin id>/<name>`) that other
   plugins may take too (plugin-host, "Turns"). Its own turns need no entry; another plugin's take of one it doesn't list
   is refused.
