@@ -112,6 +112,10 @@ whole thing; plugin-host, "Tools that drive a page", says what the tools may do.
 - `api.turns.take(name, opts)` works in a component too (plugin-host, "Turns"): the same queue as the host halves'.
   A component's turn ends when its frame goes (the part removed, its page reloaded or asleep), so a part that must
   keep a turn while it is out of sight takes it in its host half.
+- `api.streams.open(name, opts)` and `api.streams.accept(name, (stream, meta) => …)` work in a component too
+  (plugin-host, "Streams"): a Web `WritableStream<Uint8Array>` to your host half and a `ReadableStream<Uint8Array>` from
+  it, for audio, frames and files, with back-pressure. A component opens to its host half and accepts what it opens;
+  a stream ends when the frame goes. `api.points.stream(...)` reads a stream another plugin's point handler answers with.
 
 ## Points: what other plugins add to yours, and calling their handlers
 

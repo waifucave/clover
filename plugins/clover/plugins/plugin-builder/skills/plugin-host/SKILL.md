@@ -125,6 +125,36 @@ try {
 - `api.turns.state(name)` and `api.turns.watch(name, listener)`: who holds it and how many wait. A take still waiting
   leaves the queue with an `AbortSignal` (`{ signal }`), or when its holder goes.
 
+### Streams: bytes between your halves
+
+`ui.send` carries messages (64 KB, 50 a second). For audio, video frames or a file, open a stream between your plugin's
+own halves, in order, with back-pressure. No capability. One half accepts a name, the other opens it:
+
+```ts
+// host half: take what the page sends
+api.streams.accept("mic", async (stream, meta) => {
+  for await (const chunk of stream) transcribe(chunk, meta); // a ReadableStream<Uint8Array>
+});
+// host half: send audio to the page (which accepts "speech" the same way)
+const out = (await api.streams.open("speech", { meta: { rate: 24000 } })).getWriter();
+await out.write(bytes); // waits while the page isn't keeping up
+await out.close();      // out.abort("why") cancels it
+```
+
+- A component opens to its host half and a host half to one of its components. Wait for `accept(...).opened` before you
+  tell the other half you are ready; an open with no acceptor on the other side is refused, with why.
+- A write waits until the daemon has room, so a slow reader slows the writer instead of filling memory. The daemon
+  buffers 256 KiB a stream and sends in chunks of at most 32 KiB; the SDK cuts bigger writes for you. At most 8 streams
+  open at once per plugin, 16 accepted names.
+- Either side can cancel (`abort(reason)` on the writable, `cancel(reason)` on the readable) and the other hears why
+  (its stream errors). A stream also ends when a frame goes, a host process exits, the plugin stops or the app quits.
+  Close the writable when you are done: the reader's stream ends after the last chunk.
+- A point handler may answer another plugin with a stream: return a `Uint8Array`, an async iterable or a
+  `ReadableStream` of bytes from the handler, and the declarer calls it with
+  `await api.points.stream("ex-editor.sources", { pluginId, entryId }, "<field>", args)`, which gives a
+  `ReadableStream` (the same checks as `points.call`; a failing handler errors the stream; leaving it cancels the
+  handler).
+
 ## Picked files
 
 The page hands the host half the tokens the user's picks gave it (plugin-ui, "Files and media"); with the `files`

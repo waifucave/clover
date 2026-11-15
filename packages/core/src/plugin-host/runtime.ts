@@ -24,6 +24,7 @@ export { apiHas, apiMember, HARMLESS_KEYS, isDataFolder } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
+import { acceptStreams, openStream, pointStream, STREAM_CHUNK_MAX, type StreamsTransport } from "@waifucave/clover-plugin-sdk/streams";
 import { LISTENER_ARG } from "./api-channel";
 import type { RpcPeer } from "./link";
 import { WorkerFetches } from "./fetch-worker";
@@ -65,6 +66,8 @@ export interface InvokeParams {
   deadline?: number;
   stream?: boolean;
   input?: boolean;
+  /** A points stream (`points.stream`): what the handler returns is pumped into this stream (`#pumpStream`). */
+  streamId?: string;
 }
 
 interface Running {
@@ -234,6 +237,10 @@ export class HostRuntime {
     };
     try {
       const out = await target.fn.call(target.self, x.args, ctx);
+      if (x.streamId !== undefined) {
+        await this.#pumpStream(x.pluginId, x.callId, x.streamId, out, abort.signal, `${x.pluginId}.${x.handler}`);
+        return { result: undefined };
+      }
       if (!x.stream) return { result: out };
       const it = out as AsyncIterable<unknown> | undefined;
       if (it === null || typeof it !== "object" || typeof (it as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") {
@@ -364,6 +371,95 @@ export class HostRuntime {
     })();
     done.catch(() => {});
     return { stop: () => { stopped = true; void it.return?.(); }, done };
+  }
+
+  /** A points stream's handler answered: its bytes go into the stream the daemon made, through `streams.write` (each
+   *  piece awaited: the daemon's back-pressure), then `streams.end`. A `Uint8Array` is one piece, an async iterable or a
+   *  `ReadableStream` gives many; anything else, a piece that isn't bytes, or a stream the reader cancelled throws, and
+   *  the call fails with why (the daemon cancels the stream with it). The source is let go when the pump stops early. */
+  async #pumpStream(pluginId: string, callId: string, streamId: string, out: unknown, signal: AbortSignal, who: string): Promise<void> {
+    const api = (call: string, args: unknown[]) =>
+      this.#o.peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args, invocation: callId })
+        .then((r) => (r as { result: unknown }).result, (err: unknown) => { throw apiFailure(err, call); });
+    const write = async (bytes: unknown) => {
+      if (!(bytes instanceof Uint8Array)) throw new ContractError("invalid", `${who} gave a piece that isn't bytes: a stream handler gives Uint8Array pieces`);
+      for (let at = 0; at < bytes.length; at += STREAM_CHUNK_MAX) {
+        if (signal.aborted) throw signal.reason;
+        await api("streams.write", [streamId, bytes.subarray(at, at + STREAM_CHUNK_MAX)]);
+      }
+    };
+    const iterable = (v: unknown): v is AsyncIterable<unknown> => v !== null && typeof v === "object" && typeof (v as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function";
+    const readable = (v: unknown): v is ReadableStream<unknown> => v !== null && typeof v === "object" && typeof (v as ReadableStream).getReader === "function";
+    if (out instanceof Uint8Array) await write(out);
+    else if (readable(out)) {
+      const reader = out.getReader();
+      let finished = false;
+      try {
+        for (;;) {
+          if (signal.aborted) throw signal.reason;
+          const next = await reader.read();
+          if (next.done) {
+            finished = true;
+            break;
+          }
+          await write(next.value);
+        }
+      } finally {
+        if (!finished) void reader.cancel().catch(() => {});
+      }
+    } else if (iterable(out)) {
+      const it = out[Symbol.asyncIterator]();
+      let finished = false;
+      try {
+        for (;;) {
+          if (signal.aborted) throw signal.reason;
+          const next = await it.next();
+          if (next.done) {
+            finished = true;
+            break;
+          }
+          await write(next.value);
+        }
+      } finally {
+        if (!finished) void it.return?.(undefined);
+      }
+    } else {
+      throw new ContractError("failed", `${who} answered a points.stream call with ${out === null ? "null" : typeof out}, not bytes: return a Uint8Array, an async iterable of them or a ReadableStream of them`);
+    }
+    await api("streams.end", [streamId]);
+  }
+
+  /** A host half's streams, over its watches and calls on the daemon (the SDK's `openStream`, `acceptStreams` and
+   *  `pointStream` make the Web streams). `ended` never settles here: a plugin's process stopping is the daemon's
+   *  end of its watches, and a watch the daemon ends tells its listener first (`aborted`). */
+  #streamsOf(pluginId: string, inside: string | undefined): StreamsTransport {
+    const peer = this.#o.peer;
+    const request = (call: string, args: unknown[]) => peer.request("pluginHost.api", { pluginId, callId: `api_${++this.#apiSeq}`, call, args, ...(inside === undefined ? {} : { invocation: inside }) });
+    return {
+      call: (call, args) => request(call, args).then((r) => (r as { result: unknown }).result, (err: unknown) => { throw apiFailure(err, call); }),
+      watch: (call, args, at) => {
+        const listener = args[at] as (v: unknown) => void;
+        let subscription: string | undefined;
+        let stopped = false;
+        const unwatch = () => {
+          if (subscription === undefined) return;
+          this.#running.get(pluginId)?.subs.delete(subscription);
+          void peer.request("pluginHost.unwatch", { pluginId, subscription }).catch(() => {});
+          subscription = undefined;
+        };
+        const opened = request(call, args.map((a, i) => (i === at ? { [LISTENER_ARG]: true } : a))).then(
+          (r) => {
+            const sub = ((r as { result?: { subscription?: string } }).result ?? {}).subscription;
+            if (sub === undefined) return;
+            subscription = sub;
+            if (stopped) return unwatch();
+            this.#listen(pluginId, sub, listener);
+          },
+          (err: unknown) => { throw apiFailure(err, call); },
+        );
+        return { opened, ended: new Promise<string>(() => {}), stop: () => { stopped = true; unwatch(); } };
+      },
+    };
   }
 
   /** A watch's listener, once its subscription is known: the values that came before it first. */
@@ -499,6 +595,10 @@ export class HostRuntime {
           if (call === "audio.play") return this.#audioPlay(pluginId, inside, args);
           // `turns.take` answers a `Turn` once the turn comes: a watch on the wire, whose events make it.
           if (call === "turns.take") return this.#turnTake(pluginId, inside, args);
+          // A stream's two ends and a handler's stream are Web streams made from watches (the SDK's streams.ts).
+          if (call === "streams.open") return openStream(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never, args[2] as never);
+          if (call === "streams.accept") return acceptStreams(this.#streamsOf(pluginId, inside), args[0] as string, args[1] as never);
+          if (call === "points.stream") return pointStream(this.#streamsOf(pluginId, inside), args[0] as string, args[1], args[2] as string, args[3], args[4] as never, args[5] as never);
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));
           const params = { pluginId, callId: `api_${++this.#apiSeq}`, call, args: wire, ...(inside === undefined ? {} : { invocation: inside }) };

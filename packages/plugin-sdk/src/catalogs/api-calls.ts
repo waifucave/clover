@@ -6,7 +6,7 @@ import type {
   ApprovalsApi, AudioApi, SpeechApi, VoicesApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
-  TurnsApi,
+  TurnsApi, StreamsApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import type { AvatarApi } from "./avatar-cues";
@@ -25,7 +25,7 @@ export type ApiCallPath =
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}` | `speech.${FnKeys<SpeechApi>}` | `voices.${FnKeys<VoicesApi>}`
   | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`
-  | `turns.${FnKeys<TurnsApi>}`;
+  | `turns.${FnKeys<TurnsApi>}` | `streams.${FnKeys<StreamsApi>}`;
 
 /** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
  *  together). */
@@ -56,7 +56,7 @@ export const API_CALLS = {
   // A component's own keys in the user's language (§5.5: components read them through `t`). A host half has none: its
   // calls cross to the core, and `t` answers at once with a string, which only a component's runtime can (`useT`).
   t: { where: "ui" },
-  "points.entries": both(), "points.watch": both(), "points.call": both(),
+  "points.entries": both(), "points.watch": both(), "points.call": both(), "points.stream": both(),
   /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
@@ -152,6 +152,9 @@ export const API_CALLS = {
    *  own (`<its id>/<name>`) is open to it; another plugin's only if that plugin's manifest lists the name
    *  (`contributes.turns`); a device turn (`device/speech`) needs the capability the turns catalog names (`audio`). */
   "turns.take": both(), "turns.done": both(), "turns.extend": both(), "turns.state": both(), "turns.watch": both(),
+  /** Byte streams between a plugin's own two halves (§5.4 "Streams"), in both halves, with no capability: a stream
+   *  connects only one plugin's own halves, or (`points.stream`) a caller to a handler it may already `points.call`. */
+  "streams.open": both(), "streams.accept": both(), "streams.write": both(), "streams.end": both(), "streams.cancel": both(), "streams.ack": both(),
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't

@@ -16,6 +16,8 @@ import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
 import { COMPONENT_CALLS, fromLayerWire, listenerArgOf, toLayerWire } from "../catalogs/layer-calls";
 import type { PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
+import type { StreamMeta, StreamOpenEvent, StreamOpenOptions, StreamReadEvent } from "../api/plugin-api";
+import { acceptStreams, openStream, pointStream, type StreamsTransport } from "../api/streams";
 import type {
   AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
@@ -1182,6 +1184,17 @@ function layerTurnTake(mount: string, pluginId: string, name: string, given?: { 
   });
 }
 
+/** What the SDK's streams need of a component: a call and a watch on the part's own plugin's connection. */
+function layerStreams(mount: string, pluginId: string): StreamsTransport {
+  return {
+    call: (path, args) => layerCall(mount, path, args),
+    watch: (path, args, at) => {
+      const w = layerWatch(mount, pluginId, path, args, at);
+      return { stop: w.stop, opened: w.opened, ended: w.stop.ended };
+    },
+  };
+}
+
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the core checks it as that
  *  plugin from the `ui` side, with the same capability, fence and limits as its host half's: every member the catalog
  *  gives components (`catalogMembers`), with these laid over them where a component's own path serves it (the pickers,
@@ -1196,6 +1209,12 @@ export function usePluginApi(): PluginApi {
       turns: {
         take: (name: string, opts?: { limitMs?: number; note?: string; signal?: AbortSignal }, onEvent?: (e: unknown) => void) => layerTurnTake(part.mount, part.entry.pluginId, name, opts, onEvent),
       } as unknown as Partial<PluginApi["turns"]>,
+      // `open`, `accept` and `points.stream` make Web streams from watches (the SDK's streams.ts); the rest of the area is
+      // the catalog's calls.
+      streams: {
+        open: (name: string, opts?: StreamOpenOptions, onEvent?: (e: StreamOpenEvent) => void) => openStream(layerStreams(part.mount, part.entry.pluginId), name, opts, onEvent),
+        accept: (name: string, onStream: (s: ReadableStream<Uint8Array>, meta: StreamMeta) => void) => acceptStreams(layerStreams(part.mount, part.entry.pluginId), name, onStream),
+      } as unknown as Partial<PluginApi["streams"]>,
       terminal: terminalApi(part.mount, part.entry.pluginId),
       shell: shellApi(part.mount),
       conversation: {
@@ -1320,6 +1339,8 @@ export function usePluginApi(): PluginApi {
       // point's name only, which the core sends to this plugin's own connection). Calling an entry's handler is the
       // host half's (`points.call`): a component asks its host half with `host.call`.
       points: {
+        stream: (point: string, entry: unknown, field: string, args?: unknown, opts?: { method?: string; timeoutMs?: number; signal?: AbortSignal }, onEvent?: (e: StreamReadEvent) => void) =>
+          pointStream(layerStreams(part.mount, part.entry.pluginId), point, entry, field, args, opts, onEvent),
         entries: <T,>(point: string) => call<{ result: T[] }>("plugin.layer.call", { call: "points.entries", args: [point] }).then((r) => r.result),
         watch: <T,>(point: string, listener: (entries: T[]) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "plugins");

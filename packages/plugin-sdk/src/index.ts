@@ -35,6 +35,7 @@ export * from "./formats/upgrade";
 export * from "./catalogs/index";
 
 export * from "./api/keyed-fetch";
+export * from "./api/streams";
 export type * from "./api/plugin-api";
 export {
   API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYED_FETCH_ERROR_CODES, KEYS_PER_PLUGIN_MAX, ROUTINE_FIRE_PAYLOAD_MAX,
