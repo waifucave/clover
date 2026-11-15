@@ -1,8 +1,10 @@
-// The narrator: a plain plugin with `voices.use` asks a voice provider to say a line and keeps the audio as its own data.
+// The narrator: a plain plugin with `voices.use` asks a voice provider to transcribe a short recording and keeps the text
+// as its own data (the providers' listening; speaking is a provider's entry on Clover Voice's own point).
 type Api = {
   voices: {
     providers(): Promise<{ id: string }[]>;
-    speak(provider: string, o: { text: string; voice: string }, l: (e: { audio?: Uint8Array; done?: { bytes: number }; error?: string }) => void): unknown;
+    listen(provider: string, o: { id: string; format: "pcm16-16k" }, l: (e: { text?: string; error?: string }) => void): unknown;
+    feed(id: string, data: Uint8Array, final: boolean): Promise<void>;
   };
 };
 let api: Api | undefined;
@@ -10,23 +12,22 @@ export function start(a: Api): void {
   api = a;
 }
 
-/** Asks the run's tone voice for a line; what came back. */
-async function narrateWith(a: Api | undefined): Promise<Record<string, unknown>> {
+/** 0.1 s of silence, pcm16-16k: the recording it has transcribed. */
+export const RECORDING_BYTES = 3_200;
+
+/** Asks the run's tone voice to transcribe; what came back. */
+export async function transcribeWith(a: Api | undefined, id: string): Promise<Record<string, unknown>> {
   if (a === undefined) return { error: "not started" };
   try {
     const providers = (await a.voices.providers()).map((p) => p.id);
     return await new Promise((resolve) => {
-      let bytes = 0;
-      const r = a.voices.speak("acceptance-voice", { text: "A line to narrate.", voice: "tone" }, (e) => {
-        if (e.audio !== undefined) bytes += e.audio.length;
-        else if (e.done !== undefined) resolve({ providers, bytes });
-        else resolve({ error: e.error ?? "no audio" });
-      });
+      const r = a.voices.listen("acceptance-voice", { id, format: "pcm16-16k" }, (e) => resolve(e.text !== undefined ? { providers, text: e.text } : { error: e.error ?? "nothing heard" }));
       void Promise.resolve(r).catch((err: unknown) => resolve({ error: err instanceof Error ? err.message : String(err) }));
+      void a.voices.feed(id, new Uint8Array(RECORDING_BYTES), true).catch((err: unknown) => resolve({ error: err instanceof Error ? err.message : String(err) }));
     });
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export const narrate = () => narrateWith(api);
+export const narrate = () => transcribeWith(api, `n${Date.now().toString(36)}`);

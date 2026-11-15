@@ -1,7 +1,7 @@
 // The plugin API's served areas on the app (lane A, try 15's gate: one clause per area): a folder-installed plugin's
 // host tool, called by the bot, reads its own log (no capability) and is refused Clover's (no `logs.read`); reads the
 // usage rows (`usage.read`), Alpha's memory (`memory.read`) and the routines (`routines.read`); runs its own command
-// and is refused another plugin's (no `call:`); hands the app a silent clip as Alpha's voice and opens a push-to-talk
+// and is refused another plugin's (no `call:`); takes and lets go of the device's speech turn and opens a push-to-talk
 // watch (`audio`); and is refused the clover tree's keys. Then the rest of each area's members (try 15's gate): the
 // commands list with its own command on it, a memory file of Alpha's read, the runs of a routine the run wrote for
 // Alpha, the plan readings and a usage watch, its own log followed (a line it writes heard), and the computers (list,
@@ -9,7 +9,7 @@
 // user-working mark on a made-up app; `computers.read` and `computers.control`). Kept apart from run.ts (which starts a run when loaded) so the
 // verdict can be unit-tested.
 
-export const API_AREAS_STEP = "the plugin API's served areas: a folder-installed plugin's tool reads its own log, the usage rows, Alpha's memory and the routines, runs its own command, plays a silent clip as Alpha's voice and listens for push-to-talk; Clover's log, another plugin's command and the clover tree's keys are refused; it lists the commands, reads a memory file, reads a routine's runs, the plan readings and a usage watch, follows its own log, and takes, lists and releases a hold, signals an action, reads Clover's windows and marks the user working; an own-process plugin reads its stored key with secrets.get";
+export const API_AREAS_STEP = "the plugin API's served areas: a folder-installed plugin's tool reads its own log, the usage rows, Alpha's memory and the routines, runs its own command, takes the device's speech turn and listens for push-to-talk; Clover's log, another plugin's command and the clover tree's keys are refused; it lists the commands, reads a memory file, reads a routine's runs, the plan readings and a usage watch, follows its own log, and takes, lists and releases a hold, signals an action, reads Clover's windows and marks the user working; an own-process plugin reads its stored key with secrets.get";
 
 /** The probe's answer, `acceptance-api-pong k=v …`, as pairs. */
 export function apiProbePairs(text: string): Record<string, string> {
@@ -32,7 +32,7 @@ export function apiProbeWrong(said: Record<string, string>): string[] {
   want("routines", (v) => /^listed:\d+$/.test(v), "the routines listed");
   want("own-command", (v) => v.startsWith("pong_by_"), "its own command run");
   want("other-command", (v) => v.startsWith("refused:"), "another plugin's command refused without call:");
-  want("audio-play", (v) => v === "handed", "a silent clip handed to the app as Alpha's voice");
+  want("speech-turn", (v) => v === "taken", "the device's speech turn taken and let go");
   want("audio-listen", (v) => v === "watched", "a push-to-talk watch opened");
   want("keys", (v) => v.startsWith("refused:"), "the clover tree's keys refused");
   want("commands-list", (v) => /^listed:\d+:own$/.test(v), "the commands list, its own command on it");
