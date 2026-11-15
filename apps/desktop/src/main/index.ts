@@ -2797,6 +2797,8 @@ async function smoke(): Promise<void> {
     frames: frames.map((f) => ({ ...f, sandboxed: metrics.find((m) => m.pid === f.osPid)?.sandboxed ?? null })),
     mounts: runtime.stats(),
     surfaces: surfaceFacts,
+    // The hidden windows of the background parts that run now (`app.background`), each its own.
+    backgrounds: [...backgrounds.keys()],
     web: webFacts,
     housing: (() => {
       if (screens === null) screens = loadScreens(join(here, "native", "screen.node"), log);

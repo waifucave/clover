@@ -87,8 +87,9 @@ function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } =
   expect(r.facts, r.output).toBeDefined();
   const f = r.facts!;
   expect(f, r.output).toMatchObject({ ok: true, profile: "dist", appId: "com.waifucave.clover", name: "Clover", visibleWindows: 0, pair: "connected", safeMode: opts.safeMode ?? false });
-  // The main window, and one per surface (the island and the pill are clover's; they stay hidden).
-  expect(f.windows).toBe(1 + (f.surfaces as unknown[]).length);
+  // The main window, one per surface (the island and the pill are clover's; they stay hidden), and one per background
+  // part that runs (Clover Voice's player; hidden too).
+  expect(f.windows).toBe(1 + (f.surfaces as unknown[]).length + (f.backgrounds as unknown[]).length);
   const rootFrame = f.frames.find((x) => x.origin === "clover-core://app");
   const shell = f.frames.find((x) => x.origin === "clover-plugin://clover");
   expect(rootFrame, r.output).toBeDefined();
@@ -253,18 +254,19 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
 
   test("the default shell from F's plugins renders in the clover layer; the app starts the daemon and Quit stops both", () => {
     // The mounts it asserts are the ones it waits for: a placed part's mounts land a beat after its document draws.
-    const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_WAIT_MOUNTS: "root:3,frame:3" });
+    const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
     const shell = expectShell(r);
     expect(shell.composer).toBe(true);
     expect(shell.text).toContain("Alpha");
-    expect(r.facts!.mounts).toMatchObject({ root: 3, frame: 3 });
+    // Clover Voice's player, a background part, is a root and a frame of its own.
+    expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 4 });
     expectBothStopped(r);
     expectQuiet(r);
   }, 120_000);
 
   test("a third-party part renders in a layer of its own, in its own process, themed by its tab; surfaces and menus go through the core", () => {
     // Both menus answered: the composer's (in the main window) and the surface's (in its own window).
-    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", CLOVER_SMOKE_WAIT_MOUNTS: "root:4,frame:5", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
+    const r = smoke(electron(), [root], "fixture", { CLOVER_SMOKE_LAYERS: "1", CLOVER_SMOKE_WAIT_TEXT: "Picked: second|Menu: second", CLOVER_SMOKE_WAIT_MOUNTS: "root:5,frame:6", CLOVER_TEST_MENU_PICK: "second", CLOVER_SMOKE_INPUT: "1" });
     const shell = expectShell(r);
     const part = r.facts!.frames.find((x) => x.origin === "clover-plugin://fixture-composer");
     expect(part, r.output).toMatchObject({ bridge: "object", node: false });
@@ -286,7 +288,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const surfaceFrame = fixture!.frames.find((x) => x.origin === "clover-plugin://fixture-surface");
     expect(surfaceFrame, r.output).toMatchObject({ text: "Menu: second", node: false, bridge: "object" });
     expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
-    expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 5 });
+    expect(r.facts!.mounts).toMatchObject({ root: 5, frame: 6 });
     for (const x of surfaces) expect(x.visible).toBe(false);
     // Menus wait for the user's input in their window: refused before the test's key press, shown after it. The log
     // lines are asserted on the run's whole output: the refused ones begin early, and a fast run's tail can cut them.
