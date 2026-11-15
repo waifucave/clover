@@ -45,7 +45,8 @@ export interface ExampleCtx {
   /** The run's throwaway keychain file (its path is the value of the variable a test-marked core needs to start). */
   keychainFile: string;
   appLog(): string;
-  requests(): { lastUserText: string; toolUse?: string; toolResult?: { text: string; isError: boolean; images?: number }; tools: string[] }[];
+  /** The fake's requests: `body` is the request as sent (its prompt, never a key). */
+  requests(): { lastUserText: string; toolUse?: string; toolResult?: { text: string; isError: boolean; images?: number }; tools: string[]; body?: unknown }[];
   /** The user's own `clover-core app <words>` (the target's CLI), where the run has it. */
   appCli?(words: string[]): Promise<{ code: number; stdout: string; stderr: string }>;
   /** Points main's picker (the test build's) at a folder for the next pick. */

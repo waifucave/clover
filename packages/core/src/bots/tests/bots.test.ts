@@ -235,6 +235,21 @@ describe("bots from plugins", () => {
     await b.shutdown();
   });
 
+  test("an edit of only its instructions file (the manifest the same, its tree changed) reaches the driver", async () => {
+    const root = tempDir();
+    const dir = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna"), "bot/instructions.md": "You are Luna." });
+    const first = await pluginFromFolder(dir);
+    const b = await boot({ home: tempDir(), plugins: first.inputs.map((i) => ({ ...i, treeHash: "sha256:one" })) });
+    const ctx = b.drivers.made[0]!.ctx;
+    writeFileSync(join(dir, "bot", "instructions.md"), "You are Luna, and you keep a herb journal.");
+    // The registry core reports this through `watchTrees` alone: the record's state and manifest are as they were.
+    b.registry.put({ ...first.inputs[0]!, treeHash: "sha256:two", change: "applies" });
+    await b.bots.settled();
+    expect(ctx.current().instructions).toBe("You are Luna, and you keep a herb journal.");
+    expect(b.drivers.made).toHaveLength(1);
+    await b.shutdown();
+  });
+
   test("a bot that breaks its own instructions keeps its last good version, so it can fix them", async () => {
     const root = tempDir();
     const dir = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna"), "bot/instructions.md": "You are Luna." });

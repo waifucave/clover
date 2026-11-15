@@ -66,6 +66,7 @@ const manifestHash = (m: Manifest) => `sha256:${createHash("sha256").update(JSON
 export class FakePluginRegistry implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
+  readonly #treeListeners = new Listeners<{ id: string }>();
   readonly #catalog: (name: string) => PointDecl | undefined;
   /** The OK cards raised, by top-level plugin: the card and the tree it shows. */
   readonly #okCards = new Map<string, { card: string; treeHash: string }>();
@@ -179,6 +180,12 @@ export class FakePluginRegistry implements PluginRegistry {
     return this.#listeners.add(fn);
   }
 
+  /** A plugin's tree changed under its id (its tree hash or version) while nothing `watch` reports changed with it, as
+   *  the registry core reports it (registry/core.ts `watchTrees`). */
+  watchTrees(fn: (changed: { id: string }) => void): Unsubscribe {
+    return this.#treeListeners.add(fn);
+  }
+
   /** A folder appeared or changed. A refused plugin is asked about again once its folder changes (§5.1). */
   put(input: FakePluginInput): void {
     this.#hold(input);
@@ -253,7 +260,15 @@ export class FakePluginRegistry implements PluginRegistry {
   #update(): void {
     const before = this.#snap;
     this.#snap = this.#compute();
-    for (const change of registryChanges(before, this.#snap)) this.#listeners.emit(change);
+    const changes = registryChanges(before, this.#snap);
+    for (const change of changes) this.#listeners.emit(change);
+    // A plugin whose tree changed under the same id and is still there, when the changes above didn't name it (the
+    // registry core's rule).
+    const named = new Set(changes.flatMap((c) => (c.type === "plugin" ? [c.id] : [])));
+    for (const [id, rec] of this.#snap.records) {
+      const was = before.records.get(id);
+      if (was !== undefined && !named.has(id) && (was.treeHash !== rec.treeHash || was.version !== rec.version)) this.#treeListeners.emit({ id });
+    }
   }
 
   #compute(): RegistrySnapshot {

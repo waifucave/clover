@@ -281,6 +281,10 @@ export class BotService {
     this.#lastRunner = this.#runner();
     this.#offs.push(this.#o.host.watch((view) => this.#onSession(view)));
     this.#offs.push(this.#o.registry.watch(() => void this.#queueSync()));
+    // A plugin's tree edited in place with nothing else changed (a bot's instructions file, the builder's edit): `watch`
+    // doesn't report it, and the bot would keep the instructions it was loaded with.
+    const offTrees = this.#o.registry.watchTrees?.(() => void this.#queueSync());
+    if (offTrees !== undefined) this.#offs.push(offTrees);
     this.#offs.push(this.#o.gate.main.watch(() => void this.#queueSync(() => this.#onRunnerChanged())));
     await this.#queueSync();
     // Runs a crash cut off whose bot is no longer installed: ended too, with the result posted for when it returns.
