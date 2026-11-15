@@ -264,9 +264,19 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
   });
   const stopBeat = (connId: number) => { const b = beats.get(connId); if (b) { clearInterval(b.timer); beats.delete(connId); } };
+  // A tick that comes this much later than the one before means this process did not run in between: the computer
+  // slept, or the daemon itself was held up. That silence is not the app's.
+  const beatGap = Math.max(beatEvery * 2, beatEvery + 2_000);
   const startBeat = (conn: CloverConn, pid: number | null, handle?: PeerHandle) => {
+    let ticked = now();
     const beat = { heard: now(), pid, ...(handle ? { handle } : {}), pending: new Set<string>(), timer: setInterval(() => {
-      if (now() - beat.heard > beatTimeout) {
+      const t = now();
+      // After a sleep the first tick used to find the last answer older than the timeout and end the app at once, with
+      // no ping sent since the wake: every wake restarted it in safe mode (85 times in one night on the owner's Mac).
+      // The count starts again from the wake, and the app gets a ping and its full time to answer it.
+      if (t - ticked > beatGap) beat.heard = t;
+      ticked = t;
+      if (t - beat.heard > beatTimeout) {
         stopBeat(conn.connId);
         deps.log?.(`[clover] the app (connection ${conn.connId}) didn't answer app.ping for ${beatTimeout} ms`);
         // With no pid it can't be ended, and a new one beside it would be a second app (review M6): its
