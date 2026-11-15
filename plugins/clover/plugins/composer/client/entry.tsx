@@ -158,9 +158,9 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
         }
       : undefined;
 
-  // Does the bot's voice listen now? Read again when its voice changes and when the window comes back (the user may have changed it).
+  // Does the bot's voice listen now? Read again when the bot changes and when the window comes back (the user may have
+  // changed its voice: that is Clover Voice's own setting).
   const [listens, setListens] = useState(false);
-  const voiceKey = bot?.voice === undefined ? "" : `${bot.voice.provider}/${bot.voice.voice}`;
   useEffect(() => {
     if (host?.listenStatus === undefined || kind !== "bot") {
       setListens(false);
@@ -174,7 +174,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       live = false;
       window.removeEventListener("focus", read);
     };
-  }, [host, props.bot.id, kind, voiceKey, botRev]);
+  }, [host, props.bot.id, kind, botRev]);
   const [listening, setListening] = useState(false);
   // A release that answers after a newer press began must not undo it.
   const hold = useRef(0);
