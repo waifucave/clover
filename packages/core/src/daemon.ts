@@ -242,9 +242,7 @@ import { createSinkCallStore, sinksFor } from "./runtime-sdk/sinks";
 import { sessionHooksFor } from "./runtime-sdk/hooks";
 import { buildCapabilitiesFor, type CapabilityDeps, type CapabilityServerRecord, type CapabilitySession } from "./capabilities";
 import { createComputerUseRuntime, type ComputerUseInjection } from "./computer-use/wiring";
-import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./island/registry";
-import { IslandActivity } from "./island/activity";
-import { IslandUsageRegistry } from "./island/usage";
+import { PlanWindowReports } from "./usage/codex-windows";
 import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
 import type { CloverApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
@@ -1579,70 +1577,28 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // line 135, and AuditLog's own constructor is cheap (mkdir is lazy, on first write — see audit.ts).
   const audit = new AuditLog(join(cloverHome, "audit.jsonl"));
 
+  // The plan windows Codex sessions report while they run (`usage/codex-windows.ts`): the Codex plan's fallback reading.
+  /** The provider a session's model tag names (the plan windows are tagged with it). */
+  const providerOf = (sid: string): string | undefined => {
+    try { const m = store.meta(sid).model; return m === undefined || !m.includes("/") ? undefined : splitTag(m).providerId; } catch { return undefined; }
+  };
+  const codexWindows = new PlanWindowReports();
+  // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): Clover's own turns as they end, the user's Codex and
+  // Claude Code usage ingested ON DEMAND. Its own SQLite file (`<home>/usage/usage.db`), never runtime-state.db.
+  const usage = createUsageService({
+    home: cloverHome, settings: () => settings, codexWindows, version: CORE_VERSION,
+    // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
+    // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
+    userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
+    ...(opts.usage === undefined ? {} : { injection: opts.usage }),
+  });
+
   // ComputerV2 (2026-10-08): the daemon's computer-use runtime — the helper connection, the per-app policy and
   // the script service behind the `computer_v2` capability (`computer-use/wiring.ts`). Built unconditionally
   // (cheap: nothing connects or spawns until a script runs); the capability is built per session only while
   // computer use is on. `interrupt` reaches `cloverDrivers` late (the helper's Esc), as the capability
   // closures below do.
-  // The Clover island (`docs/claude/island.md`): every card still pending in any session, for Clover.app's surface at
-  // the camera housing (`island.pending`). Pending-ness is the brokers'; the payload is the request event, seen here.
-  const islandFacts = (sid: string): IslandSessionFacts | undefined => {
-    try {
-      const meta = store.meta(sid);
-      const title = store.getTitle(sid);
-      return {
-        ...(meta.mode === undefined ? {} : { mode: meta.mode }),
-        ...(meta.origin === undefined ? {} : { origin: meta.origin }),
-        ...(meta.parentSessionId === undefined ? {} : { parentSessionId: meta.parentSessionId }),
-        ...(title === null ? {} : { title }),
-      };
-    } catch { return undefined; }
-  };
-  const islandHosts = (sid: string): IslandHost[] => hub.attachedHarnesses(sid).map((h) => ({
-    clientName: h.clientName, ...(typeof h.role === "string" ? { role: h.role } : {}), ...(h.tty === undefined ? {} : { tty: h.tty }),
-  }));
-  const islandRegistry = new IslandRegistry({
-    pending: {
-      approval: (sid, callId) => approvalBroker.pendingMeta(sid, callId) !== undefined,
-      question: (sid, callId) => questions.isPending(sid, callId),
-      elicitation: (sid, id) => elicitationBroker.urlFor(sid, id) !== undefined,
-    },
-    facts: islandFacts,
-    hosts: islandHosts,
-  });
-  hub.addObserver((event) => islandRegistry.observe(event));
-  // The island's Usage tab (`island.usage`): plan windows the runtime reported, per-session token counts since start,
-  // and Clover's background jobs' quota — all read from what the daemon already sees.
-  /** The provider a session's model tag names (the island's plan windows are tagged with it). */
-  const islandProviderOf = (sid: string): string | undefined => {
-    try { const m = store.meta(sid).model; return m === undefined || !m.includes("/") ? undefined : splitTag(m).providerId; } catch { return undefined; }
-  };
-  const islandUsage = new IslandUsageRegistry({
-    background: () => ({ ...quota.state(), ...quota.usage() }),
-    subscription: () => quota.subscriptionQuota(),
-    modelOf: (sid) => {
-      const model = store.meta(sid).model;
-      if (model === undefined) return undefined;
-      const window = rowForTag(model)?.contextWindow?.value;
-      return { model, ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}) };
-    },
-  });
-  hub.addObserver((event) => islandUsage.observe(event));
-  // Usage and cost tracking (`usage.*`, `docs/claude/usage.md`): Clover's own turns as they end, the user's Codex and
-  // Claude Code usage ingested ON DEMAND. Its own SQLite file (`<home>/usage/usage.db`), never runtime-state.db.
-  // A fired plan alarm is the island's notification pill — late-bound: the island's activity is built further down.
-  let usageAlarmNotices: (() => void) | undefined;
-  const usage = createUsageService({
-    home: cloverHome, settings: () => settings, islandUsage, version: CORE_VERSION,
-    // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
-    // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
-    userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
-    ...(opts.usage === undefined ? {} : { injection: opts.usage }),
-    onAlarmNotices: () => usageAlarmNotices?.(),
-  });
-
   const computerUseRuntime = createComputerUseRuntime({
-    island: islandRegistry,
     home: cloverHome,
     profile,
     settings: () => settings,
@@ -1678,23 +1634,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   });
   hub.addObserver((event) => computerUseRuntime.observe(event));
-  // The Clover island's activity (phase 2, `island/activity.ts`): the sessions driving ComputerV2 now, the turns that
-  // just ended idle, and every armed wake trigger — for Clover.app's island (`island.activity`).
-  const islandActivity = new IslandActivity({
-    facts: islandFacts,
-    hosts: islandHosts,
-    watches: () => computerUseRuntime.control.wakesList?.() ?? [],
-    hasPendingCard: (sid) => islandRegistry.list().some((i) => i.answerSessionId === sid || i.sessionId === sid),
-    // The fired plan alarms not acknowledged yet, from the usage DB (they survive a restart).
-    usageAlarms: () => (usage?.service.firedAlarms() ?? []).map((a) => ({
-      id: a.id, provider: a.provider, windowKey: a.windowKey, kind: a.kind, ...(a.scope === undefined ? {} : { scope: a.scope }),
-      ...(a.windowMinutes === undefined ? {} : { windowMinutes: a.windowMinutes }), thresholdPercent: a.thresholdPercent,
-      usedPercent: a.usedPercent, ...(a.resetsAt === undefined ? {} : { resetsAt: a.resetsAt }), at: a.firedAt,
-    })),
-  });
-  hub.addObserver((event) => islandActivity.observe(event));
-  usageAlarmNotices = () => islandActivity.usageAlarmsChanged();
-
   // ComputerV2 Phase 2 — Winter for Chrome's door into this daemon: `<home>/run/browser.sock`, where
   // `winter-browser-host` (inside the Winter Computer Use bundle) connects for each browser profile running the extension.
   // Each verified connection becomes a transport registered in the engine's backends (`computerUseRuntime.backends`).
@@ -2513,7 +2452,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(bgAgents === undefined ? {} : { children: bgAgents }),
     onTurnSettled: (sid) => { signals.onTurnSettled?.(sid); dispatchChildren?.onTurnSettled(sid); },
     onSupportedAgents: (sid, agents) => supportedAgentsCache.observe(sid, agents),
-    onRateLimit: (sid, info) => islandUsage.noteRateLimit(sid, info, islandProviderOf(sid)),
+    onRateLimit: (sid, info) => codexWindows.noteRateLimit(sid, info, providerOf(sid)),
     onTurnUsage: (sid, u) => {
       let mode: string | undefined;
       try { mode = store.meta(sid).mode; } catch { mode = undefined; }
@@ -3712,9 +3651,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // restart, even on a no-provider daemon where the facade itself was never built.
     hooks: hookRegistry,
     questions: questions ?? undefined,
-    island: islandRegistry,
-    islandActivity,
-    islandUsage,
     ...(usage === undefined ? {} : { usage: usage.service }),
     tasks: undefined,
     // P8c integration Wiring 1: lane 2's `planBridgeFor(...)` (built above), replacing the retired

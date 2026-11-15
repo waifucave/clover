@@ -68,8 +68,8 @@ export interface ConnectOptions {
   token: string;
   clientName: string;
   role?: "harness" | "admin";
-  /** The controlling terminal sent in the hello (`HelloParams.tty`) — the Clover island's "is this terminal in
-   *  front?" question. Default: detected (`controllingTtyName`); `null` sends none. */
+  /** The controlling terminal sent in the hello (`HelloParams.tty`) — which terminal a session's host is.
+   *  Default: detected (`controllingTtyName`); `null` sends none. */
   tty?: string | null;
   timeoutMs?: number;
   onEvent: (event: SessionEvent) => void;

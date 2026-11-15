@@ -54,13 +54,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // the scripts' few macOS-only tests (scripts/**/*.darwin.test.ts, on a macOS runner): the scripts themselves only, so
   // a change under apple/ alone takes no macOS runner for them (a push to main still runs every area)
   scriptsmac: ["scripts/"],
-  codegen: ["packages/protocol/", "apple/WinterProtocol/"],
-  // the predecessor's Swift kits, on a macOS runner: their own tree and the protocol's generated fixtures their round
-  // trips read, and nothing else (SWIFT_GLOBAL). WinterKit's tests also start the core's daemon through bun
-  // (apple/WinterKit/Tests/WinterKitTests/support/RealDaemon.swift), but a core, Bun or lockfile change no longer runs
-  // them in a pull request or a merge group: macOS runners are the queue's bottleneck, and a push to main still runs
-  // every area, so such a break shows on main's own run.
-  swift: ["apple/", "Package.swift", "packages/protocol/generated/"],
+  codegen: ["packages/protocol/"],
+  // the browser host's Swift tests (apple/ComputerUse/WinterBrowserHost), on a macOS runner: the apple/ tree and nothing
+  // else (SWIFT_GLOBAL). The old Mac app's kits left this repository.
+  swift: ["apple/"],
   verify: [...CORE, "packages/cli/", "scripts/verify-", "scripts/stage-runtimes.ts", "scripts/fetch-ant.ts", "scripts/build-winter.ts", "VERSIONS.json"],
   // the tree and the computers on Linux and Windows (macOS runs them in the core suite): their code, their tests and
   // lane B's conformance suites for them

@@ -155,8 +155,7 @@ needs, run in a sandbox once you've said yes.
   like paste bins, anonymous file drops and tunnels, are blocked in every mode.
 - **Built to be checked.** Every build is signed and notarized by Apple, and updates install
   themselves only when nothing is running and nothing is unsaved. The app, the engine, the command
-  line and the protocol are open source here under Apache 2.0. (The iPhone app is closed source; the
-  Swift packages it's built on live here.)
+  line and the protocol are open source here under Apache 2.0. (The iPhone app is closed source.)
 
 ## FAQ
 
@@ -189,7 +188,7 @@ all come for free.
 packages/protocol   the contract: schemas for every RPC method and session event
 packages/core       the service: sessions, tools, models, memory, routines
 packages/cli        the `clover` command and its terminal UI
-apple/              the Swift client packages the iPhone app uses, and the retired Mac app (reference only)
+apple/              the computer-use helper's Swift packages and the paused Cowork's (the old Mac app is on the maintenance branch)
 ```
 
 ```sh

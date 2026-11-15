@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildCleanerVectorsFixture, buildDangerousDomainsFixture, CLEANER_VECTOR_INPUTS } from "../scripts/parity-fixtures";
 
@@ -73,11 +73,4 @@ describe("cross-language parity fixtures (Chat Slice D, Task 4): regeneration fr
   // on disk, so it moves in this task's own commit; the Swift LITERAL in RoundTripTests.swift is a
   // separate, later edit — the same two-commit split diff-tabs Task 4 established, and `swift test`
   // is expected red between the two commits by design.
-  test("did not leak into the Swift-synced fixture bundle, which now has exactly 97 files", () => {
-    const swiftFixDir = join(import.meta.dir, "..", "..", "..", "apple", "WinterProtocol", "Tests", "WinterProtocolTests", "Fixtures");
-    const swiftFiles = readdirSync(swiftFixDir).filter((f) => f.endsWith(".json"));
-    expect(swiftFiles.length).toBe(97);
-    expect(swiftFiles).not.toContain("dangerous-domains.json");
-    expect(swiftFiles).not.toContain("cleaner-vectors.json");
-  });
 });

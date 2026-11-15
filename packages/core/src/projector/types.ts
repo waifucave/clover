@@ -154,7 +154,7 @@ export interface ProjectorDeps {
    *  `tool_result.display` on a success. Absent → none. */
   takeToolDisplay?: (callId: string) => ToolDisplay | undefined;
   /**
-   * The island's Usage tab (`docs/claude/island.md`): a `rate_limit_event` frame's `rate_limit_info` (a plan window's
+   * The usage service's Codex plan fallback (`usage/codex-windows.ts`): a `rate_limit_event` frame's `rate_limit_info` (a plan window's
    * status, kind, utilization and reset), handed over as it arrives — the frame itself stays observed, never persisted.
    * A throw is swallowed.
    */

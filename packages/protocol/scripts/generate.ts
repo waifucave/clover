@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { SessionEvent } from "../src/events";
 import { buildCleanerVectorsFixture, buildDangerousDomainsFixture } from "./parity-fixtures";
@@ -300,18 +300,6 @@ writeFileSync(join(fixDir, "dangerous-domains.json"), JSON.stringify(buildDanger
 const cleanerVectors = buildCleanerVectorsFixture();
 writeFileSync(join(fixDir, "cleaner-vectors.json"), JSON.stringify(cleanerVectors, null, 2));
 
-// 3. Sync fixtures into the Swift test bundle — the SessionEvent per-variant fixtures ONLY (see
-// the comment above): a blanket directory copy would also carry dangerous-domains.json/
-// cleaner-vectors.json into RoundTripTests.swift's Fixtures/, which decodes every file there as a
-// SessionEvent and hard-asserts an exact count (65 as of B2 T2). Both counts here are
-// deliberately written as "the count RoundTripTests asserts" rather than restated numbers — they
-// have drifted twice; check `RoundTripTests.swift` rather than trusting a figure in this comment.
-const swiftFixDir = join(import.meta.dir, "..", "..", "..", "apple", "WinterProtocol", "Tests", "WinterProtocolTests", "Fixtures");
-rmSync(swiftFixDir, { recursive: true, force: true }); // delete-then-copy: no orphaned fixtures after variant renames
-mkdirSync(swiftFixDir, { recursive: true });
-for (const name of Object.keys(fixtures)) {
-  cpSync(join(fixDir, `${name}.json`), join(swiftFixDir, `${name}.json`));
-}
 // 4. Clover's protocol (spec revision 17): an area file each, a fixture per Clover event and every role's allow list,
 // under generated/clover/ (scripts/clover-artifacts.ts). Delete-then-write, so a renamed event leaves no orphan.
 const cloverDir = join(outDir, "clover");
@@ -323,7 +311,7 @@ for (const [rel, content] of cloverFiles) {
 }
 
 console.log(
-  `generated: schema + ${Object.keys(fixtures).length} fixtures (synced to Swift test bundle) + ` +
+  `generated: schema + ${Object.keys(fixtures).length} fixtures + ` +
     `dangerous-domains (${buildDangerousDomainsFixture().length} entries) + cleaner-vectors (${cleanerVectors.length} vectors) + ` +
     `clover (${cloverFiles.size} files)`,
 );

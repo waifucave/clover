@@ -29,9 +29,6 @@ test("real Unix RPC exposes only canonical inventory and refuses missing identit
  expect((await f.client.request("workspace.output.initialize", { workspaceId: f.workspaceId, sessionId: f.sessionId })).error.code).toBe(ERR.METHOD_NOT_FOUND);
  expect(existsSync(f.root)).toBe(false);
  for (const method of METHODS) { expect((COWORK_REMOTE_METHODS as readonly string[]).includes(method)).toBe(false); expect(REMOTE_ALLOWED_METHODS.has(method)).toBe(false); expect((await f.remote.request(method, {})).error.code).toBe(ERR.UNAUTHORIZED); }
- const gateway = readFileSync(join(import.meta.dir, "../../../../apple/WinterKit/Sources/WinterKit/Gateway/Gateway.swift"), "utf8");
- for (const method of METHODS) expect(gateway).not.toContain(`"${method}"`);
- const gateTests = readFileSync(join(import.meta.dir, "../../../../apple/WinterKit/Tests/WinterKitTests/GatewayGateTests.swift"), "utf8"); expect(gateTests).toContain("Gateway.remoteAllowedMethods.count, 40");
 });
 const native = process.platform === "darwin" && process.arch === "arm64" && process.env.WINTER_COWORK_OUTPUT_FS_FIXTURE === "1" ? test : test.skip;
 native("real Unix RPC stat/read/readRange returns bounded binary chunks and rejects stale generations", async () => {

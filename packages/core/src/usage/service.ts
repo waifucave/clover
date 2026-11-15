@@ -84,9 +84,6 @@ export interface UsageServiceDeps {
   claudeJsonMaxBytes?: number;
   /** Claude Code's `stats-cache.json` over this is not read (default 8 MiB). */
   claudeStatsMaxBytes?: number;
-  /** The fired alarms waiting for an acknowledgement changed — one fired, or one was acknowledged (the island's
-   *  notifications, `IslandActivity.usageAlarmsChanged`, which reads them back from `firedAlarms`). */
-  onAlarmNotices?: () => void;
   /** The background plan checks (`startBackground`): every installed and tracked plan every `backgroundEveryMs`
    *  (default 30 min), and a plan with an alarm on its own beat (`alarmBeatMs`; default its throttle — Codex 60 s, Claude
    *  Code and Antigravity 5 min). Tests shorten them. */
@@ -1024,20 +1021,14 @@ export class UsageService {
   }
 
   /** Every fired alarm whose notice no client has acknowledged yet, in the order they fired — from the DB, so a
-   *  restart, an app away for hours or a busy island never loses one. */
+   *  restart or an app away for hours never loses one. */
   firedAlarms(): FiredUsageAlarm[] {
     try { return this.deps.db.firedAlarms(); } catch { return []; }
   }
 
   /** A client acknowledged a fired alarm's notice (dismissed it, opened it, or showed it its full time): the row goes. */
   ackAlarm(id: string): boolean {
-    const acked = this.deps.db.ackAlarm(id);
-    if (acked) this.noticesChanged();
-    return acked;
-  }
-
-  private noticesChanged(): void {
-    try { this.deps.onAlarmNotices?.(); } catch { /* the island's failure is its own */ }
+    return this.deps.db.ackAlarm(id);
   }
 
   /** Set an alarm (whole percent); one already set for the same window and threshold is answered instead. The plan's
@@ -1084,10 +1075,7 @@ export class UsageService {
       fired = true;
       this.deps.log?.info?.("[usage] plan alarm fired", { provider: a.provider, window: a.windowKey, threshold: a.thresholdPercent });
     }
-    if (fired) {
-      this.rescheduleBeats();
-      this.noticesChanged();
-    }
+    if (fired) this.rescheduleBeats();
   }
 
   // ── the background plan checks ──────────────────────────────────────────────────────────────────

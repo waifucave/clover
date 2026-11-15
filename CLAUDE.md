@@ -31,8 +31,8 @@ pnpm protocol:generate               # REQUIRED after changing packages/protocol
 # Compiled-artifact gates — each builds a real binary
 bun run verify:workflow              # also verify:automation-worker, verify:runtime-state, verify:runtimes, verify:embedded
 
-# Swift — only the packages the iOS app uses
-cd apple/WinterProtocol && swift test   # also apple/WinterKit
+# Swift — the computer-use helper's packages and the paused Cowork's; the old Mac app's kits are gone (below)
+cd apple/ComputerUse/WinterBrowserHost && swift test   # also the other packages under apple/ComputerUse and apple/Cowork
 
 # CLI / daemon in dev — never a plain `clover` or `winter`: those are dist CLIs
 cd packages/cli && bun src/main.ts daemon run   # headless daemon; `-p "hello"` one-shot; no args = TUI (a throwaway home only, below)
@@ -65,7 +65,7 @@ The topic files under `docs/claude/` describe **Winter's** code as it stood at t
 
 | Read | When |
 |---|---|
-| [architecture.md](docs/claude/architecture.md) | Before touching more than one package, any `apple/*` or `extensions/*` target, the dev daemon, or the dev/dist split. Monorepo layout and the profiles/transition rules. |
+| [architecture.md](docs/claude/architecture.md) | Before touching more than one package, any `apple/ComputerUse`, `apple/Cowork` or `extensions/*` target, the dev daemon, or the dev/dist split. Monorepo layout and the profiles/transition rules. |
 | [runtime-and-sessions.md](docs/claude/runtime-and-sessions.md) | Before touching session create/resume, the embedded host, the `winter`/`ant` binary ladders, legacy-session adoption, model switches, the event log, per-call tool results and concurrency lanes. |
 | [providers-and-credentials.md](docs/claude/providers-and-credentials.md) | Before touching a Keychain slot, `credential.*`/`provider.*` doors, the host-credential broker, the boot Keychain passes or Anthropic/Console sign-in. |
 | [internal-jobs.md](docs/claude/internal-jobs.md) | Before touching titles, the bash safety reviewer, the dreamer or the session cleaner — model/effort/credential resolution and the role problems. |
@@ -77,7 +77,6 @@ The topic files under `docs/claude/` describe **Winter's** code as it stood at t
 | [mcp.md](docs/claude/mcp.md) | Before touching connector permissions, MCP OAuth sign-ins, URL-mode elicitation, an `mcp.*` RPC or `clover mcp`. |
 | [images.md](docs/claude/images.md) | Before touching image attachments, `session.stageImage` or `images` on `session.send`/`steer`. |
 | [computer-use.md](docs/claude/computer-use.md) | Before touching `packages/core/src/computer-use/**` (not `browser/`), `apple/ComputerUse/**`, the `computer_v2` tool, its policy/cards, the helper client, app adapters, the focus guardian. |
-| [island.md](docs/claude/island.md) | Before touching `apple/Winter/Sources/Island/`, `packages/core/src/island/`, the hello's `capabilities`/`tty`, `island.pending`, or where an approval, question or desktop-switch prompt shows on the Mac. |
 | [computer-use-browsers.md](docs/claude/computer-use-browsers.md) | Before touching `computer-use/browser/**`, `extensions/winter-for-chrome/**`, `apple/ComputerUse/WinterBrowserHost/**` or the browser link — tabs, readers, downloads, the sign-in hand-off, WebMCP. |
 | [headless.md](docs/claude/headless.md) | Before touching the `headless` backend, the Winter Headless helper, its local-network rules or the Chromium embed layout. |
 | [usage.md](docs/claude/usage.md) | Before touching usage and cost tracking: `packages/core/src/usage/`, the projector's `onTurnUsage`, `usage.*`, `settings.usage`, reading the user's Codex/Claude Code/Antigravity/OpenCode usage or plans. |
@@ -94,10 +93,10 @@ Other references: `clover-vs-cc-tools.md` (repo root, the tool comparison with C
 - **Never kill, restart, launch or write to a running Winter.app or the user's live Winter daemon.** The daily driver is `Winter.app` (`com.winter.app`) in `/Applications` on `~/.winter` with Keychain `com.winter.core`. A local Release build of the Mac app (`out/release/<version>/…/Winter.app`) carries the same bundle id and Launch Services can resolve `com.winter.app` to it at relaunch: never launch one, and never delete an `out/release/<version>` tree while a Winter process runs from it. The legacy `Norma.app` / `~/.norma` / `com.norma.core` items stay untouched as the rollback source.
 - **Never launch a dist Winter instance** — `Winter.app`, a Release build, or the dist `winter` CLI, which launches the app on a dead socket. A Claude-launched dist instance is indistinguishable from the user's own in the menu bar and defeats the entire dev/dist split. Winter's dev work happens only in "Winter Dev" (`com.winter.app.dev`, `~/.winter-dev`), from the Winter checkout, never from this one.
 - **Winter fixes go on `winter/maintenance`**, from Winter's own checkout. The `winter-before-clover` tag marks Winter's last commit before Clover: never move it.
-- **Before C7, never build `apple/Winter` or run `scripts/release*.ts` or `bun run tap:publish`.** They produce `com.winter.app` against Winter's live update feed (`apple/Winter/project.yml`) and publish to Winter's tap; `release.ts` and `tap:publish` refuse until Clover's own release pipeline lands in C7.
-- **Never run WinterKit's `winter-probe`.** Its defaults are the live Winter daemon's socket (`~/.winter/run/core.sock`) and Keychain (`com.winter.core`).
+- **Before C7, never run `scripts/release*.ts` or `bun run tap:publish`.** They publish against Winter's live update feed and tap; `release.ts` and `tap:publish` refuse until Clover's own release pipeline lands in C7.
+- **The old Winter Mac app's Swift sources are not in this repo** (the owner's ruling, 2026-11-15): `apple/Winter`, `apple/WinterKit`, `apple/WinterChatKit`, `apple/WinterProtocol` and the root `Package.swift` live on `winter/maintenance` and the `winter-before-clover` tag. Never build them from there into a live install, and never run WinterKit's `winter-probe` (its defaults are the live Winter daemon's socket and Keychain).
 - **Never run the live suites from an agent.** `e2e:cu-live` takes over the screen (gated only by `WINTER_CU_LIVE_TESTS=1`); `e2e:browser` drives real browsers on the desktop (`CLOVER_BROWSER_E2E=1`).
-- The Sparkle public key in `apple/Winter/project.yml` (`SUPublicEDKey`) is Winter's production key, and Winter's live update feed depends on it; the private half exists only in the login Keychain — never committed anywhere.
+- The Sparkle public key in the old app's `project.yml` (`SUPublicEDKey`, on `winter/maintenance`) is Winter's production key, and Winter's live update feed depends on it; the private half exists only in the login Keychain — never committed anywhere.
 
 ### Tests, secrets and identities
 

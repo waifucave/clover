@@ -33,8 +33,8 @@ export interface HubClient {
    *  hub's removal paths hold. `"remote"` is what makes the phone's gateway app-kind by the
    *  daemon's own record rather than by string-matching its name (`harnessKindOf`). */
   role?: string | null;
-  /** The Clover island: the connection's controlling terminal from its hello (`HelloParams.tty`), for a terminal
-   *  client — how the Mac app tells whether that exact terminal window or tab is in front. */
+  /** The connection's controlling terminal from its hello (`HelloParams.tty`), for a terminal client — which exact
+   *  terminal window or tab a session's host is. */
   tty?: string | null;
   deliver(event: SessionEvent): boolean;
   /** Bracket `attach`'s synchronous replay loop: a socket-backed client suspends its slow-consumer
@@ -183,13 +183,6 @@ export class SessionHub {
     return [...(this.attachments.get(sessionId) ?? [])].map((c) => ({
       clientName: c.clientName, role: c.role, ...(typeof c.tty === "string" ? { tty: c.tty } : {}),
     }));
-  }
-
-  /** The island's Sessions tab (`island.hosts`): every session with at least one attachment now. Read-only. */
-  attachedSessionIds(): string[] {
-    const out: string[] = [];
-    for (const [sid, set] of this.attachments) if (set.size > 0) out.push(sid);
-    return out;
   }
 
   /** Which session `client` is currently attached to, or `undefined` if none — read-only, no side

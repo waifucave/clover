@@ -266,7 +266,7 @@ export class WakeRegistry {
     }));
   }
 
-  /** Every armed trigger, every session's, oldest first (the Mac island's Watches tab, `island.activity`). Labels only:
+  /** Every armed trigger, every session's, oldest first. Labels only:
    *  never the model's note. */
   listAll(): { sessionId: string; wakeId: string; condition: string; targetLabel: string; elementLabel?: string; armedAt: number; expiresAt: number }[] {
     return [...this.triggers.values()].map((t) => ({

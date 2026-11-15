@@ -64,7 +64,7 @@ test("all four remote allowlist mirrors exclude schedule metadata", () => {
   for (const method of ["create", "cancel", "list", "status"].map(value => `workspace.schedule.${value}`)) {
     expect(REMOTE_ALLOWED_METHODS.has(method)).toBe(false); expect((COWORK_REMOTE_METHODS as readonly string[]).includes(method)).toBe(false);
     const root = join(import.meta.dir, "../../../..");
-    const mirrors = ["apple/WinterKit/Sources/WinterKit/Gateway/Gateway.swift", "apple/WinterKit/Tests/WinterKitTests/GatewayGateTests.swift", "packages/core/test/ipc/remote-allowlist-parity.test.ts"];
+    const mirrors = ["packages/core/test/ipc/remote-allowlist-parity.test.ts"];
     for (const path of mirrors) expect(readFileSync(join(root, path), "utf8").includes(`"${method}"`)).toBe(false);
   }
 });
