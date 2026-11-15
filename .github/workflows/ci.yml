@@ -995,7 +995,7 @@ jobs:
   # Winter for Chrome's native host (apple/ComputerUse/WinterBrowserHost): framing, the relay, the daemon check (fakes
   # plus the real Security.framework decision against this process), identity. It imports nothing outside the system, so
   # it needs no Bun and no install. The old Mac app's Swift kits (WinterProtocol, WinterKit, WinterChatKit, the app) left
-  # this repository (the owner's ruling, 2026-11-15); they stay on the winter/maintenance branch and its tag.
+  # this repository (the owner's ruling, 2026-11-15); they stay on the maintenance branch and its tag.
   swift:
     name: swift (WinterBrowserHost)
     needs: changes

@@ -188,7 +188,7 @@ all come for free.
 packages/protocol   the contract: schemas for every RPC method and session event
 packages/core       the service: sessions, tools, models, memory, routines
 packages/cli        the `clover` command and its terminal UI
-apple/              the computer-use helper's Swift packages and the paused Cowork's (the old Mac app lives on `winter/maintenance`)
+apple/              the computer-use helper's Swift packages and the paused Cowork's (the old Mac app is on the maintenance branch)
 ```
 
 ```sh
