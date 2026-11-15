@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { HandlerContext } from "@waifucave/clover-plugin-sdk";
 import {
@@ -11,7 +10,7 @@ import { codexPlanFromAppServer, codexPlanFromRollouts, codexRecordOf, codexRoll
 // rollouts, `~/.codex/sessions` and `~/.codex/archived_sessions` (the two folders the manifest names).
 
 /** Where Codex keeps its files: the user's home is the host process's `HOME`. */
-export const codexHomeOf = (env: Readonly<Record<string, string | undefined>> = process.env): string => join(env.HOME ?? homedir(), ".codex");
+export const codexHomeOf = (env: Readonly<Record<string, string | undefined>> = process.env): string => join(env.HOME ?? "/nonexistent-home", ".codex");
 
 export interface CodexSourceOptions {
   /** `<codex home>`; the user's `~/.codex` unless a test names another. */

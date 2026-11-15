@@ -3908,6 +3908,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: hostComputer, registry, secrets: contractSecrets,
+      // The daemon's own notion of the user's home: the real one only on its default home (as usage's, `wiring.ts`); any
+      // other (a test's) runs programs and judges folders against an empty stand-in, never the developer's.
+      ...(opts.parts?.userHome !== undefined ? { userHome: opts.parts.userHome } : isDefaultCloverHome(home, profile) ? { userHome: homedir() } : {}),
       // A component's `plugins.install`: the user's install door, once the registry's methods hand it out (below).
       handlers: [notify.apiHandlers(), pluginsInstallApi(() => componentInstall)],
       openCard: brokerCardOpener(pluginsBroker), main: pluginMain,
@@ -3948,7 +3951,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           const v = c.value as { id?: unknown; name?: unknown; handler?: unknown; provides?: unknown; planEveryMs?: unknown };
           if (c.state !== "active" || typeof v.id !== "string" || typeof v.handler !== "string" || !Array.isArray(v.provides)) return [];
           const provides = v.provides.filter((p): p is "plan" | "usage" => p === "plan" || p === "usage");
-          return [{ pluginId: c.pluginId, id: v.id, name: typeof v.name === "string" ? v.name : v.id, handler: v.handler, provides, ...(typeof v.planEveryMs === "number" ? { planEveryMs: v.planEveryMs } : {}) }];
+          return [{ pluginId: c.pluginId, bundled: opened.registry.get(c.pluginId)?.source === "bundled", id: v.id, name: typeof v.name === "string" ? v.name : v.id, handler: v.handler, provides, ...(typeof v.planEveryMs === "number" ? { planEveryMs: v.planEveryMs } : {}) }];
         }),
         call: (e, method, args, timeoutMs) => usageHost.host.invoke({ pluginId: e.pluginId, handler: e.handler, method, args, caller: { kind: "core" }, timeoutMs }),
       },

@@ -11,6 +11,8 @@ import type { UsagePricer } from "./pricing";
 /** One entry of the `usage.sources` point: a tool's usage, by the plugin that reads it. */
 export interface UsageSourceEntry {
   pluginId: string;
+  /** The plugin is one the build ships (it wins a source id another plugin also declares). */
+  bundled?: boolean;
   /** The source's name: its records' `source`, its plan's `provider`, an alarm's provider. */
   id: string;
   name: string;

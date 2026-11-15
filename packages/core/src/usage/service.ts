@@ -20,6 +20,10 @@ export const USAGE_RANGES: readonly UsageRange[] = ["1h", "24h", "7d", "30d", "a
 export type UsageTracking = Record<string, boolean>;
 
 /** A source's switch: its name in camel case. */
+/** Where usage.db keeps which plugin holds each source id. */
+const SOURCE_OWNERS_KEY = "usage-source-owners";
+/** The most passes in a row a source's `more: true` may ask for; then the throttle applies again. */
+export const MORE_PASSES_MAX = 6;
 export const trackingKey = (id: string): string => id.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 
 export interface UsageServiceDeps {
@@ -210,6 +214,8 @@ export class UsageService {
   private ingestRun: Promise<void> | undefined;
   private lastIngestAt = 0;
   private ingestMore = false;
+  /** Consecutive passes each source answered `more` (see `MORE_PASSES_MAX`). */
+  private readonly morePasses = new Map<string, number>();
   private lastTracking: UsageTracking | undefined;
   /** The sources that could be read at the last pass: one that has come up since (a plugin's yes, a restart of its
    *  process) is news too, never held back by the throttle. */
@@ -235,12 +241,64 @@ export class UsageService {
 
   // ── the entries ─────────────────────────────────────────────────────────────────────────────────
 
-  /** The entries now, one per source id (the first to claim a name keeps it). */
+  /**
+   * The entries now, one per source id. A source id BELONGS to the plugin that first held it (recorded in usage.db, so it
+   * holds across restarts and while that plugin is off): an entry of another plugin naming the same id is refused, said
+   * once in the log, and never called, so it cannot file rows under that name or replace the rows stored there. A bundled
+   * plugin's entry wins over an installed one (it takes the id over, and the installed one is refused); among installed
+   * ones the first to hold it keeps it. (Chosen over keying stored rows by plugin id: the Usage page's names and the
+   * alarms' providers are source ids, and one tool's history must stay one history.)
+   */
   private entries(): UsageSourceEntry[] {
     let all: UsageSourceEntry[];
     try { all = this.deps.sources?.entries() ?? []; } catch { return []; }
+    const owners = this.owners();
+    let changed = false;
+    const out: UsageSourceEntry[] = [];
     const seen = new Set<string>();
-    return all.filter((e) => SOURCE_ID.test(e.id) && e.id !== "winter" && !seen.has(e.id) && (seen.add(e.id), true));
+    // Bundled first, so a bundled entry takes an id before an installed one listed ahead of it.
+    for (const e of [...all].sort((a, b) => Number(b.bundled === true) - Number(a.bundled === true))) {
+      if (!SOURCE_ID.test(e.id) || e.id === "winter") continue;
+      let owner = owners[e.id];
+      if (owner === undefined || (owner.pluginId !== e.pluginId && e.bundled === true && owner.bundled !== true)) {
+        owner = owners[e.id] = { pluginId: e.pluginId, ...(e.bundled === true ? { bundled: true } : {}) };
+        changed = true;
+      }
+      if (owner.pluginId !== e.pluginId) {
+        const said = `${e.pluginId}/${e.id}`;
+        if (!this.refusedIds.has(said)) {
+          this.refusedIds.add(said);
+          this.deps.log?.warn?.(`[usage] ${e.pluginId} source "${e.id}" is refused: that name belongs to ${owner.pluginId}`);
+        }
+        continue;
+      }
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      out.push(e);
+    }
+    if (changed) {
+      try { this.deps.db.setSourceState(SOURCE_OWNERS_KEY, "winter", { owners }, this.now()); } catch { /* held in memory; the next pass writes it */ }
+    }
+    // The order the entries came in, as before.
+    const order = new Map(all.map((e, i) => [`${e.pluginId}/${e.id}`, i]));
+    return out.sort((a, b) => (order.get(`${a.pluginId}/${a.id}`) ?? 0) - (order.get(`${b.pluginId}/${b.id}`) ?? 0));
+  }
+
+  private ownersMap: Record<string, { pluginId: string; bundled?: boolean }> | undefined;
+  private readonly refusedIds = new Set<string>();
+  private owners(): Record<string, { pluginId: string; bundled?: boolean }> {
+    if (this.ownersMap === undefined) {
+      const raw = this.deps.db.sourceState(SOURCE_OWNERS_KEY)?.owners;
+      const map: Record<string, { pluginId: string; bundled?: boolean }> = {};
+      if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+        for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+          const o = v as { pluginId?: unknown; bundled?: unknown } | null;
+          if (o !== null && typeof o === "object" && typeof o.pluginId === "string") map[id] = { pluginId: o.pluginId, ...(o.bundled === true ? { bundled: true } : {}) };
+        }
+      }
+      this.ownersMap = map;
+    }
+    return this.ownersMap;
   }
 
   private entry(id: string): UsageSourceEntry | undefined {
@@ -319,12 +377,21 @@ export class UsageService {
     for (const entry of this.entries()) {
       if (!entry.provides.includes("usage") || !this.tracked(entry.id)) continue;
       try {
-        if (await this.ingestSource(entry)) more = true;
+        if (await this.ingestSource(entry)) more = this.moreAllowed(entry.id) || more;
+        else this.morePasses.delete(entry.id);
       } catch (err) {
         this.deps.log?.warn?.("[usage] ingest failed", { source: entry.id, error: err instanceof Error ? err.name : "error" });
       }
     }
     this.ingestMore = more;
+  }
+
+  /** A source "more" is honoured for at most `MORE_PASSES_MAX` passes in a row; then it waits for the throttle like any other. */
+  private moreAllowed(id: string): boolean {
+    const n = (this.morePasses.get(id) ?? 0) + 1;
+    if (n >= MORE_PASSES_MAX) { this.morePasses.delete(id); return false; }
+    this.morePasses.set(id, n);
+    return true;
   }
 
   private stateKey(id: string): string { return `${SOURCE_STATE_PREFIX}${id}`; }
@@ -360,7 +427,8 @@ export class UsageService {
     const next: Record<string, unknown> = { seeded: true, ...(a.state === "keep" ? ("state" in row ? { state: row.state } : {}) : { state: a.state }), ...(history === undefined ? {} : { history }) };
     const text = JSON.stringify(next);
     const touched = records.length > 0 || a.replace.length > 0 || estimates !== undefined || this.stateText.get(id) !== text;
-    if (!touched) return a.more;
+    const brought = records.length > 0 || a.replace.length > 0 || (estimates?.length ?? 0) > 0;
+    if (!touched) return a.more && brought;
     db.db.transaction(() => {
       db.insert(records);
       for (const span of a.replace) this.replaceSpan(id, span.from, span.to, span.records.map((r) => priceRecord(this.deps.pricer, id, r)));
@@ -369,7 +437,7 @@ export class UsageService {
     })();
     this.stateText.set(id, text);
     if (history !== undefined) this.histories.set(id, history); else this.histories.delete(id);
-    return a.more;
+    return a.more && brought;
   }
 
   /** Replace one span of a source's rows — written only when something differs (a re-read of an unchanged span writes nothing). */

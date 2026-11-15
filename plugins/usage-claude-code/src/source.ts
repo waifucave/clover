@@ -1,5 +1,4 @@
 import { statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { HandlerContext } from "@waifucave/clover-plugin-sdk";
 import {
@@ -20,7 +19,7 @@ import {
 const DAY = 86_400_000;
 
 /** Where Claude Code keeps its files: the user's home is the host process's `HOME`. */
-export const claudeHomeOf = (env: Readonly<Record<string, string | undefined>> = process.env): string => join(env.HOME ?? homedir(), ".claude");
+export const claudeHomeOf = (env: Readonly<Record<string, string | undefined>> = process.env): string => join(env.HOME ?? "/nonexistent-home", ".claude");
 
 export interface ClaudeSourceOptions {
   /** Claude Code's config folder; the user's `~/.claude` unless a test names another. */

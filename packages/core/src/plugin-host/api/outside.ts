@@ -15,8 +15,8 @@
 //   fence, read only, never inside the Clover home (the fence's last denies, the Keychain's files and the tools'
 //   credential files, still hold).
 // * Everything else the plugin does stays fenced as before.
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { OUTSIDE_OUTPUT_MAX, OUTSIDE_TIMEOUT_MAX_MS, OUTSIDE_TIMEOUT_MS } from "@waifucave/clover-plugin-sdk/api-calls";
 import { ContractError } from "../../contracts/common";
@@ -109,8 +109,17 @@ export function notTheUsers(o: { cloverHome: string; folder?: string; writable?:
   return [...new Set([o.cloverHome, ...(o.folder !== undefined ? [o.folder] : []), ...(o.writable ?? [])].map(real))];
 }
 
+/** Where a program runs, and what a plugin's folders are judged against, when the daemon names no user home (a test's,
+ *  or a daemon not on its default home): an empty folder in the temp area (never Clover's own, which a program may not run
+ *  in), not the real one. The daemon passes the user's home for the one on its default home (`daemon.ts`). */
+export function noUserHome(): string {
+  const dir = join(tmpdir(), "clover-no-user-home");
+  try { mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { /* the folder check below says so */ }
+  return dir;
+}
+
 export function outsideApi(o: { userHome?: string; cloverHome: string; log?: (line: string) => void; path?: () => string | undefined; writable?: (pluginId: string) => readonly string[] }): ApiHandlers {
-  const userHome = o.userHome ?? homedir();
+  const userHome = o.userHome ?? noUserHome();
   const clover = real(o.cloverHome);
   return {
     "outside.run": async (ctx, args) => {

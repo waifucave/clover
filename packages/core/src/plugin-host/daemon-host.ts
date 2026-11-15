@@ -16,7 +16,6 @@
 import type { CardOpener } from "../devices/rpc";
 import { wrapperOpensNetwork } from "../registry/wrap";
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, fencedSpawn, pluginFenceAvailable, toolCacheEnv, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
@@ -41,7 +40,7 @@ import { AvatarService } from "./api/avatar";
 import { confirmApi } from "./api/confirm";
 import { keysApi } from "./api/keys";
 import { logsApi } from "./api/logs";
-import { outsideApi, outsideReadFolders } from "./api/outside";
+import { noUserHome, outsideApi, outsideReadFolders } from "./api/outside";
 import { pointChanges, pointsApi } from "./api/points";
 import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
@@ -169,7 +168,7 @@ export interface StartPluginHostOptions {
   netConnect?: typeof Bun.connect;
   /** Test seam: how the proxies resolve a listed name (default: the system's resolver). */
   netResolve?: (host: string) => Promise<string[]>;
-  /** The user's home the fence denies (default: `os.homedir()`; tests pass a temp one). */
+  /** The user's home the fence denies (the daemon passes the user's on its default home; absent, an empty stand-in, never the real one). */
   userHome?: string;
   /** How long an added pick waits for a host that runs programs to have no call in flight before its process is
    *  replaced anyway (default `PICK_WAIT_MS`; tests pass less). */
@@ -350,7 +349,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // What an own process's fence holds of programs now: undefined for none, else its picks.
   const programsNow = (pluginId: string) => (runsPrograms(pluginId) ? o.picked?.(pluginId) ?? { read: [], write: [] } : undefined);
   /** P5: the folders its manifest names to read outside its sandbox, as its own process's fence takes them. */
-  const outsideReadsNow = (pluginId: string): string[] => outsideReadFolders(o.registry.get(pluginId), { userHome: o.userHome ?? homedir(), cloverHome: o.home });
+  const outsideReadsNow = (pluginId: string): string[] => outsideReadFolders(o.registry.get(pluginId), { userHome: o.userHome ?? noUserHome(), cloverHome: o.home });
   const fenceKey = (programs: { read: readonly string[]; write: readonly string[] } | undefined, pluginId?: string) =>
     `${programs === undefined ? "no programs" : picksKey(programs)}|${pluginId === undefined ? "" : outsideReadsNow(pluginId).join("\u0000")}`;
   // A live own process whose fence no longer says what its plugin's OK'd tree and picks say (it gained or lost
@@ -412,7 +411,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // P5: the folders of the user's its manifest names to read outside its sandbox (`host.outside.read`), read only, for
     // the process of its own the manifest then has (`host.process: "own"`). The fence's last denies (the Keychain's
     // files, the tools' credential files) still hold inside them.
-    const userHome = o.userHome ?? homedir();
+    const userHome = o.userHome ?? noUserHome();
     const outsideReads = key.startsWith("own:") ? outsideReadsNow(dataOf) : [];
     const fence: PluginFenceInput = programs !== undefined
       ? {
@@ -425,7 +424,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
         read: [tree, ...(l.reads ?? []), ...outsideReads], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false, network,
         ...(key === "clover" ? { noNativeCode: true } : {}),
       };
-    const env = { ...l.env, ...(proxy?.env ?? {}), ...(programs !== undefined ? toolCacheEnv(tmp) : {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };
+    // A process of its own that reads the user's folders (`host.outside`) is told the one home the door and the fence use.
+    const env = { ...l.env, ...(key.startsWith("own:") ? { HOME: userHome } : {}), ...(proxy?.env ?? {}), ...(programs !== undefined ? toolCacheEnv(tmp) : {}), TMPDIR: tmp, TMP: tmp, TEMP: tmp };
     // Through the spawn trampoline, keeping its link (descriptor 3): its own TCC-responsible process (the controller's
     // ruling after #345). A launch that names no run files (a test's) is fenced without it.
     if (l.files === undefined) return { ...l, cmd: fencedCommand(l.cmd, fence), env };
@@ -533,7 +533,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     logs.handlers,
     keysApi({ secrets: o.secrets }),
     // P5: the programs a plugin's manifest names, run by the daemon outside its sandbox with the user's own access.
-    outsideApi({ userHome: o.userHome ?? homedir(), cloverHome: o.home, log, writable: (id) => o.picked?.(id)?.write ?? [] }),
+    outsideApi({ userHome: o.userHome ?? noUserHome(), cloverHome: o.home, log, writable: (id) => o.picked?.(id)?.write ?? [] }),
     ...(areas !== undefined ? [areas.handlers] : []),
     new AvatarService((event) => o.emit?.(event)).handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
