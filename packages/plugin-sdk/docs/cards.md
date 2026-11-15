@@ -12,7 +12,7 @@ user decides by what the sealed frames say, and only a press the app saw itself,
 | Put your bot's card where your page wants it | place it with `<Card>` from `@waifucave/clover-plugin-sdk/ui` | `approvals` in the manifest's `capabilities` |
 | Know which cards wait (ids, places, options, never text) | `useApprovals()`, or `api.approvals.pending()` / `api.approvals.watch(fn)` in a component | `approvals` |
 | Know about, and place, every card (a plugin's OK, a change from Settings, any bot's), not only your own bot's | the same calls | `approvals` and `approvals.all` (its OK card says it shows all the user's cards) |
-| Send text it chooses as the user (to any bot, session or `pill.target`) on any real click or key press in its window | `useUserSend()` | `user.send` (its OK card says so; a warning) |
+| Send text it chooses as the user (to any bot, session or `pill.target`) on any real click or key press in its window, or once within 30 s after a press it held and released there (hold-to-talk) | `useUserSend()` | `user.send` (its OK card says so; a warning) |
 | Draw the pending cards in a surface of your own while Clover's window is not in front | `window.cards: true` on your `app.surface` entry | `approvals` and `approvals.all` |
 
 ### 1. Styling: the `card.*` tokens

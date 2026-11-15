@@ -64,7 +64,7 @@
     },
     {
       "name": "user.send",
-      "lets": "Send text the part chooses to any bot, any session (coding sessions too) or any `pill.target` entry, as the user, on any real click or key press inside its own frames (`useUserSend`); one send for one press",
+      "lets": "Send text the part chooses to any bot, any session (coding sessions too) or any `pill.target` entry, as the user, on any real click or key press inside its own frames (`useUserSend`); one send for one press, or one send after a press the app saw held and released, within 30 s of the release (hold-to-talk)",
       "ok": "sends messages to your bots and sessions as you, with text it chooses, whenever you click or press a key in its window",
       "warns": true
     },

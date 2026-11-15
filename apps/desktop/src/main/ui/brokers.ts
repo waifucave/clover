@@ -300,6 +300,9 @@ export class MenuGate {
 /** How soon after the user's key press or click a send it started must reach the main process. */
 export const SEND_INPUT_WINDOW_MS = 1_000;
 
+/** How long after a press's release the frame may send once (hold-to-talk: the release, then the transcription). */
+export const SEND_RELEASE_WINDOW_MS = 30_000;
+
 /** Sends counted as the user's (§5.5): one key press or click the main process saw come to the window covers one
  *  send, within a second; any other send is refused. */
 export class SendGate {
@@ -319,6 +322,44 @@ export class SendGate {
 
   forget(windowId: number): void {
     this.lastInput.delete(windowId);
+    this.pressed.delete(windowId);
+    for (const [frame, r] of this.releases) if (r.windowId === windowId) this.releases.delete(frame);
+  }
+
+  // After a hold (hold-to-talk): the words come only after the release and the transcription, past the second and past the
+  // frame's own activation (Chromium drops it about 5 s after the press). A press AND its release the main process itself saw
+  // come to a frame (never a page's own events, which don't reach `before-input-event` / `before-mouse-event`) give THAT frame one
+  // send within SEND_RELEASE_WINDOW_MS of the release, with no check of the frame's activation at send time. It is the frame's own:
+  // not another frame's, not carried across the frame's reload or navigation, spent by the send, ended by a new press.
+  private readonly pressed = new Set<number>();
+  private readonly releases = new Map<string, { windowId: number; at: number }>();
+
+  /** A press (mouse down or key down) the main process saw in a window: a new press ends the old allowance (of `frameId`, the
+   *  focused frame a key came to; a mouse press whose frame isn't known ends every allowance of the window), and starts a hold. */
+  press(windowId: number, frameId?: string): void {
+    this.input(windowId);
+    this.pressed.add(windowId);
+    if (frameId !== undefined) { this.releases.delete(frameId); return; }
+    for (const [frame, r] of this.releases) if (r.windowId === windowId) this.releases.delete(frame);
+  }
+
+  /** The release of a press the main process saw (mouse up, key up), in `frameId` (the focused frame): that frame may send once. */
+  release(windowId: number, frameId: string): void {
+    if (!this.pressed.delete(windowId)) return; // a release with no press seen here gives nothing
+    this.releases.set(frameId, { windowId, at: this.now() });
+  }
+
+  /** Spends the frame's allowance: true once, within SEND_RELEASE_WINDOW_MS of the release, in the window it was seen in. */
+  takeRelease(windowId: number, frameId: string): boolean {
+    const r = this.releases.get(frameId);
+    if (r === undefined || r.windowId !== windowId) return false; // another window's call spends nothing
+    this.releases.delete(frameId);
+    return this.now() - r.at <= SEND_RELEASE_WINDOW_MS;
+  }
+
+  /** A frame that navigated, reloaded or went away is a document of its own from now on. */
+  forgetFrame(frameId: string): void {
+    this.releases.delete(frameId);
   }
 }
 

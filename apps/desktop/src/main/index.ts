@@ -563,7 +563,7 @@ async function ready(): Promise<void> {
         own.win.setContentSize(width ?? FALLBACK_WIDTH, Math.min(FALLBACK_MAX_HEIGHT, Math.max(FALLBACK_MIN_HEIGHT, height)));
       }
     },
-    userSend: async (windowId, to, message, active) => {
+    userSend: async (windowId, to, message, active, frameId) => {
       // Everything that can be refused is refused first, so a refused call spends nobody's gesture. Each refusal says why in
       // the app's log (the reason only, never the words) and reaches the person as the error the sender shows.
       const refuse = (reason: string, say = reason): never => {
@@ -578,8 +578,12 @@ async function ready(): Promise<void> {
       if (client === undefined) return refuse("Clover isn't running");
       // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
       // window covers one send (§5.5).
-      if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
-      if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+      // A hold that ended (hold-to-talk) lets this frame send once within 30 s of the release, its activation long gone; any other
+      // send is the one second after a press, in the frame's own activation. A refused call spends nobody's allowance or gesture.
+      if (!sends.takeRelease(windowId, frameId)) {
+        if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
+        if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+      }
       try {
         return await client.request<{ seq?: number }>("user.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
       } catch (err) {
@@ -1855,6 +1859,11 @@ function setSoundMuted(on: boolean): void {
 // independent of the main window: closing it changes nothing here. Never shown, never focused, never slowed while hidden; a window
 // may start sound with no press only when its plugin holds `audio` (the other windows' autoplay policy still wants one).
 const backgrounds = new Map<string, { win: BrowserWindow; audio: boolean; microphone: boolean }>();
+/** A background part's window has no input of its own: it never earns a send's allowance. */
+function isBackgroundWindow(id: number): boolean {
+  for (const b of backgrounds.values()) if (!b.win.isDestroyed() && b.win.id === id) return true;
+  return false;
+}
 
 function syncBackgrounds(): void {
   const wanted = runtime.backgroundEntries();
@@ -2264,9 +2273,14 @@ function watchWindow(win: BrowserWindow): void {
     if (typeof e.message === "string" && /^the part .* stopped/.test(e.message)) log(`layers: ${e.message.replace(/\s+/g, " ").slice(0, 300)}`);
   });
   win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyUp" && !isBackgroundWindow(id)) {
+      const f = win.webContents.focusedFrame;
+      if (f !== null && !f.detached) sends.release(id, `${f.processId}:${f.routingId}`);
+    }
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
-      sends.input(id);
+      const down = win.webContents.focusedFrame;
+      if (isBackgroundWindow(id)) sends.input(id); else sends.press(id, down !== null && !down.detached ? `${down.processId}:${down.routingId}` : undefined);
       // The record is per focused frame (the review's S2), the frame the key came to: the part that hands it over
       // idents itself from that same frame. No focused frame records nothing.
       const f = win.webContents.focusedFrame;
@@ -2283,7 +2297,12 @@ function watchWindow(win: BrowserWindow): void {
     if (mouse.type === "mouseUp") {
       // A click sends on its release: the release the main process saw counts as the input too, so a person who holds the
       // button on Send for a while still sends (the press alone covers only the second after it).
-      if (mouse.button === undefined || mouse.button === "left") sends.input(id);
+      if (mouse.button === undefined || mouse.button === "left") {
+        sends.input(id);
+        // The frame the click went to is the focused one (its press focused it): that frame holds the release's allowance.
+        const f = win.webContents.focusedFrame;
+        if (f !== null && !f.detached && !isBackgroundWindow(id)) sends.release(id, `${f.processId}:${f.routingId}`);
+      }
       return dragEnd(id);
     }
     if (mouse.type === "mouseMove") {
@@ -2295,18 +2314,19 @@ function watchWindow(win: BrowserWindow): void {
     cursors.set(id, at);
     windowDrags.down(id, { button: mouse.button, x: mouse.x, y: mouse.y });
     menus.input(id);
-    sends.input(id);
+    if (isBackgroundWindow(id)) sends.input(id); else sends.press(id); // a mouse press's frame isn't known yet: it ends the window's allowances
     pointers.down(id, mouse.x, mouse.y);
   });
   win.webContents.on("did-frame-navigate", (_event, _url, _code, _text, _main, frameProcessId, frameRoutingId) => {
     // A frame that navigated is a document of its own from now on (the review's S2): its old record must not serve it.
     keys.forget(`${frameProcessId}:${frameRoutingId}`);
+    sends.forgetFrame(`${frameProcessId}:${frameRoutingId}`);
   });
   win.webContents.on("render-process-gone", () => {
     // A renderer gone takes its frames' records with it; its new render starts empty.
     const gone = keyFrames.get(id);
     if (gone !== undefined) {
-      for (const frameId of gone) keys.forget(frameId);
+      for (const frameId of gone) { keys.forget(frameId); sends.forgetFrame(frameId); }
       keyFrames.delete(id);
     }
   });

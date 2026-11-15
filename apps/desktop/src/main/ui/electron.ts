@@ -406,7 +406,7 @@ export interface IpcHooks {
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part (`user.send`), after the gate. */
-  userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }, active: boolean): Promise<{ seq?: number }>;
+  userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }, active: boolean, frameId: string): Promise<{ seq?: number }>;
   /** The shell's press on a drag region (`shell`: the main process's own record says this is the shell in `app.root`). */
   windowDrag(windowId: number, shell: boolean): void;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
@@ -800,7 +800,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (only !== undefined && !(typeof a.to === "object" && a.to !== null && Object.keys(a.to).length === 1 && (a.to as { session?: unknown }).session === only.session)) throw new LayerError("a composer sends to its own session");
     const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
     if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
-    return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) }, a.active === true);
+    return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) }, a.active === true, `${s.frame.processId}:${s.frame.routingId}`);
     } catch (err) {
       // Refused before the core's own checks (the part, the target, the words): the reason, never the words.
       if (err instanceof LayerError) log(`send: refused (${err.message})`);

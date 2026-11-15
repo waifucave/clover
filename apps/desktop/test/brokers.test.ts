@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SEND_RELEASE_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -302,6 +302,98 @@ describe("a view's use counts only after main saw the mouse-down there", () => {
     expect(p.pressedIn(1, { ...rect, x: 0, width: 100 })).toBe(false);
     now += VIEW_USE_WINDOW_MS + 1;
     expect(p.pressedIn(1, rect)).toBe(false);
+  });
+});
+
+describe("a send after a hold (hold-to-talk): the release the main process saw gives its frame one send within 30 s", () => {
+  const A = "10:1";
+  const B = "10:2";
+  const held = (g: SendGate, seconds: number, now: { t: number }, frame = A) => { g.press(1, frame); now.t += seconds * 1000; g.release(1, frame); };
+
+  test("a button held 6 s, released, then a send at 5 s and at 29 s after the release passes; 31 s is refused", () => {
+    for (const [after, ok] of [[5, true], [29, true], [30, true], [31, false]] as const) {
+      const now = { t: 0 };
+      const g = new SendGate(() => now.t);
+      held(g, 6, now);
+      now.t += after * 1000;
+      expect(g.takeRelease(1, A)).toBe(ok);
+    }
+  });
+
+  test("a key held and released works the same (the frame the key came to)", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    g.press(1, A); // keyDown in the focused frame
+    now.t += 7_000;
+    g.release(1, A); // keyUp
+    now.t += 3_000;
+    expect(g.takeRelease(1, A)).toBe(true);
+  });
+
+  test("one release covers one send: the allowance is used up", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    held(g, 1, now);
+    expect(g.takeRelease(1, A)).toBe(true);
+    expect(g.takeRelease(1, A)).toBe(false);
+  });
+
+  test("a new press in that frame ends the old allowance; a mouse press (frame unknown) ends the window's", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    held(g, 1, now);
+    g.press(1, A);
+    expect(g.takeRelease(1, A)).toBe(false);
+    held(g, 1, now);
+    g.press(1); // a mouse press
+    expect(g.takeRelease(1, A)).toBe(false);
+    // The new hold's own release starts over.
+    g.release(1, A);
+    expect(g.takeRelease(1, A)).toBe(true);
+  });
+
+  test("it is the frame's own: not another frame's, not another window's", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    held(g, 1, now);
+    expect(g.takeRelease(1, B)).toBe(false);
+    expect(g.takeRelease(2, A)).toBe(false);
+    expect(g.takeRelease(1, A)).toBe(true);
+  });
+
+  test("a frame's reload or navigation (and its window closing) drops it", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    held(g, 1, now);
+    g.forgetFrame(A);
+    expect(g.takeRelease(1, A)).toBe(false);
+    held(g, 1, now);
+    g.forget(1);
+    expect(g.takeRelease(1, A)).toBe(false);
+  });
+
+  test("only input the main process saw gives one: a release with no press seen, or no input at all, gives nothing", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    // A page's own dispatchEvent never reaches before-input-event / before-mouse-event, so nothing is recorded: no allowance.
+    expect(g.takeRelease(1, A)).toBe(false);
+    // A release seen with no press behind it in the window (a key pressed before the window was focused) gives nothing either.
+    g.release(1, A);
+    expect(g.takeRelease(1, A)).toBe(false);
+    // A background part's window has no input, and index.ts records nothing for it: the same as no input at all.
+    const bg = new SendGate(() => now.t);
+    expect(bg.takeRelease(9, "20:1")).toBe(false);
+  });
+
+  test("the one-second rule stays for a send with no release behind it", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    g.press(1, A);
+    expect(g.take(1)).toBe(true); // a click button sends at once
+    g.press(1, A);
+    now.t += SEND_INPUT_WINDOW_MS + 1;
+    expect(g.take(1)).toBe(false);
+    expect(SEND_RELEASE_WINDOW_MS).toBe(30_000);
   });
 });
 

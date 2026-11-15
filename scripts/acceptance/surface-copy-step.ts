@@ -8,6 +8,9 @@
 //     when it is not, and the card is answered by a real press on the copy's own sealed buttons;
 //   * the copy pill sends the user's words as the user on a real press of its Send circle (a click the page makes itself is no
 //     press), and the bot's conversation holds them;
+//   * a folder plugin with user.send held to a button for 6 s with a real press, released, and sending 3 s later sends the user's
+//     words once (the hold's release gives its frame one send within 30 s, its activation long gone); a second send on that
+//     release and a send after a press with no release are refused;
 //   * the bundled two come back when switched on, and the copies are removed.
 // Nothing here names the bundled plugins' ids but to switch them off and on: the copies are the island and the pill's own sources,
 // built into a client module and given another id and name.
@@ -22,6 +25,8 @@ export const SURFACE_COPY_STEP = "a folder-installed copy of the island and of t
 const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins");
 const FIXTURE = resolve(import.meta.dir, "fixtures", "acceptance-island");
 const FIXTURE_ID = "acceptance-island";
+const HOLD = resolve(import.meta.dir, "fixtures", "acceptance-hold");
+const HOLD_ID = "acceptance-hold";
 
 export type Mirror = "island" | "pill";
 export const MIRROR_ID: Readonly<Record<Mirror, string>> = { island: "mirror-island", pill: "mirror-pill" };
@@ -169,6 +174,47 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
     await until("the user's words in the bot's conversation, sent by the copy pill", 40_000, async () => (JSON.stringify(await ctx.history(session)).includes(tag) ? true : undefined),
       async () => `the app's log: ${ctx.appLog().split("\n").filter((l) => /send:/.test(l)).slice(-3).join(" | ")}`);
     said.push("the copy pill sent the user's words as the user on a real press, and sent nothing on a click the page made itself");
+
+    // 7. user.send after a hold: a real press held for 6 s and released, the page sends 3 s later (no click of its own, no activation).
+    const hr = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: HOLD } }, 60_000);
+    if (hr.id !== HOLD_ID) fail(`${HOLD_ID} installed as ${hr.id}`);
+    installed.push(hr.id);
+    const hcard = await until(`${HOLD_ID}'s OK card`, 30_000, okCardOf(ctx, HOLD_ID));
+    await ctx.pressCard(`${HOLD_ID}'s OK card`, (c) => c.id === hcard.id);
+    const hdoc = await until("the hold fixture's surface document", 60_000, async () => {
+      for (const d of await layerDocs(cdp, HOLD_ID)) if ((await cdp.evaluate(d.session, `typeof globalThis.__holdSend === "function" && !!document.querySelector('[data-hold=button]')`).catch(() => false)) === true) return d;
+      return undefined;
+    });
+    const hs = hdoc.session;
+    await cdp.send("Emulation.setDeviceMetricsOverride", { width: 720, height: 160, deviceScaleFactor: 1, mobile: false }, hs).catch(() => undefined);
+    await sleep(600);
+    const HB = "[data-hold=button]";
+    const hbtn = await until("the hold button's place", 15_000, async () => cdp.centerOf(hs, HB).catch(() => undefined));
+    const mouse = (type: "mousePressed" | "mouseReleased") => cdp.send("Input.dispatchMouseEvent", { type, x: hbtn.x, y: hbtn.y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, hs);
+    const sendLater = async (text: string) => String(await cdp.evaluate(hs, `globalThis.__holdSend(${JSON.stringify({ session })}, ${JSON.stringify(text)})`).catch((e: unknown) => `evaluate failed: ${String(e)}`));
+    const seenCount = async (t: string) => (JSON.stringify(await ctx.history(session)).split(t).length - 1);
+    // (a) A press with no release behind it: 3 s later the one-second rule has run out, so the send is refused and nothing arrives.
+    const noRelease = `ACCEPTANCE-NOREL-${Math.random().toString(16).slice(2, 10).toUpperCase()}`;
+    await mouse("mousePressed");
+    await sleep(3_000);
+    const refusedNoRelease = await sendLater(noRelease);
+    if (!refusedNoRelease.startsWith("refused")) fail(`a send 3 s after a press with no release was not refused: ${refusedNoRelease}`);
+    // (b) A new press, held 6 s, released, then 3 s later: the words arrive once.
+    await mouse("mouseReleased");
+    const held = `ACCEPTANCE-HOLD-${Math.random().toString(16).slice(2, 10).toUpperCase()}`;
+    await mouse("mousePressed");
+    await sleep(6_000);
+    await mouse("mouseReleased");
+    await sleep(3_000);
+    const sent = await sendLater(held);
+    if (sent !== "sent") fail(`the send 3 s after a held press's release said "${sent}": ${ctx.appLog().split("\n").filter((l) => /send:/.test(l)).slice(-3).join(" | ")}`);
+    await until("the held words in the bot's conversation", 40_000, async () => ((await seenCount(held)) >= 1 ? true : undefined));
+    // (c) One release covers one send.
+    const second = await sendLater(`${held}-AGAIN`);
+    if (!second.startsWith("refused")) fail(`a second send on one release was not refused: ${second}`);
+    await sleep(1_500);
+    if ((await seenCount(held)) !== 1 || (await seenCount(noRelease)) !== 0 || JSON.stringify(await ctx.history(session)).includes("-AGAIN")) fail("the bot's conversation doesn't hold the held words exactly once and nothing else");
+    said.push("a press held 6 s and released let the page send once 3 s later (the words arrived once); a second send on that release, and a send after a press with no release, were refused");
     return said.join("; ");
   } finally {
     if (fixtureCard !== undefined) await ctx.denyCard(fixtureCard).catch(() => undefined);
