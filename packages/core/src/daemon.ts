@@ -229,7 +229,7 @@ import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClas
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
-import { moveFieldsToPluginSettings } from "./migration/fields-to-plugin-settings";
+import { moveSettingsToPlugins } from "./migration/settings-moved-to-plugins";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
 import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
 import { convertLegacyPluginsForMigration } from "./plugins/convert-legacy";
@@ -1020,9 +1020,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // never throws; `settings.json` itself is never written.
   splitSettingsToSdk(home, { log: (line) => console.error(line) });
 
-  // Values the core used to keep for a feature since re-founded as a plugin move into that plugin's own settings, once
-  // (F1: the speak-replies switch and each bot's voice → Clover Voice's settings). Before anything reads them.
-  moveFieldsToPluginSettings(home, { log: (line) => console.error(line) });
+  // Settings that moved from the core to a plugin go into that plugin's own settings, once, before anything reads them
+  // (the table of rows in migration/settings-moved-to-plugins.ts).
+  moveSettingsToPlugins(home, { log: (line) => console.error(line) });
 
   // The skills Clover ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
   // skill tier, `sdk/skills/` — the builtin tier is staged into no run folder. Every boot, every home, after the
