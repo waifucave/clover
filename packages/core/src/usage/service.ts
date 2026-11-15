@@ -211,6 +211,9 @@ export class UsageService {
   private lastIngestAt = 0;
   private ingestMore = false;
   private lastTracking: UsageTracking | undefined;
+  /** The sources that could be read at the last pass: one that has come up since (a plugin's yes, a restart of its
+   *  process) is news too, never held back by the throttle. */
+  private lastSources = "";
   /** Each source's last plan call (its throttle) and the call still running. */
   private readonly planCache = new Map<string, PlanCache>();
   private readonly planRuns = new Map<string, Promise<void>>();
@@ -285,9 +288,11 @@ export class UsageService {
     const every = this.deps.ingestEveryMs ?? 20_000;
     // A tracking switch flipped since the last pass is news: never held back by the throttle.
     const tracking = this.deps.tracking();
-    const switched = this.lastTracking === undefined || JSON.stringify(this.lastTracking) !== JSON.stringify(tracking);
+    const sources = this.entries().filter((e) => e.provides.includes("usage")).map((e) => e.id).sort().join(",");
+    const switched = this.lastTracking === undefined || JSON.stringify(this.lastTracking) !== JSON.stringify(tracking) || (sources !== "" && sources !== this.lastSources);
     if (!force && !switched && !this.ingestMore && this.now() - this.lastIngestAt < every) return Promise.resolve();
     this.lastTracking = tracking;
+    if (sources !== "") this.lastSources = sources;
     this.ingestRun = this.ingestPass().finally(() => { this.ingestRun = undefined; this.lastIngestAt = this.now(); });
     return this.ingestRun;
   }

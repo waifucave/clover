@@ -1,5 +1,6 @@
 {
   "manifest": 1,
+  "id": "usage-opencode",
   "name": "OpenCode usage",
   "description": "Your OpenCode token counts and cost for the Usage tab, from its own program: `opencode stats`. It runs that one program as you and reads none of OpenCode's files.",
   "engines": { "clover": "^1.0.0" },

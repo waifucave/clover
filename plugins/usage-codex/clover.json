@@ -1,5 +1,6 @@
 {
   "manifest": 1,
+  "id": "usage-codex",
   "name": "Codex usage",
   "description": "Your Codex plan windows and token counts for the Usage tab: it runs `codex app-server` as you to ask Codex for its own plan windows, and reads the numbers in Codex's session files. It reads nothing of Codex's sign-in.",
   "engines": { "clover": "^1.0.0" },
