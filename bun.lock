@@ -822,6 +822,17 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/usage-opencode": {
+      "name": "@waifucave/clover-plugin-usage-opencode",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "typescript": "5.9.3",
+      },
+    },
     "services/accounts": {
       "name": "@waifucave/clover-service-accounts",
       "version": "0.0.0",
@@ -1434,6 +1445,8 @@
     "@waifucave/clover-plugin-usage-claude-code": ["@waifucave/clover-plugin-usage-claude-code@workspace:plugins/usage-claude-code"],
 
     "@waifucave/clover-plugin-usage-codex": ["@waifucave/clover-plugin-usage-codex@workspace:plugins/usage-codex"],
+
+    "@waifucave/clover-plugin-usage-opencode": ["@waifucave/clover-plugin-usage-opencode@workspace:plugins/usage-opencode"],
 
     "@waifucave/clover-plugin-voice": ["@waifucave/clover-plugin-voice@workspace:plugins/clover/plugins/voice"],
 
