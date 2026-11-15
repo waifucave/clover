@@ -14,7 +14,7 @@ from then on it runs.
 To make a new bot (the user asks you for another bot), make a plugin with a `bot` entry: `PluginNew` with the template
 `bot`, its instructions in `bot/instructions.md`, then check and install it as any plugin. There is no other call that
 makes a bot. Once the user OKs it, it has its own row under Bots and its own conversation; you can edit its
-instructions later without asking, and they apply at its conversation's next compaction.
+instructions later without asking, and they apply at its next turn.
 
 ## What a plugin brings, and where each thing may show
 
