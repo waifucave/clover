@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, MICROPHONE_ORIGIN, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
@@ -101,7 +101,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (type === undefined) return notFound();
     // The core's document is the top of every window: same-origin opener policy (with the embedder policy of `commonHeaders`) is
     // what lets a frame of it be cross-origin isolated; it severs `window.opener`, which no window of the app uses (popups are denied).
-    return fileResponse(file, type, { ...(type.startsWith("text/html") ? withMicrophone(commonHeaders(), `(self "${MICROPHONE_ORIGIN}")`) : commonHeaders()), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP, "Cross-Origin-Opener-Policy": "same-origin" } : {}) });
+    return fileResponse(file, type, { ...(type.startsWith("text/html") ? withMicrophone(commonHeaders(), "*") : commonHeaders()), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP, "Cross-Origin-Opener-Policy": "same-origin" } : {}) });
   });
 
   // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
@@ -144,7 +144,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
       // The clover layer's document alone may open the microphone (push-to-talk's shell, listen.ts); the policy still needs the frame's `allow`.
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover");
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover" ? "*" : runtime.layerHolds(doc.layer, "microphone"));
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });

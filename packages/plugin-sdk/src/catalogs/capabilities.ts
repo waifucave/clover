@@ -56,6 +56,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see", warns: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
   { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices", warns: true },
+  /** The user's microphone for a plugin's own frames: `getUserMedia({ audio: true })` works in a frame of a plugin that holds it,
+   *  and in no other plugin's. The system's own question still applies (the first time, on a Mac). Push-to-talk to the bots is
+   *  `audio`'s, not this. */
+  { name: "microphone", lets: "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it", ok: "hears your microphone, also while no window of it shows", warns: true },
   /** The voice providers' endpoints (`voices.*`, §6.6): their audio or text back as the plugin's own data (a narration
    *  track, a transcript). A voice mode has it by being one. Nothing sounds through it: the player is the active
    *  voice mode's alone. */

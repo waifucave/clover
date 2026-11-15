@@ -79,6 +79,14 @@ your own, with a button of its own:
 A panel is for something the user keeps beside the conversation (a document, a sheet, a preview, a board). A whole
 page of your own is `main` with a `sidebar.app` button ("A whole app"); a part inside a stock panel is `panel.view`.
 
+## The microphone
+
+With the `microphone` capability, `navigator.mediaDevices.getUserMedia({ audio: true })` works in your plugin's own frames: a
+`composer.action` button, a panel, a `main` page, and a part kept in the background (a voice mode that listens for a wake word
+needs exactly that). No other plugin's frame gets it. The system's own permission still applies (a Mac asks the first time;
+without it the call is refused), and the OK card says "It hears your microphone, also while no window of it shows" with a warning. Open it when your part needs it and
+stop the track (`track.stop()`) when it doesn't. This is not push-to-talk: that is the user's press and the `audio` capability.
+
 ## A part that keeps running in the background
 
 A `ui` entry at `app.background` has no place in any window: `{ "spot": "app.background", "id": "player", "component":

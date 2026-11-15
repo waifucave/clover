@@ -62,7 +62,7 @@ import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
-import { LISTEN_REQUEST_MS, ListenHolds, micPermission } from "./ui/listen";
+import { LISTEN_REQUEST_MS, ListenHolds, micHandlers } from "./ui/listen";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
@@ -294,11 +294,18 @@ async function ready(): Promise<void> {
     ...(typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? {} : { ensureMic: microphoneProblem }),
     log,
   });
-  ui.setPermissionRequestHandler((wc, permission, callback, details) => {
-    callback(micPermission({ permission, mediaTypes: "mediaTypes" in details ? details.mediaTypes : undefined, requestingUrl: details.requestingUrl, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME));
+  // A plugin that holds `microphone` may open it from its own frames (their address names the layer; the runtime says what that plugin
+  // holds). On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build answers the
+  // permission check and request but never opens a real microphone or asks the system (nothing in a test calls getUserMedia).
+  const pluginMic = (layer: string): boolean => runtime?.layerHolds(layer, "microphone") === true;
+  const testBuild = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
+  const mic = micHandlers({
+    holds, layerScheme: LAYER_SCHEME, plugin: pluginMic, testBuild,
+    windowOf: (wc) => (wc === null ? undefined : BrowserWindow.fromWebContents(wc as Electron.WebContents)?.id),
+    systemProblem: microphoneProblem,
   });
-  ui.setPermissionCheckHandler((wc, permission, origin, details) =>
-    micPermission({ permission, mediaTypes: details.mediaType === undefined || details.mediaType === "unknown" ? undefined : [details.mediaType], requestingUrl: details.requestingUrl ?? origin, windowId: wc === null ? undefined : BrowserWindow.fromWebContents(wc)?.id }, holds, LAYER_SCHEME));
+  ui.setPermissionRequestHandler((wc, permission, callback, details) => mic.request(wc, permission, callback, { mediaTypes: "mediaTypes" in details ? details.mediaTypes : undefined, requestingUrl: details.requestingUrl }));
+  ui.setPermissionCheckHandler((wc, permission, origin, details) => mic.check(wc, permission, origin, details));
 
   runtime = new UiRuntime({
     os, platform: process.platform, safeMode, log,
@@ -1790,14 +1797,15 @@ function setSoundMuted(on: boolean): void {
 // that entry. Created when the part may run, destroyed when it may not (the plugin stopped, turned off or removed), and
 // independent of the main window: closing it changes nothing here. Never shown, never focused, never slowed while hidden; a window
 // may start sound with no press only when its plugin holds `audio` (the other windows' autoplay policy still wants one).
-const backgrounds = new Map<string, { win: BrowserWindow; audio: boolean }>();
+const backgrounds = new Map<string, { win: BrowserWindow; audio: boolean; microphone: boolean }>();
 
 function syncBackgrounds(): void {
   const wanted = runtime.backgroundEntries();
   for (const [ref, b] of [...backgrounds]) {
     const now = wanted.find((w) => w.ref === ref);
-    // A plugin whose `audio` changed gets a new window: the autoplay policy is fixed at a window's creation.
-    if (now !== undefined && now.audio === b.audio && !b.win.isDestroyed()) continue;
+    // A plugin whose `audio` changed gets a new window: the autoplay policy is fixed at a window's creation. So does one whose
+    // `microphone` changed: a stream it already has open would keep recording after the capability went.
+    if (now !== undefined && now.audio === b.audio && now.microphone === b.microphone && !b.win.isDestroyed()) continue;
     backgrounds.delete(ref);
     if (!b.win.isDestroyed()) b.win.destroy();
     log(`background: ${ref} stopped`);
@@ -1812,7 +1820,7 @@ function syncBackgrounds(): void {
     watchWindow(win);
     if (prefs.soundMuted) win.webContents.setAudioMuted(true);
     win.setIgnoreMouseEvents(true);
-    backgrounds.set(w.ref, { win, audio: w.audio });
+    backgrounds.set(w.ref, { win, audio: w.audio, microphone: w.microphone });
     const id = win.id;
     runtime.openWindow(id, { material: "none", surface: { id: w.ref, ref: w.ref, spot: "app.background" } });
     win.on("closed", () => {

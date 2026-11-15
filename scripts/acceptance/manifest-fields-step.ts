@@ -446,4 +446,72 @@ export function writeBackground(root: string, id: string, o: { audio: boolean })
     ].join("\n"),
   });
 }
+/** The microphone plugins (window step 30): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer; the other plugin takes `level`, since two plugins on one key leave one) and
+ *  `app.background`; `acc-mic-quiet` fills `composer.action` and doesn't hold it. Each part reads
+ *  the page's own view of the microphone as it mounts (the permission state, which Chromium asks the app's check handler, and its
+ *  frame's policy, the iframe's `allow`) and says it in its DOM. No device is opened: a test build never asks the system. */
+export const MIC_IDS = { holder: "acc-mic", other: "acc-mic-quiet" } as const;
+export function writeMicrophone(root: string, id: string, o: { mic: boolean }): string {
+  return writePlugin(join(root, id), {
+    manifest: 1, id, name: o.mic ? "Acceptance microphone" : "Acceptance microphone (quiet)", version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    ...(o.mic ? { capabilities: ["microphone"] } : {}),
+    contributes: {
+      ui: [
+        { spot: "composer.action", key: o.mic ? "model" : "level", id: "mic", component: "MicButton", title: "Acceptance microphone" },
+        ...(o.mic ? [{ spot: "app.background", id: "listener", component: "Listener" }] : []),
+      ],
+    },
+  }, undefined, {
+    "client/index.js": [
+      "import { jsx } from \"react/jsx-runtime\";",
+      "import { useEffect, useState } from \"react\";",
+      "const startedAt = Date.now();",
+      "export function Ticker() {",
+      "  const [s, set] = useState({ ticks: 0, ctx: \"none\", rms: 0, time: 0, vis: document.visibilityState });",
+      "  useEffect(() => {",
+      "    let ticks = 0, rms = 0, ctxState = \"none\", analyser = null, ctx = null;",
+      "    try {",
+      "      ctx = new AudioContext();",
+      "      const osc = ctx.createOscillator(); osc.frequency.value = 440;",
+      "      const gain = ctx.createGain(); gain.gain.value = 0.2;",
+      "      analyser = ctx.createAnalyser(); analyser.fftSize = 512;",
+      "      osc.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);",
+      "      osc.start();",
+      "      ctx.resume().catch(() => undefined);",
+      "    } catch { ctxState = \"refused\"; }",
+      "    const buf = new Float32Array(512);",
+      "    const timer = setInterval(() => {",
+      "      ticks++;",
+      "      if (ctx !== null) {",
+      "        ctxState = ctx.state;",
+      "        if (analyser !== null && ctx.state === \"running\") { analyser.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v; rms = Math.max(rms, Math.sqrt(sum / buf.length)); }",
+      "      }",
+      "      set({ ticks, ctx: ctxState, rms, time: ctx === null ? 0 : ctx.currentTime, vis: document.visibilityState });",
+      "    }, 100);",
+      "    return () => { clearInterval(timer); if (ctx !== null) ctx.close().catch(() => undefined); };",
+      "  }, []);",
+      "  return jsx(\"div\", { \"data-acc-background\": \"\", \"data-started\": String(startedAt), \"data-ticks\": String(s.ticks), \"data-ctx\": s.ctx, \"data-rms\": s.rms.toFixed(4), \"data-time\": s.time.toFixed(3), \"data-vis\": s.vis, children: \"background\" });",
+      "}",
+      "async function probe() {",
+      "  // No device is opened here: a test build never asks the system for the microphone. The page's own view of the permission",
+      "  // (Chromium asks the app's check handler) and of its frame's policy (the iframe's `allow`) is the proof.",
+      "  const q = await navigator.permissions.query({ name: \"microphone\" });",
+      "  const policy = document.permissionsPolicy || document.featurePolicy;",
+      "  return { perm: q.state, policy: policy && policy.allowsFeature ? (policy.allowsFeature(\"microphone\") ? \"allowed\" : \"blocked\") : \"unavailable\" };",
+      "}",
+      "function Part({ kind }) {",
+      "  const [s, set] = useState({ state: \"asking\", perm: \"\", policy: \"\", error: \"\" });",
+      "  useEffect(() => {",
+      "    let live = true;",
+      "    probe().then((r) => live && set({ state: \"done\", perm: r.perm, policy: r.policy, error: \"\" }), (e) => live && set({ state: \"failed\", perm: \"\", policy: \"\", error: `${e && e.name}: ${e && e.message}` }));",
+      "    return () => { live = false; };",
+      "  }, []);",
+      "  return jsx(\"div\", { \"data-acc-mic\": kind, \"data-state\": s.state, \"data-perm\": s.perm, \"data-policy\": s.policy, \"data-error\": s.error, children: `mic ${kind}` });",
+      "}",
+      "export const MicButton = () => jsx(Part, { kind: \"composer\" });",
+      "export const Listener = () => jsx(Part, { kind: \"background\" });",
+      "",
+    ].join("\n"),
+  });
+}
 export const OFFICE_REFUSAL = "The panel \"slides\" adds a panel of its own: it needs a `title`, which names its button.";

@@ -2,7 +2,7 @@
 // numbered, ordered and checked here; the microphone permission answered only while a hold records.
 import { describe, expect, test } from "bun:test";
 import { MICROPHONE_ORIGIN, commonHeaders, layerHeaders, withMicrophone } from "../src/main/ui/documents";
-import { LISTEN_GRACE_MS, LISTEN_MAX_BYTES, LISTEN_MAX_MS, ListenHolds, base64Bytes, cleanPiece, micPermission, type ListenDeps } from "../src/main/ui/listen";
+import { LISTEN_GRACE_MS, LISTEN_MAX_BYTES, LISTEN_MAX_MS, ListenHolds, base64Bytes, cleanPiece, micHandlers, micPermission, type ListenDeps } from "../src/main/ui/listen";
 
 const b64 = (n: number): string => Buffer.alloc(n, 1).toString("base64");
 
@@ -222,6 +222,36 @@ describe("the window's microphone permission", () => {
   });
 });
 
+describe("a plugin that holds `microphone`", () => {
+  const holds = (on: number[]) => ({ micAllowed: (w: number) => on.includes(w) });
+  const plugin = (layers: string[]) => (layer: string) => layers.includes(layer);
+  const ask = { permission: "media", mediaTypes: ["audio"], requestingUrl: "clover-plugin://acc-mic/doc/index.html?mount=a", windowId: 5 };
+  test("its own frames may open it (audio alone, in any window), no other plugin's frame may", () => {
+    expect(micPermission(ask, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(true);
+    expect(micPermission(ask, holds([]), "clover-plugin", plugin(["acc-other"]))).toBe(false);
+    expect(micPermission(ask, holds([]), "clover-plugin")).toBe(false);
+    expect(micPermission({ ...ask, requestingUrl: "clover-plugin://acc-mic--child/x" }, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(false);
+    expect(micPermission({ ...ask, requestingUrl: "clover-plugin://acc-mic.evil/x" }, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(false);
+    expect(micPermission({ ...ask, requestingUrl: "clover-sealed://acc-mic/x" }, holds([]), "clover-plugin", plugin(["acc-mic"]))).toBe(false);
+  });
+  test("never a camera, a screen or anything else, even for the holder", () => {
+    for (const q of [{ mediaTypes: ["video"] }, { mediaTypes: ["audio", "video"] }, { mediaTypes: [] }, { mediaTypes: undefined }, { permission: "display-capture" }, { permission: "geolocation" }, { windowId: undefined }]) {
+      expect([q, micPermission({ ...ask, ...q }, holds([]), "clover-plugin", plugin(["acc-mic"]))]).toEqual([q, false]);
+    }
+  });
+  test("the clover layer's push-to-talk rule is unchanged: still only while its window's hold records, whoever holds `microphone`", () => {
+    const shell = { ...ask, requestingUrl: "clover-plugin://clover/doc/index.html" };
+    expect(micPermission(shell, holds([]), "clover-plugin", plugin(["clover"]))).toBe(false);
+    expect(micPermission(shell, holds([5]), "clover-plugin", plugin([]))).toBe(true);
+  });
+  test("a plugin's own document opens it to its own frames only; the app's own documents hand it down", () => {
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, true))).toContain("microphone=(self)");
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, "*"))).toContain("microphone=*");
+    expect(policy(layerHeaders("text/html; charset=utf-8", [], [], false, false))).toContain("microphone=()");
+  });
+  const policy = (h: Record<string, string>) => h["Permissions-Policy"]!;
+});
+
 describe("the documents' microphone policy: closed everywhere but the clover layer", () => {
   const policy = (h: Record<string, string>) => h["Permissions-Policy"]!;
   test("every response of the app's schemes keeps microphone=(); only the clover layer's document and the core root that frames it open it", () => {
@@ -234,5 +264,69 @@ describe("the documents' microphone policy: closed everywhere but the clover lay
     for (const p of [policy(layerHeaders("text/html", [], [], false, true)), policy(withMicrophone(commonHeaders(), "(self)"))]) {
       for (const closed of ["camera=()", "display-capture=()", "geolocation=()"]) expect(p).toContain(closed);
     }
+  });
+});
+
+describe("the session's two microphone handlers (request and check), driven with fake details", () => {
+  const holdsNone = { micAllowed: () => false };
+  const build = (o: { holders: string[]; testBuild: boolean; problem?: string; windows?: Record<string, number | undefined> }) => {
+    const asked: number[] = [];
+    const h = micHandlers({
+      holds: holdsNone, layerScheme: "clover-plugin", plugin: (layer) => o.holders.includes(layer), testBuild: o.testBuild,
+      windowOf: (wc) => (o.windows ?? { win: 3, hidden: 9, none: undefined })[String(wc)],
+      systemProblem: async () => { asked.push(1); return o.problem; },
+    });
+    const request = (wc: string, url: string, types: readonly string[] | undefined = ["audio"], permission = "media"): Promise<boolean> => new Promise((done) => h.request(wc, permission, done, { mediaTypes: types, requestingUrl: url }));
+    const check = (wc: string, url: string, mediaType: string | undefined = "audio", permission = "media") => h.check(wc, permission, url, { mediaType, requestingUrl: url });
+    return { request, check, asked };
+  };
+  const doc = (layer: string) => `clover-plugin://${layer}/?mount=abc`;
+
+  test("a holder's frame in a window and in a hidden background window: both handlers say yes, and they agree", async () => {
+    const t = build({ holders: ["acc-mic"], testBuild: true });
+    for (const wc of ["win", "hidden"]) {
+      expect(t.check(wc, doc("acc-mic"))).toBe(true);
+      expect(await t.request(wc, doc("acc-mic"))).toBe(true);
+    }
+    expect(t.asked).toEqual([]);
+  });
+
+  test("another plugin's frame, the clover layer without a hold, video, a screen, a missing window and a bare address: both handlers say no", async () => {
+    const t = build({ holders: ["acc-mic"], testBuild: true });
+    const cases: [string, string, readonly string[] | undefined, string][] = [
+      ["win", doc("acc-mic-quiet"), ["audio"], "media"],
+      ["win", doc("clover"), ["audio"], "media"],
+      ["win", doc("acc-mic"), ["audio", "video"], "media"],
+      ["win", doc("acc-mic"), ["video"], "media"],
+      ["win", doc("acc-mic"), ["audio"], "display-capture"],
+      ["none", doc("acc-mic"), ["audio"], "media"],
+      ["win", "https://acc-mic/", ["audio"], "media"],
+      ["win", "clover-plugin://acc-mic.evil/?x", ["audio"], "media"],
+    ];
+    for (const [wc, url, types, permission] of cases) {
+      expect(await t.request(wc, url, types, permission)).toBe(false);
+      expect(t.check(wc, url, types?.length === 1 ? types[0] : "unknown", permission)).toBe(false);
+    }
+  });
+
+  test("a real build asks the system first for a plugin's frame (a refusal there refuses it), a test build never does", async () => {
+    const real = build({ holders: ["acc-mic"], testBuild: false, problem: "Microphone access is off." });
+    expect(await real.request("win", doc("acc-mic"))).toBe(false);
+    expect(real.asked.length).toBe(1);
+    const granted = build({ holders: ["acc-mic"], testBuild: false });
+    expect(await granted.request("hidden", doc("acc-mic"))).toBe(true);
+    // A plugin without the hold never reaches the system's question.
+    expect(await granted.request("win", doc("someone"))).toBe(false);
+    expect(granted.asked.length).toBe(1);
+  });
+
+  test("the capability going is read live: the same handlers refuse once the plugin no longer holds it", async () => {
+    const holders = ["acc-mic"];
+    const h = micHandlers({ holds: holdsNone, layerScheme: "clover-plugin", plugin: (l) => holders.includes(l), testBuild: true, windowOf: () => 3, systemProblem: async () => undefined });
+    const ask = () => new Promise<boolean>((done) => h.request("w", "media", done, { mediaTypes: ["audio"], requestingUrl: doc("acc-mic") }));
+    expect(await ask()).toBe(true);
+    holders.length = 0;
+    expect(await ask()).toBe(false);
+    expect(h.check("w", "media", doc("acc-mic"), { mediaType: "audio" })).toBe(false);
   });
 });

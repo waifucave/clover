@@ -929,6 +929,31 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.mountForDocument(again!).assets.module).toBe(`/_b/fixture-composer/${"cd".repeat(8)}/index.js`);
   });
 
+  test("the microphone follows the capability for a frame already open: the plugin stays listed, its live frame loads again with the new policy (withdrawn and given)", () => {
+    const { s, item, shell } = withFixtureFrame();
+    const base = readUiPlugins([...cloverViews(), alphaView()] as never);
+    const withMic = (on: boolean) => composerFixture().map((p) => ({ ...p, capabilities: new Set(on ? [...p.capabilities, "microphone"] : [...p.capabilities].filter((c) => c !== "microphone")) }));
+    // Given while the frame is open: it loads again (its document's policy was fixed when it was served), the layer now holds it.
+    s.sent.length = 0;
+    s.rt.setRegistry([...base, ...withMic(true)]);
+    expect(s.rt.layerHolds("fixture-composer", "microphone")).toBe(true);
+    const gain = s.sent.filter((x) => x.m.type === "child-reload");
+    expect(gain.length).toBe(1);
+    expect(gain[0]!.m).toMatchObject({ child: item.mount });
+    const token = new URL((gain[0]!.m as { url: string }).url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    s.rt.describe(frame((gain[0]!.m as { url: string }).url, shell.shellFrame), WIN, token);
+    // The same registry again is nothing.
+    s.sent.length = 0;
+    s.rt.setRegistry([...base, ...withMic(true)]);
+    expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
+    // Withdrawn while it stays listed and open: loads again, and the layer no longer holds it (a new request is refused too).
+    s.rt.setRegistry([...base, ...withMic(false)]);
+    const lose = s.sent.filter((x) => x.m.type === "child-reload");
+    expect(lose.length).toBe(1);
+    expect(s.rt.layerHolds("fixture-composer", "microphone")).toBe(false);
+  });
+
   test("ten changes of a plugin's module while its frame loads again: one reload, and the document served has the last module", () => {
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;
@@ -986,13 +1011,13 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   test("background parts: app.background components that may run, each in a window of its own whose root shows only it; audio only for a plugin holding it", () => {
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
-    expect(s.rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true }]);
+    expect(s.rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true, microphone: false }]);
     // The surface list doesn't take it, and in safe mode only clover's would run.
     expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
     expect(setup(bg, { safeMode: true }).rt.backgroundEntries()).toEqual([]);
     // A plugin without `audio`.
     const quiet = readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-background")), capabilities: [] }] as never);
-    expect(setup(quiet).rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false }]);
+    expect(setup(quiet).rt.backgroundEntries()).toEqual([{ ref: "fixture-background#ticker", pluginId: "fixture-background", audio: false, microphone: false }]);
     // Its window's root declares `app.background` and places just that entry; the frame may autoplay (the plugin holds `audio`), and the
     // other plugin's would not.
     s.rt.openWindow(8, { material: "none", surface: { id: "fixture-background#ticker", ref: "fixture-background#ticker", spot: "app.background" } });
@@ -1009,6 +1034,25 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     // Closing its window drops the mount.
     s.rt.closeWindow(8);
     expect(() => s.rt.describe(rootFrame, 8, undefined)).toThrow();
+  });
+
+  test("a plugin holding `microphone`: its frames carry the flag and the runtime says its layer holds it; no other plugin's does", () => {
+    const view = (capabilities: string[]) => readUiPlugins([{ ...folderView(join(FIXTURES, "fixture-surface")), capabilities }] as never);
+    const hold = setup(view(["microphone"]));
+    expect(hold.rt.layerHolds("fixture-surface", "microphone")).toBe(true);
+    expect(hold.rt.layerHolds("fixture-surface", "audio")).toBe(false);
+    expect(hold.rt.layerHolds("clover", "microphone")).toBe(false);
+    expect(hold.rt.layerHolds("someone-else", "microphone")).toBe(false);
+    const itemOf = (s: ReturnType<typeof setup>) => {
+      s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });
+      const rootFrame = frame("clover-core://app/?surface=fixture");
+      const root = s.rt.describe(rootFrame, 7, undefined);
+      return s.rt.resolve(rootFrame, root.mount, "app.surface").items[0] as { microphone?: true };
+    };
+    expect(itemOf(hold).microphone).toBe(true);
+    const none = setup(view([]));
+    expect(none.rt.layerHolds("fixture-surface", "microphone")).toBe(false);
+    expect(itemOf(none).microphone).toBeUndefined();
   });
 
   test("the menu broker learns a frame's place from each document above it", () => {
