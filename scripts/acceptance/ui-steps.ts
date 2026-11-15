@@ -36,7 +36,7 @@ export const UI_STEPS = [
   "the bot editor imports a model the user picked: Choose avatar… (main's picker) → Import and use; no path on the page, the model's own credit note shown and on her header, and her stage draws it",
   "a bot's question card (AskUserQuestion) takes a pressed option and Send answer in the window and the turn goes on with the answer; a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
   "a third-party bot plugin that ships its own Live2D model (the placeholder's files) draws it on its stage, with no \"can't be shown\" note",
-  "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage",
+  "a third-party character renderer (the SDK's picture-swap example) installed from its folder: a bot plugin whose avatar format is its own draws its pictures on its stage; and the mouth: a folder plugin holding avatar.control.all sends speech levels for Alpha that her stage's renderer takes at their stamps, while one without it is refused for a bot that isn't its own",
   "a bot with a voice speaks its reply (the run's fixture voice, a tone): the app gets the pieces and makes frames, the picture-swap bot shows its talking picture while it speaks and Alpha's stage gets frames too; the stage's chip mutes at once and the next reply stays silent",
   "Alpha's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to Alpha's own on her tab and shows on the plain bot's; her stage tools are offered to her and not to the plain bot; her outfit is her setting (her Outfit tool, the setting and her tool agree with what her figure wears)",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
@@ -1772,8 +1772,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   });
   // 18: the format is a plugin's own. The SDK's picture-swap example (a character renderer) is installed from its folder; then a bot
   // plugin whose avatar format is `pngtuber` (the example's sample model copied beside it) is installed, and its stage draws the
-  // renderer's pictures: the model's JSON and pictures were served to that bot because the renderer declared them. The mouth waits
-  // for the app's speech feed to reach a third-party frame (not asserted here).
+  // renderer's pictures: the model's JSON and pictures were served to that bot because the renderer declared them. Then the mouth (the
+  // avatar cue API's speech cue): a plugin without avatar.control.all is refused for a bot that isn't its own, and a folder plugin
+  // holding it sends speech levels for Alpha that her stage's renderer takes at their stamps.
   await step(18, async () => {
     if (ctx.pressCard === undefined) fail("this run can't press a card");
     const exampleDir = resolve(import.meta.dir, "..", "..", "packages", "plugin-sdk", "examples", "example-pngtuber");
@@ -1799,12 +1800,22 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       "  if (held === undefined) return { text: \"cue: no api\" };",
       "  return { text: `cue: ${JSON.stringify(await held.avatar.cue({ type: \"expression\", name: \"happy\" }))}` };",
       "}",
+      "// A bot that holds only avatar.control may not send the mouth's levels for a bot that is not its own.",
+      "export async function speakAlpha(): Promise<{ text: string }> {",
+      "  if (held === undefined) return { text: \"speak: no api\" };",
+      "  const t = Date.now() + 1500;",
+      "  try {",
+      "    return { text: `speak: ${JSON.stringify(await (held.avatar.cue as (c: unknown, o?: unknown) => Promise<unknown>)({ type: \"speech\", frames: [{ t, rms: 0.5 }, { t: t + 20, rms: 0.5 }] }, { bot: \"alpha\" }))}` };",
+      "  } catch (err) {",
+      "    return { text: `speak: threw ${err instanceof Error ? err.message : String(err)}` };",
+      "  }",
+      "}",
       "",
     ].join("\n"));
     writeFileSync(join(folder, "clover.json"), JSON.stringify({
       manifest: 1, id: botId, name, description: "The acceptance run's bot with a community-format avatar.", version: "0.0.1", engines: { clover: "^1.0.0" },
       capabilities: ["avatar.control"], host: { entry: "host/index.ts", runtime: "bun" },
-      contributes: { commands: [{ name: "cue", description: "Cues the figure's happy expression", handler: "cue" }], bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
+      contributes: { commands: [{ name: "cue", description: "Cues the figure's happy expression", handler: "cue" }, { name: "speakAlpha", description: "Tries to send mouth levels for Alpha", handler: "speakAlpha" }], bot: { name, instructions: "bot/instructions.md", model: { default: "anthropic/claude-sonnet-5-5", effort: "medium" }, avatar: { file: "model/sunny.pngtuber.json", format: "pngtuber" }, layout: "tab/layout.json" } },
     }));
     const installed: string[] = [];
     try {
@@ -1857,7 +1868,65 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }, async () => `the renderer says ${JSON.stringify(await cdp.evaluate(first.session, CUED).catch(() => "?"))}; ${ran}`);
       if (cued.img) fail("the cued picture set still draws the files' pictures beside the code-drawn one");
       const cuedSaid = `useAvatarControl: the bot's command cued happy (${ran}) and the renderer's frame switched from idle to its code-drawn picture set "${cued.label}" (data-pngtuber=happy)`;
-      return `${cuedSaid}; the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
+
+      // The mouth (the avatar cue API's speech cue): a plugin without avatar.control.all is refused for a bot that is not its own; a
+      // folder plugin holding it sends twelve levels for Alpha, stamped 1.5 s ahead of the clock, and her stage hands her renderer
+      // each at its stamp (the test build's counters on the tree's root: data-cue-speech).
+      const refusedRan = await until("the picture bot's try to speak for Alpha to answer", 30_000, async () => {
+        const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: `${botId}.speakAlpha` }).catch(() => undefined);
+        const text = r?.result?.text ?? r?.text;
+        return text?.startsWith("speak:") ? text : undefined;
+      });
+      if (!refusedRan.includes("threw") || !refusedRan.includes("avatar.control.all")) fail(`a plugin without avatar.control.all speaking for a bot that is not its own wasn't refused with the reason: ${refusedRan}`);
+      const speakerDir = resolve(import.meta.dir, "fixtures", "acceptance-speaker");
+      const speakerInstalled = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: speakerDir } }, 60_000);
+      if (speakerInstalled.id !== "acceptance-speaker") fail(`acceptance-speaker installed as ${speakerInstalled.id}`);
+      installed.push("acceptance-speaker");
+      await ctx.pressCard!("acceptance-speaker's OK card", (c) => c.kind === "plugin-ok" && c.pluginId === "acceptance-speaker");
+      await until("acceptance-speaker running", 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id: "acceptance-speaker" }).catch(() => undefined))?.plugin.state) === "running" ? true : undefined));
+      await escape();
+      type CueSpeech = { bot: string; batches: number; levels: number; released: number; listeners: number; minAheadMs: number | null; maxAheadMs: number | null; onAt?: number; offAt?: number; firstT?: number; lastT?: number };
+      const readCue = async (): Promise<CueSpeech | undefined> => {
+        const r = await inTree<string>(cdp, "document.documentElement.dataset.cueSpeech || null");
+        return r === undefined ? undefined : JSON.parse(r.value) as CueSpeech;
+      };
+      let pressedAlpha = 0;
+      await until("Alpha's stage drawn (her tab open)", 60_000, async () => {
+        if ((await inTree<boolean>(cdp, "!!document.querySelector('.cl-bot-stage[data-format=\"vrm\"]')")) !== undefined) return true;
+        if (Date.now() - pressedAlpha > 6_000) {
+          pressedAlpha = Date.now();
+          await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha", 5_000).catch(() => undefined);
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      const heardBefore = await readCue();
+      const spoke = await until("acceptance-speaker's speech cue for Alpha to be answered", 30_000, async () => {
+        const r = await rpc.request<{ result?: { text?: string }; text?: string }>("command.run", { name: "acceptance-speaker.speak" }).catch(() => undefined);
+        const text = r?.result?.text ?? r?.text;
+        return text?.startsWith("speak:") ? text : undefined;
+      });
+      const said = JSON.parse(spoke.slice("speak:".length)) as { answer?: { ok?: boolean; reason?: string; message?: string }; t0?: number; n?: number; last?: number };
+      if (said.answer?.ok !== true || typeof said.t0 !== "number" || typeof said.last !== "number" || said.n === undefined) fail(`acceptance-speaker's speech cue for Alpha wasn't taken: ${spoke}`);
+      const sentAt = Date.now();
+      const heard = await until("Alpha's stage to hand her renderer the whole run and stop speaking", 30_000, async () => {
+        const c = await readCue();
+        return c !== undefined && c.bot === "alpha" && c.offAt !== undefined && c.released - (heardBefore?.released ?? 0) >= said.n! ? c : undefined;
+      }, async () => `the stage's counters: ${JSON.stringify(await readCue())}; sent ${spoke}`);
+      const t0 = said.t0!;
+      const last = said.last!;
+      const lag = (what: string, at: number | undefined, stamp: number, lo: number, hi: number) => {
+        if (at === undefined || at - stamp < lo || at - stamp > hi) fail(`${what} was at ${at === undefined ? "never" : `${at - stamp} ms from its stamp`}, not within ${lo} to ${hi} ms (stamps ${t0} to ${last}; counters ${JSON.stringify(heard)})`);
+      };
+      if (heard.levels - (heardBefore?.levels ?? 0) !== said.n) fail(`her stage took ${heard.levels - (heardBefore?.levels ?? 0)} levels, not the ${said.n} sent (${JSON.stringify(heard)})`);
+      if (heard.listeners < 1) fail(`no renderer was hearing her stage's speech feed (${JSON.stringify(heard)})`);
+      // At the stamps, not at receipt: the batch reached the stage ~1.5 s before its first level was due, yet she began to speak at
+      // that stamp (the renderer was handed each level a moment before its own stamp, never after it), and stopped a hold after the last.
+      if (heard.onAt === undefined || heard.onAt < t0 - 50) fail(`she began to speak at ${heard.onAt === undefined ? "never" : `${t0 - heard.onAt} ms before`} the first level's stamp, which was sent ${t0 - sentAt} ms ahead (${JSON.stringify(heard)})`);
+      lag("she began to speak", heard.onAt, t0, 0, 400);
+      lag("she stopped speaking", heard.offAt, last, 100, 600);
+      if (heard.minAheadMs === null || heard.minAheadMs < -150 || heard.maxAheadMs === null || heard.maxAheadMs > 260) fail(`her renderer was handed levels from ${heard.minAheadMs} to ${heard.maxAheadMs} ms before their stamps, not within -150 to 260 (${JSON.stringify(heard)})`);
+      const mouthSaid = `the mouth: a picture bot holding avatar.control only was refused speaking for Alpha (${refusedRan.slice(0, 160)}); acceptance-speaker (a folder plugin with avatar.control.all, its OK card pressed) sent ${said.n} speech levels for Alpha stamped ${t0 - sentAt} ms ahead, and her stage's renderer (${heard.listeners} listening) was handed all ${said.n} from ${heard.minAheadMs} to ${heard.maxAheadMs} ms before their stamps; she began to speak ${heard.onAt! - t0} ms after the first stamp and stopped ${heard.offAt! - last} ms after the last`;
+      return `${cuedSaid}; ${mouthSaid}; the picture-swap renderer installed from its folder (OK card pressed), then ${botId} (avatar format pngtuber, the example's sample model): its stage, the renderer's own frame (${first.src?.split("/").pop()}), drew the renderer's pictures, served by what the renderer declared; over 7 s quiet it showed ${shown}`;
     } finally {
       for (const id of installed.reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
