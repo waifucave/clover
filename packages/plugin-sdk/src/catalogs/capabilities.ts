@@ -59,7 +59,7 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** The user's microphone for a plugin's own frames: `getUserMedia({ audio: true })` works in a frame of a plugin that holds it,
    *  and in no other plugin's. The system's own question still applies (the first time, on a Mac). Push-to-talk to the bots is
    *  `audio`'s, not this. */
-  { name: "microphone", lets: "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it", ok: "hears your microphone", warns: true },
+  { name: "microphone", lets: "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it", ok: "hears your microphone, also while no window of it shows", warns: true },
   /** The voice providers' endpoints (`voices.*`, §6.6): their audio or text back as the plugin's own data (a narration
    *  track, a transcript). A voice mode has it by being one. Nothing sounds through it: the player is the active
    *  voice mode's alone. */

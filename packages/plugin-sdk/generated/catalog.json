@@ -155,7 +155,7 @@
     {
       "name": "microphone",
       "lets": "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it",
-      "ok": "hears your microphone",
+      "ok": "hears your microphone, also while no window of it shows",
       "warns": true
     },
     {

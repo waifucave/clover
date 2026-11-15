@@ -206,11 +206,24 @@ export class UiRuntime {
       if (m.kind !== "frame" || m.plugin === undefined) continue;
       const now = this.plugins.find((p) => p.id === m.plugin!.id);
       if (now === undefined) continue;
+      // The microphone follows the capability for a stream already open: its document's policy was fixed when it was served, and a
+      // MediaStream in it would keep recording after the OK was withdrawn (or never get the grant after it was given), so a live
+      // frame whose plugin's hold on `microphone` changed loads again (a sleeping one has no document; it wakes with the new flag).
+      const micChanged = m.plugin.capabilities.has("microphone") !== now.capabilities.has("microphone");
       if (m.tokenState === "issued") {
         m.plugin = now;
         continue;
       }
-      if (m.tokenState !== "served" && m.tokenState !== "bound") continue;
+      if (m.tokenState !== "served" && m.tokenState !== "bound") {
+        if (micChanged) m.plugin = now;
+        continue;
+      }
+      if (micChanged) {
+        m.plugin = now;
+        m.servedModule = this.assets({ ...m, plugin: now }).module;
+        this.refreshDocument(m, "its plugin's hold on the microphone changed");
+        continue;
+      }
       const module = this.assets({ ...m, plugin: now }).module;
       if (module === m.servedModule) continue;
       m.plugin = now;
@@ -1048,16 +1061,17 @@ export class UiRuntime {
 
   /** The parts to keep running in the background: every `app.background` component that may run now, each in a hidden window of its own.
    *  `ref` is the window's name (the entry's plugin and id, which never repeats across plugins); `audio` says whether its plugin
-   *  holds the `audio` capability, the only plugin whose window may start sound with no press from the user. */
-  backgroundEntries(): { ref: string; pluginId: string; audio: boolean }[] {
-    const out: { ref: string; pluginId: string; audio: boolean }[] = [];
+   *  holds the `audio` capability, the only plugin whose window may start sound with no press from the user; `microphone` says whether
+   *  it holds that one (a window's open stream ends with the capability, so a change makes a new window). */
+  backgroundEntries(): { ref: string; pluginId: string; audio: boolean; microphone: boolean }[] {
+    const out: { ref: string; pluginId: string; audio: boolean; microphone: boolean }[] = [];
     for (const p of this.plugins) {
       if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
       for (const e of p.entries) {
         if (e.spot !== "app.background" || e.kind !== "component") continue;
         const os = e.when?.os;
         if (os !== undefined && !os.includes(this.opts.os)) continue;
-        out.push({ ref: entryRef(e), pluginId: p.id, audio: p.capabilities.has("audio") });
+        out.push({ ref: entryRef(e), pluginId: p.id, audio: p.capabilities.has("audio"), microphone: p.capabilities.has("microphone") });
       }
     }
     return out;

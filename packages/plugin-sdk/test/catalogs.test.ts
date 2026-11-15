@@ -27,7 +27,7 @@ describe("capabilities", () => {
       "sees every plugin you have, whether it's on, and when you add or remove one",
       "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
       "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
-      "hears your microphone",
+      "hears your microphone, also while no window of it shows",
       "can ask your voice providers to speak or transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
     ]);

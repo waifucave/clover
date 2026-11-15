@@ -44,7 +44,7 @@ test("the microphone fixtures validate; only the holder holds `microphone`, and 
   for (const dir of [holder, other]) expect([dir, await errors(dir)]).toEqual([dir, []]);
   const read = (dir: string) => validateManifest(JSON.parse(readFileSync(join(dir, "clover.json"), "utf8")));
   expect(read(holder).capabilities).toEqual(["microphone"]);
-  expect(describeOk(read(holder))).toContain("It hears your microphone.");
+  expect(describeOk(read(holder))).toContain("It hears your microphone, also while no window of it shows.");
   expect(read(other).capabilities).toEqual([]);
 });
 
