@@ -640,6 +640,19 @@ describe("the door, table by table: what each entry needs, with what press", () 
     expect(src).not.toMatch(/"clover\/[a-z-]+"/);
   });
 
+  test("every bundled part that opens a place in the main window (useOpen) holds shell.control, as any plugin must (mayOpen)", () => {
+    const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+    const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => { const f = join(dir, n); return statSync(f).isDirectory() ? files(f) : /\.tsx?$/.test(n) ? [f] : []; });
+    const openers: string[] = [];
+    for (const name of readdirSync(BUNDLED)) {
+      let client: string[] = [];
+      try { client = files(join(BUNDLED, name, "client")); } catch { continue; }
+      if (client.some((f) => !/\/sdk\.tsx?$/.test(f) && /\buseOpen\(\)/.test(readFileSync(f, "utf8")))) openers.push(`clover/${name}`);
+    }
+    expect(openers.length).toBeGreaterThan(0);
+    for (const id of openers) expect([id, capsOf(id).has("shell.control")]).toEqual([id, true]);
+  });
+
   test("plugin.settings: a call naming a bot is its Edit page's (bots.edit, the bot's own plugin); any other plugin's settings are plugins.read's and plugins.manage's", async () => {
     expect(verdict(BOT_EDITOR_PART, "plugin.settings.get", { id: "alpha", bot: "alpha" })).toMatchObject({ ok: true, by: "bots.edit" });
     expect(verdict(BOT_EDITOR_PART, "plugin.settings.set", { id: "tarot", key: "k", value: "v" })).toMatchObject({ ok: false, owned: false });
