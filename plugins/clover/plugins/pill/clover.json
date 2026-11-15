@@ -7,7 +7,11 @@
   },
   "capabilities": [
     "approvals",
-    "bots.read"
+    "approvals.all",
+    "bots.read",
+    "overlay",
+    "tray",
+    "user.send"
   ],
   "client": {
     "entry": "client/index.tsx"
@@ -15,6 +19,12 @@
   "contributes": {
     "locales": [{ "lang": "en", "file": "locales/en.json" }],
     "ui": [
+      {
+        "spot": "app.tray",
+        "id": "put-away",
+        "title": "Dispatch Pill",
+        "toggles": "pill"
+      },
       {
         "spot": "app.surface",
         "id": "pill",
@@ -24,6 +34,8 @@
           "type": "overlay",
           "alwaysOnTop": true,
           "transparent": true,
+          "front": "steps-aside",
+          "summon": ["tap"],
           "placement": {
             "macos": "bottom-center",
             "windows": "bottom-center",
@@ -31,7 +43,7 @@
           }
         },
         "declares": {
-          "pill.target": { "shape": "list" }
+          "pill.target": { "shape": "list", "props": { "type": "object", "properties": {} } }
         }
       }
     ]

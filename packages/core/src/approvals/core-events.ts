@@ -7,13 +7,12 @@ import type { Unsubscribe } from "../contracts/common";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import type { CoreEventInput, CoreEventOptions } from "../ipc/core-events";
 
-/** Who hears a card: the bundled `clover` tree (the app's own surfaces, the island and the pill), and the plugin whose bot
- *  the card is for, by top-level id on both sides (a plugin's bot is `<plugin>` or `<plugin>/<name>`). A card with no bot
- *  (a plugin's OK, a change from Settings) reaches `clover` alone. */
-export const cardAudience = (bot: string | undefined) => (pluginId: string): boolean => {
-  const top = topPluginIdOf(pluginId);
-  return top === "clover" || (bot !== undefined && top === topPluginIdOf(bot));
-};
+/** Who hears a card: a plugin holding `approvals.all` (what the island, the pill and the window's own parts hold: every card), and the
+ *  plugin whose bot the card is for, by top-level id on both sides (a plugin's bot is `<plugin>` or `<plugin>/<name>`). A card with
+ *  no bot (a plugin's OK, a change from Settings) reaches `approvals.all` alone. No plugin's id decides it: `capabilities` is what
+ *  the plugin was granted and may use now. */
+export const cardAudience = (bot: string | undefined) => (pluginId: string, capabilities: readonly string[]): boolean =>
+  (capabilities.includes("approvals") && capabilities.includes("approvals.all")) || (bot !== undefined && topPluginIdOf(pluginId) === topPluginIdOf(bot));
 
 /** Forwards `broker`'s events to `send` (the server's `coreEvent`), stamped with the shared clock's `now`. */
 export function approvalCoreEvents(broker: Pick<ApprovalBroker, "watch">, send: (event: CoreEventInput, opts?: CoreEventOptions) => unknown, now: () => number): Unsubscribe {

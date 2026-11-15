@@ -252,9 +252,42 @@ export class ListenHolds {
 /** What the `ui` session's permission handlers answer for a microphone: yes only for the main window's `clover` shell (the
  *  layer's own origin), for audio alone, while its window's hold is recording. Everything else is refused: a camera, a
  *  screen, any other frame, any other time. */
-export function micPermission(q: { permission: string; mediaTypes?: readonly string[]; requestingUrl: string; windowId: number | undefined }, holds: Pick<ListenHolds, "micAllowed">, layerScheme: string): boolean {
+export function micPermission(q: { permission: string; mediaTypes?: readonly string[]; requestingUrl: string; windowId: number | undefined }, holds: Pick<ListenHolds, "micAllowed">, layerScheme: string, plugin?: (layer: string) => boolean): boolean {
   if (q.permission !== "media" || q.windowId === undefined) return false;
   if (q.mediaTypes === undefined || q.mediaTypes.length === 0 || q.mediaTypes.some((t) => t !== "audio")) return false;
-  if (!q.requestingUrl.startsWith(`${layerScheme}://clover/`)) return false;
-  return holds.micAllowed(q.windowId);
+  if (q.requestingUrl.startsWith(`${layerScheme}://clover/`)) return holds.micAllowed(q.windowId);
+  // A plugin that holds `microphone`: its own frames (its origin, and only that), audio alone, in any window the plugin's parts are in.
+  const layer = pluginLayerOf(q.requestingUrl, layerScheme);
+  return layer !== undefined && layer !== "clover" && plugin?.(layer) === true;
+}
+
+/** The two handlers the `ui` session gets (Chromium asks the check, then the request), built from what main knows so a test can drive them
+ *  with fake `details` without Electron. `windowOf` is the window a web contents belongs to (a visible window or a hidden background
+ *  window alike: both are windows, so a background part's request carries a window id); a real build asks the system first for a
+ *  plugin's frame (`systemProblem`), a test build never does. */
+export function micHandlers(env: {
+  holds: Pick<ListenHolds, "micAllowed">;
+  layerScheme: string;
+  plugin: (layer: string) => boolean;
+  windowOf: (wc: unknown) => number | undefined;
+  testBuild: boolean;
+  systemProblem: () => Promise<string | undefined>;
+}) {
+  const request = (wc: unknown, permission: string, callback: (ok: boolean) => void, details: { mediaTypes?: readonly string[]; requestingUrl: string }): void => {
+    const q = { permission, mediaTypes: details.mediaTypes, requestingUrl: details.requestingUrl, windowId: env.windowOf(wc) };
+    const ok = micPermission(q, env.holds, env.layerScheme, env.plugin);
+    if (ok && !env.testBuild && !q.requestingUrl.startsWith(`${env.layerScheme}://clover/`)) void env.systemProblem().then((problem) => callback(problem === undefined), () => callback(false));
+    else callback(ok);
+  };
+  const check = (wc: unknown, permission: string, origin: string, details: { mediaType?: string; requestingUrl?: string }): boolean =>
+    micPermission({ permission, mediaTypes: details.mediaType === undefined || details.mediaType === "unknown" ? undefined : [details.mediaType], requestingUrl: details.requestingUrl ?? origin, windowId: env.windowOf(wc) }, env.holds, env.layerScheme, env.plugin);
+  return { request, check };
+}
+
+/** The layer a plugin frame's address names (`<scheme>://<layer>/…`), or undefined for any other address. */
+export function pluginLayerOf(url: string, layerScheme: string): string | undefined {
+  const prefix = `${layerScheme}://`;
+  if (!url.startsWith(prefix)) return undefined;
+  const host = url.slice(prefix.length).split(/[/?#]/)[0];
+  return host !== undefined && /^[a-z0-9][a-z0-9._-]*$/.test(host) ? host : undefined;
 }

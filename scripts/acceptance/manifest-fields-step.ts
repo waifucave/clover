@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
 import { resolveShell } from "../../packages/plugin-sdk/src/formats/shell";
 
-export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session; a folder plugin that asks for the six capabilities that were Clover's own (browser, terminal, plugins.install, plugins.watch, avatar.report, network:public): its OK card warns of each, OK'd each is granted, and its terminal, its figure report, its install from npm and its public page answer";
+export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session; a folder plugin that asks for the six capabilities that were Clover's own (browser, terminal, plugins.install, plugins.watch, avatar.report, network:public): its OK card warns of each, OK'd each is granted, and its terminal, its figure report, its install from npm and its public page answer; a folder plugin naming a program and a folder of the user's outside its sandbox: its OK card names each with a warning, its program runs outside the sandbox and its folder is read, and a plugin naming neither is refused both";
 
 export const ENGINES = { clover: "^1.0.0" } as const;
 
@@ -442,6 +442,74 @@ export function writeBackground(root: string, id: string, o: { audio: boolean })
       "  }, []);",
       "  return jsx(\"div\", { \"data-acc-background\": \"\", \"data-started\": String(startedAt), \"data-ticks\": String(s.ticks), \"data-ctx\": s.ctx, \"data-rms\": s.rms.toFixed(4), \"data-time\": s.time.toFixed(3), \"data-vis\": s.vis, children: \"background\" });",
       "}",
+      "",
+    ].join("\n"),
+  });
+}
+/** The microphone plugins (window step 30): `acc-mic` holds `microphone` and fills `composer.action` (key `model`, in Alpha's composer; the other plugin takes `level`, since two plugins on one key leave one) and
+ *  `app.background`; `acc-mic-quiet` fills `composer.action` and doesn't hold it. Each part reads
+ *  the page's own view of the microphone as it mounts (the permission state, which Chromium asks the app's check handler, and its
+ *  frame's policy, the iframe's `allow`) and says it in its DOM. No device is opened: a test build never asks the system. */
+export const MIC_IDS = { holder: "acc-mic", other: "acc-mic-quiet" } as const;
+export function writeMicrophone(root: string, id: string, o: { mic: boolean }): string {
+  return writePlugin(join(root, id), {
+    manifest: 1, id, name: o.mic ? "Acceptance microphone" : "Acceptance microphone (quiet)", version: "0.0.1", engines: ENGINES, client: { entry: "client/index.js" },
+    ...(o.mic ? { capabilities: ["microphone"] } : {}),
+    contributes: {
+      ui: [
+        { spot: "composer.action", key: o.mic ? "model" : "level", id: "mic", component: "MicButton", title: "Acceptance microphone" },
+        ...(o.mic ? [{ spot: "app.background", id: "listener", component: "Listener" }] : []),
+      ],
+    },
+  }, undefined, {
+    "client/index.js": [
+      "import { jsx } from \"react/jsx-runtime\";",
+      "import { useEffect, useState } from \"react\";",
+      "const startedAt = Date.now();",
+      "export function Ticker() {",
+      "  const [s, set] = useState({ ticks: 0, ctx: \"none\", rms: 0, time: 0, vis: document.visibilityState });",
+      "  useEffect(() => {",
+      "    let ticks = 0, rms = 0, ctxState = \"none\", analyser = null, ctx = null;",
+      "    try {",
+      "      ctx = new AudioContext();",
+      "      const osc = ctx.createOscillator(); osc.frequency.value = 440;",
+      "      const gain = ctx.createGain(); gain.gain.value = 0.2;",
+      "      analyser = ctx.createAnalyser(); analyser.fftSize = 512;",
+      "      osc.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);",
+      "      osc.start();",
+      "      ctx.resume().catch(() => undefined);",
+      "    } catch { ctxState = \"refused\"; }",
+      "    const buf = new Float32Array(512);",
+      "    const timer = setInterval(() => {",
+      "      ticks++;",
+      "      if (ctx !== null) {",
+      "        ctxState = ctx.state;",
+      "        if (analyser !== null && ctx.state === \"running\") { analyser.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v; rms = Math.max(rms, Math.sqrt(sum / buf.length)); }",
+      "      }",
+      "      set({ ticks, ctx: ctxState, rms, time: ctx === null ? 0 : ctx.currentTime, vis: document.visibilityState });",
+      "    }, 100);",
+      "    return () => { clearInterval(timer); if (ctx !== null) ctx.close().catch(() => undefined); };",
+      "  }, []);",
+      "  return jsx(\"div\", { \"data-acc-background\": \"\", \"data-started\": String(startedAt), \"data-ticks\": String(s.ticks), \"data-ctx\": s.ctx, \"data-rms\": s.rms.toFixed(4), \"data-time\": s.time.toFixed(3), \"data-vis\": s.vis, children: \"background\" });",
+      "}",
+      "async function probe() {",
+      "  // No device is opened here: a test build never asks the system for the microphone. The page's own view of the permission",
+      "  // (Chromium asks the app's check handler) and of its frame's policy (the iframe's `allow`) is the proof.",
+      "  const q = await navigator.permissions.query({ name: \"microphone\" });",
+      "  const policy = document.permissionsPolicy || document.featurePolicy;",
+      "  return { perm: q.state, policy: policy && policy.allowsFeature ? (policy.allowsFeature(\"microphone\") ? \"allowed\" : \"blocked\") : \"unavailable\" };",
+      "}",
+      "function Part({ kind }) {",
+      "  const [s, set] = useState({ state: \"asking\", perm: \"\", policy: \"\", error: \"\" });",
+      "  useEffect(() => {",
+      "    let live = true;",
+      "    probe().then((r) => live && set({ state: \"done\", perm: r.perm, policy: r.policy, error: \"\" }), (e) => live && set({ state: \"failed\", perm: \"\", policy: \"\", error: `${e && e.name}: ${e && e.message}` }));",
+      "    return () => { live = false; };",
+      "  }, []);",
+      "  return jsx(\"div\", { \"data-acc-mic\": kind, \"data-state\": s.state, \"data-perm\": s.perm, \"data-policy\": s.policy, \"data-error\": s.error, children: `mic ${kind}` });",
+      "}",
+      "export const MicButton = () => jsx(Part, { kind: \"composer\" });",
+      "export const Listener = () => jsx(Part, { kind: \"background\" });",
       "",
     ].join("\n"),
   });

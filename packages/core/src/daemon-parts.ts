@@ -115,7 +115,7 @@ export interface DaemonBotsInput {
   voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
   /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
   relayMailbox?: BotRelayMailbox;
-  /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
+  /** The plugin host that runs `pill.target` entries' handlers (#323's `user.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
   /** Lane B's plugin triggers' arm and disarm, where the daemon gives no `pluginHost` (whose webhook ingress this
    *  leaves off): a routine file that names a plugin's trigger type is armed through that plugin. */

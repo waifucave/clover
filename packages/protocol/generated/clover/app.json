@@ -2042,7 +2042,7 @@
         "additionalProperties": false
       }
     },
-    "pill.send": {
+    "user.send": {
       "doc": "The user's own words from the Dispatch pill: to a bot or a session as the user's message, or to a `pill.target` entry's handler.",
       "owner": "G",
       "direction": "to-daemon",

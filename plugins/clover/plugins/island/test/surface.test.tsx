@@ -329,7 +329,8 @@ function TabFromAnotherPlugin() {
 describe("the entries the manifest names", () => {
   test("every component the manifest names is an export of the client entry", () => {
     for (const entry of manifest.contributes.ui) expect(typeof (client as Record<string, unknown>)[entry.component]).toBe("function");
-    expect(manifest.capabilities).toEqual(["approvals", "bots.read"]);
+    // What an island does for every card, on top of everything: its OK card says so (the same capabilities a copy holds).
+    expect(manifest.capabilities).toEqual(["approvals", "approvals.all", "bots.read", "overlay"]);
     // The island declares the slot and draws its own Needs you; every other tab (Usage, Devices) is another plugin's entry.
     expect(manifest.contributes.ui.map((e) => e.spot)).toEqual(["app.surface"]);
   });

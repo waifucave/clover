@@ -7,6 +7,7 @@ import { basename, join, relative, sep } from "node:path";
 import { backgroundOkLines, contributionLabels, describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport, fillsOkLines } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
+import { outsideHomeIssues } from "./outside-homes";
 import { agentEnvLines } from "./folders";
 import { pluginFenceAvailable } from "./plugin-fence";
 import { TreeProblem, folderReader, folderTreeHash, treeEntries } from "./tree";
@@ -49,7 +50,7 @@ const summary = (r: ManifestReport, fallback: string, labels: string[]): PluginS
   settings: r.settings, fetchesCode: r.fetchesCode, labels, ok: r.ok,
 });
 
-export async function validatePluginFolder(folder: string, opts: { os?: "macos" | "windows" | "linux"; bundled?: boolean } = {}): Promise<FolderValidation> {
+export async function validatePluginFolder(folder: string, opts: { os?: "macos" | "windows" | "linux"; bundled?: boolean; homes?: { userHome: string; cloverHome: string } } = {}): Promise<FolderValidation> {
   const name = basename(folder);
   const issues: ValidationIssue[] = [];
   let hash: string | undefined;
@@ -61,6 +62,8 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   }
   const tree = await validateTree(folderReader(folder), { folderName: name, bundled: opts.bundled ?? false });
   issues.push(...tree.top.issues, ...tree.children.flatMap((c) => c.report.issues), ...tree.issues);
+  // P5: a folder it names outside its sandbox that holds a home, judged where the homes are known (read 44).
+  if (opts.homes !== undefined) issues.push(...outsideHomeIssues(tree.top.manifest, opts.homes));
   // A loader config reaching outside the tree is an error here, whatever folder it is checked in (the controller's
   // ruling): a plugin built in a development folder, where the registry lets it pass, fails before it ships rather
   // than going invalid on someone else's computer. Only Clover's own trees (`bundled`) share the repository's config.

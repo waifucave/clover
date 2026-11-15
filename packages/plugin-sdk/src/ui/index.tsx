@@ -851,7 +851,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
       // Its document has drawn (its first size report since this URL loaded): a host holding a tab until it is drawn reads it.
       data-clover-drawn={drawnUrl === url ? "" : undefined}
       // A plugin's own isolated frame, and the `clover` layer's frames, which pass the permission down to a plugin page placed inside them.
-      allow={item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : ""}
+      allow={[item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "", item.microphone === true ? "microphone" : ""].filter((a) => a !== "").join("; ")}
       referrerPolicy="no-referrer"
       data-clover-fill={fill ? "" : undefined}
       style={{ display: "block", border: 0, width: "100%", ...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` }), colorScheme: "light dark", background: "transparent" }}
@@ -1609,21 +1609,19 @@ export function useShellReport(): (report: { state: ShellState; apps: readonly S
 }
 
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the
- *  Dispatch pill's). The entry in the `composer` spot has it (whichever plugin's), and the bundled `clover` tree's surfaces (the pill); elsewhere it is undefined. The runtime counts
- *  a send only within the frame's transient user activation, and the core only after it saw that input come to the
- *  window, one send for one press or click; any other is refused and sends nothing. */
+ *  Dispatch pill's). The entry in the `composer` spot has it (whichever plugin's, to its own session only); any other part
+ *  has it with the `user.send` capability (the OK card says "sends messages to your bots and sessions as you, with text it chooses"), and the app refuses the
+ *  send of a part without it. The runtime counts a send only within the frame's transient user activation, and the core only
+ *  after it saw that input come to the window, one send for one press or click; any other is refused and sends nothing. */
 export function useUserSend(): ((to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => Promise<void>) | undefined {
   const part = usePart();
-  // The core decides again, from the mount it made: the entry in the `composer` spot (any plugin's), or a part of
-  // the bundled `clover` tree. This only hides the hook from the rest.
-  const allowed = part.entry.spot === "composer" || part.entry.pluginId.split("/")[0] === "clover";
   const send = useCallback(async (to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => {
     const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
     if (activation !== undefined && !activation.isActive) throw new Error("the user's words go only from inside their key press or click");
     const m = typeof message === "string" ? { text: message } : message;
     await rt().bridge.userSend(part.mount, to, m);
   }, [part.mount]);
-  return allowed ? send : undefined;
+  return send;
 }
 
 /** What the `composer` spot hands the entry the core mounted there (spec §5.5, lane E): the models its session can

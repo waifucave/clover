@@ -266,11 +266,11 @@ export const APP_METHODS = {
     result: z.object({ listens: z.boolean() }),
     doc: "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
   }),
-  pillSend: defineMethod({
-    /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree
-     *  surface's `useUserSend` inside the key press or click that sends (its transient user activation), so a script
-     *  can't speak as the user. A layer's own sends are `conversation.send`, whose turns are the plugin's. */
-    name: "pill.send", owner: "G", roles: ["app"], userOnly: true,
+  userSend: defineMethod({
+    /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a part's `useUserSend`
+     *  (a composer entry's own session, or any part whose plugin holds the `user.send` capability) inside the key press or click
+     *  that sends (its transient user activation), so a script can't speak as the user. A layer's own sends are `conversation.send`, whose turns are the plugin's. */
+    name: "user.send", owner: "G", roles: ["app"], userOnly: true,
     params: z.object({
       /** A bot's main conversation, a session, or a `pill.target` entry by its ref (`<plugin-id>#<entry-id>`). */
       to: z.union([

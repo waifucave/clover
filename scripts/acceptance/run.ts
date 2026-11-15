@@ -24,7 +24,7 @@
 //                       daemon, the dummy key, Alpha's keyed bot, then the app and just those rows; the table has them
 //   --only-stage        only the stage row (the levels and the cards pressed in her tab, wide and narrow): the daemon,
 //                       the dummy key, the default-level turn, then that row's own app and daemon; the table has that row
-//   --only-kids | --only-listen | --only-web | --only-drag | --only-review   those rows alone (the plugin-app unit, shards.ts):
+//   --only-kids | --only-listen | --only-web | --only-drag | --only-review | --only-surface-copy   those rows alone (the plugin-app unit, shards.ts):
 //                       the daemon, the dummy key, Alpha on it, then the app over it and just those rows; each takes no
 //                       other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units
 //   --stage-history N   with --only-stage: N turns in her conversation first (replies, reads and writes, no card), so
@@ -106,6 +106,7 @@ import { LISTEN_STEP, listenStep } from "./listen-step";
 import { WEB_STEP, webStep } from "./web-step";
 import { DRAG_STEP, dragStep } from "./drag-step";
 import { REVIEW_STEP, reviewStep } from "./review-step";
+import { SURFACE_COPY_STEP, surfaceCopyStep } from "./surface-copy-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -123,6 +124,7 @@ import { mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnit
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
+import { OUTSIDE_FOLDER, OUTSIDE_TOOL, outsideWrong, writeOutside, type ProbeAnswer } from "./outside-step";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -210,7 +212,7 @@ const manifestOnly = argv.includes("--only-manifest");
  *  card, so their cards are answered over RPC only, without `appGotCard`'s look at the app's log. */
 // (`let`: a shard's `models` unit runs the same rows on its daemon before any app of the shard is up, appless too.)
 let appless = codeAdapterOnly || thirdPartyOnly || oauthOnly || routineOnly;
-// --only-kids | --only-listen | --only-web | --only-drag | --only-review: the row(s) of the plugin-app unit (shards.ts) alone: the
+// --only-kids | --only-listen | --only-web | --only-drag | --only-review | --only-surface-copy: the row(s) of the plugin-app unit (shards.ts) alone: the
 // daemon, the dummy key, Alpha on it, then the app over it and just those rows (the child-plugin and notifier rows together
 // for --only-kids; a web page part drawn sealed; Alpha's own handle dragging the window; the Review on an OK card).
 const kidsOnly = argv.includes("--only-kids");
@@ -218,12 +220,13 @@ const listenOnly = argv.includes("--only-listen");
 const webOnly = argv.includes("--only-web");
 const dragOnly = argv.includes("--only-drag");
 const reviewOnly = argv.includes("--only-review");
+const surfaceCopyOnly = argv.includes("--only-surface-copy");
 /** The rows a `--only-kids|listen|web|drag|review` run drives (none when none of those flags is given). */
 const appRowsOnly: readonly string[] | undefined = (() => {
-  const picked = [kidsOnly && [CHILD_STEP, NOTIFY_STEP], listenOnly && [LISTEN_STEP], webOnly && [WEB_STEP], dragOnly && [DRAG_STEP], reviewOnly && [REVIEW_STEP]].filter((x): x is string[] => x !== false);
+  const picked = [kidsOnly && [CHILD_STEP, NOTIFY_STEP], listenOnly && [LISTEN_STEP], webOnly && [WEB_STEP], dragOnly && [DRAG_STEP], reviewOnly && [REVIEW_STEP], surfaceCopyOnly && [SURFACE_COPY_STEP]].filter((x): x is string[] => x !== false);
   return picked.length === 0 ? undefined : picked.flat();
 })();
-if (appRowsOnly !== undefined && ([kidsOnly, listenOnly, webOnly, dragOnly, reviewOnly].filter(Boolean).length > 1 || onlyUi !== undefined || browserOnly || routineOnly || oauthOnly || codeAdapterOnly || thirdPartyOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined || shards > 1 || shardUnits !== undefined)) { console.error("acceptance: --only-kids, --only-listen, --only-web, --only-drag and --only-review each run their row(s) alone; they take no other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units"); process.exit(2); }
+if (appRowsOnly !== undefined && ([kidsOnly, listenOnly, webOnly, dragOnly, reviewOnly, surfaceCopyOnly].filter(Boolean).length > 1 || onlyUi !== undefined || browserOnly || routineOnly || oauthOnly || codeAdapterOnly || thirdPartyOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined || shards > 1 || shardUnits !== undefined)) { console.error("acceptance: --only-kids, --only-listen, --only-web, --only-drag and --only-review each run their row(s) alone; they take no other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -2111,6 +2114,23 @@ async function main(): Promise<void> {
       if (helper !== undefined) wrong.push(`the helper plugin: ${helper.slice(0, 300)}`);
       if (node === undefined && helper === undefined) done.push("1.2/1.10 node and helper refused with their instead-messages");
 
+      // P5 (the owner, 2026-11-15: "Yes, named on the card"): programs and folders of the user's outside the sandbox
+      // (outside-step.ts).
+      {
+        const o = writeOutside(src, join(root, "outside-bin"), userHome);
+        const named = await install({ from: "folder", path: o.named });
+        const plain = await install({ from: "folder", path: o.plain });
+        const probe = async (pid: string) => (await c.request<{ result: ProbeAnswer }>("command.run", { name: `${pid}.probe`, args: { program: o.program, private: o.privateFile, note: o.noteFile } }, 60_000)).result;
+        const answers = { named: await probe(named.id), plain: await probe(plain.id) };
+        // Its read-only tool still asks (read 44): a bot's call at the default level raises a tool card, approved, then it answers.
+        const toolSeen = fake!.requests.length;
+        const toolTurn = await turn(c, session, `ACCEPTANCE-CALL ${OUTSIDE_TOOL} {}`, 150_000).catch((err: unknown) => { wrong.push(`P5 the bot's call to ${OUTSIDE_TOOL}: ${why(err)}`); return undefined; });
+        const tool = { cards: toolTurn?.cards ?? [], answered: fake!.requests.slice(toolSeen).some((r) => r.toolResult?.text.includes(`${OUTSIDE_TOOL}-pong`) === true) };
+        const p5 = outsideWrong({ card: named.text, plainCard: plain.text, program: o.program, ...answers, tool });
+        if (p5.length > 0) wrong.push(`P5 ${p5.join("; ")}`);
+        else done.push(`P5 ${named.id} named ${o.program} and ${OUTSIDE_FOLDER} (its OK card named each with its warning): its program ran outside the sandbox (${answers.named.ran!.slice(0, 40)}), its folder read, the private file refused to its own process (${answers.named.direct}); its ${OUTSIDE_TOOL}, listed read-only, still asks (its card says so; the bot's call raised ${tool.cards.join(", ")} and it answered); ${plain.id}, naming neither, was refused the program (${answers.plain.ran!.slice(9, 80)}) and the folder (${answers.plain.folder})`);
+      }
+
       // The main fixture: settings by scope, a custom sign-in, a child off by default, servers by placement.
       const fields = await install({ from: "folder", path: writeFields(src) });
       // 1.23: its child starts off; switched on, it runs.
@@ -3379,6 +3399,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [WEB_STEP, () => webStep(ctx, session)],
     [DRAG_STEP, () => dragStep(ctx, session)],
     [REVIEW_STEP, () => reviewStep(ctx, session)],
+    // A copy of the island and of the pill under other ids, behind their OK cards, takes the bundled two's place (F4).
+    [SURFACE_COPY_STEP, () => surfaceCopyStep(ctx, session)],
   ] as const;
 }
 

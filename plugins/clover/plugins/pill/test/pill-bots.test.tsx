@@ -1,17 +1,12 @@
 // The pill's bots: read once per API object and kept current from `bot_changed`. A key that changed on every
 // render (a `list` bound afresh) re-ran the read after each update, which looped `bot.list` against the daemon.
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { afterAll, describe, expect, test } from "bun:test";
 
-GlobalRegistrator.register();
 const { act, cleanup, render } = await import("@testing-library/react");
 const { createElement: h, useState } = await import("react");
-const { usePillBots } = await import("../src/layer/clover/pill-bots");
+const { usePillBots } = await import("../src/ui/pill-bots");
 
-afterAll(async () => {
-  cleanup();
-  await GlobalRegistrator.unregister();
-});
+afterAll(() => cleanup());
 
 const tick = () => act(async () => {
   await new Promise((r) => setTimeout(r, 10));

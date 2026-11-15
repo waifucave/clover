@@ -465,7 +465,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
         try {
           // A component acts as its plugin, never as the user (the coordinator's ruling on #333): `commands.run`,
           // `host.call` and every area see the plugin. The user's own gesture counts only on the app's explicit path
-          // (`pill.send` inside a real key press or click, carried by the app's main process).
+          // (`user.send` inside a real key press or click, carried by the app's main process).
           return { result: await componentCall(p.pluginId, p.call, p.args, p.session) };
         } catch (err) {
           return failed(err, p.pluginId, p.call);

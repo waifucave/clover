@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { botPartLines, describeOk, validateManifest } from "../../packages/plugin-sdk/src/manifest/validate";
 import { validatePluginFolder } from "../../packages/core/src/registry/validate";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
-import { asksAllWrong, ONCE_CLOVERS_OWN, writeAsksAll, AGENTS_ONLY_SHORT, BACKGROUND_IDS, writeBackground, BOT_COMMAND_REFUSAL, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, HELPER_REFUSAL, NODE_REFUSAL, oldSidebarTaken, offerWrong, OWN_BOT_ITEMS, ownBotWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeOldSidebarTheme, writeReach, writeRefusals, writeRefused } from "./manifest-fields-step";
+import { asksAllWrong, ONCE_CLOVERS_OWN, writeAsksAll, AGENTS_ONLY_SHORT, BACKGROUND_IDS, writeBackground, MIC_IDS, writeMicrophone, BOT_COMMAND_REFUSAL, BOT_PARTS_LINES, BOT_SIDEBAR_REFUSAL, botPartsWrong, HELPER_REFUSAL, NODE_REFUSAL, oldSidebarTaken, offerWrong, OWN_BOT_ITEMS, ownBotWrong, writeBotOnSidebar, writeBotParts, writeClaudePlugin, writeElsewhere, writeFields, writeOldSidebarTheme, writeReach, writeRefusals, writeRefused } from "./manifest-fields-step";
 
 const root = mkdtempSync(join(tmpdir(), "clover-b-fields-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -36,6 +36,16 @@ test("the background fixtures validate; the OK says it keeps a part running, and
   expect(describeOk(read(sound))).toContain("It keeps a part running in the background while Clover is open.");
   expect(read(sound).capabilities).toEqual(["audio"]);
   expect(read(quiet).capabilities).toEqual([]);
+});
+
+test("the microphone fixtures validate; only the holder holds `microphone`, and its OK says it hears the microphone", async () => {
+  const holder = writeMicrophone(root, MIC_IDS.holder, { mic: true });
+  const other = writeMicrophone(root, MIC_IDS.other, { mic: false });
+  for (const dir of [holder, other]) expect([dir, await errors(dir)]).toEqual([dir, []]);
+  const read = (dir: string) => validateManifest(JSON.parse(readFileSync(join(dir, "clover.json"), "utf8")));
+  expect(read(holder).capabilities).toEqual(["microphone"]);
+  expect(describeOk(read(holder))).toContain("It hears your microphone, also while no window of it shows.");
+  expect(read(other).capabilities).toEqual([]);
 });
 
 test("R1: the plugin that asks for the six that were Clover's own validates, its OK lines are the catalog's warnings, and the verdict names each miss", async () => {

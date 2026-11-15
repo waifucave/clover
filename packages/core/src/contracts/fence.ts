@@ -829,6 +829,14 @@ export const CREDENTIAL_FILES: readonly string[] = [
   ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
 ];
 
+/** The coding agents' sign-in files (their tokens; their settings are `agentConfigPaths`, write-held), relative to the
+ *  user's home: a bot never reads them (`SECRET_READ_PLACES`), and no plugin's process reads or writes them whatever
+ *  folder of theirs it names (the plugin fence's last deny, P5). The owner's standing rule: a plan's usage is read
+ *  through the tool's own install, never its token. ONE list for both. */
+export const CODING_AGENT_SIGN_INS: readonly string[] = [
+  ".codex/auth.json", ".claude/.credentials.json", ".local/share/opencode/auth.json", ".gemini/oauth_creds.json", ".gemini/google_accounts.json",
+];
+
 /** What a secret place holds, for the refusal a bot gets (it names the class, never the file's content). */
 export type SecretClass =
   | "SSH or GPG keys" | "cloud credentials" | "a package registry's token" | "a developer tool's sign-in"
@@ -872,11 +880,7 @@ export const SECRET_READ_PLACES: readonly SecretPlace[] = [
   { path: ".config/github-copilot", cls: "a developer tool's sign-in" },
   { path: ".password-store", cls: "a password manager's store" },
   // The coding agents' sign-ins (their tokens; their settings are `agentConfigPaths`, write-held).
-  { path: ".codex/auth.json", cls: "a coding agent's sign-in" },
-  { path: ".claude/.credentials.json", cls: "a coding agent's sign-in" },
-  { path: ".local/share/opencode/auth.json", cls: "a coding agent's sign-in" },
-  { path: ".gemini/oauth_creds.json", cls: "a coding agent's sign-in" },
-  { path: ".gemini/google_accounts.json", cls: "a coding agent's sign-in" },
+  ...CODING_AGENT_SIGN_INS.map((path): SecretPlace => ({ path, cls: "a coding agent's sign-in" })),
   // Shell and REPL history (passwords and tokens typed on a command line).
   ...[".zsh_history", ".bash_history", ".sh_history", ".zhistory", ".history", ".python_history", ".node_repl_history",
     ".psql_history", ".mysql_history", ".sqlite_history", ".rediscli_history", ".local/share/fish/fish_history"]

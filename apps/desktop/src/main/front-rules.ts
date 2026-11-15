@@ -1,8 +1,8 @@
-// Which surfaces stand aside while Clover's own window is the one in front. The pill is a second place to type to a bot; with
-// the window's composer in front it only covers the window's own composer and picker, so it steps aside and comes back
-// when the window is closed, hidden, minimised, or another app is in front. The island stays: it is where cards and
-// status show. Pure, so each transition is tested; the main process feeds it the window's state on every focus, blur,
-// show, hide, minimise, restore and close.
+// Which surfaces stand aside while Clover's own window is the one in front, by what each surface's manifest says (`window.front`).
+// The Dispatch pill is a second place to type to a bot; with the window's composer in front it only covers the window's own
+// composer and picker, so it says `steps-aside` and comes back when the window is closed, hidden, minimised, or another app is in
+// front. The island stays: it is where cards and status show. Pure, so each transition is tested; the main process feeds it
+// the window's state on every focus, blur, show, hide, minimise, restore and close.
 
 export interface MainWindowState {
   /** The window exists (not closed). */
@@ -18,35 +18,35 @@ export function mainWindowFront(s: MainWindowState): boolean {
   return s.exists && s.visible && !s.minimized && s.focused;
 }
 
-/** The Dispatch pill's plugin: the one surface the user can put away or summon (tray item, four-finger tap). */
-export const PILL_PLUGIN = "clover/pill";
-/** The plugin ids whose surface steps aside while the main window is in front. */
-export const STEPS_ASIDE = new Set(["clover/pill"]);
-
-/** What the user has done to the pill. `auto`: it shows when its part asks and steps aside for the window in front. `hidden`:
+/** What the user has done to a surface that can be put away (a tray item that toggles it, a tap that summons it). `auto`: it
+ *  shows when its part asks, and steps aside for the window in front if its manifest says `front: "steps-aside"`. `hidden`:
  *  put away (kept across restarts). `summoned`: brought up by a four-finger tap, over Clover's own window too, until the next
  *  tap (not kept: a restart is `auto` again). */
-export type PillMode = "auto" | "hidden" | "summoned";
+export type PutAway = "auto" | "hidden" | "summoned";
 
-/** Whether a surface may be shown right now: what it asked for, unless it steps aside for the window in front (the pill does
- *  not step aside once summoned) or the user put the pill away. */
-export function surfaceShown(pluginId: string, wantsVisible: boolean, main: MainWindowState, pill: PillMode = "auto"): boolean {
-  if (pluginId === PILL_PLUGIN) {
-    if (pill === "hidden") return false;
-    if (pill === "summoned") return wantsVisible;
-  }
-  return wantsVisible && !(STEPS_ASIDE.has(pluginId) && mainWindowFront(main));
+/** What a surface's manifest says about the main window in front (`window.front`). */
+export interface FrontRule {
+  /** `front: "steps-aside"`: the surface leaves the screen while the main window is in front. */
+  stepsAside: boolean;
 }
 
-/** A four-finger tap toggles what the person sees: a pill on screen is put away, one that is not (put away, or stepped aside
+/** Whether a surface may be shown right now: what it asked for, unless it steps aside for the window in front (it does not once
+ *  summoned) or the user put it away. Nothing here names a plugin: a surface says what it does in its manifest. */
+export function surfaceShown(rule: FrontRule, wantsVisible: boolean, main: MainWindowState, mode: PutAway = "auto"): boolean {
+  if (mode === "hidden") return false;
+  if (mode === "summoned") return wantsVisible;
+  return wantsVisible && !(rule.stepsAside && mainWindowFront(main));
+}
+
+/** A four-finger tap toggles what the person sees: a surface on screen is put away, one that is not (put away, or stepped aside
  *  for the window in front) is summoned. */
-export function pillAfterTap(mode: PillMode, wantsVisible: boolean, main: MainWindowState): PillMode {
-  return surfaceShown(PILL_PLUGIN, wantsVisible, main, mode) ? "hidden" : "summoned";
+export function afterTap(mode: PutAway, rule: FrontRule, wantsVisible: boolean, main: MainWindowState): PutAway {
+  return surfaceShown(rule, wantsVisible, main, mode) ? "hidden" : "summoned";
 }
 
-/** The tray item: Hide while the pill is not put away, Show while it is. Show gives the pill back its usual behaviour (it still
- *  steps aside for the window in front); a tap is what summons it over the window. */
-export function pillAfterTray(mode: PillMode): PillMode {
+/** The tray item: Hide while the surface is not put away, Show while it is. Show gives the surface back its usual behaviour (it
+ *  still steps aside for the window in front if it does); a tap is what summons it over the window. */
+export function afterTray(mode: PutAway): PutAway {
   return mode === "hidden" ? "auto" : "hidden";
 }
 

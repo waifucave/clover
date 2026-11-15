@@ -369,6 +369,25 @@ export interface HostApi {
   on(event: string, listener: (data: unknown) => void): Unsubscribe;
 }
 
+/** What a program run outside the sandbox gave back: its exit code (null when a signal ended it), its output as text
+ *  (each capped at `OUTSIDE_OUTPUT_MAX` bytes; `truncated` when one was cut), and `timedOut` when its time ran out. */
+export interface OutsideRun {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  truncated?: boolean;
+  timedOut?: boolean;
+}
+
+/** Programs of the user's run outside the plugin sandbox (P5): only the ones its manifest names (`host.outside.programs`),
+ *  which its OK card listed with a warning, run with the user's own access; any other is refused. Host halves only.
+ *  `program` is the name as the manifest has it; `args` go to it as they are (no shell); `cwd` is the user's home
+ *  unless given (an absolute path or `~/…`); `input` is written to its standard input; `timeoutMs` is 60 s by default,
+ *  at most 10 minutes. */
+export interface OutsideApi {
+  run(program: string, args?: readonly string[], opts?: { cwd?: string; input?: string; timeoutMs?: number }): Promise<OutsideRun>;
+}
+
 /** A host half reaches its components' `host.on` (§5.4 "Its components"). */
 export interface UiSendApi {
   send(event: string, data?: unknown): void;
@@ -963,7 +982,8 @@ export interface TurnState {
  *  limit passes, when the holder's frame is gone, its host process exits, its plugin stops, or the app quits (for a
  *  frame); a take still waiting leaves the queue the same ways. */
 export interface TurnsApi {
-  /** Waits for the caller's turn, then resolves with it. Refused (`refused`) for a name the caller may not take. */
+  /** Waits for the caller's turn, then resolves with it. Refused (`refused`) for a name the caller may not take, and over
+   *  the caps: 64 takes of one name and 256 over all its names held or waiting per plugin, 4,096 on the computer. */
   take(name: string, options?: TurnOptions, onEvent?: (event: TurnEvent) => void): Promise<Turn>;
   /** Ends the caller's own turn (or takes its waiting take out of the queue) by its id; an id already ended is a no-op. */
   done(id: string): Promise<void>;
@@ -996,6 +1016,8 @@ export interface PluginApi {
   readonly net: NetApi;
   /** Only in a process of the plugin's own (§5.2). */
   readonly secrets?: SecretsApi;
+  /** In host halves: the programs its manifest names, run outside the sandbox (P5). */
+  readonly outside?: OutsideApi;
   /** The `clover` process's per-computer keys: the plugin's own X25519 pairs, whose private half stays in the core. */
   readonly keys?: KeysApi;
   readonly settings: SettingsApi;

@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { CloverClient } from "./client";
-import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeOfficePanels } from "./manifest-fields-step";
+import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, MIC_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeMicrophone, writeOfficePanels } from "./manifest-fields-step";
 import { ACTIVE_IDS, ACTIVE_NAMES, ACTIVE_POINT, ACTIVE_TITLE, activeWrong, writeActiveOne, type ActiveSeen } from "./active-one-step";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
@@ -49,6 +49,7 @@ export const UI_STEPS = [
   "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
   "a plugin keeps a part running in the background (`app.background`, the owner, November 15): it is mounted in a hidden window of its own while the app is open, keeps counting at its real rate while hidden and through the main window being closed and opened again, plays a generated tone with no press when its plugin holds `audio` (made and measured in the page, muted at the app's output), gets no sound without it, and goes when the plugin is turned off",
   "a point that takes one filler at a time (P4, the owner, November 15): a folder plugin declares one and three folder plugins fill it; the first installed is the default, Settings › Plugins draws one picker titled by the point's own title, the user's press picks the second (the declarer's host reads it and hears it, the filler reads it too), the second turned off lets the first stand in (the picker says so and the user is told once), and turned on again it is the one again",
+  "a plugin that holds `microphone` opens the microphone from its own frames (the owner, November 15): its composer.action button and its background part see the microphone granted for their frame (a test build opens no device and asks no system), and a second plugin without the capability sees it denied",
 ] as const;
 
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
@@ -841,7 +842,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const before = count();
     await sleep(IDLE_MS);
     const idle = count() - before;
-    if (idle > IDLE_MAX) fail(`${idle} surface requests in ${IDLE_MS / 1000} s with nothing happening (at most ${IDLE_MAX}) [apps/desktop/src/layer/clover/hosts.tsx coalesced, plugins/clover/plugins/island/src/ui/IslandSurface.tsx]`);
+    if (idle > IDLE_MAX) fail(`${idle} surface requests in ${IDLE_MS / 1000} s with nothing happening (at most ${IDLE_MAX}) [plugins/clover/plugins/island/src/ui/coalesce.ts, plugins/clover/plugins/island/src/ui/IslandSurface.tsx]`);
     let said = "";
     await ctx.cardTurn(async (card) => {
       // The island's own part draws in a frame of the island's surface page; its card is the element that carries the card's id.
@@ -2736,8 +2737,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("the hooks' first answers", 20_000, async () => ((await attrOf("approvals")) !== "" && (await attrOf("questions")) !== "" ? true : undefined), async () => `page said ${JSON.stringify((await find('[data-acceptance-window="page"]'))?.attrs)}`);
       const listsSaid = `useApprovals gave a list (${await attrOf("approvals")}), useQuestions gave a list (${await attrOf("questions")})`;
       if (Number.isNaN(Number(await attrOf("approvals"))) || Number.isNaN(Number(await attrOf("questions")))) fail(`the hooks gave no list: ${JSON.stringify(page.attrs)}`);
+      // useUserSend is a function for any part now (the app refuses a send from a part without the `user.send` capability, which this
+      // plugin does not declare; the runtime tests cover the refusal); useComposerHost stays undefined outside the composer spot.
       const absent = [await attrOf("usersend"), await attrOf("composerhost")];
-      if (absent.join(",") !== "undefined,undefined") fail(`useUserSend / useComposerHost for a third party's page should be undefined, were ${absent.join(", ")}`);
+      if (absent.join(",") !== "function,undefined") fail(`useUserSend should be a function (refused on use without user.send) and useComposerHost undefined for a third party's page, were ${absent.join(", ")}`);
       // useViewFrame: the hook was given the probe's box element; what the frame measured of it is compared with the harness's own
       // measurement of the same element in the real window (its box and the viewport), and main's answer to the hook's report is in the app log
       // (this plugin has no `browser` capability, so main refuses to place a view for it, and says so).
@@ -3338,6 +3341,64 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     } finally {
       await escape().catch(() => undefined);
       for (const [id] of [...order].reverse()) await rpc.request("plugin.remove", { id }).catch(() => undefined);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  // 30: the microphone (`microphone`, the owner, November 15). Two ordinary plugins, each with a `composer.action` part (Alpha's composer)
+  // that reads the page's own view of the microphone as it mounts: `acc-mic` holds the capability (and keeps a background part that does
+  // the same), `acc-mic-quiet` doesn't. A test build opens no device and never asks the system (the macOS question would show a prompt),
+  // so nothing calls getUserMedia: the holder's parts see the permission granted and their frame allowed; the other plugin's part sees
+  // it denied and its frame blocked.
+  await step(30, async () => {
+    if (ctx.pressCard === undefined) fail("this run can't press a card");
+    const parent = mkdtempSync(join(tmpdir(), "clover-mic-"));
+    const ids = [MIC_IDS.holder, MIC_IDS.other];
+    const said: string[] = [];
+    const part = async (id: string, kind: string): Promise<Record<string, string> | undefined> => {
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith(`clover-plugin://${id}/`))) {
+        const v = await cdp.evaluate(d.session, `(() => { const e = document.querySelector('[data-acc-mic="${kind}"]'); return e ? JSON.stringify(Object.fromEntries([...e.attributes].map((a) => [a.name, a.value]))) : ''; })()`).catch(() => "");
+        if (typeof v === "string" && v !== "") return JSON.parse(v) as Record<string, string>;
+      }
+      return undefined;
+    };
+    const finished = (id: string, kind: string, what: string) =>
+      until(`${id}'s ${kind} part ${what}`, 60_000, async () => { const a = await part(id, kind); return a !== undefined && a["data-state"] !== "asking" ? a : undefined; }, async () => `${id}'s ${kind} part: ${JSON.stringify(await part(id, kind))}; its documents: ${(await cdp.documents()).filter((x) => x.url.includes("acc-mic")).map((x) => x.url.slice(0, 60)).join(" | ")}; log: ${ctx.appLog().split("\n").filter((l) => /acc-mic|microphone|media/i.test(l)).slice(-5).join(" // ")}`);
+    const install = async (id: string) => {
+      const folder = writeMicrophone(parent, id, { mic: id === MIC_IDS.holder });
+      const r = await rpc.request<{ id: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
+      if (r.id !== id) fail(`the fixture installed as ${r.id}`);
+      await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
+      await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined),
+        async () => `plugin.get: ${JSON.stringify(await rpc.request("plugin.get", { id }).catch((e: unknown) => String(e))).slice(0, 600)}`);
+    };
+    try {
+      for (const id of ids) await install(id);
+      // Alpha's tab, where the composer's action parts are drawn.
+      await escape();
+      const at = await until("Alpha in the sidebar", 20_000, async () => {
+        for (const d of await treeDocs(cdp)) {
+          const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      }, () => dumpFrames(cdp));
+      await cdp.click(at.session, at.c.x, at.c.y);
+      await sleep(600);
+      for (const [id, kind] of [[MIC_IDS.holder, "composer"], [MIC_IDS.holder, "background"]] as const) {
+        const a = await finished(id, kind, "answered");
+        if (a["data-state"] !== "done") fail(`${id}'s ${kind} part couldn't ask: ${a["data-error"]}`);
+        if (a["data-perm"] !== "granted" || a["data-policy"] !== "allowed") fail(`${id}'s ${kind} part sees the microphone as ${a["data-perm"]} (frame policy ${a["data-policy"]}), not granted`);
+        said.push(`${id}'s ${kind} part sees the microphone granted and its frame allowed`);
+      }
+      const refused = await finished(MIC_IDS.other, "composer", "answered");
+      if (refused["data-state"] !== "done" || refused["data-perm"] === "granted" || refused["data-policy"] === "allowed") fail(`the plugin without the capability may use the microphone (${JSON.stringify(refused)})`);
+      said.push(`${MIC_IDS.other}'s part sees it ${refused["data-perm"]} and its frame ${refused["data-policy"]}`);
+      if (/system.*microphone|askForMediaAccess/i.test(ctx.appLog())) fail("the system was asked for the microphone in a test build");
+      if (/window: shown while headless/.test(ctx.appLog())) fail("a window was shown while headless");
+      return said.join("; ");
+    } finally {
+      for (const id of ids) await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
     }
   });

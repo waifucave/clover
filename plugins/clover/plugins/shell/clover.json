@@ -13,6 +13,7 @@
   },
   "capabilities": [
     "approvals",
+    "approvals.all",
     "bots.read",
     "computers.read",
     "conversation.read"

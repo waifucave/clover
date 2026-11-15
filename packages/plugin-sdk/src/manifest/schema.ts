@@ -369,7 +369,19 @@ export const UiSchema = z.object({
     alwaysOnTop: z.boolean().optional(),
     transparent: z.boolean().optional(),
     placement: z.partialRecord(Os, utf16(256, 1)).optional(),
+    /** How the surface stands when the main window is in front: `stays` (the default) or `steps-aside` (it leaves the
+     *  screen and comes back when another app is in front). */
+    front: z.enum(["stays", "steps-aside"]).optional(),
+    /** The surface draws the pending cards (with `approvals` and `approvals.all`): the platform's rule is one place at a
+     *  time, so it shows them only while the main window is not in front, and the window draws them otherwise. */
+    cards: z.boolean().optional(),
+    /** How the user summons it: `tap` (a four-finger tap on the trackpad, when the add-on is there). */
+    summon: z.array(z.enum(["tap"])).max(1).optional(),
   }).optional(),
+  /** On an `app.tray` entry: the own surface (an `app.surface` entry id of this plugin) the menu item hides and shows. */
+  toggles: EntryId.optional(),
+  /** On an `app.tray` entry: a command of this plugin's (the core's `command.list`) the menu item runs. */
+  command: utf16(128, 1).optional(),
   /** In a plugin with a bot: a part beside the bot, which follows the app's rules (any spot an ordinary plugin fills,
    *  `when.bot` any bots) and has its own switch, rather than one of the bot's tab (§5.5, the owner's rule of November
    *  14). Without it, a bot's plugin fills only what Bots offers, on its own tab. */
@@ -487,6 +499,16 @@ export const ManifestSchema = z.strictObject({
      *  picked for it, its tree's network proxy, nothing more of the user's). Only with `process: "own"`; the OK card
      *  says so. */
     programs: z.literal(true).optional(),
+    /** Programs and folders of the user's outside the plugin sandbox (P5; the owner, 2026-11-15: "Yes, named on the
+     *  card"). `programs`: what its host half runs OUTSIDE the sandbox through `api.outside.run`, with the user's own
+     *  access (their sign-ins, their Keychain, their files, their network), each a bare name found on the user's PATH or
+     *  an absolute path; only these leave the sandbox. `read`: folders of the user's (`~/…` or an absolute path) its
+     *  host process reads, read only. The OK card names every one with a warning; a change to either list asks for the
+     *  OK again. A top-level plugin's only. */
+    outside: z.strictObject({
+      programs: z.array(utf16(1024, 1)).max(16).optional(),
+      read: z.array(utf16(1024, 1)).max(16).optional(),
+    }).optional(),
     /** Starts at once there (§5.2); otherwise only when needed. */
     start: RunsOn.optional(),
     /** Points the host serves (§5.4). */

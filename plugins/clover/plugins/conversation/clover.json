@@ -15,6 +15,7 @@
     "conversation.read",
     "conversation.post",
     "approvals",
+    "approvals.all",
     "bots.read",
     "devices.read"
   ],

@@ -47,6 +47,10 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 - `process: "own"`: a process of its own under Bun too. Needed for `secrets.get` (plugin-host).
 - `programs: true` (with `process: "own"`, in a top-level plugin only): the host half may run programs on the computer,
   such as ffmpeg, within its own folders and the files the user picks (plugin-host, "Programs"). The OK card says so.
+- `outside: { programs, read }` (with `process: "own"`, in a top-level plugin only): programs of the user's its host half
+  runs outside the sandbox with the user's own access (`api.outside.run`), and folders of the user's it reads (plugin-host,
+  "Outside the sandbox"). The OK card names each with a warning; a change to either list asks again. Naming a program
+  means none of its tools skips the card (`readOnly`, `contained`, `webSearch`, `webFetch` don't hold).
 - `start`: `each`, `main` or `chosen`: start at once on those computers; without it the host half starts when
   something needs it (a tool call, a component's `host.call`). `chosen` is the computer the plugin is added on, and
   `main` moves with the main computer. The OK card says it runs in the background, and where.
@@ -165,7 +169,11 @@ Every entry above may also carry `declares` (below).
   `audio` capability;
 - the spot's own fields: plugin-catalog lists them (`title` and `icon` for `sidebar.app`, `opens` naming a `main`
   key, `title` for `settings.section`…);
-- `layout` (on `bot.tab` only), `window` (`{ type: "overlay" | "window", alwaysOnTop, transparent }` for a window spot).
+- `layout` (on `bot.tab` only), `window` (for an `app.surface` entry: `{ type: "overlay" | "window", alwaysOnTop, transparent,
+  placement, front, cards, summon }`). `alwaysOnTop` needs the `overlay` capability; `front: "steps-aside"` leaves the screen while
+  Clover's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
+  `approvals.all`); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
+  `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so.
 
 ### Your own points and spots (`declares`)
 

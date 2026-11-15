@@ -50,7 +50,7 @@ function options(raw: unknown): { limitMs?: number; note?: string } {
   }
   if (o.note !== undefined) {
     if (typeof o.note !== "string" || o.note.length > TURN_NOTE_MAX) throw new ContractError("invalid", `a take's note is a string of at most ${TURN_NOTE_MAX} characters`);
-    out.note = o.note.replace(/[\r\n\t]+/g, " ");
+    out.note = o.note;
   }
   return out;
 }

@@ -13,7 +13,8 @@
   },
   "capabilities": [
     "bots.read",
-    "approvals"
+    "approvals",
+    "approvals.all"
   ],
   "contributes": {
     "ui": [

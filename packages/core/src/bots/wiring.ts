@@ -14,7 +14,7 @@ import { ContractError } from "../contracts/common";
 import type { DeliveredInput } from "../contracts/session-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import type { PluginHost } from "../contracts/plugin-host";
-import { pillMethods } from "../pill/rpc";
+import { userSendMethods } from "../pill/rpc";
 import { CacheTimedCompaction, type CompactionPolicy } from "../sessions/compaction";
 import { DurableSessionHost, type DurableSessionHostOptions } from "../sessions/durable-host";
 import { SessionGrants } from "../sessions/grants";
@@ -81,7 +81,7 @@ export interface BotSideOptions {
     /** The plugin registry's `triggers` entries: which plugin may fire which trigger type (`RoutineEngine.fire`). */
     triggers?: Pick<PluginRegistry, "entries">;
   };
-  /** The plugin host that runs `pill.target` entries' handlers (lane G's `pill.send`); absent, a send to an entry is
+  /** The plugin host that runs `pill.target` entries' handlers (lane G's `user.send`); absent, a send to an entry is
    *  refused as not installed, and sends to bots and sessions still work. */
   pillTargets?: Pick<PluginHost, "invoke">;
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
@@ -281,9 +281,9 @@ export function createBotSide(o: BotSideOptions): BotSide {
       });
       return {
       ...sessions,
-      // Lane G's `pill.send`: the Dispatch pill's words go through the same session.send as the composer's, and to a
+      // Lane G's `user.send`: the Dispatch pill's words go through the same session.send as the composer's, and to a
       // `pill.target` entry's handler through the plugin host, when there is one.
-      ...pillMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
+      ...userSendMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
       ...(voices === undefined ? {} : voicesMethods({ ...(voiceSlot === undefined ? {} : { slot: voiceSlot }) })),
       };

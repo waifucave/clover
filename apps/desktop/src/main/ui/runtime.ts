@@ -130,6 +130,15 @@ export interface RuntimeOptions {
   sleepAfterMs?: number;
 }
 
+/** The most lines one plugin adds to the tray menu, and all plugins together. */
+export const TRAY_LINES_PER_PLUGIN = 3;
+export const TRAY_LINES_MAX = 12;
+
+/** A surface to open (see `surfaceEntries`). */
+export interface SurfaceEntry { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]>; floats: boolean; cards: boolean; stepsAside: boolean; tap: boolean }
+/** A line a plugin adds to the tray menu (see `trayEntries`): `surface` is the ref of the surface it hides and shows. */
+export interface TrayEntry { ref: string; pluginId: string; /** Its plugin's name (a command's line says whose it is). */ pluginName: string; title: string; surface?: string; command?: string }
+
 export class LayerError extends Error {
   constructor(message: string) {
     super(message);
@@ -206,11 +215,24 @@ export class UiRuntime {
       if (m.kind !== "frame" || m.plugin === undefined) continue;
       const now = this.plugins.find((p) => p.id === m.plugin!.id);
       if (now === undefined) continue;
+      // The microphone follows the capability for a stream already open: its document's policy was fixed when it was served, and a
+      // MediaStream in it would keep recording after the OK was withdrawn (or never get the grant after it was given), so a live
+      // frame whose plugin's hold on `microphone` changed loads again (a sleeping one has no document; it wakes with the new flag).
+      const micChanged = m.plugin.capabilities.has("microphone") !== now.capabilities.has("microphone");
       if (m.tokenState === "issued") {
         m.plugin = now;
         continue;
       }
-      if (m.tokenState !== "served" && m.tokenState !== "bound") continue;
+      if (m.tokenState !== "served" && m.tokenState !== "bound") {
+        if (micChanged) m.plugin = now;
+        continue;
+      }
+      if (micChanged) {
+        m.plugin = now;
+        m.servedModule = this.assets({ ...m, plugin: now }).module;
+        this.refreshDocument(m, "its plugin's hold on the microphone changed");
+        continue;
+      }
       const module = this.assets({ ...m, plugin: now }).module;
       if (module === m.servedModule) continue;
       m.plugin = now;
@@ -867,6 +889,8 @@ export class UiRuntime {
         ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
         // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
         ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
+        // A plugin holding `microphone` has its frames allowed to open it (main's permission handlers say yes for its origin only).
+        ...(m.plugin!.capabilities.has("microphone") ? { microphone: true as const } : {}),
       };
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
@@ -1029,16 +1053,54 @@ export class UiRuntime {
   // Surfaces (the island, the pill: `app.surface` entries with a `window`)
   // ----------------------------------------------------------------------------------------------
 
-  /** The surfaces to open: every `app.surface` entry with a `window` that may run now. Its id is the surface's. */
-  surfaceEntries(): { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]> }[] {
-    const out: { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]> }[] = [];
+  /** The surfaces to open: every `app.surface` entry with a `window` that may run now. Its id is the surface's. What it may do is
+   *  what its plugin's capabilities say, never its id: `floats` (`overlay`: above everything, on every Space, any size) and
+   *  `cards` (`window.cards` with `approvals` and `approvals.all`: it draws the pending cards while the main window is not in front). */
+  surfaceEntries(): SurfaceEntry[] {
+    const out: SurfaceEntry[] = [];
     for (const p of this.plugins) {
       if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
       for (const e of p.entries) {
         if (e.spot !== "app.surface" || e.window === undefined || e.kind !== "component") continue;
         const os = e.when?.os;
         if (os !== undefined && !os.includes(this.opts.os)) continue;
-        out.push({ id: e.id, ref: entryRef(e), pluginId: p.id, window: e.window });
+        const caps = p.capabilities;
+        out.push({
+          id: e.id, ref: entryRef(e), pluginId: p.id, window: e.window,
+          floats: caps.has("overlay"),
+          cards: e.window.cards === true && caps.has("approvals") && caps.has("approvals.all"),
+          stepsAside: e.window.front === "steps-aside",
+          tap: e.window.summon?.includes("tap") === true,
+        });
+      }
+    }
+    return out;
+  }
+
+  /** The lines plugins add to the tray menu (`app.tray` entries, with the `tray` capability): one that hides and shows a surface of
+   *  the plugin's own (`toggles`, by that surface's ref), or runs a command of its own (`command`). */
+  trayEntries(): TrayEntry[] {
+    const out: TrayEntry[] = [];
+    for (const p of this.plugins) {
+      if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
+      if (!p.capabilities.has("tray")) continue;
+      const first = out.length;
+      for (const e of p.entries) {
+        if (e.spot !== "app.tray" || e.kind !== "data") continue;
+        // A few lines each, so no plugin fills the menu: the menu is the user's.
+        if (out.length - first >= TRAY_LINES_PER_PLUGIN || out.length >= TRAY_LINES_MAX) break;
+        const title = typeof e.fields.title === "string" ? e.fields.title : undefined;
+        if (title === undefined) continue;
+        const os = e.when?.os;
+        if (os !== undefined && !os.includes(this.opts.os)) continue;
+        const toggles = typeof e.fields.toggles === "string" ? e.fields.toggles : undefined;
+        const command = typeof e.fields.command === "string" ? e.fields.command : undefined;
+        if (toggles !== undefined) {
+          // Only a surface of the plugin's own that is there.
+          const target = p.entries.find((x) => x.spot === "app.surface" && x.id === toggles && x.window !== undefined);
+          if (target === undefined) continue;
+          out.push({ ref: entryRef(e), pluginId: p.id, pluginName: p.name ?? p.id, title, surface: entryRef(target) });
+        } else if (command !== undefined) out.push({ ref: entryRef(e), pluginId: p.id, pluginName: p.name ?? p.id, title, command });
       }
     }
     return out;
@@ -1046,19 +1108,26 @@ export class UiRuntime {
 
   /** The parts to keep running in the background: every `app.background` component that may run now, each in a hidden window of its own.
    *  `ref` is the window's name (the entry's plugin and id, which never repeats across plugins); `audio` says whether its plugin
-   *  holds the `audio` capability, the only plugin whose window may start sound with no press from the user. */
-  backgroundEntries(): { ref: string; pluginId: string; audio: boolean }[] {
-    const out: { ref: string; pluginId: string; audio: boolean }[] = [];
+   *  holds the `audio` capability, the only plugin whose window may start sound with no press from the user; `microphone` says whether
+   *  it holds that one (a window's open stream ends with the capability, so a change makes a new window). */
+  backgroundEntries(): { ref: string; pluginId: string; audio: boolean; microphone: boolean }[] {
+    const out: { ref: string; pluginId: string; audio: boolean; microphone: boolean }[] = [];
     for (const p of this.plugins) {
       if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
       for (const e of p.entries) {
         if (e.spot !== "app.background" || e.kind !== "component") continue;
         const os = e.when?.os;
         if (os !== undefined && !os.includes(this.opts.os)) continue;
-        out.push({ ref: entryRef(e), pluginId: p.id, audio: p.capabilities.has("audio") });
+        out.push({ ref: entryRef(e), pluginId: p.id, audio: p.capabilities.has("audio"), microphone: p.capabilities.has("microphone") });
       }
     }
     return out;
+  }
+
+  /** Whether the plugin whose layer is `layer` (its origin's host, `clover-plugin://<layer>/`) holds a capability now. Main's permission
+   *  handlers judge a microphone request by it: the layer is read from the frame's own address, which only that plugin's files can have. */
+  layerHolds(layer: string, capability: string): boolean {
+    return this.plugins.some((p) => p.layer === layer && p.capabilities.has(capability));
   }
 
   /** The surface window a document may steer: the frame its window's root placed, and only that one. */
@@ -1205,14 +1274,31 @@ export class UiRuntime {
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("opening a card's page takes the approvals capability");
     const card = this.sealed?.get(cardId);
     if (card === undefined) return false;
-    const owner = part.plugin.id.split("/")[0];
-    if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("opening a card's page takes a card of this plugin's own bot");
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("opening a card's page takes a card of this plugin's own bot, or the approvals.all capability");
     if (card.kind !== "plugin-ok" && !(card.kind === "change" && card.change === "plugin-update")) return false;
     return (await this.onCardPage?.(cardId)) ?? false;
   }
 
-  /** Whether the island may be given a card's frames now: not while Clover's own window is in front (the card is drawn there). */
-  islandMayDraw?: () => boolean;
+  /** Whether a surface that draws the cards (`window.cards`) may be given a card's frames now: not while Clover's own window is in
+   *  front (the card is drawn there). */
+  cardSurfaceMayDraw?: () => boolean;
+
+  /** Whether a plugin may place a card's sealed frames: any card with `approvals.all`, else a card of its own bot's. */
+  #mayPlace(plugin: UiPlugin, card: { bot?: string }): boolean {
+    if (plugin.capabilities.has("approvals") && plugin.capabilities.has("approvals.all")) return true;
+    const owner = plugin.id.split("/")[0];
+    return card.bot !== undefined && card.bot.split("/")[0] === owner;
+  }
+
+  /** The `app.surface` entry a part is in or under (a surface's document draws its one entry), or undefined. */
+  #surfaceEntryOf(part: Mount): UiEntry | undefined {
+    let m: Mount | undefined = part;
+    for (let depth = 0; m !== undefined && depth < 32; depth++) {
+      if (m.spot === "app.surface") return this.entryOf(m);
+      m = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+    }
+    return undefined;
+  }
 
   /** Hears what came of each sealed frame's ask (the app's timing lines): made, not yet (the app hasn't heard of the card,
    *  or it is past), absent (a field the card lacks), or refused. */
@@ -1230,8 +1316,7 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
-    const owner = part.plugin.id.split("/")[0];
-    if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot");
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
@@ -1261,12 +1346,13 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
-    // A card is its own bot's plugin's to place (the core sends a plugin only those, and this holds the rule where the
-    // frame is made): the bundled `clover` tree places any card, every other plugin the cards of its own bots, by top-level id on both sides. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is the tree's alone.
-    const owner = part.plugin.id.split("/")[0];
-    if (owner !== "clover" && (card.bot === undefined || card.bot.split("/")[0] !== owner)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot");
-    // One place at a time: the island is given no frame while the window is in front ("not yet": it asks again when it shows the card).
-    if (part.plugin.id === "clover/island" && this.islandMayDraw?.() === false) return undefined;
+    // A card is its own bot's plugin's to place (the core sends a plugin only those, and this holds the rule where the frame is
+    // made): a plugin with `approvals.all` places any card, every other plugin the cards of its own bots, by top-level id on both
+    // sides. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is `approvals.all`'s alone.
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
+    // One place at a time: a surface that declares `window.cards` is given no frame while the window is in front ("not yet": it asks
+    // again when it shows the card).
+    if (part.plugin.capabilities.has("approvals.all") && this.#surfaceEntryOf(part)?.window?.cards === true && this.cardSurfaceMayDraw?.() === false) return undefined;
     // A field the card lacks draws nothing: the part's holder stays empty and takes no room.
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     // A glyph only on the button it fits (✓ approves, ✕ denies, ↗ opens a link); any other pairing is the label.
@@ -1279,9 +1365,9 @@ export class UiRuntime {
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
     // What the part resolved for this card itself (the island's own tokens, say) goes over the part's: style in, nothing out.
-    // Only the island's own resolved theme: any other part's values could set text to its background's colour or to nothing
-    // while the buttons stay, and the sealed words are what the user decides by.
-    if (given !== undefined && part.plugin?.id === "clover/island") for (const [name, value] of Object.entries(given)) if (name.startsWith("card.")) tokens[name] = value;
+    // Only from a plugin with `approvals.all` (it shows every card, and its OK card says so): the sealed page keeps its own text
+    // from going clear (`readable()`), and the sealed words are what the user decides by.
+    if (given !== undefined && part.plugin?.capabilities.has("approvals.all")) for (const [name, value] of Object.entries(given)) if (name.startsWith("card.")) tokens[name] = value;
     // The binding: the frame whose sender's sealed page may answer is this document's own (B4's parent rule).
     const doc = this.docOf(part);
     const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
@@ -1465,15 +1551,16 @@ export class UiRuntime {
     return { windowId: part.windowId, pluginId: part.plugin.id, session, ...(typeof bot === "string" ? { bot } : {}), tree: this.treePart(frame, mountId) !== undefined };
   }
 
-  /** The part sending the user's own words, in the document `frame` (throws otherwise): the entry the core mounted in
-   *  the `composer` spot, whichever plugin's it is (it sends only to its own session), or a surface part of the bundled
-   *  `clover` tree (the Dispatch pill's). The key press or click is the core's to check. */
+  /** The part sending the user's own words, in the document `frame` (throws otherwise): the entry the core mounted in the
+   *  `composer` spot, whichever plugin's it is (it sends only to its own session), or any other part whose plugin holds the
+   *  `user.send` capability (the Dispatch pill's; its OK card says it sends as the user). Decided here from what the main process
+   *  holds, never from what the page says. The key press or click is the core's to check. */
   userSender(frame: FrameRef, mountId: string): { windowId: number; pluginId: string; only?: { session: string } } {
     const composer = this.composerOf(frame, mountId);
     if (composer !== undefined) return { windowId: composer.windowId, pluginId: composer.pluginId, only: { session: composer.session } };
-    const tree = this.treePart(frame, mountId);
-    if (tree === undefined) throw new LayerError("only the composer's entry and the app's own parts send the user's words");
-    return tree;
+    const part = this.actInThisLayer(frame, mountId);
+    if (part.plugin === undefined || !part.plugin.capabilities.has("user.send")) throw new LayerError("only the composer's entry and a part whose plugin has the user.send capability send the user's words");
+    return { windowId: part.windowId, pluginId: part.plugin.id };
   }
 
   /** A message to every document that holds a part of this plugin (its connection's events). An inline part whose

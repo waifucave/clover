@@ -45,7 +45,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "nod
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
-import { agentConfigPaths, autoRunPaths, CREDENTIAL_FILES, SHELL_FILES } from "../contracts/fence";
+import { agentConfigPaths, autoRunPaths, CREDENTIAL_FILES, SECRET_READ_PLACES, SHELL_FILES } from "../contracts/fence";
 import { CloverFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
 import { secretFilesFolder } from "./secret-files";
@@ -81,6 +81,10 @@ export const TOOL_READ_DIRS: readonly string[] = [
 
 /** The credential files tools keep in the user's home: the one list, in `contracts/fence.ts` (`SECRET_READ_PLACES` holds it). */
 export { CREDENTIAL_FILES };
+
+/** The places in the user's home no plugin process reads or writes, whatever it was given (a folder it names outside its
+ *  sandbox, a pick): the bots' secret places on macOS, the only OS the plugin fence runs on. ONE list with the bots'. */
+export const PLUGIN_FENCE_SECRET_PLACES: readonly string[] = SECRET_READ_PLACES.filter((p) => p.os === undefined || p.os.includes("macos")).map((p) => p.path);
 
 /** A project folder's entries denied WHOLE to a fenced process's writes, and the folder itself (so it can't be renamed
  *  away and back, #352's review): Git's folder (its hooks, config, attributes and every submodule's under `modules`),
@@ -406,8 +410,11 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     `(allow file-read* file-write* ${subpaths(write)})`,
     // Inside what it was opened read-only (a wrapped server's own folders): never a .git folder or an .env file.
     ...paths(i.readDenies ?? []).map((d) => `(deny file-read* (regex #"^${regexLiteral(d)}/(.*/)?\\.git(/|$)") (regex #"^${regexLiteral(d)}/(.*/)?\\.env(\\.[^/]*)?$"))`),
-    // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
-    `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
+    // Never, whatever was allowed above (a folder a plugin names outside its sandbox included, P5): every place a bot may
+    // never read (`SECRET_READ_PLACES`, the one list: the Keychain's files, the tools' credential files, the coding
+    // agents' sign-ins, the password managers', the browsers' stores, cloud and deploy tokens, shell histories), and
+    // every way in to launchd.
+    `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...PLUGIN_FENCE_SECRET_PLACES.map((f) => join(user, f))])})`,
     // In a project folder: what Git runs on its own, and the same credential files (the ruling on project writes).
     // In a project folder (the rulings on #352): what runs on its own, whole, and every folder that holds one, so none
     // can be renamed away and back; its credential files unread too.

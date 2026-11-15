@@ -120,7 +120,7 @@ describe("the broker's cards as core events", () => {
   });
 });
 
-describe("a card is heard by its own bot's plugin and the bundled tree, no other plugin", () => {
+describe("a card is heard by its own bot's plugin and any plugin with approvals.all, no other (no id decides it)", () => {
   const raise = (bot: string | undefined) => ({
     kind: "tool" as const, session: "s1", origin: "user" as const, ...(bot === undefined ? {} : { bot }), computers: ["Studio"], effect: "execute" as const,
     fields: { title: { type: "text" as const, text: "Run a command" } },
@@ -131,11 +131,16 @@ describe("a card is heard by its own bot's plugin and the bundled tree, no other
     const luna = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna" } });
     const lunaPart = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna/extra" } });
     const sol = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "sol" } });
+    // Any plugin with `approvals.all` hears every card, the bundled island or a copy of it under another id; the tree's name alone is no key.
     const tree = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "clover/island" } });
+    const copy = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "mirror-island" } });
+    const treeWithout = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "clover/other" } });
+    const allAlone = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "all-alone" } });
     const app = conn("app", ["approvals"]);
-    const r = { connections: () => [luna.c, lunaPart.c, sol.c, tree.c, app.c], pluginCapabilities: () => ["approvals"] };
+    const holds: Record<string, string[]> = { "all-alone": ["approvals.all"], "clover/island": ["approvals", "approvals.all"], "mirror-island": ["approvals", "approvals.all"] };
+    const r = { connections: () => [luna.c, lunaPart.c, sol.c, tree.c, copy.c, treeWithout.c, allAlone.c, app.c], pluginCapabilities: (id: string) => holds[id] ?? ["approvals"] };
     const off = approvalCoreEvents(broker, (e, o) => sendCoreEvent(r, e, o), () => clock.now());
-    return { broker, luna, lunaPart, sol, tree, app, off };
+    return { broker, luna, lunaPart, sol, tree, copy, treeWithout, allAlone, app, off };
   }
   const types = (got: unknown[]) => (got as [string, { type: string }][]).map(([, e]) => e.type);
 
@@ -146,6 +151,9 @@ describe("a card is heard by its own bot's plugin and the bundled tree, no other
     expect(types(w.luna.got)).toEqual(["card_pending"]);
     expect(types(w.lunaPart.got)).toEqual(["card_pending"]);
     expect(types(w.tree.got)).toEqual(["card_pending"]);
+    expect(types(w.copy.got)).toEqual(["card_pending"]);
+    expect(types(w.treeWithout.got)).toEqual([]);
+    expect(types(w.allAlone.got)).toEqual([]); // approvals.all without approvals hears nothing of it
     expect(types(w.sol.got)).toEqual([]);
     expect(types(w.app.got)).toEqual(["card_requested"]); // the sealed card to the app is unchanged
     w.broker.cancelSession("s1");

@@ -180,7 +180,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "session.stop": { disposition: "unserved" },
 };
 
-/** Sent only by the user's gesture, through `useUserSend`'s door (`pill.send`); never a bare call. */
+/** Sent only by the user's gesture, through `useUserSend`'s door (`user.send`); never a bare call. */
 export const SEND_ONLY = new Set(["session.send"]);
 
 /** Never on this route, whoever asks. */

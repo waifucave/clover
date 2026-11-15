@@ -3522,7 +3522,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     savedFor: (hash) => daemonParts?.broker?.savedFor(hash) ?? [],
     forgetSaved: (hash, bot) => daemonParts?.broker?.forgetSaved(hash, bot) ?? 0,
   })));
-  Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
+  Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker, (pluginId) => grantsInForce(partsRegistry?.registry.get(pluginId))), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
     // A user's call made on this computer (the app or the terminal here) is this computer's device.
     localDevice: () => liveDeviceId,
     definitions: () => daemonParts?.agentDefinitions?.() ?? [],
@@ -4221,7 +4221,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         },
         ownPlugins: (bot) => (partsRegistry?.registry.list() ?? []).filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id),
       },
-      // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
+      // #323: `user.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       // §6.6, push-to-talk (the listening half): the providers' listening runs on the plugin host.
       ...(pluginHost !== undefined ? { voiceHost: pluginHost.host } : {}),

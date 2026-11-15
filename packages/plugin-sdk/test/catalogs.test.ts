@@ -16,17 +16,23 @@ describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "approvals.all", "user.send", "overlay", "tray", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio", "microphone",
       "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders",
+      "controls the screen and input of your computers",
+      "restyles approval cards",
+      "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them",
+      "sends messages to your bots and sessions as you, with text it chooses, whenever you click or press a key in its window",
+      "shows windows on top of everything else on your screen",
+      "changes files in your project folders",
       "drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there",
       "runs commands in a terminal on your computers, as you, outside Clover's sandbox",
       "downloads other plugins from the indexes and npm onto your computer, each waiting for your OK on its own card",
       "sees every plugin you have, whether it's on, and when you add or remove one",
       "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
       "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
+      "hears your microphone, also while no window of it shows",
       "can ask your voice providers to transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
     ]);
@@ -126,7 +132,9 @@ describe("the plugin API's gating", () => {
     // checks per source: the calls themselves need no capability.
     // avatar.control.all widens whose figure `avatar.cue` may move (the core checks it per bot) and carries avatar.control
     // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
-    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all"];
+    // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call.
+    // approvals.all, user.send, overlay and tray gate a window's fields, a hook and a spot (the app checks them), not a call.
+    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone"];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });
@@ -268,8 +276,8 @@ describe("points and spots", () => {
   });
 
   test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the clover tree's rules", () => {
-    const entry = (ui: Record<string, unknown>, parent?: { id: string; namespace: string }) => validateManifest(
-      { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },
+    const entry = (ui: Record<string, unknown>, parent?: { id: string; namespace: string }, capabilities: string[] = []) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id: "home" }), name: "Home", capabilities, engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, host: { entry: "host/index.ts" }, contributes: { ui: [ui] } },
       parent ? { parent, folderName: "home", bundled: true } : { folderName: "home" },
     ).issues.map((i) => `${i.code}:${i.path}`);
     const CLOVER = { id: "clover", namespace: "clover" };
@@ -291,9 +299,24 @@ describe("points and spots", () => {
     expect(named("Lights")).toEqual([]);
     for (const name of ["Clover", "CL\u041EVER", "clover!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
     expect(named("Clover", true)).toEqual([]);
-    // Always-on-top surfaces are the clover tree's in 1.111.1 (R12).
-    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } })).toEqual(["ui_always_on_top:/contributes/ui/0/window/alwaysOnTop"]);
-    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } }, CLOVER)).toEqual([]);
+    // Always-on-top surfaces are for a plugin with the `overlay` capability, whoever it is (F4), and cards and the tray likewise.
+    const float = { spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } };
+    expect(entry(float)).toEqual(["ui_window_capability:/contributes/ui/0/window/alwaysOnTop"]);
+    expect(entry(float, CLOVER)).toEqual(["ui_window_capability:/contributes/ui/0/window/alwaysOnTop"]);
+    expect(entry(float, undefined, ["overlay"])).toEqual([]);
+    expect(entry(float, CLOVER, ["overlay"])).toEqual([]);
+    // approvals.all alone is refused: it is a widening of `approvals`.
+    expect(validateManifest({ manifest: 1, id: "home", name: "Home", capabilities: ["approvals.all"] }, { folderName: "home" }).issues.map((i) => `${i.code}:${i.path}`)).toEqual(["capability_needs:/capabilities/0"]);
+    const cards = { spot: "app.surface", component: "Float", window: { type: "overlay", cards: true } };
+    expect(entry(cards, undefined, ["approvals"])).toEqual(["ui_window_capability:/contributes/ui/0/window/cards"]);
+    expect(entry(cards, undefined, ["approvals.all"])).toEqual(["capability_needs:/capabilities/0", "ui_window_capability:/contributes/ui/0/window/cards"]);
+    expect(entry(cards, undefined, ["approvals", "approvals.all"])).toEqual([]);
+    expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", front: "steps-aside", summon: ["tap"] } })).toEqual([]);
+    expect(entry({ spot: "app.tray", id: "put-away", title: "Hide Home", toggles: "float" })).toEqual(["ui_window_capability:/contributes/ui/0"]);
+    expect(entry({ spot: "app.tray", id: "put-away", title: "Hide Home", toggles: "float" }, undefined, ["tray"])).toEqual([]);
+    expect(entry({ spot: "app.tray", id: "put-away", title: "Hide Home" }, undefined, ["tray"])).toEqual(["ui_tray_field:/contributes/ui/0"]);
+    expect(entry({ spot: "app.tray", id: "x", title: "X", toggles: "a", command: "b" }, undefined, ["tray"])).toEqual(["ui_tray_field:/contributes/ui/0"]);
+    expect(entry({ spot: "app.surface", component: "Float", toggles: "a" })).toEqual(["ui_tray_field:/contributes/ui/0/toggles"]);
     // A pill target names the handler that gets the user's words.
     expect(entry({ spot: "pill.target", component: "Target", title: "Lights" }).some((i) => i.endsWith("/handler"))).toBe(true);
     expect(entry({ spot: "pill.target", component: "Target", title: "Lights", handler: "lights" })).toEqual([]);
@@ -494,7 +517,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(29);
+    expect(c.capabilities.length).toBe(34);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
