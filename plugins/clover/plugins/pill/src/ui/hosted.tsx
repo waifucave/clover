@@ -4,6 +4,7 @@ import { useMemo, type ReactElement } from "react";
 import { useSpotEntries, useSurface, useSurfaceEnvironment, usePluginApi, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { PillApp as PillView, PillHostContext, type PillHost } from "./host";
 import { useCoalesced, type SurfaceHostApi } from "@waifucave/clover-plugin-island";
+import { displayText } from "@waifucave/clover-plugin-sdk/plain";
 import { usePillBots } from "./pill-bots";
 
 /* The pill's host ---------------------------------------------------------------------------------------------------
@@ -26,7 +27,7 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
   // The plugins' `pill.target` entries (title and handler data; the daemon runs the handler when the pill sends to one).
   const listed = useSpotEntries("pill.target").entries;
   const targets = useMemo<NonNullable<PillHost["targets"]>>(
-    () => listed.filter((e) => typeof e.fields.title === "string").map((e) => ({ ref: e.ref, pluginId: e.pluginId, pluginName: e.pluginName, id: e.id, title: e.fields.title as string })),
+    () => listed.flatMap((e) => { const title = fieldText(e.fields.title); return title === undefined ? [] : [{ ref: e.ref, pluginId: e.pluginId, pluginName: e.pluginName, id: e.id, title }]; }),
     [listed],
   );
   const host: PillHost = {
@@ -37,4 +38,14 @@ export function PillHosted({ props, tokens }: EntryProps<Record<string, unknown>
     t,
   };
   return <PillHostContext.Provider value={host}><PillView props={props as never} tokens={tokens} /></PillHostContext.Provider>;
+}
+
+/** A spot entry's title as the manifest wrote it (a string, or words by language), cleaned to one plain line by the SDK's own
+ *  cleaner; undefined when it is neither. (The pill reads nothing of another plugin: this is its own copy of the shell's.) */
+function fieldText(v: unknown, lang = "en"): string | undefined {
+  if (typeof v === "string") return displayText(v, 80);
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const t = v as Record<string, unknown>;
+  if (typeof t.en !== "string") return undefined;
+  return displayText([t[lang], t[lang.split("-")[0]!], t.en].find((x): x is string => typeof x === "string"), 80);
 }

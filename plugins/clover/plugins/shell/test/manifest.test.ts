@@ -15,6 +15,8 @@ const CAPABILITIES = new Set([
   "terminal", "devices.read",
   // The player's speech reaches every bot's stage through the avatar cue API (the shell sends it until Clover Voice's own plugin does).
   "avatar.control.all",
+  // The window's other surfaces: the shell sees every pending card's meta (with approvals) to know when a card needs the window.
+  "approvals.all",
 ]);
 
 describe("clover.json (spec §5.9, format 1)", () => {

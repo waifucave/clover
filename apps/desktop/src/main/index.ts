@@ -1102,7 +1102,7 @@ function makePair(): Pair {
   const captureDeps: CaptureDeps = {
     windows: () => [
       ...(mainWindow !== undefined && !mainWindow.isDestroyed() ? [{ name: "main", win: mainWindow as unknown as WindowLike }] : []),
-      ...[...surfaces].map(([id, s]) => ({ name: captureName(id), win: s.win as unknown as WindowLike })),
+      ...[...surfaces.values()].map((s) => ({ name: captureName(s.id), win: s.win as unknown as WindowLike })),
     ],
     scaleOf: (bounds) => screen.getDisplayMatching(bounds).scaleFactor,
     fromBitmap: (bitmap, size) => nativeImage.createFromBitmap(bitmap, size),
@@ -2501,7 +2501,7 @@ async function smoke(): Promise<void> {
   while (Date.now() < deadline) {
     frames = await probeWindow(win);
     surfaceFacts = [];
-    for (const [id, s] of surfaces) if (!s.win.isDestroyed()) surfaceFacts.push({ id, visible: s.win.isVisible(), bounds: s.win.getBounds(), frames: await probeWindow(s.win) });
+    for (const s of surfaces.values()) if (!s.win.isDestroyed()) surfaceFacts.push({ id: s.id, visible: s.win.isVisible(), bounds: s.win.getBounds(), frames: await probeWindow(s.win) });
     const shell = frames.find((f) => f.origin === "clover-plugin://clover");
     const wanted = Number(process.env.CLOVER_SMOKE_LAYERS ?? "0");
     const layers = frames.filter((f) => f.origin.startsWith("clover-plugin://"));
