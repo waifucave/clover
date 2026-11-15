@@ -23,7 +23,7 @@ describe("capabilities", () => {
       "controls the screen and input of your computers",
       "restyles approval cards",
       "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them",
-      "sends messages to your bots and sessions as you, with text it chooses, whenever you click or press a key in its window",
+      "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or up to 30 seconds after you let go",
       "shows windows on top of everything else on your screen",
       "changes files in your project folders",
       "drives the Clover Browser: it can open pages, read them and act on them in its tabs, signed in wherever you signed in there",

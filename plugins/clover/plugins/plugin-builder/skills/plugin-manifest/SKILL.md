@@ -164,7 +164,7 @@ Every entry above may also carry `declares` (below).
   placement, front, cards, summon }`). `alwaysOnTop` needs the `overlay` capability; `front: "steps-aside"` leaves the screen while
   Clover's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
   `approvals.all`); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
-  `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so. A send comes inside the press (within a second, in the frame's own activation) or, for hold-to-talk, once within 30 s after a press the app saw held and released in that frame (no activation needed then; a new press, a reload or a page's own events give none).
+  `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so. A send comes inside the press (within a second, in the frame's own activation) or, for hold-to-talk, once within 30 s after a press the app saw held and released in the frame it happened in (no activation needed then; one press covers one send; a new press anywhere in the window, a reload, focus a page moved, or a page's own events give none).
 
 ### Your own points and spots (`declares`)
 

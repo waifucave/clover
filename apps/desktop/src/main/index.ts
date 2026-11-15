@@ -44,6 +44,7 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
+import { frameChainAt, hitScript, type HitFrame } from "./frame-hit";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -1859,6 +1860,26 @@ function setSoundMuted(on: boolean): void {
 // independent of the main window: closing it changes nothing here. Never shown, never focused, never slowed while hidden; a window
 // may start sound with no press only when its plugin holds `audio` (the other windows' autoplay policy still wants one).
 const backgrounds = new Map<string, { win: BrowserWindow; audio: boolean; microphone: boolean }>();
+/** The frame and the frames it sits in, as the ids a press is credited to (the window's main frame left out). */
+function frameChainOf(f: Electron.WebFrameMain | null): string[] {
+  const out: string[] = [];
+  for (let cur: Electron.WebFrameMain | null = f; cur !== null && !cur.detached && cur.parent !== null && out.length < 8; cur = cur.parent) out.unshift(`${cur.processId}:${cur.routingId}`);
+  return out;
+}
+
+/** A frame as the pointer walk sees it: each hop is asked inside that frame, for at most a moment. */
+function hitRoot(f: Electron.WebFrameMain): HitFrame {
+  return {
+    id: `${f.processId}:${f.routingId}`,
+    url: f.url,
+    get children() { return f.frames.map(hitRoot); },
+    ask: (x, y) => Promise.race([
+      f.executeJavaScript(hitScript(x, y)) as Promise<{ src: string; x: number; y: number } | null>,
+      new Promise<null>((r) => setTimeout(() => r(null), 400)),
+    ]),
+  };
+}
+
 /** A background part's window has no input of its own: it never earns a send's allowance. */
 function isBackgroundWindow(id: number): boolean {
   for (const b of backgrounds.values()) if (!b.win.isDestroyed() && b.win.id === id) return true;
@@ -2274,13 +2295,15 @@ function watchWindow(win: BrowserWindow): void {
   });
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyUp" && !isBackgroundWindow(id)) {
+      // A key's release counts in the frame it comes to, if that is a frame the key went down in.
       const f = win.webContents.focusedFrame;
-      if (f !== null && !f.detached) sends.release(id, `${f.processId}:${f.routingId}`);
+      sends.release(id, { kind: "key", key: input.key, ...(f !== null && !f.detached ? { frame: `${f.processId}:${f.routingId}` } : {}) });
     }
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
-      const down = win.webContents.focusedFrame;
-      if (isBackgroundWindow(id)) sends.input(id); else sends.press(id, down !== null && !down.detached ? `${down.processId}:${down.routingId}` : undefined);
+      // The frames the key went down in (the focused frame and the frames it sits in): a key held down repeats, which is no new press.
+      if (isBackgroundWindow(id)) sends.input(id);
+      else if (!input.isAutoRepeat) sends.press(id, { kind: "key", key: input.key, frames: frameChainOf(win.webContents.focusedFrame) });
       // The record is per focused frame (the review's S2), the frame the key came to: the part that hands it over
       // idents itself from that same frame. No focused frame records nothing.
       const f = win.webContents.focusedFrame;
@@ -2297,12 +2320,9 @@ function watchWindow(win: BrowserWindow): void {
     if (mouse.type === "mouseUp") {
       // A click sends on its release: the release the main process saw counts as the input too, so a person who holds the
       // button on Send for a while still sends (the press alone covers only the second after it).
-      if (mouse.button === undefined || mouse.button === "left") {
-        sends.input(id);
-        // The frame the click went to is the focused one (its press focused it): that frame holds the release's allowance.
-        const f = win.webContents.focusedFrame;
-        if (f !== null && !f.detached && !isBackgroundWindow(id)) sends.release(id, `${f.processId}:${f.routingId}`);
-      }
+      if (mouse.button === undefined || mouse.button === "left") sends.input(id);
+      // The release of the press seen (the same button): the press's own frames hold its allowance, whichever frame is focused now.
+      if (!isBackgroundWindow(id)) sends.release(id, { kind: "mouse", key: mouse.button ?? "left" });
       return dragEnd(id);
     }
     if (mouse.type === "mouseMove") {
@@ -2314,7 +2334,12 @@ function watchWindow(win: BrowserWindow): void {
     cursors.set(id, at);
     windowDrags.down(id, { button: mouse.button, x: mouse.x, y: mouse.y });
     menus.input(id);
-    if (isBackgroundWindow(id)) sends.input(id); else sends.press(id); // a mouse press's frame isn't known yet: it ends the window's allowances
+    if (isBackgroundWindow(id)) sends.input(id);
+    else {
+      // The frame under the pointer is found a moment later (it asks the frames); the release waits for it if it comes first.
+      const hold = sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
+      void frameChainAt(hitRoot(win.webContents.mainFrame), mouse.x, mouse.y).then((frames) => sends.holdFrames(id, hold, frames), () => undefined);
+    }
     pointers.down(id, mouse.x, mouse.y);
   });
   win.webContents.on("did-frame-navigate", (_event, _url, _code, _text, _main, frameProcessId, frameRoutingId) => {
