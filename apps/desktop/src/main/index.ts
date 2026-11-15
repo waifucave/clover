@@ -44,6 +44,7 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
+import { frameChainAt, hitScript, type HitFrame } from "./frame-hit";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -563,7 +564,7 @@ async function ready(): Promise<void> {
         own.win.setContentSize(width ?? FALLBACK_WIDTH, Math.min(FALLBACK_MAX_HEIGHT, Math.max(FALLBACK_MIN_HEIGHT, height)));
       }
     },
-    userSend: async (windowId, to, message, active) => {
+    userSend: async (windowId, to, message, active, frameId) => {
       // Everything that can be refused is refused first, so a refused call spends nobody's gesture. Each refusal says why in
       // the app's log (the reason only, never the words) and reaches the person as the error the sender shows.
       const refuse = (reason: string, say = reason): never => {
@@ -578,8 +579,12 @@ async function ready(): Promise<void> {
       if (client === undefined) return refuse("Clover isn't running");
       // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
       // window covers one send (§5.5).
-      if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
-      if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+      // A hold that ended (hold-to-talk) lets this frame send once within 30 s of the release, its activation long gone; any other
+      // send is the one second after a press, in the frame's own activation. A refused call spends nobody's allowance or gesture.
+      if (!sends.takeRelease(windowId, frameId)) {
+        if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
+        if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+      }
       try {
         return await client.request<{ seq?: number }>("user.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
       } catch (err) {
@@ -1855,6 +1860,31 @@ function setSoundMuted(on: boolean): void {
 // independent of the main window: closing it changes nothing here. Never shown, never focused, never slowed while hidden; a window
 // may start sound with no press only when its plugin holds `audio` (the other windows' autoplay policy still wants one).
 const backgrounds = new Map<string, { win: BrowserWindow; audio: boolean; microphone: boolean }>();
+/** The frame and the frames it sits in, as the ids a press is credited to (the window's main frame left out). */
+function frameChainOf(f: Electron.WebFrameMain | null): string[] {
+  const out: string[] = [];
+  for (let cur: Electron.WebFrameMain | null = f; cur !== null && !cur.detached && cur.parent !== null && out.length < 8; cur = cur.parent) out.unshift(`${cur.processId}:${cur.routingId}`);
+  return out;
+}
+
+/** A frame as the pointer walk sees it: each hop is asked inside that frame, for at most a moment. */
+function hitRoot(f: Electron.WebFrameMain): HitFrame {
+  return {
+    id: `${f.processId}:${f.routingId}`,
+    url: f.url,
+    get children() { return f.frames.map(hitRoot); },
+    ask: (x, y) => Promise.race([
+      f.executeJavaScript(hitScript(x, y)) as Promise<{ src: string; x: number; y: number } | null>,
+      new Promise<null>((r) => setTimeout(() => r(null), 400)),
+    ]),
+  };
+}
+
+/** A background part's window has no input of its own: it never earns a send's allowance. */
+function isBackgroundWindow(id: number): boolean {
+  for (const b of backgrounds.values()) if (!b.win.isDestroyed() && b.win.id === id) return true;
+  return false;
+}
 
 function syncBackgrounds(): void {
   const wanted = runtime.backgroundEntries();
@@ -2264,9 +2294,16 @@ function watchWindow(win: BrowserWindow): void {
     if (typeof e.message === "string" && /^the part .* stopped/.test(e.message)) log(`layers: ${e.message.replace(/\s+/g, " ").slice(0, 300)}`);
   });
   win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyUp" && !isBackgroundWindow(id)) {
+      // A key's release counts in the frame it comes to, if that is a frame the key went down in.
+      const f = win.webContents.focusedFrame;
+      sends.release(id, { kind: "key", key: input.key, ...(f !== null && !f.detached ? { frame: `${f.processId}:${f.routingId}` } : {}) });
+    }
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
-      sends.input(id);
+      // The frames the key went down in (the focused frame and the frames it sits in): a key held down repeats, which is no new press.
+      if (isBackgroundWindow(id)) sends.input(id);
+      else if (!input.isAutoRepeat) sends.press(id, { kind: "key", key: input.key, frames: frameChainOf(win.webContents.focusedFrame) });
       // The record is per focused frame (the review's S2), the frame the key came to: the part that hands it over
       // idents itself from that same frame. No focused frame records nothing.
       const f = win.webContents.focusedFrame;
@@ -2284,6 +2321,8 @@ function watchWindow(win: BrowserWindow): void {
       // A click sends on its release: the release the main process saw counts as the input too, so a person who holds the
       // button on Send for a while still sends (the press alone covers only the second after it).
       if (mouse.button === undefined || mouse.button === "left") sends.input(id);
+      // The release of the press seen (the same button): the press's own frames hold its allowance, whichever frame is focused now.
+      if (!isBackgroundWindow(id)) sends.release(id, { kind: "mouse", key: mouse.button ?? "left" });
       return dragEnd(id);
     }
     if (mouse.type === "mouseMove") {
@@ -2295,18 +2334,24 @@ function watchWindow(win: BrowserWindow): void {
     cursors.set(id, at);
     windowDrags.down(id, { button: mouse.button, x: mouse.x, y: mouse.y });
     menus.input(id);
-    sends.input(id);
+    if (isBackgroundWindow(id)) sends.input(id);
+    else {
+      // The frame under the pointer is found a moment later (it asks the frames); the release waits for it if it comes first.
+      const hold = sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
+      void frameChainAt(hitRoot(win.webContents.mainFrame), mouse.x, mouse.y).then((frames) => sends.holdFrames(id, hold, frames), () => undefined);
+    }
     pointers.down(id, mouse.x, mouse.y);
   });
   win.webContents.on("did-frame-navigate", (_event, _url, _code, _text, _main, frameProcessId, frameRoutingId) => {
     // A frame that navigated is a document of its own from now on (the review's S2): its old record must not serve it.
     keys.forget(`${frameProcessId}:${frameRoutingId}`);
+    sends.forgetFrame(`${frameProcessId}:${frameRoutingId}`);
   });
   win.webContents.on("render-process-gone", () => {
     // A renderer gone takes its frames' records with it; its new render starts empty.
     const gone = keyFrames.get(id);
     if (gone !== undefined) {
-      for (const frameId of gone) keys.forget(frameId);
+      for (const frameId of gone) { keys.forget(frameId); sends.forgetFrame(frameId); }
       keyFrames.delete(id);
     }
   });
@@ -2585,6 +2630,12 @@ async function smoke(): Promise<void> {
             // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
             log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
+            // The covered run's own fact: whether the button had been reported visible BEFORE the cover went on (the page's last
+            // verdict), so the press below waits for the verdict to flip, never for a delay.
+            let coverToken: string | null = null;
+            try { coverToken = new URL(frame.url).searchParams.get("token"); } catch { coverToken = null; }
+            const visibleBeforeCover = cover === true && coverToken !== null && sealed.isTokenVisible(coverToken);
+            const coverAt = Date.now();
             if (cover === true) {
               await frame.executeJavaScript(`(() => {
                 const b = document.querySelector('.seal-button');
@@ -2608,6 +2659,17 @@ async function smoke(): Promise<void> {
             // sleep, and the page refuses presses it hasn't seen yet (its 500 ms visible gate starts at the verdict,
             // so a seen verdict waits out a further beat). Caps at ~10 s; a button that never reports (covered,
             // dimmed) still gets its press on timeout, which the page refuses.
+            if (cover === true && coverToken !== null) {
+              // A button the page had already reported visible keeps that verdict until its next IOv2 report: the press waits for the report
+              // that the cover hides it (the app's own record of what covers a sealed card), up to 10 s, and says how long it took.
+              if (visibleBeforeCover) {
+                const stop = Date.now() + 10_000;
+                while (sealed.isTokenVisible(coverToken) && Date.now() < stop) await new Promise((r) => setTimeout(r, 50));
+                log(`sealed-click: cover verdict ${sealed.isTokenVisible(coverToken) ? "never flipped" : "not visible"} after ${Date.now() - coverAt} ms (was visible before the cover)`);
+              } else {
+                log(`sealed-click: cover verdict never visible (not reported visible before the cover)`);
+              }
+            }
             await new Promise((r) => setTimeout(r, 800));
             let seenToken: string | null = null;
             try {

@@ -210,6 +210,10 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", cover: true } });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
+    // The press waited for the app's own record that the cover hides the button (never a delay): a verdict that never flips is the
+    // app's check failing to see a cover, and fails here.
+    expect(r.output).not.toContain("cover verdict never flipped");
+    expect(r.output).toMatch(/cover verdict (not visible after \d+ ms|never visible)/);
     // The press reached the sealed page itself (not just the main frame), and the page refused it.
     expect(r.output).toContain("presses=[[");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);

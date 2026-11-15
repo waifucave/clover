@@ -1648,13 +1648,16 @@ export function useShellReport(): (report: { state: ShellState; apps: readonly S
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the
  *  Dispatch pill's). The entry in the `composer` spot has it (whichever plugin's, to its own session only); any other part
  *  has it with the `user.send` capability (the OK card says "sends messages to your bots and sessions as you, with text it chooses"), and the app refuses the
- *  send of a part without it. The runtime counts a send only within the frame's transient user activation, and the core only
- *  after it saw that input come to the window, one send for one press or click; any other is refused and sends nothing. */
+ *  send of a part without it. A send counts only inside a press or click (the frame's own activation, and the app saw that input
+ *  come to the window within a second: one send for one press), or after a hold: a press and its release the app itself saw in
+ *  this frame give it one send within 30 s of the release, its activation no longer needed (hold-to-talk: the words come after
+ *  the release and the transcription). A page's own events give neither; any other send is refused and sends nothing. */
 export function useUserSend(): ((to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => Promise<void>) | undefined {
   const part = usePart();
   const send = useCallback(async (to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => {
-    const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
-    if (activation !== undefined && !activation.isActive) throw new Error("the user's words go only from inside their key press or click");
+    // Whether this is the user's own words is the app's to say, not the page's: a send inside a press or click (the frame's own
+    // activation, and the press seen by the app within a second), or after a hold the app saw released (once, within 30 s of the
+    // release, with no activation needed). Any other send is refused there.
     const m = typeof message === "string" ? { text: message } : message;
     await rt().bridge.userSend(part.mount, to, m);
   }, [part.mount]);

@@ -665,6 +665,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const s = box.session;
     // The frame's own activation from the earlier steps has run out.
     await until("the composer frame to have no user activation", 15_000, async () => ((await cdp.evaluate(s, "navigator.userActivation.isActive")) === false ? true : undefined));
+    // A real click earlier in this frame gives it one send for 30 s after its release (user.send after a hold); a click the page
+    // makes itself is refused only once that has run out.
+    await sleep(31_000);
     const words = "ACCEPTANCE-REFUSED-DRAFT";
     await cdp.evaluate(s, `(() => { const t = document.querySelector('${COMPOSER_BOX}'); t.focus(); return true; })()`);
     await cdp.send("Input.insertText", { text: words }, s);
