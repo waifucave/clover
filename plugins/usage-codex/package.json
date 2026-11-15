@@ -1,0 +1,23 @@
+{
+  "name": "@waifucave/clover-plugin-usage-codex",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "usage-codex: Codex plan windows and token counts, through its own `codex` and its session files, filling usage.sources.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts",
+    "./source": "./src/source.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@waifucave/clover-plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}

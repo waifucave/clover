@@ -123,6 +123,19 @@ export const DATA_POINTS: readonly DataPointInfo[] = [
   { name: "webhook.ingress", shape: "list", declaredBy: "clover/trigger-webhook", kind: "code",
     entry: z.strictObject({ id: EntryId, name: Text.optional(), handler: HandlerName }),
     doc: "Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7)." },
+  { name: "usage.sources", shape: "list", declaredBy: "clover/usage", kind: "code",
+    entry: z.strictObject({
+      /** The source's id: what its records and its plan reading are filed under, and what an alarm names. */
+      id: EntryId,
+      /** What the Usage surfaces call it; the id when left out. */
+      name: Text.optional(),
+      handler: HandlerName,
+      /** What it gives: a plan reading (`plan`), the numbers its tool's own files hold (`usage`), or both. */
+      provides: z.array(z.enum(["plan", "usage"])).min(1).max(2),
+      /** The least time between two plan readings (default 5 minutes, at least 10 seconds): the core asks no oftener. */
+      planEveryMs: z.number().int().min(10_000).max(86_400_000).optional(),
+    }),
+    doc: "A tool of the user's installed on this computer whose usage Clover reads: its plan windows (`plan`) and the token counts its own session files hold (`ingest`), through its own program and its own folders (`host.outside`), never its sign-in. The core calls the handler on this computer only, asks no oftener than `planEveryMs`, prices the records and keeps the store; the source owns how its tool is read (§12)." },
   { name: "island.line", shape: "list", declaredBy: "island", kind: "code",
     entry: z.strictObject({ id: EntryId, handler: HandlerName }),
     doc: "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when Clover isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line." },
