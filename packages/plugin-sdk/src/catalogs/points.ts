@@ -62,6 +62,8 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
     doc: "Mounts the main window's root: the shell (§5.5).", shipsWith: "the default shell" },
   { name: "app.surface", side: "app", shape: "list", kind: "code", runsOn: "every app instance",
     doc: "Opens top-level floating windows.", shipsWith: "island, Dispatch pill" },
+  { name: "app.background", side: "app", shape: "list", kind: "code", runsOn: "every app instance",
+    doc: "Runs parts that have no place in the window, in a hidden window of their own." , shipsWith: "nothing yet; any plugin" },
   { name: "bot.tab", side: "app", shape: "keyed", kind: "code", runsOn: "every app instance",
     doc: "Holds each bot's tab, which the shell shows.", shipsWith: "the default bot tab" },
   { name: "locales", side: "app", shape: "keyed", kind: "data", runsOn: "every app instance",

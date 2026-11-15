@@ -52,6 +52,7 @@ How to read it:
 | :- | :- | :- | :- | :- |
 | `app.root` | single | app | — | The main window's root: the shell, which declares every other spot. |
 | `app.surface` | list | app | — | Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float. |
+| `app.background` | list | app | — | A part with no place in the window: it runs in a hidden window of its own while Clover is open and the plugin runs, outlives the main window, is never slept or slowed, and may play sound when the plugin holds `audio`. A… |
 | `bot.tab` | keyed | app | — | Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key. |
 | `sidebar` | single | shell | — | The sidebar: the app's own, the same on every tab. A plugin may fill it for the whole app (its own component, in its own frame, reading and acting through `shell.*`); an entry tied to a bot's tab (`when.bot`, or inside… |
 | `bar` | single | shell | — | The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: "none"` there is no bar at all and the bot's own controls (`bot.… |
@@ -120,7 +121,7 @@ How to read it:
 | `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do | moves your bot's figure |  |
 | `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | reports your bots' figures | Clover's own plugins only |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
-| `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices | hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices | a warning |
+| `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one… | hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices | a warning |
 | `voices.use` | Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back | can ask your voice providers to speak or transcribe, which may use your accounts with them | a warning |
 | `call:<plugin-id>` | Run that plugin's commands | runs commands of {plugin} |  |
 | `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards | Clover's own plugins only |

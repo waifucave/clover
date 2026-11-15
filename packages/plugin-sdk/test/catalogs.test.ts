@@ -20,7 +20,7 @@ describe("capabilities", () => {
       "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
+      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
       "can ask your voice providers to speak or transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards",
     ]);
@@ -155,7 +155,7 @@ describe("points and spots", () => {
   test("the core's points are §5.3's, and every daemon point is a manifest key", () => {
     expect(CORE_POINTS.map((p) => p.name)).toEqual([
       "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes",
-      "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "bot.tab", "locales",
+      "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "app.background", "bot.tab", "locales",
     ]);
     for (const p of CORE_POINTS) if (p.side === "daemon" || p.name === "themes" || p.name === "locales") expect(CORE_CONTRIBUTION_KEYS).toContain(p.name as never);
     expect(CORE_POINTS.filter((p) => p.uniqueBy).map((p) => `${p.name}.${p.uniqueBy}`)).toEqual([

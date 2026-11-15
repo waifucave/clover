@@ -134,6 +134,8 @@ export type SpotItem =
     asleep?: boolean;
     /** The plugin's manifest says `client.isolated`: its frame may be cross-origin isolated (`allow="cross-origin-isolated"`). */
     isolated?: true;
+    /** The part is a background part (`app.background`) of a plugin holding `audio`: its frame may play sound with no press (`allow="autoplay"`). */
+    autoplay?: true;
   }
   /** A web page entry (§5.5 "Web pages"): an isolated view with its own session, which the core draws over the
    *  place the part reports (`webFrame`). */

@@ -14,6 +14,8 @@ export interface TrayActions {
   togglePill?(): void;
   /** Turns the four-finger tap (which hides and shows the pill) on or off. */
   toggleFourFingerTap?(): void;
+  /** Turns the app's one mute over all plugin sound on or off. */
+  toggleSoundMute?(): void;
 }
 
 export interface TrayState {
@@ -22,6 +24,8 @@ export interface TrayState {
   pillHidden?: boolean;
   /** Whether the four-finger tap is on; left out where this Mac has no add-on for it (the menu then has no item). */
   fourFingerTap?: boolean;
+  /** Whether all plugin sound is muted (the menu's checkbox); left out, the menu has no such item. */
+  soundMuted?: boolean;
   /** One line about the pair, when the daemon isn't connected ("Reconnecting…"). */
   status?: string;
   /** The core's strings in the app's language (English until the runtime has them). */
@@ -37,6 +41,7 @@ export function trayMenu(state: TrayState, actions: TrayActions, strings: String
     { label: t("tray.open"), click: () => actions.open() },
     ...(state.pillHidden !== undefined && actions.togglePill !== undefined ? [{ label: t(state.pillHidden ? "tray.show-pill" : "tray.hide-pill"), click: () => actions.togglePill?.() }] : []),
     ...(state.fourFingerTap !== undefined && actions.toggleFourFingerTap !== undefined ? [{ label: t("tray.four-finger-tap"), type: "checkbox" as const, checked: state.fourFingerTap, click: () => actions.toggleFourFingerTap?.() }] : []),
+    ...(state.soundMuted !== undefined && actions.toggleSoundMute !== undefined ? [{ label: t("tray.mute-sound"), type: "checkbox" as const, checked: state.soundMuted, click: () => actions.toggleSoundMute?.() }] : []),
     ...(state.safeMode ? [{ label: t("tray.manage-plugins"), click: () => actions.managePlugins() }] : []),
     state.safeMode
       ? { label: t("tray.restart-normally"), click: () => actions.restart(false) }

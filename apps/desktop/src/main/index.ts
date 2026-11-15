@@ -19,7 +19,7 @@ import { openWindow, OPEN_TARGETS } from "./open";
 import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, type RenderHandle } from "./render";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
-import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
@@ -214,6 +214,8 @@ if (!app.requestSingleInstanceLock()) {
   // The app's guards on every webContents but the Clover Browser's (its tabs, the windows its pages open and its
   // viewport pages), which lane L's own policy covers (ruling R11); `isBrowserContents` holds from creation on.
   app.on("web-contents-created", (_event, contents) => {
+    // The app's one mute: a page made after it was turned on is muted from the start.
+    if (prefs.soundMuted) contents.setAudioMuted(true);
     // A run that must make no sound: a page that plays while the switch is somehow missing is said once, loudly.
     if (silent) {
       let said = false;
@@ -673,6 +675,7 @@ async function ready(): Promise<void> {
     startProcessDiag();
   }
   startFrontSeam();
+  startWindowSeam();
   syncAppearance();
   nativeTheme.on("updated", syncAppearance);
   if (process.platform === "win32") systemPreferences.on("accent-color-changed", syncAppearance);
@@ -696,8 +699,8 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
-    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillMode(pillAfterTray(pillMode), "from the tray"), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap) }, log);
-    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: pillMode === "hidden" };
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins"), togglePill: () => setPillMode(pillAfterTray(pillMode), "from the tray"), toggleFourFingerTap: () => setFourFingerTap(!prefs.fourFingerTap), toggleSoundMute: () => setSoundMuted(!prefs.soundMuted) }, log);
+    trayState = { safeMode, strings: runtime.coreStrings(), pillHidden: pillMode === "hidden", soundMuted: prefs.soundMuted };
     syncFourFingerTap();
     tray.show(trayState);
   }
@@ -1289,6 +1292,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   } else log("pair: an empty UI list while a shell is showing; keeping it until it lasts");
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
+  syncBackgrounds();
   log(`layers: ${plugins.length} plugin(s) with UI`);
   const again = (ms: number, what: string): void => {
     registryRetry = setTimeout(() => {
@@ -1655,6 +1659,28 @@ function startFrontSeam(): void {
   }
 }
 
+/** A test-marked build's stand-in for the user closing and reopening the main window (the background part's row): the file named
+ *  by CLOVER_TEST_WINDOW_FILE holds `close <n>` or `open <n>`, read every 100 ms; a new line closes the main window or opens it
+ *  again, as the tray's Open does. Compiled out of a release (the marker gate's TEST_ONLY_APP_STRINGS checks it). */
+function startWindowSeam(): void {
+  if ((typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && headless && process.env.CLOVER_TEST_WINDOW_FILE) {
+    const file = process.env.CLOVER_TEST_WINDOW_FILE;
+    let last = "";
+    setInterval(() => {
+      let word = "";
+      try { word = readFileSync(file, "utf8").trim(); } catch { return; }
+      if (word === last) return;
+      last = word;
+      if (word.startsWith("close")) {
+        if (mainWindow !== undefined && !mainWindow.isDestroyed()) { log("window: the test seam closes the main window"); mainWindow.close(); }
+      } else if (word.startsWith("open")) {
+        log("window: the test seam opens the main window");
+        void openMainWindow();
+      }
+    }, 100).unref?.();
+  }
+}
+
 function mainState(): MainWindowState {
   if (frontSeam !== undefined) return { exists: true, visible: true, minimized: false, focused: frontSeam };
   // Clover is in front while its main window or one of its own card windows has the focus (a click on a card blurs the main window).
@@ -1744,6 +1770,56 @@ const frontWatcher = new FrontWatcher({
   settleMs: 120,
 });
 const surfaces = new Map<string, Surface>();
+
+/** The app's one mute over all plugin sound: every page of the app (the bots' voices in the main window, a background part's
+ *  sound) is muted at once and stays muted as new ones open. The choice is kept across restarts. */
+function setSoundMuted(on: boolean): void {
+  if (prefs.soundMuted === on) return;
+  prefs = { ...prefs, soundMuted: on };
+  writePrefs(prefsFile(), prefs, log);
+  for (const c of webContents.getAllWebContents()) if (!c.isDestroyed()) c.setAudioMuted(on);
+  if (trayState !== undefined) { trayState = { ...trayState, soundMuted: on }; tray?.show(trayState); }
+  log(`audio: all plugin sound ${on ? "muted" : "unmuted"} from the tray`);
+}
+
+// Parts kept in the background (`app.background`): each in a hidden window of its own, with the core root that places just
+// that entry. Created when the part may run, destroyed when it may not (the plugin stopped, turned off or removed), and
+// independent of the main window: closing it changes nothing here. Never shown, never focused, never slowed while hidden; a window
+// may start sound with no press only when its plugin holds `audio` (the other windows' autoplay policy still wants one).
+const backgrounds = new Map<string, { win: BrowserWindow; audio: boolean }>();
+
+function syncBackgrounds(): void {
+  const wanted = runtime.backgroundEntries();
+  for (const [ref, b] of [...backgrounds]) {
+    const now = wanted.find((w) => w.ref === ref);
+    // A plugin whose `audio` changed gets a new window: the autoplay policy is fixed at a window's creation.
+    if (now !== undefined && now.audio === b.audio && !b.win.isDestroyed()) continue;
+    backgrounds.delete(ref);
+    if (!b.win.isDestroyed()) b.win.destroy();
+    log(`background: ${ref} stopped`);
+  }
+  for (const w of wanted) {
+    if (backgrounds.has(w.ref)) continue;
+    const win = new BrowserWindow({
+      show: false, width: 64, height: 64, frame: false, focusable: false, skipTaskbar: true, paintWhenInitiallyHidden: true,
+      title: `${identity.productName} background`,
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: false, offscreen: false, background: true, autoplay: w.audio }),
+    });
+    watchWindow(win);
+    if (prefs.soundMuted) win.webContents.setAudioMuted(true);
+    win.setIgnoreMouseEvents(true);
+    backgrounds.set(w.ref, { win, audio: w.audio });
+    const id = win.id;
+    runtime.openWindow(id, { material: "none", surface: { id: w.ref, ref: w.ref, spot: "app.background" } });
+    win.on("closed", () => {
+      runtime.closeWindow(id);
+      if (backgrounds.get(w.ref)?.win === win) backgrounds.delete(w.ref);
+    });
+    void win.loadURL(`clover-core://app/?surface=${encodeURIComponent(w.ref)}`);
+    log(`background: ${w.ref} started${w.audio ? " (may play sound)" : ""}`);
+  }
+}
+app.on?.("before-quit", () => { for (const b of backgrounds.values()) if (!b.win.isDestroyed()) b.win.destroy(); });
 
 function syncSurfaces(): void {
   const wanted = runtime.surfaceEntries();

@@ -456,7 +456,7 @@ export class UiRuntime {
   // ----------------------------------------------------------------------------------------------
 
   /** A window's core root: `app.root` for the main window, one `app.surface` entry for a surface window. */
-  openWindow(windowId: number, input: { material: Material; surface?: { id: string; ref: string }; render?: boolean }): string {
+  openWindow(windowId: number, input: { material: Material; surface?: { id: string; ref: string; spot?: "app.surface" | "app.background" }; render?: boolean }): string {
     this.windows.set(windowId, { material: input.material, frame: defaultFrameMetrics(this.opts.platform ?? "darwin"), narrow: false, ...(input.render === true ? { render: true as const } : {}) });
     const id = this.mountId();
     const m: Mount = {
@@ -465,13 +465,13 @@ export class UiRuntime {
       windowId,
       layer: "core",
       entryId: "root",
-      spot: input.surface === undefined ? "app.root" : "app.surface",
+      spot: input.surface === undefined ? "app.root" : (input.surface.spot ?? "app.surface"),
       ctx: { os: this.opts.os, safeMode: this.safeModeValue, ...(input.surface !== undefined ? { surface: input.surface.id } : {}) },
       styles: [],
       tokens: {},
       tokensKey: "",
       props: {},
-      rootSpots: [input.surface === undefined ? "app.root" : "app.surface"],
+      rootSpots: [input.surface === undefined ? "app.root" : (input.surface.spot ?? "app.surface")],
       ...(input.surface !== undefined ? { surfaceRef: input.surface.ref } : {}),
       children: new Map(),
     };
@@ -863,7 +863,11 @@ export class UiRuntime {
     const layout = this.entryOf(m)?.layout;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
     if (m.kind === "frame") {
-      const isolated = m.plugin!.isolated === true ? { isolated: true as const } : {};
+      const isolated = {
+        ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
+        // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
+        ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
+      };
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
     }
@@ -1035,6 +1039,23 @@ export class UiRuntime {
         const os = e.when?.os;
         if (os !== undefined && !os.includes(this.opts.os)) continue;
         out.push({ id: e.id, ref: entryRef(e), pluginId: p.id, window: e.window });
+      }
+    }
+    return out;
+  }
+
+  /** The parts to keep running in the background: every `app.background` component that may run now, each in a hidden window of its own.
+   *  `ref` is the window's name (the entry's plugin and id, which never repeats across plugins); `audio` says whether its plugin
+   *  holds the `audio` capability, the only plugin whose window may start sound with no press from the user. */
+  backgroundEntries(): { ref: string; pluginId: string; audio: boolean }[] {
+    const out: { ref: string; pluginId: string; audio: boolean }[] = [];
+    for (const p of this.plugins) {
+      if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
+      for (const e of p.entries) {
+        if (e.spot !== "app.background" || e.kind !== "component") continue;
+        const os = e.when?.os;
+        if (os !== undefined && !os.includes(this.opts.os)) continue;
+        out.push({ ref: entryRef(e), pluginId: p.id, audio: p.capabilities.has("audio") });
       }
     }
     return out;

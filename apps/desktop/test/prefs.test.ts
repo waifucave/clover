@@ -23,6 +23,12 @@ describe("the app's own choices", () => {
     writePrefs(file, { ...readPrefs(file), pillHidden: false });
     expect(readPrefs(file).pillHidden).toBe(false);
   });
+  test("the one mute over plugin sound is off unless turned on, and is kept across a restart", () => {
+    const file = join(dir, "mute.json");
+    expect(readPrefs(file).soundMuted).toBe(false);
+    writePrefs(file, { ...DEFAULT_PREFS, soundMuted: true });
+    expect(readPrefs(file).soundMuted).toBe(true);
+  });
   test("a write that can't happen is logged, never thrown", () => {
     const lines: string[] = [];
     writePrefs(join(dir, "no-such-dir", "prefs.json"), DEFAULT_PREFS, (l) => lines.push(l));

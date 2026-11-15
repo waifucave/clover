@@ -79,6 +79,23 @@ your own, with a button of its own:
 A panel is for something the user keeps beside the conversation (a document, a sheet, a preview, a board). A whole
 page of your own is `main` with a `sidebar.app` button ("A whole app"); a part inside a stock panel is `panel.view`.
 
+## A part that keeps running in the background
+
+A `ui` entry at `app.background` has no place in any window: `{ "spot": "app.background", "id": "player", "component":
+"Player" }`. Clover mounts the component while the app is open and your plugin runs, in a hidden window of its own, so it
+keeps going when the main window is closed and reopened, is never put to sleep, and its timers (and sound) aren't slowed
+while nothing is on screen. It goes when your plugin stops, is turned off or is removed, and it reloads when your files
+change. The component draws nothing the user sees; it listens (a timer, `api.events`, a connection) and acts.
+
+- **At most two** per plugin, each with its own `id`. It takes no `when.bot`. In a plugin with a bot it needs
+  `"app": true` and sits under the plugin's app-parts switch.
+- **Sound**: with the `audio` capability it may play sound with no press from the user (a `new Audio()` or an
+  `AudioContext` that starts on its own). Without `audio` the page still needs a press, and there is none, so nothing
+  plays. The app has one mute over all plugin sound (the tray's "Mute Sound from Plugins"); play through the page's own
+  audio and it is covered.
+- The OK card says "It keeps a part running in the background while Clover is open", and the Plugins page labels the
+  plugin "Background".
+
 ## An app a bot can work in
 
 An app's host half can serve an MCP server too, so a bot edits the same project the user sees: the tools change the

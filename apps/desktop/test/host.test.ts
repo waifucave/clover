@@ -127,6 +127,15 @@ describe("the windows (decision 86)", () => {
     expect(prefs).toMatchObject({ sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInWorker: false, nodeIntegrationInSubFrames: true, webSecurity: true, webviewTag: false, spellcheck: false, backgroundThrottling: false });
   });
 
+  test("a background part's window is never slowed while hidden, and only a plugin holding audio gets sound with no press", () => {
+    const shown = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: false, offscreen: false });
+    expect(shown).toMatchObject({ backgroundThrottling: true, autoplayPolicy: "user-gesture-required" });
+    const quiet = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: false, offscreen: false, background: true });
+    expect(quiet).toMatchObject({ backgroundThrottling: false, autoplayPolicy: "user-gesture-required", sandbox: true, nodeIntegration: false });
+    const loud = webPreferences({ preload: "/p.cjs", partition: "clover-ui", headless: false, offscreen: false, background: true, autoplay: true });
+    expect(loud).toMatchObject({ backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required", sandbox: true });
+  });
+
   test("macOS: an inset title bar over the sidebar material", () => {
     const p = mainWindowPlan({ platform: "darwin", acrylic: false, title: "Clover", dark: false, solid: "#F5F5F5", symbol: "#1F1F1F", webPreferences: prefs });
     expect(p.material).toBe("vibrancy");
@@ -168,6 +177,15 @@ describe("the tray", () => {
     expect(pillCalls).toEqual(["toggle"]);
     expect(trayMenu({ safeMode: false, pillHidden: true }, withPill).map((m) => m.label ?? m.type)[1]).toBe("Show Dispatch Pill");
     expect(trayMenu({ safeMode: false }, withPill).map((m) => m.label ?? m.type)).not.toContain("Hide Dispatch Pill");
+    // The one mute over all plugin sound is a checkbox too, there only where the app offers it.
+    const muteCalls: string[] = [];
+    const withMute = { ...actions, toggleSoundMute: () => muteCalls.push("toggle") };
+    const muteItem = trayMenu({ safeMode: false, soundMuted: false }, withMute).find((m) => m.label === "Mute Sound from Plugins")!;
+    expect([muteItem.type, muteItem.checked]).toEqual(["checkbox", false]);
+    (muteItem.click as () => void)();
+    expect(muteCalls).toEqual(["toggle"]);
+    expect(trayMenu({ safeMode: false, soundMuted: true }, withMute).find((m) => m.label === "Mute Sound from Plugins")?.checked).toBe(true);
+    expect(trayMenu({ safeMode: false }, withMute).map((m) => m.label)).not.toContain("Mute Sound from Plugins");
     // The four-finger tap's switch is a checkbox, there only where the Mac has the add-on for it.
     const tapCalls: string[] = [];
     const withTap = { ...actions, toggleFourFingerTap: () => tapCalls.push("tap") };

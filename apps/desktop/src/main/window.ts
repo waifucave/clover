@@ -16,7 +16,7 @@ export const TITLE_BAR_HEIGHT = 45;
 /** Every window's page: sandboxed and isolated, no Node, no `<webview>`, and the preload in every frame (S9: with
  *  `nodeIntegrationInSubFrames`, a sandboxed preload reaches out-of-process frames; it exposes only the layer bridge,
  *  and only to the core's and the layers' own origins). */
-export function webPreferences(input: { preload: string; partition: string; headless: boolean; offscreen: boolean }): NonNullable<BrowserWindowConstructorOptions["webPreferences"]> {
+export function webPreferences(input: { preload: string; partition: string; headless: boolean; offscreen: boolean; /** A part kept in the background (`app.background`): never slowed while hidden. */ background?: boolean; /** Sound with no press from the user (a background part of a plugin holding `audio`); every other window still wants one. */ autoplay?: boolean }): NonNullable<BrowserWindowConstructorOptions["webPreferences"]> {
   return {
     preload: input.preload,
     partition: input.partition,
@@ -32,9 +32,9 @@ export function webPreferences(input: { preload: string; partition: string; head
     navigateOnDragDrop: false,
     safeDialogs: true,
     enableWebSQL: false,
-    autoplayPolicy: "user-gesture-required",
+    autoplayPolicy: input.autoplay === true ? "no-user-gesture-required" : "user-gesture-required",
     // Headless runs (the tests, the smoke run) paint without a window on screen.
-    backgroundThrottling: !input.headless,
+    backgroundThrottling: !input.headless && input.background !== true,
     ...(input.offscreen ? { offscreen: true } : {}),
   };
 }

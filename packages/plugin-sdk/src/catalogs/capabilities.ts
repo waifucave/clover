@@ -54,7 +54,7 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
-  { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices", warns: true },
+  { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices", warns: true },
   /** The voice providers' endpoints (`voices.*`, §6.6): their audio or text back as the plugin's own data (a narration
    *  track, a transcript). A voice mode has it by being one. Nothing sounds through it: the player is the active
    *  voice mode's alone. */
