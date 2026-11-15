@@ -196,7 +196,7 @@
     },
     {
       "name": "bots.edit",
-      "lets": "On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar, the model too), its tab's layout switches, and its own plugin's settings for that bot; open Clover's own key dialog for that bot's keys (the key never passes the plugin); read the model list",
+      "lets": "On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar, the model too), its tab's layout switches, and its own plugin's settings for that bot; open Clover's own key dialog for that bot's keys (the key never passes the plugin); read the model list and Clover's layout settings",
       "ok": "changes your bots' settings, models and keys when you press its controls",
       "warns": true
     },
