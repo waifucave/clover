@@ -118,7 +118,7 @@ describe("Clover Voice's host half", () => {
 
   test("a bot's voice for its parts, its reset, and the chip's stop", async () => {
     const f = fake({ settings: { ...VOICED, "model@alpha": "s2" } });
-    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "tone", model: "s2", from: "user" });
+    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", plugin: "acceptance-voice", voice: "tone", model: "s2", from: "user" });
     await host.ui.forget({ bot: "alpha" });
     expect(await host.ui.voiceOf({ bot: "alpha" })).toBeNull();
     await host.ui.stop({ bot: "alpha" });
@@ -142,7 +142,7 @@ describe("Clover Voice's host half", () => {
     await settle();
     expect(f.opened.map((s) => [s.name, s.meta.bot])).toEqual([["speech", "alpha"]]);
     f = fake({ defaults, settings: VOICED });
-    expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", voice: "tone", from: "user" });
+    expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", plugin: "acceptance-voice", voice: "tone", from: "user" });
     f = fake({ defaults: [defaults[0]] });
     expect(await host.voiceOf("alpha")).toBeUndefined();
   });
@@ -160,6 +160,12 @@ describe("Clover Voice's host half", () => {
     await host.replies(at("turn.end", { outcome: "completed" }));
     await settle();
     expect(g.opened.map((s) => s.name)).toEqual(["speech"]);
+  });
+
+  test("a pick is tied to the plugin whose entry it named, the first time it is read; a twin installed later doesn't take it", async () => {
+    const f = fake({ settings: VOICED });
+    expect(await host.voiceOf("alpha")).toEqual({ provider: "acceptance-voice", plugin: "acceptance-voice", voice: "tone", from: "user" });
+    expect(f.settings.get("providerPlugin@alpha")).toBe("acceptance-voice");
   });
 
   test("a provider is found by its plugin and its entry: another plugin's entry of the same id never gets the text", async () => {
@@ -180,7 +186,7 @@ describe("Clover Voice's host half", () => {
     const f = fake({ settings: VOICED });
     expect(await host.ui.setOff({ bot: "alpha", off: true })).toEqual({ ok: true });
     expect(f.settings.get("silent@alpha")).toBe(true);
-    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", voice: "tone", from: "user", off: true });
+    expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", plugin: "acceptance-voice", voice: "tone", from: "user", off: true });
     expect(await host.voice.listens({ bot: "alpha" })).toBe(false);
     await host.replies(at("message.out", { text: "Hi." }));
     await host.replies(at("turn.end", { outcome: "completed" }));

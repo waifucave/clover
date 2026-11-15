@@ -9,7 +9,7 @@ import { PLUGIN_API_VERSION, fillsLine, fillsOkLines, validateManifest } from "@
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
-import { classifyChange, type OkSnapshot } from "../changes";
+import { classifyChange, updateAddsTrigger, workshopAdds, type OkSnapshot } from "../changes";
 import { openPluginRegistry } from "../open";
 
 const temps: string[] = [];
@@ -50,7 +50,7 @@ describe("a point's fills line", () => {
     try {
       await ok("deck");
       await opened.folders.refresh(fanDir);
-      const LINE = 'Fills Deck Studio\'s "Deck voices": it is given what you type.';
+      const LINE = 'Fills Deck Studio\'s (deck) "Deck voices": it is given what you type.';
       // Plain text, the declarer named; the point with no `fills` adds nothing.
       expect(opened.folders.okText("fan", "macos", false, true).lines.filter((l) => l.includes("Fills"))).toEqual([LINE]);
       await ok("fan");
@@ -62,7 +62,7 @@ describe("a point's fills line", () => {
       await opened.folders.refresh(deckDir);
       for (let i = 0; i < 100 && reg.get("fan")!.state !== "found"; i++) await Bun.sleep(20);
       expect(reg.get("fan")!.state).toBe("found");
-      expect(opened.folders.okText("fan", "macos", false, true).lines).toContain('Careful: Fills Deck Studio\'s "Deck voices": it is given everything you say.');
+      expect(opened.folders.okText("fan", "macos", false, true).lines).toContain('Careful: Fills Deck Studio\'s (deck) "Deck voices": it is given everything you say.');
       await ok("fan");
       // The declarer's own tree gets no line for its own point.
       expect(opened.folders.okText("deck", "macos", false, true).lines.some((l) => l.startsWith("Fills") || l.startsWith("Careful: Fills"))).toBe(false);
@@ -89,5 +89,20 @@ describe("a point's fills line", () => {
     const long = fillsLine({ by: "A\u0007B", title: "T".repeat(500), ok: `x${"y".repeat(1000)}` });
     expect(long.length).toBeLessThan(500);
     expect(long).toStartWith('Fills A B\'s "');
+    // A plugin's point names its declarer by name and id; an empty name (once plain) falls back to the id; zero-width and
+    // direction marks go too.
+    expect(fillsLine({ by: "Voice\u200b\u061c", id: "acme", title: "Modes", ok: "it hears you" })).toBe('Fills Voice\'s (acme) "Modes": it hears you.');
+    expect(fillsLine({ by: "\u200b\u200f", id: "acme", title: "Modes", ok: "it hears you" })).toBe('Fills acme\'s "Modes": it hears you.');
+  });
+
+  test("a declarer's change of its fills words is its own update trigger", () => {
+    const fp = (fillsDecl?: string) => ({
+      class: "code" as const, capabilities: [], networkHosts: [], helperPermissions: [], hookEvents: [], fetchesCode: [], addons: false, adult: false,
+      runs: "{}", defaults: "{}", reaches: "{}", dynamicHosts: false, label: "{}", agentBackends: "[]", ...(fillsDecl === undefined ? {} : { fillsDecl }),
+    });
+    const snap = (p: ReturnType<typeof fp>): OkSnapshot => ({ okHash: "a", files: [], plugins: { "": p }, cards: "", codePaths: [] });
+    expect(updateAddsTrigger(snap(fp()), snap(fp("[]")))).toBeUndefined();
+    expect(updateAddsTrigger(snap(fp("[]")), snap(fp('[{"point":"x.y","fills":{"ok":"a"}}]')))).toContain("what its points' fillers are told");
+    expect(workshopAdds(snap(fp('[{"point":"x.y","fills":{"ok":"a"}}]')), snap(fp('[{"point":"x.y","fills":{"ok":"b"}}]')))).toContain("what its points' fillers are told");
   });
 });

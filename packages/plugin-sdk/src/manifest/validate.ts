@@ -1371,7 +1371,7 @@ export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it as
 /** A point's `fills` line as its declarer wrote it, with who declared it and its title (§5.4): the core's points'
  *  from `CORE_POINTS` (declared by Clover), a plugin's from its declaration. `tree`: the declarer's top-level id (its
  *  own tree's entries get no line). */
-export interface FillsDecl { by: string; title: string; ok: string; warns?: boolean; tree?: string }
+export interface FillsDecl { by: string; title: string; ok: string; warns?: boolean; tree?: string; /** The declarer's plugin id (a plugin's point; none for the core's). */ id?: string }
 /** The `fills` of a point a plugin declares, as the registry knows it now (undefined: none, or not declared here). */
 export type FillsOf = (point: string) => FillsDecl | undefined;
 
@@ -1379,16 +1379,20 @@ export type FillsOf = (point: string) => FillsDecl | undefined;
 export const FILLS_OK_MAX = 300;
 const FILLS_NAME_MAX = 80;
 
-/** Text as one plain line: control, line-break and direction-override characters to one space, runs of space to one,
- *  trimmed and cut to `max`. A declarer's words are shown as text, never as markup. */
+/** Text as one plain line: control, line-break, zero-width, direction-mark and direction-override characters to one
+ *  space, runs of space to one, trimmed and cut to `max`. A declarer's words are shown as text, never as markup. */
 export function plainLine(s: string, max: number): string {
-  return s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-/** One filler's line for a point with `fills`, attributed to its declarer so it can't pass as Clover's words. */
+/** One filler's line for a point with `fills`, attributed to its declarer so it can't pass as Clover's words: a
+ *  plugin's point names the declarer by its name and its id (the id alone when the name is empty once made plain). */
 export function fillsLine(f: FillsDecl): string {
   const ok = plainLine(f.ok, FILLS_OK_MAX).replace(/[.!?]$/, "");
-  const line = `Fills ${plainLine(f.by, FILLS_NAME_MAX)}'s "${plainLine(f.title, FILLS_NAME_MAX)}": ${ok}.`;
+  const name = plainLine(f.by, FILLS_NAME_MAX);
+  const id = f.id === undefined ? "" : plainLine(f.id, FILLS_NAME_MAX);
+  const label = id === "" ? `${name}'s` : name === "" || name === id ? `${id}'s` : `${name}'s (${id})`;
+  const line = `Fills ${label} "${plainLine(f.title, FILLS_NAME_MAX)}": ${ok}.`;
   return f.warns === true ? `Careful: ${line}` : line;
 }
 

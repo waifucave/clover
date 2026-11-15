@@ -27,7 +27,7 @@ const VOICE_BOT_ID = "acceptance-voice-bot";
 function voiceFills(point: string): string {
   const voice = JSON.parse(readFileSync(resolve(import.meta.dir, "..", "..", "plugins", "clover", "plugins", "voice", "clover.json"), "utf8")) as { name: string; host: { declares: Record<string, { title: string; fills: { ok: string; warns?: boolean } }> } };
   const d = voice.host.declares[point]!;
-  return fillsLine({ by: voice.name, title: d.title, ok: d.fills.ok, ...(d.fills.warns === true ? { warns: true } : {}) });
+  return fillsLine({ by: voice.name, id: "clover/voice", title: d.title, ok: d.fills.ok, ...(d.fills.warns === true ? { warns: true } : {}) });
 }
 /** Whether a card's text (its JSON) shows `line`. */
 const shows = (cardJson: string, line: string): boolean => cardJson.includes(JSON.stringify(line).slice(1, -1));

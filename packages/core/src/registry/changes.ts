@@ -47,6 +47,10 @@ export interface PluginFingerprint {
    *  that stay when its lists are reordered (`pluginParts`). A part that moves from inside to beside reaches more (every
    *  bot, every tab), so it asks again. Absent in snapshots kept before it: not compared. */
   parts?: { inside: string[]; beside: string[] };
+  /** The `fills` lines of the points it declares (each with its title), as canonical JSON: its fillers' OK cards show
+   *  them, so changing one is the declarer's own trigger (`updateAddsTrigger`), before its fillers are asked again.
+   *  Absent in older snapshots: read as none. */
+  fillsDecl?: string;
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -295,7 +299,24 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
     agentBackends: canonicalJson((m?.contributes?.agentBackends ?? []).map((b) => ({ id: b.id, protocol: b.protocol, command: b.command ?? null, args: b.args ?? [], handler: b.handler ?? null })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
     parts: partsKeysOf(m),
+    fillsDecl: declaredFillsOf(m),
   };
+}
+
+/** The `fills` of every point a manifest declares (its host's, its bot's and its ui entries' `declares`), by point,
+ *  with each one's title, as canonical JSON; `[]` for none. */
+function declaredFillsOf(m: Manifest | undefined): string {
+  const found: { point: string; title: unknown; fills: unknown }[] = [];
+  const take = (d: unknown) => {
+    if (d === null || typeof d !== "object") return;
+    for (const [point, decl] of Object.entries(d as Record<string, { fills?: unknown; title?: unknown } | undefined>)) {
+      if (decl?.fills !== undefined) found.push({ point, title: decl.title ?? null, fills: decl.fills });
+    }
+  };
+  take((m?.host as { declares?: unknown } | undefined)?.declares);
+  take((m?.contributes?.bot as { declares?: unknown } | undefined)?.declares);
+  for (const u of m?.contributes?.ui ?? []) take((u as { declares?: unknown }).declares);
+  return canonicalJson(found.sort((a, b) => (a.point < b.point ? -1 : a.point > b.point ? 1 : 0)));
 }
 
 /** A plugin's parts inside its bot and beside it, by key (`pluginParts`), sorted. */
@@ -513,6 +534,7 @@ export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | und
     if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
     if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
     if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
+    if ((after.fillsDecl ?? "[]") !== (before.fillsDecl ?? "[]")) return `${who} changes what its points' fillers are told on their OK cards`;
     const grew = besideGrew(before, after);
     if (grew === "moved") return `${who} moves a part from inside its bot to beside it, for every bot and every tab`;
     if (grew === "added") return `${who} adds a part beside its bot, for every bot and every tab`;

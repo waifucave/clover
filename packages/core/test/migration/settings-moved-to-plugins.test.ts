@@ -28,13 +28,15 @@ test("the speak-replies switch and each bot's voice move into Clover Voice's set
   writeFileSync(userLayerFile(h, "luna"), JSON.stringify({ userLayer: 1, bot: "luna", fields: { voice: { provider: "fish-audio", voice: "v2" } } }));
   const lines: string[] = [];
   const moved = moveSettingsToPlugins(h, { log: (l) => lines.push(l) });
-  expect(moved.length).toBe(6);
-  expect(lines).toHaveLength(6);
+  expect(moved.length).toBe(8);
+  expect(lines).toHaveLength(8);
+  expect(lines).toContain("migration: luna's voice.provider → clover/voice's bot setting providerPlugin (clover/fish-audio)");
   expect(lines).toContain("migration: alpha's voice.model → clover/voice's bot setting model");
   expect(lines).toContain("migration: voice.speakReplies → clover/voice's account setting speakReplies");
   const v = filePluginSettings(h).read("clover/voice");
   expect(v.account).toEqual({ speakReplies: false });
-  expect(v.bot).toEqual({ alpha: { provider: "fish-audio", voice: "v1", model: "s2.1-pro" }, luna: { provider: "fish-audio", voice: "v2" } });
+  // A Fish Audio pick is tied to Fish Audio's plugin.
+  expect(v.bot).toEqual({ alpha: { providerPlugin: "clover/fish-audio", provider: "fish-audio", voice: "v1", model: "s2.1-pro" }, luna: { providerPlugin: "clover/fish-audio", provider: "fish-audio", voice: "v2" } });
   // The core holds neither any more: ui.json keeps the rest, Alpha's layer its theme, Luna's (only a voice) is gone.
   expect(json(uiSettingsFile(h))).toEqual({ picks: [], lists: [], appearance: "dark" });
   expect(json(userLayerFile(h, "alpha")).fields).toEqual({ theme: "alpha#t" });

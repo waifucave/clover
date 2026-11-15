@@ -245,6 +245,7 @@ export function fillsFrom(registry: Pick<RegistryCore, "points" | "get">, point:
     ok: fills.ok,
     ...(fills.warns === true ? { warns: true } : {}),
     tree: topPluginIdOf(id),
+    id,
   };
 }
 

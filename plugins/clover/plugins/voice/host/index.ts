@@ -85,7 +85,17 @@ export async function voiceChoice(bot: string): Promise<BotVoice | undefined> {
     a.settings.get<string>("provider", { bot }), a.settings.get<string>("providerPlugin", { bot }), a.settings.get<string>("voice", { bot }), a.settings.get<string>("model", { bot }),
   ]);
   if (named(provider) !== undefined && named(voice) !== undefined) {
-    return { provider: provider!, ...(named(plugin) ? { plugin: plugin! } : {}), voice: voice!, ...(named(model) ? { model: model! } : {}), from: "user" };
+    // A pick is tied to the plugin whose entry it named, recorded the first time it is read (a settings watch doesn't
+    // say which bot changed): later, another plugin's entry of the same id never takes it over.
+    let tied = named(plugin);
+    if (tied === undefined) {
+      const offering = (await a.points.entries(PROVIDERS).catch(() => [])).filter((e) => e.entryId === provider);
+      if (offering.length === 1) {
+        tied = offering[0]!.pluginId;
+        await a.settings.set("providerPlugin", tied, { bot }).catch(() => undefined);
+      }
+    }
+    return { provider: provider!, ...(tied !== undefined ? { plugin: tied } : {}), voice: voice!, ...(named(model) ? { model: model! } : {}), from: "user" };
   }
   // Only the bot's own plugin (its tree) speaks for its default.
   const own = (await a.points.entries<{ provider?: unknown; plugin?: unknown; voice?: unknown; model?: unknown }>(DEFAULTS).catch(() => [])).find((e) => topOf(e.pluginId) === topOf(bot));
