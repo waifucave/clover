@@ -97,6 +97,16 @@ and after each change `api.ui.send("changed", …)` so an open page redraws. Eve
 - `api.notify.send({ title, body })` with `notify`; `api.conversation.*` with `conversation.read` /
   `conversation.post`; `api.files.*` with `files`; `api.bots.*` with `bots.read`; `api.avatar.*` with the `avatar.*`
   capabilities of a bot's own plugin.
+- `api.avatar.cue(cue, { bot? })` moves a bot's figure: `{ type: "expression" | "motion", name }`, `{ type: "outfit", part,
+  on }`, `{ type: "pace", calm }`, `{ type: "lookAt", point }`, and **the mouth**: `{ type: "speech", frames: [{ t, rms,
+  centroid? }] }`, where `t` is epoch milliseconds (`Date.now()`'s clock), `rms` loudness 0 to 1 and `centroid` brightness
+  in Hz. Send speech in batches ahead of the clock: at most 128 levels a batch, stamps strictly rising, none more than two
+  minutes ahead, at most 20 speech cues and 2000 levels a second; a level lasts until the next (at most 50 ms), so 20 ms
+  hops suit. `{ type: "speech", frames: [], cut: true }` forgets every level not yet due (the speech was stopped or
+  replaced). It resolves `{ ok: true }` or `{ ok: false, reason, message }` (`no-renderer`, `unsupported`: the renderer
+  declares no `lipsync`, `unknown-name`, `invalid`); a rate or permission refusal throws. A plugin cues its own bot with
+  `avatar.control`; `{ bot: "<bot id>" }` names another and needs `avatar.control.all` (the OK says it "moves any of your
+  bots' figures"; holding it carries `avatar.control`); without it the call is refused, saying so.
 
 Calls marked NOT SERVED YET in plugin-catalog fail with "isn't available yet": don't use them.
 

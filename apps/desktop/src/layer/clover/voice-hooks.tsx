@@ -2,8 +2,9 @@
 // only when the first sound is due), fed by the `voice` messages main forwards, and the hooks the character stage reads
 // it through. Idle, it is a map and nothing else.
 import { useEffect, useState } from "react";
-import { useCore, useLayerMessage } from "@waifucave/clover-plugin-sdk/ui";
+import { useCore, useLayerMessage, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { VoiceStage, type AudioContextLike, type SpeechState } from "./voice";
+import { SpeechCueBridge } from "./voice-cues";
 
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 declare const __CLOVER_ACCEPTANCE_BUILD__: string | false | undefined;
@@ -42,6 +43,20 @@ export function setVoiceStage(make: (() => VoiceStage) | undefined): void {
 /** For the shell: plays the pieces main sends and applies the user's mute (`voice.speakReplies`). */
 export function useVoicePlayback(): void {
   const core = useCore();
+  const api = usePluginApi();
+  // What the player plays reaches a bot's stage as the avatar cue API's speech cue (the stage takes its mouth from there
+  // only): the shell, which holds `avatar.control.all` as any plugin that speaks for every bot will, sends it.
+  useEffect(() => {
+    const cue = api.avatar?.cue;
+    if (cue === undefined) return;
+    const s = voiceStage();
+    const bridge = new SpeechCueBridge((bot, c) => cue(c, { bot }));
+    s.tap(bridge);
+    return () => {
+      s.tap(undefined);
+      bridge.close();
+    };
+  }, [api]);
   useLayerMessage((m) => {
     if (m.type === "voice") voiceStage().piece(m.piece);
   });

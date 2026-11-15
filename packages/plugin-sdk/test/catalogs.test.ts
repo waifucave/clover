@@ -16,7 +16,7 @@ describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.report", "notify", "audio",
+      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio",
       "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
@@ -104,7 +104,9 @@ describe("the plugin API's gating", () => {
     // (the controller's ruling: nothing callable).
     // logs.read widens what `logs.*` reads (Clover's log and every plugin's, beyond the plugin's own), which the core
     // checks per source: the calls themselves need no capability.
-    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read"];
+    // avatar.control.all widens whose figure `avatar.cue` may move (the core checks it per bot) and carries avatar.control
+    // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
+    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all"];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });
@@ -472,7 +474,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(28);
+    expect(c.capabilities.length).toBe(29);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

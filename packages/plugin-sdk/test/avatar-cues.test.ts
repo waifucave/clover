@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { boxOrDefault, cleanAvatarBox, cleanAvatarCue, cleanAvatarReport, defaultAvatarBox, judgeCue, type AvatarReport } from "../src/index";
+import { SPEECH_FRAMES_MAX, boxOrDefault, cleanAvatarBox, cleanAvatarCue, cleanAvatarReport, cleanSpeechCue, defaultAvatarBox, judgeCue, judgeSpeech, type AvatarReport } from "../src/index";
 
 describe("the avatar cues", () => {
   test("a cue crosses only in one of its shapes, with names checked and a point kept inside the stage", () => {
@@ -45,5 +45,28 @@ describe("the avatar cues", () => {
     expect(unknown).toMatchObject({ ok: false, reason: "unknown-name" });
     expect((unknown as { message: string }).message).toContain("happy, sad");
     expect(judgeCue({ ...report, capabilities: ["lookat"] }, { type: "lookAt", point: null })).toBeUndefined();
+  });
+});
+
+describe("the speech cue", () => {
+  test("it is not a cue a renderer is handed: cleanAvatarCue never reads it", () => {
+    expect(cleanAvatarCue({ type: "speech", frames: [{ t: 1, rms: 0.5 }] })).toBeUndefined();
+  });
+
+  test("levels cross as whole-millisecond stamps strictly rising, loudness 0 to 1, brightness 0 to 24 kHz and optional; cut only as true", () => {
+    expect(cleanSpeechCue({ type: "speech", frames: [{ t: 1000.6, rms: 2, centroid: 99_999, extra: 1 }, { t: 1020, rms: -1 }], x: 1 })).toEqual({ cue: { type: "speech", frames: [{ t: 1001, rms: 1, centroid: 24_000 }, { t: 1020, rms: 0 }] } });
+    expect(cleanSpeechCue({ type: "speech", frames: [], cut: true })).toEqual({ cue: { type: "speech", frames: [], cut: true } });
+    expect(cleanSpeechCue({ type: "speech", frames: Array.from({ length: SPEECH_FRAMES_MAX }, (_, i) => ({ t: 1 + i, rms: 0 })) })).toHaveProperty("cue");
+    for (const bad of [null, "x", {}, { type: "speech" }, { type: "speech", frames: [] }, { type: "speech", frames: [{ t: 5, rms: 0 }, { t: 5, rms: 0 }] }, { type: "speech", frames: [{ t: -1, rms: 0 }] },
+      { type: "speech", frames: [{ t: 1, rms: "0" }] }, { type: "speech", frames: [{ t: 1, rms: 0, centroid: Number.NaN }] }, { type: "speech", frames: [null] },
+      { type: "speech", frames: [{ t: 1, rms: 0 }], cut: false }, { type: "speech", frames: Array.from({ length: SPEECH_FRAMES_MAX + 1 }, (_, i) => ({ t: 1 + i, rms: 0 })) }]) {
+      expect(cleanSpeechCue(bad)).toHaveProperty("why");
+    }
+  });
+
+  test("a renderer must declare lipsync; with none drawing, the answer says so", () => {
+    expect(judgeSpeech(undefined)).toMatchObject({ ok: false, reason: "no-renderer" });
+    expect(judgeSpeech({ renderer: "luna/pngtuber", capabilities: ["expressions"] })).toMatchObject({ ok: false, reason: "unsupported" });
+    expect(judgeSpeech({ renderer: "luna/pngtuber", capabilities: ["lipsync"] })).toBeUndefined();
   });
 });
