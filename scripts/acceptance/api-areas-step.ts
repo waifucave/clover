@@ -33,7 +33,6 @@ export function apiProbeWrong(said: Record<string, string>): string[] {
   want("own-command", (v) => v.startsWith("pong_by_"), "its own command run");
   want("other-command", (v) => v.startsWith("refused:"), "another plugin's command refused without call:");
   want("speech-turn", (v) => v === "taken", "the device's speech turn taken and let go");
-  want("audio-listen", (v) => v === "watched", "a push-to-talk watch opened");
   want("keys", (v) => v.startsWith("refused:"), "the clover tree's keys refused");
   want("commands-list", (v) => /^listed:\d+:own$/.test(v), "the commands list, its own command on it");
   want("memory-read", (v) => v === "read:text", "a memory file of Alpha's read");

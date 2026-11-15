@@ -1,29 +1,29 @@
-// Push-to-talk (try 15, lane E-listen; spec §6.6): the app records while the user holds the composer's talk button and hands
-// the audio to the bot's listening voice plugin. The run's fixture voice (`acceptance-voice`: no key, no network) is installed
-// the user's way and set as Alpha's voice (Clover Voice's own setting for her), and the row holds the button down with real
-// mouse events, as a person does, so main sees the press (a recording starts only after one). The listening half still runs
-// on the core's voice slot until it is re-founded; the speaking clause is voice-mode-step.ts.
+// Push-to-talk (spec §6.6, F1's listening half): Clover Voice's own hold-to-talk button (its `composer.action` entry,
+// key `voice`) records while the user holds it and streams the audio to its own host half; on the release the voice
+// picked writes it down and the words go to the bot as the user's message (`user.send`, one send after the press and
+// release main saw). The run's fixture voice (`acceptance-voice`: no key, no network) is installed the user's way and set
+// as Alpha's voice (Clover Voice's own setting for her); the button appears with no window focus, and the row holds it
+// with real mouse events, as a person does.
 //
-// No real microphone: the test build's recorder takes a generated 1.2 s tone clip in place of getUserMedia (listen.ts's
-// `clipSource`), so no run opens a device or raises a system prompt; the row proves the real constructor was never reached
-// (a counter on `navigator.mediaDevices.getUserMedia`) and that the shell frame's Permissions-Policy allows the microphone
-// for the recorder (`permissionsPolicy`, which asks nothing of the user). What the row proves is the path around the device:
-// the press, main's hold, the numbered pieces crossing the daemon into the plugin, and the plugin's words back in the box.
+// No real microphone: the test build's recorder takes a generated 1.2 s tone clip in place of getUserMedia (Clover
+// Voice's `clipSource`), so no run opens a device or raises a system prompt; the row proves the real door was never
+// reached (a counter on `navigator.mediaDevices.getUserMedia`) and that the recording document's Permissions-Policy
+// allows the microphone (`permissionsPolicy`, which asks nothing of the user). What it proves is the path around the
+// device: the press, the recording whole in Clover Voice's host half, the voice's words, and the user's message.
 import { resolve } from "node:path";
-import { composerDoc } from "./ui-steps";
 import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
-import { VOICE_MODE_CLAUSE, voiceModeClause } from "./voice-mode-step";
+import { VOICE_MODE_CLAUSE, voiceModeClause, type Talk } from "./voice-mode-step";
 
-export const LISTEN_STEP = `push-to-talk: the talk button shows only where the bot's voice listens; held, the app records a generated clip (never the microphone) and the numbered pieces reach the voice plugin whole and in order, and its words land in the composer's box; ${VOICE_MODE_CLAUSE}`;
+export const LISTEN_STEP = `push-to-talk: Clover Voice's talk button shows only where the bot's voice listens, with no window focus needed; held, it records a generated clip (never the microphone) and the recording reaches the voice whole, and its words are sent as the user's message, not put in the box; ${VOICE_MODE_CLAUSE}`;
 
 const VOICE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice");
 const VOICE_ID = "acceptance-voice";
-const BUTTON = ".cl-composer__voice";
+const BUTTON = ".cl-voice-talk__button";
 const BOX = ".cl-composer textarea";
-/** What the fixture's `listen` answers for the clip: 5 chunks (16,000 bytes) twice, then the last 2 chunks (6,400 bytes) at the release. */
-const HEARD = "heard 3 pieces, 38400 bytes of pcm16-16k";
+/** What the fixture's `listen` answers for the clip: 1.2 s of 16 kHz 16-bit PCM. */
+const HEARD = "heard 38400 bytes of pcm16-16k";
 
-export async function listenStep(ctx: ExampleCtx, _session: string): Promise<string> {
+export async function listenStep(ctx: ExampleCtx, session: string): Promise<string> {
   await toAlphasTab(ctx);
   const { cdp, rpc } = ctx;
   const done: string[] = [];
@@ -40,11 +40,39 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     }
     return undefined;
   };
+  /** The talk button's document and place, if it shows. */
+  const button = async (): Promise<{ session: string; c: { x: number; y: number } } | undefined> => {
+    for (const d of await treeDocs(cdp)) {
+      const c = await cdp.centerOf(d.session, BUTTON).catch(() => undefined);
+      if (c !== undefined) return { session: d.session, c };
+    }
+    return undefined;
+  };
+  const alphaSession = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession ?? session;
+  /** The user's messages in Alpha's conversation that carry `words`. */
+  const sentWith = async (words: string): Promise<number> => (await ctx.history(alphaSession)).filter((e) => (e as { type?: unknown }).type === "user_message" && JSON.stringify(e).includes(words)).length;
+  /** Holds the talk button with real mouse events (main sees the press and the release) while the clip plays, and waits for
+   *  the user's message with `words` in Alpha's conversation. */
+  const talk: Talk = async (words) => {
+    const at = await until("the talk button", 30_000, button, async () => "no talk button in the composer");
+    const before = await sentWith(words);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.c.x, y: at.c.y }, at.session);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.c.x, y: at.c.y, button: "left", clickCount: 1, buttons: 1 }, at.session);
+    try {
+      await until("the talk button listening while it is held", 10_000, async () => ((await cdp.evaluate(at.session, "!!document.querySelector('.cl-voice-talk[data-voice-talk=listening]')")) === true ? true : undefined));
+      await sleep(1_500);
+    } finally {
+      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.c.x, y: at.c.y, button: "left", clickCount: 1, buttons: 0 }, at.session);
+    }
+    await until(`the user's message "${words}" in Alpha's conversation`, 40_000, async () => ((await sentWith(words)) > before ? true : undefined),
+      async () => `the button says "${String(await cdp.evaluate(at.session, "document.querySelector('.cl-voice-talk')?.innerText ?? ''").catch(() => "?")).slice(0, 160)}"; app: ${ctx.appLog().split("\n").filter((l) => /send:|voice/i.test(l)).slice(-4).join(" | ").slice(-800)}`);
+    return at.session;
+  };
   try {
-    const box = await until("the composer's text box", 30_000, () => composerDoc(cdp));
-    // Alpha has no voice yet: text-only, so no talk button (the daemon says her voice doesn't listen).
+    await until("the composer's text box", 30_000, () => inTree<boolean>(`!!document.querySelector('${BOX}')`));
+    // Alpha has no voice yet: text-only, so no talk button (Clover Voice's host half says her voice doesn't listen).
     await sleep(1_000);
-    if ((await cdp.centerOf(box.session, BUTTON)) !== undefined) fail("the composer shows a talk button for a bot with no voice");
+    if ((await button()) !== undefined) fail("the composer shows a talk button for a bot with no voice");
     done.push("with no voice, the composer has no talk button");
 
     // The fixture voice, installed from its folder the user's way (its OK card pressed in the window), then Alpha's voice.
@@ -55,21 +83,10 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
     await until(`${VOICE_ID} running`, 30_000, async () => ((await state()) === "running" ? true : undefined));
     for (const [key, value] of [["provider", VOICE_ID], ["voice", "tone"]] as const) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value, bot: "alpha" });
     voiced = true;
-    // The daemon's own answer, where this connection may ask (a packaged core's CLI role may not: the talk button
-    // below, which the composer draws from the same answer, then says it).
-    const status = await rpc.request<{ listens: boolean }>("voice.status", { bot: "alpha" }).catch((e: unknown) => { if (/may not call voice\.status/.test(String((e as { message?: unknown })?.message ?? e))) return undefined; throw e; });
-    if (status !== undefined && status.listens !== true) fail(`voice.status says ${JSON.stringify(status)} for Alpha with a listening voice`);
 
-    // The talk button appears (the composer re-reads the daemon's answer when the bot changes, or when the window is focused:
-    // the voice is Clover Voice's own setting, so the run gives the window the focus back, as the user coming back would).
-    const at = await until("the composer's talk button", 60_000, async () => {
-      const d = await composerDoc(cdp);
-      if (d === undefined) return undefined;
-      await cdp.evaluate(d.session, "window.dispatchEvent(new Event('focus'))").catch(() => undefined);
-      const c = await cdp.centerOf(d.session, BUTTON);
-      return c === undefined ? undefined : { session: d.session, c };
-    }, async () => "no talk button in the composer");
-    done.push("with a listening voice set, the talk button shows");
+    // The talk button appears by itself: it reads Clover Voice's own settings as they change (no window focus given).
+    await until("the talk button", 30_000, button, async () => "no talk button in the composer");
+    done.push("with a listening voice set, the talk button shows, with no window focus given");
 
     // A counter on the real constructor's door: the generated clip must never reach it.
     for (const d of await treeDocs(cdp)) {
@@ -82,35 +99,24 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
       })()`).catch(() => undefined);
     }
 
-    // Held with real mouse events (main sees the press), released after the clip has played.
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.c.x, y: at.c.y }, at.session);
-    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.c.x, y: at.c.y, button: "left", clickCount: 1, buttons: 1 }, at.session);
-    try {
-      await until("the listening line while the button is held", 10_000, async () => ((await cdp.evaluate(at.session, "!!document.querySelector('.cl-composer__listening')")) === true ? true : undefined));
-      await sleep(1_500);
-    } finally {
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.c.x, y: at.c.y, button: "left", clickCount: 1, buttons: 0 }, at.session);
-    }
-    done.push("held, the composer showed its listening line");
-
-    // What the fixture heard lands in the box; the line is gone.
-    const text = await until("what the voice heard in the composer's box", 30_000, async () => {
-      const v = String(await cdp.evaluate(at.session, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : ''`).catch(() => ""));
-      return v.includes("heard ") ? v : undefined;
-    }, async () => `box: "${String(await cdp.evaluate(at.session, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : ''`).catch(() => "?")).slice(0, 120)}"; notice: "${String(await cdp.evaluate(at.session, "document.querySelector('.cl-composer')?.innerText ?? ''").catch(() => "?")).slice(0, 200)}"`);
-    if (!text.includes(HEARD)) fail(`the box shows "${text.slice(0, 120)}", not "${HEARD}"`);
-    done.push(`the plugin's words "${HEARD}" landed in the box (3 numbered pieces, 38,400 bytes, whole and in order)`);
-    if ((await cdp.evaluate(at.session, "!!document.querySelector('.cl-composer__listening')")) === true) fail("the listening line stays after the release");
+    // Held with real mouse events (main sees the press and the release), released after the clip has played.
+    const recorded = await talk(HEARD);
+    done.push(`held and released, the voice's words "${HEARD}" (the whole 1.2 s clip, 38,400 bytes) were sent to Alpha as the user's message`);
+    const box = String(await cdp.evaluate(recorded, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : ''`).catch(() => ""));
+    if (box.includes("heard ")) fail(`the words landed in the composer's box too: "${box.slice(0, 120)}"`);
+    if ((await cdp.evaluate(recorded, "!!document.querySelector('.cl-voice-talk[data-voice-talk=listening]')")) === true) fail("the talk button still says it is listening after the release");
+    done.push("the composer's box stayed as it was, and the button stopped listening");
     // The hold was one: a second recording didn't start by itself.
-    const counters = await inTree<string>("(() => { const d = document.documentElement.dataset; return d.listenStarts === undefined ? null : JSON.stringify({ starts: +d.listenStarts, source: d.listenSource, pieces: +d.listenPieces, bytes: +d.listenBytes, probe: (navigator.mediaDevices && navigator.mediaDevices.__listenProbe) || 0 }); })()");
-    if (counters === undefined) fail("the shell frame shows no recorder counters (a test build marks them on its root)");
-    const c = JSON.parse(counters!.value) as { starts: number; source: string; pieces: number; bytes: number; probe: number };
+    const counters = await inTree<string>("(() => { const d = document.documentElement.dataset; return d.voiceTalkStarts === undefined ? null : JSON.stringify({ starts: +d.voiceTalkStarts, source: d.voiceTalkSource, bytes: +d.voiceTalkBytes, probe: (navigator.mediaDevices && navigator.mediaDevices.__listenProbe) || 0 }); })()");
+    if (counters === undefined) fail("the talk button's document shows no recorder counters (a test build marks them on its root)");
+    const c = JSON.parse(counters!.value) as { starts: number; source: string; bytes: number; probe: number };
     if (c.source !== "clip") fail(`the recorder's source was ${c.source}, not the generated clip`);
-    if (c.starts !== 1 || c.pieces !== 3 || c.bytes !== 38_400) fail(`the recorder's counters read ${JSON.stringify(c)}; wanted 1 start, 3 pieces, 38400 bytes`);
+    if (c.starts !== 1 || c.bytes !== 38_400) fail(`the recorder's counters read ${JSON.stringify(c)}; wanted 1 start, 38400 bytes`);
     if (c.probe !== 0) fail(`getUserMedia was called ${c.probe} time(s): the real microphone was asked for`);
-    done.push(`the recorder ran the generated clip once (${c.starts} start, ${c.pieces} pieces, ${c.bytes} bytes), and getUserMedia was never called`);
-    // The document that recorded (the one with the counters) is the clover layer's own, and the browser's Permissions-Policy for its
-    // frame allows the microphone; a document of any other layer (Alpha's, a plugin's) does not (the real device is never asked).
+    done.push(`the recorder ran the generated clip once (${c.starts} start, ${c.bytes} bytes), and getUserMedia was never called`);
+    // The document that recorded (the one with the counters) is the clover layer's own (Clover Voice's button is drawn there), and the
+    // browser's Permissions-Policy for its frame allows the microphone; a document of a layer that doesn't hold `microphone` (Alpha's,
+    // the fixture voice's) does not (the real device is never asked).
     // Two readings must agree: the browser's own state for the frame (CDP `Page.getPermissionsPolicyState`: the header and the
     // iframe's `allow` together) and the page's own view (`document.featurePolicy`, the shipped name; `permissionsPolicy` where it exists).
     const policyOf = async (session: string): Promise<{ href: string; browser: boolean | undefined; page: "allowed" | "blocked" | "unavailable" }> => {
@@ -123,7 +129,7 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
       return { href: page[0]!, browser, page: page[1] as "allowed" | "blocked" | "unavailable" };
     };
     const mine = await policyOf(counters!.session);
-    if (!mine.href.startsWith("clover-plugin://clover/") || mine.browser !== true || mine.page === "blocked") fail(`the recording document ${mine.href}: the browser's Permissions-Policy state says the microphone is ${String(mine.browser)}, the page says ${mine.page}; it must be allowed for the recorder`);
+    if (!mine.href.startsWith("clover-plugin://clover/") || mine.browser !== true || mine.page === "blocked") fail(`the recording document ${mine.href}: the browser's Permissions-Policy state says the microphone is ${String(mine.browser)}, the page says ${mine.page}; it must be allowed for Clover Voice's button`);
     const others: string[] = [];
     for (const d of await cdp.documents()) {
       if (d.session === counters!.session || d.url.startsWith("clover-plugin://clover/") || !d.url.startsWith("clover-plugin://")) continue;
@@ -133,8 +139,8 @@ export async function listenStep(ctx: ExampleCtx, _session: string): Promise<str
       others.push(v.href.slice(0, 30));
     }
     done.push(`the recording document's Permissions-Policy allows the microphone for it (browser state ${String(mine.browser)}, page ${mine.page})${others.length > 0 ? `, and blocks it in ${others.length} other layer document(s)` : ""} (no prompt was raised)`);
-    // The voice slot's clause, with Alpha's voice still the run's tone voice.
-    done.push(...(await voiceModeClause(ctx)));
+    // The second voice's clause, with Alpha's voice still the run's tone voice; it holds the button again while that voice is picked.
+    done.push(...(await voiceModeClause(ctx, talk)));
     return done.join("; ");
   } finally {
     if (voiced) for (const key of ["provider", "voice"]) await rpc.request("plugin.settings.set", { id: "clover/voice", key, value: null, bot: "alpha" }).catch(() => undefined);
