@@ -87,7 +87,6 @@ export const AUDIO_UTTERANCES_MAX = 64;
 export const AUDIO_UTTERANCES_PER_PLUGIN = 8;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
-export const TERMINAL_INPUT_MAX = 64 * 1024;
 /** Output held while a terminal opens, before its id is known, in characters (any terminal's; ours is kept, the rest
  *  let go). Past it only exits are held, without their data. */
 export const EARLY_OUTPUT_BYTES = 1_000_000;
@@ -672,8 +671,8 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
     // main process saw come to the frame and hands over itself (`terminal.write` on the plugin's connection, a call the
     // general door never passes: layer-links.ts `MAIN_ONLY`). This member is the component SDK's name for that path; a
     // call that reaches the core here, with bytes of the plugin's own choosing, is refused.
-    "terminal.input": async (ctx, args) => {
-      own(ctx, stringArg(args, 0, "the terminal"));
+    "terminal.input": async () => {
+      // Refused whichever terminal it names, its own included (one opened over `terminal.open` on its connection too).
       throw new ContractError("refused", "a terminal takes only the user's own key presses and pastes, which the app hands over itself; a plugin's call writes nothing to it");
     },
     "terminal.onData": (ctx, args) => {

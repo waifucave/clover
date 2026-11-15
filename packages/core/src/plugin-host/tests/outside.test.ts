@@ -108,10 +108,10 @@ test("\"of yours\": a program in Clover's folder, the plugin's own or one it can
   expect(await run(["tool", [], { cwd: bin }])).toMatchObject({ code: 0 });
 });
 
-test("a tree that names programs outside its sandbox has no card-free tool: read-only, display-only and web lists, the build's copy's too", () => {
-  const server = { type: "host", tools: { status: "preload", show: "preload", find: "preload", page: "preload" }, readOnly: ["status"], contained: ["show"], webSearch: ["find"], webFetch: ["page"] };
+test("a tree that names programs outside its sandbox has no card-free tool: read-only, display-only, web and Browser lists, the build's copy's too", () => {
+  const server = { type: "host", tools: { status: "preload", show: "preload", find: "preload", page: "preload", surf: "preload" }, readOnly: ["status"], contained: ["show"], webSearch: ["find"], webFetch: ["page"], browserTools: ["surf"] };
   const record = (id: string, outside: boolean) => ({
-    id, state: "running", enabled: true, dev: false, okHash: "sha256:a", treeHash: "sha256:a", capabilities: [], provenance: {}, source: "bundled",
+    id, state: "running", enabled: true, dev: false, okHash: "sha256:a", treeHash: "sha256:a", capabilities: [], granted: ["browser"], provenance: {}, source: "bundled",
     manifest: { host: { entry: "host/index.js", process: "own", ...(outside ? { outside: { programs: ["git"] } } : {}) }, contributes: { mcpServers: { tools: server } } },
   });
   const records = [record("plain", false), record("gitter", true)];
@@ -122,10 +122,11 @@ test("a tree that names programs outside its sandbox has no card-free tool: read
     pluginToolContained(reg, id, "tools", "show", { fenced: true }),
     pluginWebTool(reg, id, "tools", "find", built ? { built } : {}) ?? false,
     pluginWebTool(reg, id, "tools", "page", built ? { built } : {}) ?? false,
+    pluginWebTool(reg, id, "tools", "surf", built ? { built } : {}) ?? false,
   ];
-  expect(lists("plain")).toEqual([true, true, "web-search", "web-fetch"]);
-  expect(lists("gitter")).toEqual([false, false, false, false]);
-  expect(lists("gitter", () => true)).toEqual([false, false, false, false]);
+  expect(lists("plain")).toEqual([true, true, "web-search", "web-fetch", "browser"]);
+  expect(lists("gitter")).toEqual([false, false, false, false, false]);
+  expect(lists("gitter", () => true)).toEqual([false, false, false, false, false]);
 });
 
 test("a named folder that holds the user's home or Clover's, or lies in Clover's, is refused with why: at install and when its folder is read", async () => {
