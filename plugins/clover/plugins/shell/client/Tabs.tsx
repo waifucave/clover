@@ -2,9 +2,10 @@
 // and an agent's live tab (`main` keyed `agent`, and `panel` keyed `agent` for a bot's coding agent opened from its
 // slim column). Each lays out the spots it declares: the conversation over the composer, and the stage above them
 // when a plugin fills it. The column beside the conversation (`bot.side`, the session column) is the shell's frame's.
-import type { BotRef, EntryProps, SessionView } from "../runtime/types";
+import type { BotRef, BotView, EntryProps, SessionView } from "../runtime/types";
+import { useEffect, useState } from "react";
 import { useLoad } from "./data";
-import { Spot, usePluginApi, useSpotEntries } from "./sdk";
+import { Spot, useSpotEntries, usePluginApi } from "./sdk";
 import { S } from "./strings";
 import { BotTab } from "./Window";
 
@@ -12,15 +13,47 @@ import { BotTab } from "./Window";
 export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?: (session: string) => void }>) {
   const api = usePluginApi();
   const bot = useLoad(() => api.bots?.get(props.bot.id) ?? Promise.reject(new Error("no bots.read")), [api, props.bot.id]);
-  const stage = useSpotEntries("bot.stage", undefined, { bot: props.bot }).entries.length > 0;
+  // The bot's own plugin's header and controls (a bot with no layout of its own): the stock tab shows them when something
+  // other than the shell's own fills the spot, above the conversation and between it and the composer.
+  const own = (spot: string) => useSpotEntries(spot, undefined, { bot: props.bot }).entries.some((e) => e.pluginId !== "clover/shell");
+  const header = own("bot.header");
+  const controls = own("bot.controls");
   if (!bot) return <div className="cl-shell-empty" role="status">{S.loading}</div>;
+  const stage = bot.avatar !== undefined;
   const at = { bot: props.bot, session: bot.mainSession };
   return (
     <BotTab
+      header={header ? <Spot name="bot.header" props={{ bot: props.bot }} /> : undefined}
+      controls={controls ? <Spot name="bot.controls" props={at} /> : undefined}
       stage={stage ? <Spot name="bot.stage" props={{ bot: props.bot }} /> : undefined}
       conversation={<Spot name="conversation" props={{ ...at, onOpenAgent: props.onOpenAgent }} />}
       composer={<Spot name="composer" props={at} />}
     />
+  );
+}
+
+/** The bot as the daemon holds it now: read once, then followed through `bots.watch` (a model pick, a new avatar). */
+function useLiveBot(bot: BotRef): BotView | undefined {
+  const api = usePluginApi();
+  const [now, setNow] = useState<BotView | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void api.bots?.get(bot.id).then((b) => live && setNow((was) => was ?? b), () => undefined);
+    const stop = api.bots?.watch((b) => { if (live && b.id === bot.id) setNow((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(b) ? was : b)); });
+    return () => { live = false; stop?.(); };
+  }, [api, bot.id]);
+  return now;
+}
+
+/** The `bot.header` entry: the bot's name and model, then whatever plugins add through `bot.header.action`. */
+export function BotHeader({ props }: EntryProps<{ bot: BotRef }>) {
+  const bot = useLiveBot(props.bot);
+  return (
+    <header className="cl-bot-header">
+      <span className="cl-bot-header__name">{props.bot.name}</span>
+      {bot && <span className="cl-bot-header__model">{bot.model.slice(bot.model.indexOf("/") + 1)}</span>}
+      <Spot name="bot.header.action" props={{ bot: props.bot }} />
+    </header>
   );
 }
 

@@ -1,0 +1,381 @@
+// The skills, held to the SDK they describe: each one's frontmatter, the entry skill routing to every other, the
+// generated catalog block current, every manifest field and core point named, the tool names in one place only, the UI
+// exports and plugin-API calls they name real, the design tokens they use real, and the parts marked "not in this
+// build yet" or "not served yet" still true (a test fails once another lane's work lands and the text is stale).
+import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  API_CALLS, BotSchema, CommandSchema, CORE_CONTRIBUTION_KEYS, HookSchema, ManifestSchema, McpServerSchema, ModelSchema, PointDeclSchema,
+  SettingSchema, TOKENS, TriggerSchema, UiSchema, VoiceSchema, cssProperty, validateManifest, type ApiCallInfo,
+} from "@waifucave/clover-plugin-sdk";
+import { BUNDLED_READ_TOOLS } from "../../../../../packages/core/src/approvals/bot-check";
+import { mcpToolName } from "../../../../../packages/core/src/computers/mcp";
+import { pluginMcpServerKey } from "../../../../../packages/core/src/runtime-sdk/turn-loop/plugin-mcp";
+import { TOOLS } from "../src/tools";
+import * as uiSdk from "@waifucave/clover-plugin-sdk/ui";
+import { withReference } from "./catalog";
+
+const SKILLS = join(import.meta.dir, "..", "skills");
+const ROOT = join(import.meta.dir, "..", "..", "..", "..", "..");
+const names = readdirSync(SKILLS).sort();
+const text = (name: string) => readFileSync(join(SKILLS, name, "SKILL.md"), "utf8");
+const calls = API_CALLS as Record<string, ApiCallInfo>;
+
+const TOOL_NAMES = ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "AppScreenshot"];
+/** The framing variables a bot's layout sets for Clover's own avatar renderers (plugin-ui, "Fitting the space you get"). */
+const AVATAR_FRAMING = ["--clover-avatar-framing", "--clover-avatar-crop", "--clover-avatar-headroom"];
+const ENTRY = "building-plugins";
+
+describe("every skill", () => {
+  test("is the set the plugin ships, and the entry skill routes to every other", () => {
+    expect(names).toEqual(["building-plugins", "plugin-cards", "plugin-catalog", "plugin-examples", "plugin-host", "plugin-loop", "plugin-manifest", "plugin-ui"]);
+    const entry = text(ENTRY);
+    for (const n of names) if (n !== ENTRY) expect(entry).toContain(`**${n}**`);
+  });
+
+  for (const n of names) {
+    test(`${n}: frontmatter with its own name and a description that says when to use it`, () => {
+      const m = /^---\nname: (.+)\ndescription: (.+)\n---\n/.exec(text(n));
+      expect(m).not.toBeNull();
+      expect(m![1]).toBe(n);
+      expect(m![2]!.length).toBeGreaterThan(80);
+      expect(m![2]!.length).toBeLessThan(1024);
+    });
+  }
+
+  test("the tools are named in the entry skill alone (the others say 'the scaffold tool' and so on)", () => {
+    for (const t of TOOL_NAMES) expect(text(ENTRY)).toContain(t);
+    expect(text(ENTRY)).toContain("`mcp__builder__PluginNew`");
+    for (const n of names) {
+      if (n === ENTRY) continue;
+      for (const t of TOOL_NAMES) expect({ skill: n, names: text(n).includes(t) ? t : null }).toEqual({ skill: n, names: null });
+    }
+  });
+
+  test("every --clover- variable a skill uses is a design token", () => {
+    const real = new Set(TOKENS.map((t) => cssProperty(t.name)));
+    for (const n of names) {
+      for (const v of text(n).match(/--clover-[a-z0-9-]+[a-z0-9]/g) ?? []) {
+        if (v === "--clover-a-b-c") continue; // the worked example of the naming rule
+        if (AVATAR_FRAMING.includes(v)) continue; // a layout's framing for Clover's own renderers, not a token (pinned below)
+        expect({ skill: n, v, real: real.has(v) }).toEqual({ skill: n, v, real: true });
+      }
+    }
+  });
+});
+
+test("plugin-catalog's generated block is current (bun run gen rewrites it)", () => {
+  const t = text("plugin-catalog");
+  expect(withReference(t)).toBe(t);
+});
+
+describe("plugin-manifest", () => {
+  const t = text("plugin-manifest");
+  test("names every top-level manifest field", () => {
+    for (const k of Object.keys(ManifestSchema.shape)) expect({ k, named: t.includes(`\`${k}\``) }).toEqual({ k, named: true });
+  });
+  test("names every core point under contributes", () => {
+    for (const k of CORE_CONTRIBUTION_KEYS) expect({ k, named: t.includes(`\`${k}\``) }).toEqual({ k, named: true });
+  });
+  // The entries a plugin built for a user writes, field by field. (The service points, computers, agent backends and
+  // agent definitions are named as points; their fields are left to the SDK's schema, as the skill says.)
+  const ENTRY_SCHEMAS = {
+    bot: BotSchema, models: ModelSchema, mcpServers: McpServerSchema, hooks: HookSchema, commands: CommandSchema, triggers: TriggerSchema,
+    voices: VoiceSchema, settings: SettingSchema, ui: UiSchema, declares: PointDeclSchema,
+  } as const;
+  for (const [entry, schema] of Object.entries(ENTRY_SCHEMAS)) {
+    test(`names every field of a ${entry} entry`, () => {
+      for (const k of Object.keys(schema.shape)) expect({ entry, k, named: new RegExp(`[\`{,] ?"?${k}"?[\`:,} ]`).test(t) }).toEqual({ entry, k, named: true });
+    });
+  }
+});
+
+// What the skills say of a plugin page's files and isolation, held to the SDK: the drop call is in the catalog (and the
+// generated reference), and `client.isolated` is a manifest field that validates, with no capability.
+describe("plugin pages: drops and cross-origin isolation", () => {
+  test("files.onDrop is a component's call under `files`, and the skills name it", () => {
+    expect(calls["files.onDrop"]).toEqual({ capability: "files", where: "ui" });
+    expect(text("plugin-catalog")).toContain("`files.onDrop` (ui)");
+    expect(text("plugin-ui")).toContain("api.files.onDrop(");
+  });
+
+  test("client.isolated validates (and needs no capability); a non-boolean is refused", () => {
+    const m = (isolated: unknown) => validateManifest({ manifest: 1, id: "iso", name: "Iso", engines: { clover: "^1.0.0" }, client: { entry: "client/index.ts", isolated } });
+    expect(m(true).issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(m(true).capabilities).toEqual([]);
+    expect(m("yes").issues.some((i) => i.severity === "error")).toBe(true);
+    for (const n of ["plugin-ui", "plugin-manifest"]) expect({ n, named: text(n).includes('"isolated": true') }).toEqual({ n, named: true });
+  });
+});
+
+test("the scaffold tool's name, as a bot's session sees it, and it runs without a card", () => {
+  const manifest = JSON.parse(readFileSync(join(import.meta.dir, "..", "clover.json"), "utf8")) as { contributes: { mcpServers: Record<string, { tools: Record<string, string> }> } };
+  const [server] = Object.keys(manifest.contributes.mcpServers);
+  const key = pluginMcpServerKey("clover/plugin-builder", server!, true);
+  expect(key).toBe("builder");
+  for (const tool of TOOLS) expect(text(ENTRY)).toContain(`\`${mcpToolName(key!, tool.name)}\``);
+  expect([...BUNDLED_READ_TOOLS["clover/plugin-builder"]!]).toEqual(TOOLS.map((x) => x.name));
+  expect(Object.keys(manifest.contributes.mcpServers[server!]!.tools)).toEqual(TOOLS.map((x) => x.name));
+});
+
+describe("plugin-ui and plugin-host name what is real", () => {
+  test("each UI SDK export plugin-ui's table names is exported", () => {
+    const t = text("plugin-ui");
+    const table = t.slice(t.indexOf("| export |"), t.indexOf("## A whole app"));
+    const named = [...table.matchAll(/^\| ([^|]+) \|/gm)].flatMap((m) => [...m[1]!.matchAll(/`([A-Za-z]+)(?:\([^`]*\))?`/g)].map((x) => x[1]!)).filter((x) => x !== "export");
+    expect(named.length).toBeGreaterThan(10);
+    for (const e of named) expect({ e, exported: e in uiSdk }).toEqual({ e, exported: true });
+  });
+
+  test("each api.<call>( a skill names is a plugin-API call", () => {
+    for (const n of ["plugin-ui", "plugin-host", "plugin-cards", "plugin-loop"]) {
+      for (const m of text(n).matchAll(/api\.([a-z]+(?:\.[a-zA-Z]+)*)\(/g)) {
+        const path = m[1]!;
+        expect({ skill: n, path, real: path in calls }).toEqual({ skill: n, path, real: true });
+        expect({ skill: n, path, notYet: calls[path]!.notYet ?? null }).toEqual({ skill: n, path, notYet: null });
+      }
+    }
+  });
+});
+
+describe("what the skills say isn't there yet is still not there", () => {
+  test("the not-served list in the entry skill: each family still has a call the core doesn't serve", () => {
+    const line = /These API calls are listed but answer "isn't available yet": ([^(]+)\(/.exec(text(ENTRY).replace(/\n\s*/g, " "));
+    // With every call served the entry skill says so instead, and carries no such list.
+    const unserved = Object.values(calls).some((i) => i.notYet !== undefined);
+    if (!unserved) {
+      expect(line).toBeNull();
+      expect(text(ENTRY)).toContain("Every API call in plugin-catalog is served in this build.");
+      return;
+    }
+    expect(line).not.toBeNull();
+    const families = [...line![1]!.matchAll(/`([a-z]+)(?:\.\*|\.[a-zA-Z]+)?`/g)].map((m) => m[0].slice(1, -1));
+    expect(families.length).toBeGreaterThan(0);
+    for (const f of families) {
+      const hits = Object.entries(calls).filter(([p]) => (f.endsWith(".*") ? p.startsWith(f.slice(0, -1)) : p === f));
+      expect({ f, listed: hits.length > 0 }).toEqual({ f, listed: true });
+      expect({ f, notYet: hits.some(([, i]) => i.notYet !== undefined) }).toEqual({ f, notYet: true });
+    }
+  });
+
+  // Lane G's file and folder pickers, media URLs and WASM: once a picker call is in the catalog, plugin-ui's "Files and
+  // media" section must be rewritten for it (and its pending marker dropped).
+  test("plugin-ui's files-and-media section matches the catalog", () => {
+    const pickers = Object.keys(calls).filter((p) => /pick/i.test(p));
+    const pending = text("plugin-ui").includes("NOT IN THIS BUILD YET");
+    expect({ pickers: pickers.length > 0, pending }).toEqual({ pickers: pickers.length > 0, pending: pickers.length === 0 });
+  });
+
+  // Lane B's core tools: the entry skill names them before they land; once the core defines them, each must be the
+  // name the entry skill gives.
+  const src = (dir: string): string => readdirSync(dir, { withFileTypes: true }).map((d) => {
+    const p = join(dir, d.name);
+    return d.isDirectory() ? src(p) : d.name.endsWith(".ts") ? readFileSync(p, "utf8") : "";
+  }).join("\n");
+  const core = src(join(ROOT, "packages", "core", "src"));
+
+  test("the core's plugin tools, once they land, carry the names the entry skill gives", () => {
+    if (!core.includes("\"PluginInstall\"")) return; // not landed in this build
+    for (const t of ["PluginValidate", "PluginInstall", "PluginStatus"]) expect({ t, defined: core.includes(`"${t}"`) }).toEqual({ t, defined: true });
+  });
+
+  // Editing in place needs both lane B's install text saying so and lane A's fence exception (a bot writes its own
+  // plugin's folder: `FenceContext.workshop`, the ids it built, and `insideWorkshop` in contracts/fence.ts). With both
+  // in the core, plugin-loop's "Editing in place" section must lose its pending marker; with either missing, it keeps it.
+  test("plugin-loop's editing-in-place section matches the core", () => {
+    const fence = readFileSync(join(ROOT, "packages", "core", "src", "contracts", "fence.ts"), "utf8");
+    const inPlace = core.includes("edit it in place") && /\bworkshop\?: readonly string\[\]/.test(fence) && /export (?:async )?(?:function|const) insideWorkshop\b/.test(fence);
+    expect({ inPlace, pending: text("plugin-loop").includes("NOT IN THIS BUILD YET") }).toEqual({ inPlace, pending: !inPlace });
+  });
+});
+
+describe("what the skills say about programs, skill names and the bundle", () => {
+  // plugin-host's "Programs" (lane A's `host.programs`): a host half runs programs only from a process of its own that
+  // declares them, in a top-level plugin, fenced like its stdio servers (any program, the picks, its folders); every
+  // other host half runs its Bun alone. The OK line is the SDK's. This fails on a build without it.
+  test("a host half runs programs only with host.programs; the fence, the rules and the OK line are the build's", () => {
+    const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
+    const validate = readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/validate.ts"), "utf8");
+    expect(daemonHost).toContain("write: [data, tmp, ...programs.write], exec: \"any\", tools: true, network,");
+    expect(daemonHost).toContain("write: [data, tmp], exec: \"plugin\", execs: [l.cmd[0]!], fork: false, network,");
+    expect(daemonHost).toContain("return host?.process === \"own\" && host.programs === true;");
+    for (const key of ["host_programs_own_process", "host_programs_top_only"]) expect({ key, refused: validate.includes(`"${key}"`) }).toEqual({ key, refused: true });
+    const line = /export const HOST_PROGRAMS_OK_LINE = "([^"]+)";/.exec(validate)?.[1];
+    expect(line).toBe("It runs programs on this computer, limited to its own folder and the files you pick.");
+    const flat = text("plugin-host").replace(/\s+/g, " ");
+    expect(flat).toContain(`Its OK card says "${line}"`);
+    expect(flat).toContain("A host half starts no program unless its plugin says so");
+    // A pick added waits for the calls in flight (10 minutes at most); one taken back replaces the process after 5 s.
+    expect(daemonHost).toContain("export const PICK_WAIT_MS = 10 * 60_000;");
+    expect(readFileSync(join(ROOT, "packages/core/src/contracts/plugin-host.ts"), "utf8")).toContain("export const RELOAD_GRACE_MS = 5_000;");
+    // The stdio servers follow picks the same way (the skill says so).
+    const stdio = readFileSync(join(ROOT, "packages/core/src/computers/stdio-mcp.ts"), "utf8");
+    expect(stdio).toContain("export const STDIO_PICK_WAIT_MS = 10 * 60_000;");
+    expect(stdio).toMatch(/export const STDIO_PICK_GRACE_MS = 5_000;/);
+    expect(flat).toContain("A pick the user adds while a call is running (an export) waits");
+    expect(flat).toContain("A pick the user takes back replaces it after 5 seconds");
+  });
+
+  test("the entry skill names a skill the way Glossary loads it, and sends bots to the skills, not the app's bundle", () => {
+    // A child plugin's id is its parent's and its folder's (`plugins/clover/plugins/plugin-builder`); Glossary names a
+    // skill `<plugin id>:<skill name>` (runtime-sdk/turn-loop/glossary.ts).
+    const id = "clover/plugin-builder";
+    expect(import.meta.dir.endsWith(join("plugins", "clover", "plugins", "plugin-builder", "test"))).toBe(true);
+    expect(readFileSync(join(ROOT, "packages/core/src/runtime-sdk/turn-loop/glossary.ts"), "utf8")).toContain("const name = `${c.pluginId}:${fm.name ?? dirName}`;");
+    const t = text(ENTRY);
+    expect(t).toContain(`load: "${id}:plugin-ui"`);
+    expect(text("plugin-ui")).toMatch(/^name: plugin-ui$/m);
+    expect(t).toContain("Don't read Clover's app bundle, its compiled daemon or other binaries for answers");
+  });
+});
+
+// The drop (lane A's `lane/a-plugin-drop`): the entry skill's moving line is true only on a build with it; this fails on
+// one without, so the line and the drop merge together.
+test("the entry skill's move-into-the-plugins-folder line matches a build with the drop", () => {
+  const fence = readFileSync(join(ROOT, "packages/core/src/contracts/fence.ts"), "utf8");
+  const folders = readFileSync(join(ROOT, "packages/core/src/registry/folders.ts"), "utf8");
+  expect(/pluginDrop\?: string;/.test(fence)).toBe(true);
+  expect(/dropped\(name: string, bot: string\): boolean/.test(folders)).toBe(true);
+  expect(text(ENTRY)).toContain("Moving the folder works as well as the install tool");
+});
+
+// plugin-ui's "Fitting the space you get", held to the runtime it describes: a frame is its spot's width and its
+// content's reported height (clamped), the few fixed boxes, the narrow window's 900 px, what the stage hands an avatar
+// renderer, and the framing variables only Clover's own renderer reads from its own element.
+describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => {
+  const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
+  test("main, panel and avatar frames fill their column and scroll themselves; every other frame is as tall as its content says", () => {
+    const sdk = read("packages/plugin-sdk/src/ui/index.tsx");
+    expect(sdk).toContain('const FILL_SPOTS: readonly string[] = ["main", "panel", "avatar"];');
+    expect(sdk).toContain('const FILL_STYLE: CSSProperties = { height: "100%", flex: "1 1 0", minHeight: 0 };');
+    expect(sdk).toContain('...(fill ? FILL_STYLE : { height: height === undefined ? undefined : `${height}px` })');
+    // A frame's reported height becomes its height (b-tab-flash also notes the drawn url in the same branch).
+    expect(sdk).toMatch(/if \(m\.type === "child-size" && m\.child === item\.mount\) \{?\s*setHeight\(m\.height\);/);
+    expect(sdk).toContain("for (const c of Array.from(host.children)) bottom = Math.max(bottom, c.getBoundingClientRect().bottom);");
+    expect(sdk).toContain('style={{ display: "contents" }}');
+    expect(read("apps/desktop/src/layer/layer.css")).toContain('html[data-clover-spot="main"] body, html[data-clover-spot="panel"] body { overflow: auto; }');
+    expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("height: Math.max(0, Math.min(100_000, Math.round(height)))");
+  });
+  test("the fixed boxes, the narrow window, and the stage's props with its framing", () => {
+    expect(read("plugins/clover/plugins/shell/client/styles.css")).toMatch(/\.cl-window__sidebar-content iframe \{[^}]*height: 100% !important;/);
+    expect(read("plugins/clover/plugins/sidebar/client/styles.css")).toMatch(/\.cl-sidebar__app-badge > iframe \{\s*width: 48px;\s*height: 18px;/);
+    expect(read("plugins/alpha/tab/layout.css")).toContain(".alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }");
+    expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("export const NARROW_BELOW = 900;");
+    expect(read("packages/plugin-sdk/src/ui/bridge.ts")).toContain("window: { narrow: boolean };");
+    const stage = read("plugins/clover/plugins/character/client/stage.tsx");
+    for (const v of AVATAR_FRAMING) expect({ v, read: stage.includes(`"${v}"`) }).toEqual({ v, read: true });
+    expect(stage).toContain("export interface AvatarFraming { mode?: \"full\" | \"bust\" | \"waist\"; crop?: number; headroom?: number }");
+    expect(read("packages/plugin-sdk/src/catalogs/spots.ts")).toContain('props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() })');
+    const flat = text("plugin-ui").replace(/\s+/g, " ");
+    expect(flat).toContain("`useMountContext().window.narrow` says so, and changes live");
+    expect(flat).toContain("`framing: { mode?, crop?, headroom? }`");
+  });
+});
+
+
+// plugin-loop's crash-stop line (lane B's 2c5e2c6ab): the note's words, a child named by its own id, the fixed tree
+// starting again with a fresh count, and the third stop in an hour said so. Fails on a build without it.
+test("plugin-loop's crash-stop line matches the plugin host's notice and restart", () => {
+  const notice = readFileSync(join(ROOT, "packages/core/src/plugin-host/crash-notice.ts"), "utf8");
+  const daemonHost = readFileSync(join(ROOT, "packages/core/src/plugin-host/daemon-host.ts"), "utf8");
+  expect(notice).toContain("const text = `${name} stopped: ${reason.replace(/[.\\s]+$/, \"\")}. PluginStatus ${id} has the log.`;");
+  expect(notice).toContain("stops within an hour: you won't be told of another until the user restarts it or an hour passes.");
+  expect(daemonHost).toContain("its tree changed after the crash rules stopped it; it starts again");
+  const flat = text("plugin-loop").replace(/\s+/g, " ");
+  expect(flat).toContain("fix the code in place, and it starts again by itself with a fresh count");
+  expect(flat).toContain("If the note says it is the third stop within an hour, stop editing");
+});
+
+// plugin-loop's `instructions` line and the builder's view in Glossary (lane A's 896f4a55a): a plugin loaded by id
+// answers its MCP servers' instructions and an index of its tools, callable at once up to PLUGIN_LOAD_MAX_TOOLS, and a
+// plugin a bot built that doesn't run is listed to that bot with where its log is. Fails on a build without it.
+test("plugin-loop's Glossary lines match what loading a plugin answers", () => {
+  const glossary = readFileSync(join(ROOT, "packages/core/src/runtime-sdk/turn-loop/glossary.ts"), "utf8");
+  expect(glossary).toContain("export const PLUGIN_LOAD_MAX_TOOLS = 50;");
+  expect(glossary).toContain("which you built: ${why}. PluginStatus ${p.id} has the log.");
+  const flat = text("plugin-loop").replace(/\s+/g, " ");
+  expect(flat).toContain("Give your plugin's MCP server an `instructions` file (`contributes.mcpServers.<name>.instructions`");
+  expect(flat).toContain("a plugin with 50 tools or fewer has them callable at once");
+  expect(flat).toContain("with its state and a line saying the status tool has its log");
+});
+
+// The screenshot tool as the skills give it, held to the core's (lane D's bots/app-screenshot.ts): its name, its sizes
+// and the targets it takes. Fails on a build without it.
+test("the screenshot tool's sizes and targets are the core's", () => {
+  const core = readFileSync(join(ROOT, "packages/core/src/bots/app-screenshot.ts"), "utf8");
+  expect(core).toContain('export const APP_SCREENSHOT_TOOL = "AppScreenshot";');
+  expect(core).toContain("SCREENSHOT_SIZES = { wide: { width: 1280, height: 820 }, narrow: { width: 860, height: 820 } }");
+  expect(core).toContain("SCREENSHOT_MAX = { width: 2560, height: 1640 }");
+  const render = readFileSync(join(ROOT, "apps/desktop/src/main/render.ts"), "utf8");
+  expect(render).toContain('export const RENDER_TARGETS = "app:<plugin id or page key>, bot:<id>, plugins, archive, code, window";');
+  const entry = text("building-plugins").replace(/\s+/g, " ");
+  expect(entry).toContain("`app:<plugin id or page key>`, `bot:<id>`, `plugins`, `archive`, `code`, or `window`");
+  expect(entry).toContain('`"wide"` (1280x820, the default), `"narrow"` (860x820) or `{ width, height }` up to 2560x1640');
+  const loop = text("plugin-loop").replace(/\s+/g, " ");
+  expect(loop).toContain("take the screenshot tool of it (`app:<your plugin id or page key>`) both `\"wide\"` and `\"narrow\"`");
+});
+
+// Sending an island line (plugin-ui, "Putting a line on the island"): the point is the catalog's, and the limits the skill
+// states are the island's own (its model), so the text can't drift from what the island enforces.
+test("plugin-ui's island line section matches the island's rules", async () => {
+  const { LINE_BACKOFF_MS, LINE_CALL_MS, LINE_FAILS_BEFORE_BACKOFF, LINE_ICONS, LINE_POLL_MS, LINE_TEXT_MAX, LINES_PER_PLUGIN, LINES_SHOWN } =
+    await import("../../island/src/model/lines");
+  const section = text("plugin-ui").replace(/\s+/g, " ");
+  expect(section).toContain("## Putting a line on the island");
+  expect(section).toContain('"island.line": [{ "id": "render", "handler": "islandLine" }]');
+  for (const icon of LINE_ICONS) expect(section).toContain(`\`${icon}\``);
+  expect(section).toContain(`at most ${LINE_TEXT_MAX} characters`);
+  expect(section).toContain("at most four, two from one plugin");
+  expect([LINES_SHOWN, LINES_PER_PLUGIN]).toEqual([4, 2]);
+  expect(section).toContain(`every ${LINE_POLL_MS / 1000 === 2 ? "two" : "?"} seconds`);
+  expect(section).toContain(`more than ${LINE_CALL_MS / 1000} seconds`);
+  expect(section).toContain(`fails ${LINE_FAILS_BEFORE_BACKOFF === 3 ? "three times" : "?"} running is left alone for ${LINE_BACKOFF_MS / 1000} seconds`);
+  // The point is in the generated catalog block, and the island declares it with the catalog's name.
+  expect(text("plugin-catalog")).toContain("island.line");
+  const island = JSON.parse(readFileSync(join(ROOT, "plugins/clover/plugins/island/clover.json"), "utf8"));
+  expect(Object.keys(island.contributes.ui[0].declares)).toContain("island.line");
+});
+
+// The plug rule as the skills teach it (spec §5.5's first block): held to the offer list, the never list, the check's
+// codes and the OK card's line, and no kind of plugin named as a type.
+describe("the skills teach the plug rule as built", () => {
+  const entry = text(ENTRY);
+  const section = entry.slice(entry.indexOf("## What a plugin brings"), entry.indexOf("## The tools"));
+  test("the entry skill names every spot Bots offers, the two panels, and the five it never offers", async () => {
+    const { BOTS_OFFER, SAME_ON_EVERY_TAB } = await import("@waifucave/clover-plugin-sdk");
+    for (const [spot, offer] of BOTS_OFFER) {
+      expect({ spot, named: section.includes(`\`${spot}\``) }).toEqual({ spot, named: true });
+      if (offer !== true) for (const key of offer) expect({ spot, key, named: section.includes(`\`${key}\``) }).toEqual({ spot, key, named: true });
+    }
+    for (const spot of SAME_ON_EVERY_TAB) expect({ spot, never: section.includes(`\`${spot}\``) }).toEqual({ spot, never: true });
+  });
+  test("each refusal code it names is the check's, and the old one is gone from every skill", () => {
+    const validate = readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/validate.ts"), "utf8") + readFileSync(join(ROOT, "packages/plugin-sdk/src/manifest/tree.ts"), "utf8");
+    const codes = [...section.matchAll(/`((?:bot|shell)_[a-z_]+)`/g)].map((m) => m[1]!);
+    expect(codes.length).toBeGreaterThanOrEqual(6);
+    for (const code of codes) expect({ code, real: validate.includes(`"${code}"`) }).toEqual({ code, real: true });
+    for (const n of names) expect({ n, old: text(n).includes("bot_spot_outside_tab") }).toEqual({ n, old: false });
+  });
+  test("no skill names a kind of plugin as a type", () => {
+    for (const n of names) expect({ n, typed: /\b(bot|app) plugins?\b/i.test(text(n).replace(/[`"][^`"\n]*[`"]/g, "")) }).toEqual({ n, typed: false });
+  });
+  test("a part beside the bot is `\"app\": true` and gets the OK card's line; own-bot on each part kind validates", () => {
+    expect(section).toContain('"app": true');
+    expect(section).toContain("Everywhere, with a switch of its own");
+    const r = validateManifest({
+      manifest: 1, id: "luna", name: "Luna", engines: { clover: "^1.0.0" }, client: { entry: "client/index.ts" }, host: { entry: "host/index.ts" },
+      contributes: {
+        bot: { name: "Luna", instructions: "bot/instructions.md" },
+        ui: [{ spot: "bot.side", component: "Side" }, { spot: "island.tab", id: "day", title: "Luna's day", component: "Day", app: true }],
+        mcpServers: { stage: { type: "host", scope: "own-bot" } },
+        skills: [{ path: "skills/*/SKILL.md", scope: "own-bot" }],
+        agents: [{ id: "helper", name: "Helper", backend: "clover-code", instructions: "agents/helper.md", scope: "own-bot" }],
+        commands: [{ name: "wave", description: { en: "Wave." }, handler: "wave", scope: "own-bot" }],
+      },
+    });
+    expect(r.issues.filter((i) => i.severity === "error").map((i) => i.code)).toEqual([]);
+    const refused = validateManifest({ manifest: 1, id: "luna", name: "Luna", engines: { clover: "^1.0.0" }, client: { entry: "client/index.ts" }, contributes: { bot: { name: "Luna", instructions: "bot/instructions.md" }, ui: [{ spot: "island.tab", id: "day", title: "Luna's day", component: "Day" }] } });
+    expect(refused.issues.map((i) => i.code)).toContain("bot_spot_not_offered");
+  });
+});

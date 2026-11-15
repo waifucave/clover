@@ -135,7 +135,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemini-2.5-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "google/gemini-2.5-flash-lite",
@@ -238,7 +239,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemini-2.5-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "google/gemini-2.5-pro",
@@ -380,7 +382,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemini-2.5-pro",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "google/gemini-3-flash-preview",
@@ -513,7 +516,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3-flash-preview",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "google/gemini-3.1-flash-lite",
@@ -652,7 +656,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.1-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "google/gemini-3.1-pro-preview",
@@ -792,7 +797,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.1-pro-preview",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "google/gemini-3.5-flash",
@@ -934,7 +940,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.5-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "google/gemini-3.5-flash-lite",
@@ -1066,7 +1073,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.5-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "google/gemini-3.6-flash",
@@ -1199,7 +1207,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.6-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "google/gemini-3.7-flash",
@@ -1332,7 +1341,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.7-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "google/gemini-3.8-flash",
@@ -1465,7 +1475,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-3.8-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "google/gemini-4-argon",
@@ -1598,7 +1609,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "gemini-4-argon",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "google/gemma-4-26b-a4b-it",
@@ -1665,7 +1677,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemma-4-26b-a4b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "google/gemma-4-31b-it",
@@ -1732,7 +1745,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemma-4-31b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     }
   ]
 }

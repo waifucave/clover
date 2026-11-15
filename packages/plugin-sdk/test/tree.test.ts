@@ -2,7 +2,7 @@
 // through an in-memory reader.
 import { describe, expect, test } from "bun:test";
 import { MAX_CHILD_PLUGINS } from "@waifucave/clover-protocol";
-import { detectBareItem, validateTree, type PluginFolderReader } from "../src/index";
+import { describeOk, detectBareItem, validateTree, type PluginFolderReader } from "../src/index";
 
 function folder(files: Record<string, string | object>, opts: { outside?: string[] } = {}): PluginFolderReader {
   const text = new Map(Object.entries(files).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
@@ -37,7 +37,7 @@ const LUNA = {
   "locales/fr.json": { locale: 1, lang: "fr", strings: { "luna.greeting": "Bonjour", "luna.cards": { one: "{n} carte", other: "{n} cartes" } } },
   "plugins/tarot-panel/clover.json": {
     manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" },
-    contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+    contributes: { ui: [{ spot: "panel", key: "tarot", title: "Tarot", component: "TarotPanel" }] },
   },
   "plugins/tarot-panel/client/index.tsx": "export function TarotPanel() { return null; }",
 };
@@ -62,11 +62,25 @@ describe("a bot plugin with a child", () => {
       ...plain,
       "plugins/tarot-panel/clover.json": {
         manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" }, capabilities: ["approvals"],
-        contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+        contributes: { ui: [{ spot: "panel", key: "tarot", title: "Tarot", component: "TarotPanel" }] },
       },
     };
     const p = await validateTree(folder(placer), { folderName: "luna" });
     expect([p.restylesCards, p.children[0]!.report.restylesCards]).toEqual([true, true]);
+  });
+
+  test("a theme with a shell block styles the window: the OK says so; one without does not", async () => {
+    const plain = await validateTree(folder(LUNA), { folderName: "luna" });
+    expect(plain.restylesWindow).toBe(false);
+    expect(describeOk(plain.top, { restylesWindow: plain.restylesWindow }).join(" ")).not.toContain("styles the window");
+    const skinned = { ...LUNA, "tab/theme.json": { ...THEME, shell: { tokens: { bar: "#1b1530", "bar.text": "#f4eefc", "bar.rule": "#3a2f5e" } } } };
+    const r = await validateTree(folder(skinned), { folderName: "luna" });
+    // Whether its colours read is formats.test's (`shell_dropped`, a warning): here, only that it validates and restyles.
+    expect(r.issues.filter((i) => i.code !== "shell_dropped")).toEqual([]);
+    expect(r.restylesWindow).toBe(true);
+    expect(r.windowSkin).toContain("tab/theme.json=");
+    expect(plain.windowSkin).toBe("");
+    expect(describeOk(r.top, { restylesWindow: r.restylesWindow })).toContain("It styles the window while its tab shows.");
   });
 
   test("a Live2D avatar is a model3.json whose files exist inside the folder, or a zip; a vrm is a .vrm (the owner's decision)", async () => {
@@ -99,7 +113,7 @@ describe("a bot plugin with a child", () => {
       ...LUNA,
       "plugins/tarot-panel/clover.json": {
         manifest: 1, name: "Tarot panel", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx", css: ["client/panel.css"] },
-        contributes: { ui: [{ spot: "panel", key: "tarot", component: "TarotPanel" }] },
+        contributes: { ui: [{ spot: "panel", key: "tarot", title: "Tarot", component: "TarotPanel" }] },
       },
     };
     const r = await validateTree(folder(files), { folderName: "luna" });
@@ -129,6 +143,32 @@ describe("a bot plugin with a child", () => {
     const files = { ...LUNA, "tab/layout.json": { layout: 1, root: { row: [{ spot: "conversation" }, { spot: "sidebar" }] } } };
     const r = await validateTree(folder(files), { folderName: "luna" });
     expect(r.issues.map((i) => i.code)).toEqual(["layout_foreign_spot"]);
+  });
+
+  test("another plugin's patch to bots' tabs: its own format, its added spots the tab's or its own, its CSS in its folder", async () => {
+    const mover = (patch: object, extra: Record<string, unknown> = {}) => folder({
+      "clover.json": { manifest: 1, id: "mover", name: "Mover", version: "1.0.0", engines: { clover: "^1.0.0" }, contributes: { ui: [{ spot: "bot.tab", id: "move", layout: "tab/move.json", when: { bot: "luna" } }] } },
+      "tab/move.json": patch,
+      ...extra,
+    } as Record<string, string | object>);
+    const move = { layout: 1, changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }], css: "tab/move.css" };
+    expect((await validateTree(mover(move, { "tab/move.css": ".nudge { transform: translateY(-6px) }" }), { folderName: "mover" })).issues).toEqual([]);
+    expect((await validateTree(mover(move), { folderName: "mover" })).issues.map((i) => i.code)).toEqual(["file_missing"]);
+    const far = { layout: 1, changes: [{ add: { spot: "sidebar" }, into: ".talk" }, { add: { spot: "composer.action", key: "model" }, before: "composer" }, { set: ".talk", class: "x" }] };
+    expect((await validateTree(mover(far), { folderName: "mover" })).issues.map((i) => i.code).sort()).toEqual(["layout_foreign_spot", "layout_foreign_spot", "layout_patch_reach"]);
+    expect((await validateTree(mover({ layout: 1, extends: "default", changes: [] }), { folderName: "mover" })).issues.map((i) => i.code)).toEqual(["file_format"]);
+  });
+
+  test("a bot's layout may be a patch on the stock tab: checked as what it makes; a change whose node isn't there is no error", async () => {
+    const patch = { layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%" }, { remove: "bot.header" }] };
+    expect((await validateTree(folder({ ...LUNA, "tab/layout.json": patch }), { folderName: "luna" })).issues).toEqual([]);
+    // What it adds is checked as any layout's: a spot outside the tab, a path out of the folder.
+    const foreign = { layout: 1, extends: "default", changes: [{ add: { spot: "sidebar" }, into: ".tab" }, { add: { image: "../x.png" }, into: ".talk" }] };
+    const r = await validateTree(folder({ ...LUNA, "tab/layout.json": foreign }), { folderName: "luna" });
+    expect(r.issues.map((i) => i.code).sort()).toEqual(["layout_foreign_spot", "path_escape"]);
+    // The bot's own layout extends the stock tab; "bot" is the user's layout's base.
+    const userBase = { layout: 1, extends: "bot", changes: [] };
+    expect((await validateTree(folder({ ...LUNA, "tab/layout.json": userBase }), { folderName: "luna" })).issues.map((i) => `${i.code}:${i.path}`)).toEqual(["file_format:/extends"]);
   });
 
   test("theme tokens are the catalog's or the plugin's own, with safe values", async () => {
@@ -203,5 +243,45 @@ describe("a tree's children are bounded", () => {
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "too_many_children" && i.refuses === "plugin")).toBe(true);
     expect(r.children.length).toBe(MAX_CHILD_PLUGINS);
+  });
+
+  // Whoever owns a plug sets the rules (§5.5, the owner's rule of November 14): Bots offers a bot its top bar, never the
+  // sidebar. A child tied to the bot's tab may dress the bar as any app plugin may, and nothing tied to a bot's tab
+  // dresses the sidebar; the bot's own plugin fills its bar directly.
+  test("a bot's top bar is its own to fill (directly, or through a child), and the sidebar no part tied to its tab dresses", async () => {
+    const chromeChild = (ui: Record<string, unknown>[]) => ({
+      "plugins/chrome/clover.json": {
+        manifest: 1, name: "Luna's chrome", engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" },
+        capabilities: ["bots.read", "shell.read", "shell.control"], contributes: { ui },
+      },
+      "plugins/chrome/client/index.tsx": "export const LunaBar = () => null; export const LunaSidebar = () => null;",
+    });
+    const r = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "bar", id: "bar", component: "LunaBar", when: { bot: "luna" } }]) }), { folderName: "luna" });
+    expect(r.issues).toEqual([]);
+    const child = r.children.find((c) => c.folder === "chrome")!;
+    expect([child.ok, child.report.id, child.report.class]).toEqual([true, "luna/chrome", "code"]);
+    // The card names the two capabilities in words, so the user sees what the part may do before it installs.
+    const card = describeOk(child.report, { treeCapabilities: r.top.capabilities.concat(child.report.capabilities) }).join(" ");
+    expect(card).toContain("lets its own buttons move around Clover's window");
+    expect(card).toContain("sees which tab and panels are showing");
+    const sidebar = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "sidebar", id: "sidebar", component: "LunaSidebar", when: { bot: "luna" } }]) }), { folderName: "luna" });
+    expect(sidebar.children.find((c) => c.folder === "chrome")!.report.issues.some((i) => i.code === "bot_tied_not_offered")).toBe(true);
+    const withUi = (ui: Record<string, unknown>[]) => ({ ...LUNA, "clover.json": { ...(LUNA["clover.json"] as { contributes: object }), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, ui }, engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" } }, "client/index.tsx": "export const X = () => null;" });
+    const bar = await validateTree(folder(withUi([{ spot: "bar", component: "X" }])), { folderName: "luna" });
+    expect([...bar.issues, ...bar.top.issues]).toEqual([]);
+    const bad = await validateTree(folder(withUi([{ spot: "sidebar", component: "X" }])), { folderName: "luna" });
+    expect([...bad.issues, ...bad.top.issues].some((i) => i.code === "bot_spot_not_offered")).toBe(true);
+  });
+
+  test("a bot's own locale table translates only its keys; one marked `app` may translate the rest", async () => {
+    const withLocale = (app: boolean) => ({
+      ...LUNA,
+      "clover.json": { ...(LUNA["clover.json"] as { contributes: object }), contributes: { ...(LUNA["clover.json"] as { contributes: object }).contributes, locales: [{ lang: "fr", file: "fr.json", ...(app ? { app: true } : {}) }] } },
+      "fr.json": { locale: 1, lang: "fr", strings: { "luna.hello": "Salut", "clover.send": "Envoyer" } },
+    });
+    const own = await validateTree(folder(withLocale(false)), { folderName: "luna" });
+    expect([...own.issues, ...own.top.issues].some((i) => i.code === "locale_foreign_key")).toBe(true);
+    const app = await validateTree(folder(withLocale(true)), { folderName: "luna" });
+    expect([...app.issues, ...app.top.issues].some((i) => i.code === "locale_foreign_key")).toBe(false);
   });
 });

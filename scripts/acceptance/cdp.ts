@@ -4,9 +4,9 @@
 // port only behind CLOVER_DEV_DEBUG=1 (apps/desktop/src/main/debug-guard.ts); a packaged app never does.
 
 export interface ConsoleEntry { session: string; url: string; level: string; text: string }
-export interface FrameInfo { session: string; url: string; type: string }
+export interface FrameInfo { session: string; url: string; type: string; targetId?: string }
 
-type Pending = { resolve(v: any): void; reject(e: Error): void };
+type Pending = { method: string; resolve(v: any): void; reject(e: Error): void };
 
 export class Cdp {
   private seq = 0;
@@ -14,6 +14,8 @@ export class Cdp {
   readonly console: ConsoleEntry[] = [];
   readonly frames = new Map<string, FrameInfo>();
   private readonly waiters: (() => void)[] = [];
+  /** Every protocol event, for a probe that answers `Fetch.requestPaused` and the like. */
+  readonly listeners: ((m: { method: string; params: any; sessionId?: string }) => void)[] = [];
 
   private constructor(private readonly ws: WebSocket) {
     ws.addEventListener("message", (m) => this.onMessage(JSON.parse(String(m.data))));
@@ -35,7 +37,7 @@ export class Cdp {
   send<T = any>(method: string, params: object = {}, session?: string): Promise<T> {
     const id = ++this.seq;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { method, resolve, reject });
       this.ws.send(JSON.stringify({ id, method, params, ...(session !== undefined ? { sessionId: session } : {}) }));
       setTimeout(() => { if (this.pending.delete(id)) reject(new Error(`${method}: no answer`)); }, 20_000);
     });
@@ -45,17 +47,21 @@ export class Cdp {
     if (typeof m.id === "number") {
       const p = this.pending.get(m.id);
       this.pending.delete(m.id);
-      if (m.error) p?.reject(new Error(`${m.error.message}`)); else p?.resolve(m.result);
+      if (m.error) p?.reject(new Error(`${m.error.message}${p.method === "" ? "" : ` (${p.method})`}`)); else p?.resolve(m.result);
       return;
     }
+    for (const l of this.listeners) { try { l(m); } catch { /* a probe's own */ } }
     const s: string = m.sessionId ?? "browser";
     if (m.method === "Target.attachedToTarget") {
       const sid: string = m.params.sessionId;
-      const info = m.params.targetInfo as { url: string; type: string };
-      this.frames.set(sid, { session: sid, url: info.url, type: info.type });
+      const info = m.params.targetInfo as { url: string; type: string; targetId?: string };
+      this.frames.set(sid, { session: sid, url: info.url, type: info.type, ...(info.targetId !== undefined ? { targetId: info.targetId } : {}) });
       void this.arm(sid);
     } else if (m.method === "Target.targetInfoChanged") {
-      for (const f of this.frames.values()) void f;
+      // A target attached before its page loaded (a surface window: the island, the pill) was named by its first
+      // address, about:blank: its own address once it has one (the island press found no island target without it).
+      const info = m.params.targetInfo as { url: string; type: string; targetId: string };
+      for (const f of this.frames.values()) if (f.targetId === info.targetId) { f.url = info.url; f.type = info.type; }
     } else if (m.method === "Runtime.consoleAPICalled") {
       const text = (m.params.args as { value?: unknown; description?: string }[]).map((a) => (a.value !== undefined ? String(a.value) : a.description ?? "")).join(" ");
       this.console.push({ session: s, url: this.frames.get(s)?.url ?? "", level: m.params.type, text });
@@ -118,18 +124,35 @@ export class Cdp {
 
   /** A trusted click at a point of a session's viewport (CSS pixels). */
   async click(session: string, x: number, y: number): Promise<void> {
-    for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
-      await this.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, session);
+    // A window under load (a shard at a high load average) can leave one of the three events unanswered for 20 s: the press is
+    // made again, twice at most, only for that answer's absence.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+          await this.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, buttons: type === "mousePressed" ? 1 : 0 }, session);
+        }
+        return;
+      } catch (err) {
+        if (attempt >= 2 || !/no answer/.test(String((err as Error).message))) throw err;
+      }
     }
   }
 
-  /** The centre of the first element matching `selector` (or whose text contains `text`) in a session, in that session's viewport. */
+  /** The centre of the first element matching `selector` (or whose text contains `text`) in a session, in that session's viewport
+   *  (scrolled into view first when it lies outside it). */
   async centerOf(session: string, selector: string, text?: string): Promise<{ x: number; y: number } | undefined> {
     const v = await this.evaluate(session, `(() => {
-      const els = [...document.querySelectorAll(${JSON.stringify(selector)})];
+      const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
       const el = ${text === undefined ? "els[0]" : `els.find((e) => (e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)}))`};
       if (!el) return null;
-      const r = el.getBoundingClientRect();
+      let r = el.getBoundingClientRect();
+      // Below the fold (a long list: the Installed tab on a home with many plugins), a press at its place would land
+      // outside the view and do nothing: it is scrolled into view first, as a person does.
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) {
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        r = el.getBoundingClientRect();
+      }
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
     })()`);
     return v === null || v === undefined ? undefined : (v as { x: number; y: number });

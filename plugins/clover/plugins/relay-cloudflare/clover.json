@@ -5,6 +5,7 @@
     "en": "Carries your devices' encrypted traffic through a relay in your own Cloudflare account when they can't connect directly, and keeps encrypted sync mail for a device that is away. The relay sees which of your devices talk and how much, never what."
   },
   "engines": { "clover": "^1.0.0" },
+  "availability": { "status": "not-yet", "reason": "device-id" },
   "host": { "entry": "host/index.ts", "runtime": "bun", "start": "each" },
   "capabilities": ["network:*.workers.dev"],
   "settings": {

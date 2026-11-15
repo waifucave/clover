@@ -29,7 +29,7 @@ import { constants as FS, promises as fsp } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { z } from "zod";
-import { FencingToken, Level, SessionId, SignedCardAnswer, TreePath, type Caller } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, TreePath, type Caller, type TurnOrigin } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Link, LinkStream, LinkTransport } from "../contracts/link-transport";
 import { transferChange, transferEndsHold } from "../contracts/tree";
@@ -652,11 +652,14 @@ export async function transferAsking(o: {
   destination: End;
   params: ReceiveParams;
   as: Caller;
+  /** What started the caller's turn, for the card (`AskContext`). */
+  origin?: TurnOrigin;
   ask?: AnswerAsker;
   /** This computer's fencing token, on the `tree.judge` and `tree.receive` it asks. */
   fence?: ActFence;
 }): Promise<TransferResult> {
   const p: ReceiveParams = { ...o.params, ...fenceParam(o.fence) };
+  const askCtx = { as: o.as, ...(o.origin === undefined ? {} : { origin: o.origin }) };
   // One card for the whole operation, whichever holders ask: the same signed answer goes to both.
   const put = (answer: SignedCardAnswer) => {
     p.answer = answer;
@@ -677,7 +680,7 @@ export async function transferAsking(o: {
       need ??= n;
     }
     if (need) {
-      const answer = await o.ask(need);
+      const answer = await o.ask(need, askCtx);
       if (!answer) throw new ContractError("refused", "the user didn't approve this");
       put(answer);
     }
@@ -688,7 +691,7 @@ export async function transferAsking(o: {
     } catch (e) {
       const need = answerNeeded(e);
       if (!need || !o.ask || attempt >= 1) throw e;
-      const answer = await o.ask(need);
+      const answer = await o.ask(need, askCtx);
       if (!answer) throw e;
       put(answer);
     }

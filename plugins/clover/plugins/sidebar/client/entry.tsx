@@ -8,7 +8,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { BotView, SessionView } from "../../shell/runtime/types";
 import { isCloverTree } from "../../shell/runtime/ui";
-import { plain } from "../../shell/runtime/views";
+import { fieldText, plain } from "../../shell/runtime/views";
 import { Sidebar } from "./Sidebar";
 import { Spot, useCore, useSpotEntries, usePluginApi } from "./sdk";
 import type { AgentStatus, AppGlyph, BotStatus, SidebarApp, SidebarBot, SidebarProject, SidebarRoute, SidebarSide } from "./types";
@@ -22,6 +22,9 @@ export interface ShellRoute {
 export interface SidebarEntryProps {
   route: ShellRoute;
   navigate: (route: ShellRoute) => void;
+  /** The shell holds whether the sidebar is a rail of icons (a bot's tab may start it collapsed): set, the sidebar follows it. */
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 /** The shell's route as the sidebar's, and back. */
@@ -74,6 +77,12 @@ export function agentStatus(s: SessionView): AgentStatus {
   }
 }
 
+/** A session that has been archived leaves the sidebar's lists (the Archive page is where it lives). One that has stopped or
+ *  failed stays, marked, so what ended and what went wrong are seen. */
+export function leftTheList(s: SessionView): boolean {
+  return s.archived === true;
+}
+
 /** A bot's state as the sidebar draws it: what waits for the user comes first. */
 export function botStatus(b: BotView, main: SessionView | undefined): BotStatus {
   if (main?.needsYou && main.needsYou.cards + main.needsYou.questions > 0) return "needs-you";
@@ -93,7 +102,14 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
   const [bots, setBots] = useState<BotView[]>([]);
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [side, setSide] = useState<SidebarSide>("bots");
-  const [collapsed, setCollapsed] = useState(false);
+  // The shell may hold the state (a bot's tab can start it collapsed, and its own sidebar button toggles it); on its own it is local.
+  const [ownCollapsed, setOwnCollapsed] = useState(false);
+  const collapsed = props.collapsed ?? ownCollapsed;
+  const setCollapsed = (next: (c: boolean) => boolean): void => {
+    const v = next(collapsed);
+    if (props.onCollapsedChange) props.onCollapsedChange(v);
+    else setOwnCollapsed(v);
+  };
   const [account, setAccount] = useState<{ name: string; detail?: string }>({ name: "" });
   const core = useCore();
 
@@ -109,9 +125,12 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     api.bots?.list().then((b) => live && setBots(b), () => undefined);
     api.conversation?.list?.().then((s) => live && setSessions(s), () => undefined);
     const stop = api.bots?.watch((b) => setBots((list) => (list.some((x) => x.id === b.id) ? list.map((x) => (x.id === b.id ? b : x)) : [...list, b])));
+    // A session started outside the window (the CLI, another window, a bot's agent) or changed anywhere shows without a remount.
+    const stopSessions = api.conversation?.watch?.((v) => setSessions((list) => (list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v])));
     return () => {
       live = false;
       stop?.();
+      stopSessions?.();
     };
   }, [api, core]);
 
@@ -123,7 +142,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
 
   const sidebarBots: SidebarBot[] = bots.map((b) => {
     const main = sessions.find((s) => s.id === b.mainSession);
-    const agents = sessions.filter((s) => s.kind === "agent" && (s.parent === b.mainSession || s.bot === b.id));
+    const agents = sessions.filter((s) => s.kind === "agent" && !leftTheList(s) && (s.parent === b.mainSession || s.bot === b.id));
     return {
       id: b.id,
       name: plain(b.name),
@@ -135,7 +154,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
   });
 
   const projects: SidebarProject[] = [];
-  for (const s of sessions.filter((x) => x.kind === "coding")) {
+  for (const s of sessions.filter((x) => x.kind === "coding" && !leftTheList(x))) {
     const path = s.root ?? `home/${s.computer}`;
     let project = projects.find((p) => p.path === path);
     if (!project) projects.push((project = { id: path, name: folderName(path), path, sessions: [] }));
@@ -151,15 +170,22 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
 
   const apps: SidebarApp[] = useSpotEntries("sidebar.app").entries.flatMap((e) => {
     const opens = e.fields?.opens;
-    const title = e.fields?.title;
-    if (typeof opens !== "string" || typeof title !== "string") return [];
+    const title = fieldText(e.fields?.title);
+    if (typeof opens !== "string" || title === undefined) return [];
     // The apps Clover ships wear the shell's own glyphs, drawn in the text colour; another plugin's, its icon.
     const glyph = GLYPHS[opens];
     const icon = isCloverTree(e.pluginId) && glyph ? { glyph } : typeof e.fields?.icon === "string" ? { url: e.fields.icon } : glyph ? { glyph } : undefined;
-    return [{ id: opens, title, ...(icon ? { icon } : {}) }];
+    // Its component, the button's badge: by its ref (the runtime's `ref`, or `<plugin>#<id>` in the gallery's).
+    const badgeRef = (e as { ref?: string }).ref ?? `${e.pluginId}#${(e as { id?: string }).id ?? ""}`;
+    return [{ id: opens, title, ...(icon ? { icon } : {}), badgeRef }];
   });
 
-  const go = (r: SidebarRoute) => props.navigate(toShellRoute(r));
+  // An app's name travels with the route as `title`: the window's title bar reads it there (the shell does not declare `sidebar.app`, so it cannot list the apps itself).
+  const go = (r: SidebarRoute) => {
+    const to = toShellRoute(r);
+    const app = r.kind === "app" ? apps.find((a) => a.id === r.appId) : undefined;
+    props.navigate(app !== undefined ? { ...to, params: { ...to.params, title: app.title } } : to);
+  };
 
   return (
     <Sidebar
@@ -170,6 +196,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       bots={sidebarBots}
       projects={projects}
       apps={apps}
+      renderAppBadge={(app) => (app.badgeRef !== undefined ? <Spot name="sidebar.app" only={app.badgeRef} props={{}} /> : null)}
       account={account}
       onOpenSettings={() => go({ kind: "settings" })}
       onPlugins={() => go({ kind: "plugins" })}

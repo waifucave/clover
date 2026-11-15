@@ -107,7 +107,7 @@ export interface SurfaceWindow {
 /** A surface's window: the overlay its entry asks for (frameless, never focused, out of the task switcher), or a normal
  *  window. On Wayland it is always a normal framed window the user places: no window there may place itself, float
  *  above the others or pass clicks through. */
-export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreferences: BrowserWindowConstructorOptions["webPreferences"]; title: string; wayland?: boolean }): BrowserWindowConstructorOptions {
+export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreferences: BrowserWindowConstructorOptions["webPreferences"]; title: string; wayland?: boolean; platform?: NodeJS.Platform }): BrowserWindowConstructorOptions {
   if (input.wayland === true) {
     return {
       width: 480,
@@ -126,6 +126,7 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     };
   }
   const overlay = input.surface.type === "overlay";
+  const panel = overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin";
   return {
     width: 480,
     height: 320,
@@ -136,7 +137,21 @@ export function surfaceWindowPlan(input: { surface: SurfaceWindow; webPreference
     transparent: input.surface.transparent === true,
     backgroundColor: input.surface.transparent === true ? "#00000000" : undefined,
     alwaysOnTop: input.surface.alwaysOnTop === true,
-    focusable: !overlay,
+    // On macOS a floating overlay is a non-activating panel: a click on the island or the pill never activates Clover or brings
+    // its main window forward, and (with the all-Spaces setting the app gives it) it stands over another app's full-screen
+    // Space, which an ordinary window of an app with a Dock icon can't. The main window is never one.
+    ...(panel ? { type: "panel" as const } : {}),
+    // macOS pushes every window's frame down below the menu bar (and the notch) whatever its level, so the island, which
+    // hangs from the very top edge of the screen, came up 33 px low with a gap above it. This option turns that frame
+    // constraint off; only a floating overlay (the `clover` tree's surfaces) asks for it, and the app keeps its bounds on its display.
+    ...(overlay && input.surface.alwaysOnTop === true && (input.platform ?? process.platform) === "darwin" ? { enableLargerThanScreen: true } : {}),
+    // A panel may become the key window (a click on the pill's field or an island question's field types into it) without
+    // making Clover the active app, so the person keeps typing in it while staying in the other app; any other overlay never
+    // takes the keyboard.
+    focusable: !overlay || panel,
+    // The click that finds the panel not yet key (the app is not the active one) is the click on its button: it reaches the page
+    // as the press it is, not only as the click that makes the panel key (a card's Approve pressed once, not twice).
+    ...(panel ? { acceptFirstMouse: true } : {}),
     skipTaskbar: overlay,
     hasShadow: !overlay,
     resizable: !overlay,

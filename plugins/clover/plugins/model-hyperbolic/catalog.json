@@ -80,7 +80,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "nousresearch/hermes-3-llama-3.1-70b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "hyperbolic/Qwen/QwQ-32B",
@@ -126,7 +127,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwq-32b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "hyperbolic/Qwen/Qwen2.5-72B-Instruct",
@@ -172,7 +174,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen2.5-72b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "hyperbolic/Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -218,7 +221,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen2.5-coder-32b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "hyperbolic/deepseek-ai/DeepSeek-R1",
@@ -264,7 +268,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-r1",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "hyperbolic/deepseek-ai/DeepSeek-V3",
@@ -310,7 +315,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v3",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "hyperbolic/meta-llama/Llama-3.2-3B-Instruct",
@@ -356,7 +362,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3.2-3b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "hyperbolic/meta-llama/Llama-3.3-70B-Instruct",
@@ -402,7 +409,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3.3-70b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     }
   ]
 }

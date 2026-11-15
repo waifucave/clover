@@ -8,7 +8,7 @@ import type { BrowserToolOptions } from "../src/tool";
 import type { CallerOf } from "../src/caller";
 import {
   isCdpMethodAllowed, type BrowserApi, type Caller, type McpServerTransport, type PluginApi, type Screenshot, type TabOwner,
-  type TabView, type Unsubscribe, type Viewport,
+  type TabView, type Viewport,
 } from "../src/types";
 
 export interface CdpCall {
@@ -50,6 +50,8 @@ export const codingCaller: Caller = { kind: "session", sessionId: "s-code", sess
 
 export class FakeBrowser implements BrowserApi {
   tabsList: TabView[] = [];
+  /** The core's answer to `toolCaller` (the tests give the caller through `callerOf`, so this is unused). */
+  async toolCaller(): Promise<{ kind: "session"; sessionId: string; sessionKind: string; bot?: string }> { return { kind: "session", sessionId: "unused", sessionKind: "bot" }; }
   /** Every API call, by name, in order (`cdp` calls are in `cdpCalls` too). */
   readonly calls: { name: string; args: unknown[] }[] = [];
   readonly cdpCalls: CdpCall[] = [];
@@ -123,31 +125,10 @@ export class FakeBrowser implements BrowserApi {
     return { ...t };
   }
 
-  async show(tab: string, view: string, viewport: Viewport): Promise<TabView> {
-    this.record("show", [tab, view, viewport]);
-    return { ...this.find(tab) };
-  }
-
-  async hide(tab: string): Promise<TabView> {
-    this.record("hide", [tab]);
-    return { ...this.find(tab) };
-  }
-
   async screenshot(tab: string, opts?: { format?: "png" | "jpeg" | "webp"; quality?: number }): Promise<Screenshot> {
     this.record("screenshot", [tab, opts]);
     this.find(tab);
     return { ...this.shot, takenAt: 1_781_270_000_000 };
-  }
-
-  /** The tool follows no DevTools events and no tab changes; these exist to satisfy the API's shape. */
-  onCdpEvent(tab: string): Unsubscribe {
-    this.calls.push({ name: "onCdpEvent", args: [tab] });
-    return () => undefined;
-  }
-
-  watch(): Unsubscribe {
-    this.calls.push({ name: "watch", args: [] });
-    return () => undefined;
   }
 
   async cdp<R = unknown>(tab: string, method: string, params?: Record<string, unknown>, opts?: { viewport?: Viewport }): Promise<R> {

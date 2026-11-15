@@ -5,6 +5,7 @@
     "en": "Makes, resizes and deletes cloud computers in your own Hetzner Cloud project, from the cloud computer folders you or your bots write. Each change asks you first. The VMs run Clover's official image and get no cloud credentials."
   },
   "engines": { "clover": "^1.0.0" },
+  "availability": { "status": "not-yet", "reason": "cloud-computers" },
   "host": { "entry": "host/index.ts", "runtime": "bun" },
   "capabilities": ["network:api.hetzner.cloud"],
   "contributes": {

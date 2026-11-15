@@ -21,12 +21,13 @@ import {
   isSealed,
   questionAnswers,
   selfCompacts,
+  readSeconds,
   typeOther,
   type IslandCard,
   type QuestionCard,
   type QuestionDraft,
 } from "../model/cards";
-import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripRect, tabForPart, waitingRect, type StripPart } from "../model/geometry";
+import { cardGeometry, ISLAND, islandRect, showsWings, stripAction, stripLineRect, stripRect, tabForPart, waitingRect, type StripPart } from "../model/geometry";
 import { FLUID, fluidSeconds } from "../model/fluid";
 import { beginClosing, beginOpening, MORPH, morphSeconds, type MorphClock } from "../model/morph";
 import { IslandQueue } from "../model/queue";
@@ -34,8 +35,10 @@ import { NEEDS_YOU, guestTabs, select, selectedTab, tabState, type GuestTab, typ
 import { t } from "../strings";
 import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
+import { StripLine, useLines, type LineSource } from "./Lines";
 import { NeedsYou, OpenIsland } from "./OpenIsland";
 import { Strip } from "./Strip";
+import { useSealedKit } from "./sealed";
 import { useIslandStyles } from "./styles";
 import { WaitingPill } from "./WaitingPill";
 import type { Rect, ScreenShape } from "../model/geometry";
@@ -72,6 +75,12 @@ export interface IslandProps {
   tabs?: readonly IslandTabEntry[];
   /** The bots' names and ids: another plugin named as one gets no tab. */
   botNames?: readonly string[];
+  /** The plugins' lines (`island.line`): asked for only while the open island's Needs you tab is up. */
+  lines?: LineSource;
+  /** Clover's main window is the one in front: no line is asked for or drawn, on the strip or in the open island. */
+  mainFront?: boolean;
+  /** A bot's name for its id, for a line that names a bot. */
+  botName?: (id: string) => string | undefined;
   /** The tab the working wing opens on; the island's current one when absent. */
   workingTab?: string;
   /** A question answered here. Resolve false (or throw) when the answer did not go through. */
@@ -85,11 +94,20 @@ export interface IslandProps {
    *  waits in Needs you. */
   alwaysOpen?: boolean;
   reducedMotion?: boolean;
+  /** Changes when cards waiting in the strip should come up at once (the pill stepped aside for the main window). */
+  bringBackSignal?: number;
   timers?: IslandTimers;
 }
 
 const ESTIMATED_CARD_HEIGHT = 132;
+/** How long an open island stays up with the pointer away from it. Its window never takes the keyboard (an overlay is
+ *  unfocusable, so Esc never arrives) and a click outside passes through to what is under it, so leaving is the one way a
+ *  person puts it away; it must not stand open on the screen once they have. */
+export const OPEN_IDLE_MS = 1500;
+const ESTIMATED_CARD_HEIGHT_NOTE = 0;
 const NO_TABS: readonly IslandTabEntry[] = [];
+/** A card still arriving: laid out (so its height is known) but not drawn and not clickable. */
+const HELD_BACK = { visibility: "hidden", pointerEvents: "none" } as const;
 
 export function Island(props: IslandProps): ReactElement {
   useIslandStyles();
@@ -101,12 +119,20 @@ export function Island(props: IslandProps): ReactElement {
   const known = useRef(new Set<string>());
   const births = useRef(new Map<string, number>());
   const heights = useRef(new Map<string, number>());
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  /** What the open island needs to show its first card with its buttons (measured while Needs you is up). */
+  const [fit, setFit] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Set<string>>(new Set());
   const [morph, setMorph] = useState<MorphClock>({ openedAt: null, closing: null });
+  // A kit whose frames arrive after the card (the app's real one) holds a sealed card back until every frame is in place:
+  // an empty or half-drawn card is never shown, and the window is not sized for one.
+  const gated = useSealedKit().holdsUntilWhole === true;
+  const [whole, setWhole] = useState<Record<string, boolean>>({});
   const [stripHovered, setStripHovered] = useState(false);
   const [waitingHovered, setWaitingHovered] = useState(false);
+  const [openHovered, setOpenHovered] = useState(false);
 
   const given = props.tabs ?? NO_TABS;
   const botNames = props.botNames;
@@ -138,7 +164,7 @@ export function Island(props: IslandProps): ReactElement {
     const now = nowS();
     const ids = new Set(cards.map((c) => c.id));
     for (const id of known.current) if (!ids.has(id)) queue.resolve(id, now);
-    for (const card of cards) if (!known.current.has(card.id)) queue.arrive(card.id, selfCompacts(card), now);
+    for (const card of cards) if (!known.current.has(card.id)) queue.arrive(card.id, selfCompacts(card), now, readSeconds(card));
     known.current = ids;
     syncBirths();
     bump();
@@ -156,17 +182,54 @@ export function Island(props: IslandProps): ReactElement {
     return () => timers.clearTimeout(handle);
   }); // re-armed after every render, for whatever the queue now says
 
+  // The pill stepped aside for the main window: a card (or question) waiting in the strip comes up at once, not after a fold.
+  const signalSeen = useRef(props.bringBackSignal ?? 0);
+  useEffect(() => {
+    const signal = props.bringBackSignal ?? 0;
+    if (signal === signalSeen.current) return;
+    signalSeen.current = signal;
+    if (queue.bringBack(nowS(), (id) => { const c = byId.get(id); return c === undefined ? undefined : readSeconds(c); })) {
+      syncBirths();
+      bump();
+    }
+  }, [props.bringBackSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Any touch of the card on top starts its wait again (at most a few a second: the timer is moved, nothing re-renders).
+  const lastTouch = useRef(0);
+  const touch = useCallback(() => {
+    const t = timers.now();
+    if (t - lastTouch.current < 250) return;
+    lastTouch.current = t;
+    queue.touchCurrent(nowS());
+    bump();
+  }, [queue, timers]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isOpen = alwaysOpen || morph.openedAt !== null;
+  // The plugins' lines are asked for only while they can be seen: the island open, on Needs you, and not on its way out.
+  // Also on the closed strip (the owner's ruling: "when Clover isn't in front"): the first line shows under it while nothing
+  // waits and Clover's window is not the one in front. While the window is in front nothing is asked at all.
+  const front = props.mainFront === true;
+  const needsYouUp = isOpen && !morph.closing && (selectedTab(tabs)?.id ?? NEEDS_YOU.id) === NEEDS_YOU.id;
+  const stripLineUp = !alwaysOpen && !isOpen && cards.length === 0 && !front;
+  const lines = useLines(props.lines, front ? "off" : needsYouUp ? "open" : stripLineUp ? "closed" : "off");
   const now = timers.now();
   const current = queue.current ? byId.get(queue.current.id) : undefined;
+  const showCurrent = current !== undefined && (!gated || !isSealed(current) || whole[current.id] === true);
   const waiting = queue.waiting ? byId.get(queue.waiting.id) : undefined;
-  const bornAt = current ? births.current.get(current.id) : undefined;
+  const bornAt = current && showCurrent ? births.current.get(current.id) : undefined;
   const birthSeconds = bornAt === undefined ? FLUID.settle : (now - bornAt) / 1000;
   const morphMoving = !alwaysOpen && isOpen && (morph.closing !== null || morphSeconds(morph, now) < MORPH.settle);
   const back = leaving.current;
   const backSeconds = back ? fluidSeconds(now, back.bornAt, back.returningAt) : 0;
   const returning = back !== null && backSeconds > 0 && !isOpen && !reducedMotion;
-  const moving = (!isOpen && current !== undefined && birthSeconds < FLUID.settle && !reducedMotion) || (morphMoving && !reducedMotion) || returning;
+  const moving = (!isOpen && showCurrent && birthSeconds < FLUID.settle && !reducedMotion) || (morphMoving && !reducedMotion) || returning;
+
+  // A card held back is born when it is shown, not when it arrived.
+  useEffect(() => {
+    if (!gated || !current || !showCurrent) return;
+    births.current.set(current.id, timers.now());
+    bump();
+  }, [gated, showCurrent, current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A return that has played out (or that the island opened over) is done; one that began after this render
   // is the next render's to judge.
@@ -185,6 +248,7 @@ export function Island(props: IslandProps): ReactElement {
     (tab: string | null) => {
       setMorph((m) => beginOpening(m, timers.now(), reducedMotion));
       if (tab) setTabs((s) => select(s, tab));
+      setOpenHovered(true); // opened by a press on the strip: the pointer is on it
       onOpenChange?.(true);
     },
     [onOpenChange, reducedMotion, timers],
@@ -200,6 +264,14 @@ export function Island(props: IslandProps): ReactElement {
     });
     onOpenChange?.(false);
   }, [onOpenChange, reducedMotion, timers, alwaysOpen]);
+
+  // The pointer away from the open island puts it away after a moment (a window with no keyboard has no Esc, and a click
+  // outside goes to what is under it). The pointer coming back stops it.
+  useEffect(() => {
+    if (alwaysOpen || !isOpen || morph.closing || openHovered) return;
+    const handle = timers.setTimeout(close, OPEN_IDLE_MS);
+    return () => timers.clearTimeout(handle);
+  }, [alwaysOpen, isOpen, morph.closing, openHovered, close, timers]);
 
   // Esc closes the open island.
   useEffect(() => {
@@ -271,12 +343,44 @@ export function Island(props: IslandProps): ReactElement {
   const contentRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     if (!current || !contentRef.current) return;
-    const h = Math.ceil(contentRef.current.getBoundingClientRect().height);
+    const h = layoutHeight(contentRef.current);
     if (h > 0 && heights.current.get(current.id) !== h + 2 * ISLAND.cardPadding) {
       heights.current.set(current.id, h + 2 * ISLAND.cardPadding);
       bump();
     }
   });
+
+  // The frames inside a card say their size after it is laid out: measure again when it changes.
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => bump());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [current?.id]);
+
+  // The open island grows to show one card with its buttons: its first row's height plus what lies above it, read from
+  // the page itself (the frames inside a card say their size after layout, so it is read again when they do).
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!isOpen || !root) return;
+    const measure = () => {
+      const row = root.querySelector<HTMLElement>(".clv-needs-row");
+      const body = root.querySelector<HTMLElement>(".clv-tab-body");
+      const content = root.querySelector<HTMLElement>(".clv-open-content");
+      if (!row || !body || !content) return;
+      const total = Math.ceil(body.getBoundingClientRect().top - content.getBoundingClientRect().top + 1 + row.getBoundingClientRect().height + 14);
+      setFit((old) => (old === total ? old : total));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    for (const el of root.querySelectorAll(".clv-needs-row")) observer.observe(el);
+    return () => observer.disconnect();
+  });
+  useEffect(() => {
+    if (cards.length === 0 && fit !== 0) setFit(0);
+  }, [cards.length, fit]);
 
   const tabBody = (() => {
     const tab = selectedTab(tabs);
@@ -286,6 +390,8 @@ export function Island(props: IslandProps): ReactElement {
           cards={cards}
           drafts={drafts}
           errors={errors}
+          lines={lines}
+          botName={props.botName}
           onChoose={(card, q, o) => questionHandlers(card).onChoose(q, o)}
           onType={(card, q, text) => questionHandlers(card).onType(q, text)}
           onBack={(card) => questionHandlers(card).onBack()}
@@ -305,8 +411,9 @@ export function Island(props: IslandProps): ReactElement {
   // What takes clicks now. Reported when it changes, so the surface host can pass every other click through.
   const regions: Rect[] = [];
   if (strip) regions.push(grow(strip, ISLAND.stripGlowMargin));
-  if (isOpen) regions.push(islandRect(shape));
-  else if (current && geometry) {
+  const openRect = islandRect(shape, undefined, fit);
+  if (isOpen) regions.push(openRect);
+  else if (current && geometry && showCurrent) {
     const left = -geometry.panelSize.width / 2;
     regions.push({ ...geometry.card, x: left + geometry.card.x });
     if (waiting) {
@@ -314,6 +421,10 @@ export function Island(props: IslandProps): ReactElement {
       regions.push({ ...pill, x: left + pill.x });
     }
   }
+  // The first line, under the closed strip (never while a card waits, the island is open or the window is in front).
+  const stripLine = stripLineUp && lines.lines.length > 0 ? lines.lines[0]! : undefined;
+  const stripLineAt = stripLine !== undefined ? stripLineRect(shape) : undefined;
+  if (stripLineAt !== undefined) regions.push(stripLineAt);
   const drawn: Rect[] = [...regions];
   if (returning && back) {
     const g = cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true });
@@ -327,12 +438,15 @@ export function Island(props: IslandProps): ReactElement {
   }, [regionKey, onRegions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="clv-island" data-open={isOpen || undefined}>
+    <div className="clv-island" data-open={isOpen || undefined} ref={rootRef}>
       {alwaysOpen ? null : (
         <span onMouseEnter={() => setStripHovered(true)} onMouseLeave={() => setStripHovered(false)}>
           <Strip shape={shape} counts={counts} hovered={stripHovered && !isOpen} onPart={onStripPart} />
         </span>
       )}
+      {stripLine !== undefined && stripLineAt !== undefined ? (
+        <StripLine line={stripLine} left={stripLineAt.x} top={stripLineAt.y} width={stripLineAt.width} height={stripLineAt.height} botName={props.botName} onOpen={() => open(NEEDS_YOU.id)} />
+      ) : null}
       {returning && back ? (
         <div className="clv-returning" aria-hidden="true">
           <LiquidCard geometry={cardGeometry(shape, { width: ISLAND.cardWidth, height: back.height }, { rounded: true })} seconds={backSeconds}>
@@ -341,9 +455,10 @@ export function Island(props: IslandProps): ReactElement {
         </div>
       ) : null}
       {isOpen ? (
+        <span style={{ display: "contents" }} onMouseEnter={() => setOpenHovered(true)} onMouseLeave={() => setOpenHovered(false)}>
         <OpenIsland
           shape={shape}
-          size={islandRect(shape)}
+          size={openRect}
           seconds={morphMoving ? morphSeconds(morph, now) : undefined}
           from={from}
           reducedMotion={reducedMotion}
@@ -354,8 +469,10 @@ export function Island(props: IslandProps): ReactElement {
         >
           {tabBody}
         </OpenIsland>
+        </span>
       ) : current && geometry ? (
         <div
+          style={showCurrent ? undefined : HELD_BACK}
           onMouseEnter={() => {
             queue.hoverCurrent(true, nowS());
             bump();
@@ -364,6 +481,10 @@ export function Island(props: IslandProps): ReactElement {
             queue.hoverCurrent(false, nowS());
             bump();
           }}
+          onMouseMove={() => touch()}
+          onWheel={() => touch()}
+          onKeyDown={() => touch()}
+          onPointerDown={() => touch()}
           onFocus={(event) => {
             if (event.target instanceof HTMLInputElement) {
               queue.typingCurrent(true, nowS());
@@ -404,7 +525,7 @@ export function Island(props: IslandProps): ReactElement {
           >
             <div ref={contentRef}>
               {isSealed(current) ? (
-                <SealedCardContent card={current} />
+                <SealedCardContent card={current} onReady={(ready) => setWhole((w) => (w[current.id] === ready ? w : { ...w, [current.id]: ready }))} />
               ) : (
                 <QuestionCardContent card={current} draft={draftOf(current)} error={errors[current.id]} sending={sending.has(current.id)} {...questionHandlers(current)} />
               )}
@@ -414,6 +535,18 @@ export function Island(props: IslandProps): ReactElement {
       ) : null}
     </div>
   );
+}
+
+/** A card's room is its layout height. A hovered card is drawn grown (a transform on its shell), and `getBoundingClientRect`
+ *  reports the drawn size: read that, the window grows with the hover, the pointer at the card's edge leaves, the card
+ *  shrinks, the window follows, and the pointer is back over it (the card flipped 247/251 on the owner's screen, its buttons
+ *  not showing at each turn). The drawn height is divided by the drawn scale (its width over its layout width) to get the
+ *  layout height back, fractions kept. */
+export function layoutHeight(el: HTMLElement): number {
+  const rect = el.getBoundingClientRect();
+  const scale = el.offsetWidth > 0 && rect.width > 0 ? rect.width / el.offsetWidth : 1;
+  // Clamped to a sane range (a frame's own cap is 4000): a transient zero or runaway reading is never a room.
+  return Math.min(4000, Math.max(0, Math.ceil(rect.height / scale - 0.01)));
 }
 
 function grow(rect: Rect, by: number): Rect {

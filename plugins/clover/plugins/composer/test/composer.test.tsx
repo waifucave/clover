@@ -262,6 +262,51 @@ describe("model, voice and actions", () => {
     expect(screen.getByRole("button", { name: "Hold to talk" }).getAttribute("aria-pressed")).toBe("true");
   });
 
+  test("push-to-talk by key: Ctrl+Shift+Space in the box starts on the first press only, never types, and any key of the chord ends it", () => {
+    const onPressStart = mock(() => undefined);
+    const onPressEnd = mock(() => undefined);
+    render(<Composer botName="Alpha" value="" onChange={() => undefined} onSend={() => undefined} voice={{ listening: false, onPressStart, onPressEnd }} />);
+    const box = screen.getByRole("textbox");
+    const chord = { key: " ", code: "Space", ctrlKey: true, shiftKey: true };
+    // The press is cancelled (no space typed); a held key repeats without starting again.
+    expect(fireEvent.keyDown(box, chord)).toBe(false);
+    fireEvent.keyDown(box, { ...chord, repeat: true });
+    fireEvent.keyDown(box, { ...chord, repeat: true });
+    expect(onPressStart).toHaveBeenCalledTimes(1);
+    fireEvent.keyUp(box, { key: "Control", code: "ControlLeft" });
+    expect(onPressEnd).toHaveBeenCalledTimes(1);
+    // A second chord, ended by the Space going up; letting go of an unrelated key ends nothing.
+    fireEvent.keyDown(box, chord);
+    fireEvent.keyUp(box, { key: "a", code: "KeyA" });
+    expect(onPressEnd).toHaveBeenCalledTimes(1);
+    fireEvent.keyUp(box, { key: " ", code: "Space" });
+    expect(onPressStart).toHaveBeenCalledTimes(2);
+    expect(onPressEnd).toHaveBeenCalledTimes(2);
+    // Enter still sends and a plain Space still types: neither is the chord.
+    fireEvent.keyDown(box, { key: " ", code: "Space" });
+    fireEvent.keyDown(box, { key: " ", code: "Space", ctrlKey: true });
+    expect(onPressStart).toHaveBeenCalledTimes(2);
+  });
+
+  test("without a listening voice the chord does nothing (no control, no hold)", () => {
+    render(<Composer botName="Alpha" value="" onChange={() => undefined} onSend={() => undefined} />);
+    expect(screen.queryByRole("button", { name: "Hold to talk" })).toBeNull();
+    expect(fireEvent.keyDown(screen.getByRole("textbox"), { key: " ", code: "Space", ctrlKey: true, shiftKey: true })).toBe(true);
+  });
+
+  test("while held, a visible status says it is listening (also with text in the box); not otherwise", () => {
+    const voice = (listening: boolean) => ({ listening, onPressStart: () => undefined, onPressEnd: () => undefined });
+    const { rerender } = render(<Composer botName="Alpha" value="half a thought" onChange={() => undefined} onSend={() => undefined} voice={voice(false)} />);
+    expect(screen.queryByRole("status")).toBeNull();
+    rerender(<Composer botName="Alpha" value="half a thought" onChange={() => undefined} onSend={() => undefined} voice={voice(true)} />);
+    expect(screen.getByRole("status").textContent).toContain("Listening… release to stop");
+    expect(document.querySelector("[data-listening]")).toBeTruthy();
+    // The box takes the focus back when the hold ends, so what was heard is there to edit.
+    rerender(<Composer botName="Alpha" value="half a thought" onChange={() => undefined} onSend={() => undefined} voice={voice(false)} />);
+    expect(document.activeElement).toBe(screen.getByRole("textbox"));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   test("push-to-talk never sticks on: blur, a lost pointer, a hidden or unfocused window, or unmounting end it (review item 7)", () => {
     const onPressStart = mock(() => undefined);
     const onPressEnd = mock(() => undefined);
@@ -299,5 +344,33 @@ describe("model, voice and actions", () => {
     expect(screen.queryByRole("button", { name: "Hold to talk" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Attach files" })).toBeNull();
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  });
+});
+
+describe("the theme's arrangement (composer.controls.inside)", () => {
+  test("by default the level and the model sit under the box and send beside the text", () => {
+    const { container } = setup({ value: "hi", model: MODELS, level: LEVEL });
+    const box = container.querySelector(".cl-composer__box")!;
+    expect(box.querySelector(".cl-composer__under")).toBeNull();
+    expect(container.querySelector(".cl-composer > .cl-composer__under")).toBeTruthy();
+    expect(container.querySelector(".cl-composer__row .cl-composer__send")).toBeTruthy();
+  });
+
+  test("inside: one row under the text in the box, the level and the model at its start, send at its end", () => {
+    const { container, onSend } = setup({ value: "hi", model: MODELS, level: LEVEL, controlsInside: true });
+    const under = container.querySelector(".cl-composer__box > .cl-composer__under[data-inside]")!;
+    expect(under).toBeTruthy();
+    expect(container.querySelector(".cl-composer > .cl-composer__under")).toBeNull();
+    expect(container.querySelector(".cl-composer__row .cl-composer__send")).toBeNull();
+    const order = [...under.children].map((c) => c.className.split(" ")[0]);
+    expect(order).toEqual(["cl-composer__pill", "cl-composer__pill", "cl-composer__spacer", "cl-composer__send"]);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  test("inside, while running: stop takes send's place at the row's end", () => {
+    const { container } = setup({ value: "", running: true, onStop: () => undefined, controlsInside: true });
+    const under = container.querySelector(".cl-composer__box > .cl-composer__under[data-inside]")!;
+    expect(under.lastElementChild?.className).toContain("cl-composer__stop");
   });
 });

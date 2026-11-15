@@ -38,6 +38,9 @@
 //   or changes what runs (§5.6 "When the app asks again") waits for a new OK; another data edit applies at once,
 //   except a change to card styling (§5.5), which applies to everything but approval cards: they keep the styling of
 //   the tree last OK'd (`okHash`) until the user OKs it.
+// * Where an OK lives: mid-run the core's memory holds it (the core is the records' only writer and persists before
+//   `approve` returns), so a folder read that loaded the records before an answer never undoes it; at start the
+//   durable record decides. A read of a folder that a newer read overtook (a removal's, an install's) puts nothing.
 // * The app's layers read each plugin's UI as `UiPluginView` (`plugin.ui`, lane E): its source and when it was
 //   enabled (§5.5 rules 5 and 6), its OK'd capabilities, its cleaned stylesheets, its `network:` hosts (the layer's CSP
 //   and `Connection-Allowlist`) and, for a bot's plugin, the bot's name and theme. A client entry in TypeScript or TSX
@@ -62,13 +65,28 @@ export interface PluginRecord extends PluginSummary {
   /** The capabilities its manifest declares, the folder as it is now. */
   capabilities: readonly string[];
   /** The capabilities the user granted: those its OK covers, empty before the OK, after a refusal or a block, and for an
-   *  invalid plugin. `PluginDetail.capabilities` is this set. */
+   *  invalid plugin. `PluginDetail.capabilities` is this set. It stays set while the plugin is off or stopped (what the
+   *  OK covers didn't change): what a plugin may USE now is `grantsInForce`, which every one of its connections and its
+   *  host half's API calls go by. A plugin's layer connection gets exactly what its host process would get at that
+   *  moment: nothing while it is off, stopped, blocked, refused, invalid or waiting for its OK; while a change waits for a
+   *  new OK, the registry's own answer for its process (the old grant while the old version keeps running on the old
+   *  OK, as an update that adds no trigger does; nothing while it is held until the OK). */
   granted: readonly string[];
   issues: readonly ValidationIssue[];
   provenance: PluginProvenance;
 }
 
-export type ContributionState = "active" | "waiting" | "refused";
+/** `off`: a part beside its plugin's bot while the user has those parts switched off (§5.5): listed, never used. */
+export type ContributionState = "active" | "waiting" | "refused" | "off";
+
+/** The states in which a plugin's code runs and may use what its OK granted (the plugin API router's own rule). */
+export const RUNNING_STATES: ReadonlySet<PluginState> = new Set<PluginState>(["running", "waiting"]);
+
+/** What a plugin may use now: its grant while it is on and in a running state, else nothing (see `granted`). An unknown
+ *  plugin gets nothing. */
+export function grantsInForce(record: Pick<PluginRecord, "enabled" | "state" | "granted"> | undefined): readonly string[] {
+  return record !== undefined && record.enabled && RUNNING_STATES.has(record.state) ? record.granted : [];
+}
 
 /** Where an install came from: the OK's rule is the same for each, a sealed card (S1). */
 export type InstallFrom = "cli" | "app" | "layer" | "bot";
@@ -123,8 +141,9 @@ export interface PluginRegistry {
   points(): RegisteredPoint[];
   /** The user's switch (§5.1). On a found plugin it raises the sealed OK card (`{ applied: false, card }`) and loads
    *  nothing; on a plugin OK'd and switched off it applies. Rejects `refused` for a blocked, refused or invalid plugin,
-   *  and for switching the bundled `clover` plugin off. */
-  setEnabled(id: string, enabled: boolean): Promise<SwitchResult>;
+   *  and for switching the bundled `clover` plugin off. With `part: "app"`, only the plugin's parts beside its bot
+   *  (§5.5): the bot and the plugin's own switch stay; refused for a plugin with no such parts. */
+  setEnabled(id: string, enabled: boolean, opts?: { part?: "app" }): Promise<SwitchResult>;
   /** A plugin installed into the folder (`plugin.install`), from anywhere: found, with its sealed OK card raised at once
    *  (`card`). A plugin already OK'd for this tree, or not found, raises none. */
   installed(id: string, from: InstallFrom): Promise<{ state: PluginState; card?: string }>;
@@ -134,6 +153,10 @@ export interface PluginRegistry {
   /** The user refused it; it stays off until its folder changes. */
   refuse(id: string): Promise<void>;
   watch(fn: (change: RegistryChange) => void): Unsubscribe;
+  /** A plugin's tree changed under its id while its state stayed (an update applied that keeps running, a workshop
+   *  plugin's edit in place): what `watch` doesn't report. The plugin host reloads its host half on it and its MCP
+   *  servers are listed again. Optional: a registry whose trees never change in place has none. */
+  watchTrees?(fn: (changed: { id: string }) => void): Unsubscribe;
 }
 
 /** The entry field each core point keeps unique among enabled plugins (§5.1 "Entry ids"); the plugin SDK's catalog
@@ -143,6 +166,7 @@ export const UNIQUE_ENTRY_FIELD: Readonly<Partial<Record<keyof CoreEntries, stri
   agentBackends: "id",
   triggers: "type",
   voices: "id",
+  voiceModes: "id",
   computerProviders: "id",
 };
 

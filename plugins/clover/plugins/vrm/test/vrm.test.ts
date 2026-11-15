@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, type VRM } from "@pixiv/three-vrm";
 import type { Mesh } from "three";
-import { FACE_TARGETS, PLACEHOLDER_NAME, makePlaceholderVrm } from "../src/placeholder/model";
+import { FACE_TARGETS, OUTFITS, PLACEHOLDER_NAME, makePlaceholderVrm } from "../src/placeholder/model";
 import { GltfBuilder, glbJson, withJson, withoutAnimations } from "../src/vrm/glb";
 import { MAX_VRM_BYTES, VRM_BUDGETS, validateVrm } from "../src/vrm/validate";
-import { AvatarScene, clampStep, SPRING_MAX_STEP, type AvatarRenderer } from "../src/vrm/scene";
+import { AvatarScene, clampStep, outfitParts, OUTFIT_PARTS_MAX, SPRING_MAX_STEP, type AvatarRenderer } from "../src/vrm/scene";
+import { Object3D } from "three";
 import { idlePose } from "../src/motion/idle";
 import { SHUT } from "../src/lipsync/visemes";
 
@@ -139,6 +140,31 @@ describe("the structural check", () => {
     expect(!outside.ok && outside.reason).toBe("external-reference");
     const cut = tiny(true).subarray(0, 40);
     expect(validateVrm(cut).ok).toBe(false);
+  });
+
+  test("a model that names an outside URL is refused before the loader runs: nothing is fetched (a third party's avatar is no beacon)", async () => {
+    const asked: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: unknown) => { asked.push(String(input)); return Promise.reject(new Error("no network in a test")); }) as typeof fetch;
+    const parsed: unknown[] = [];
+    const parseAsync = GLTFLoader.prototype.parseAsync;
+    GLTFLoader.prototype.parseAsync = function (data, path) { parsed.push(path); return parseAsync.call(this, data, path); };
+    try {
+      for (const bytes of [
+        tiny(true, (b) => (b.json.images = [{ uri: "https://beacon.example/x.png" }])),
+        tiny(true, (b) => (b.json.images = [{ uri: "//beacon.example/x.png" }])),
+        tiny(true, (b) => (b.json.images = [{ uri: "data:image/png;base64,AAAA" }])),
+      ]) {
+        const scene = new AvatarScene(document.createElement("canvas"), { createRenderer: fakeRenderer().create });
+        await expect(scene.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer)).rejects.toThrow();
+        scene.dispose();
+      }
+    } finally {
+      globalThis.fetch = realFetch;
+      GLTFLoader.prototype.parseAsync = parseAsync;
+    }
+    expect(asked).toEqual([]);
+    expect(parsed).toEqual([]);
   });
 
   test("refuses an extension it can't draw", () => {
@@ -480,6 +506,43 @@ describe("the avatar's scene", () => {
     expect(fake.calls.render).toBe(1);
     scene.dispose();
     expect(fake.calls.disposed).toBe(true);
+  });
+
+  test("her three outfits are marked parts, the lilac dress shown and the others hidden; switching one shows or hides only its nodes", async () => {
+    const scene = new AvatarScene(document.createElement("canvas"), { createRenderer: fakeRenderer().create });
+    await scene.load(buffer(bytes()));
+    expect(scene.outfitNames()).toEqual(OUTFITS.map((name, i) => ({ name, on: i === 0 })));
+    expect(scene.setOutfit("lilac-dress", false)).toBe(true);
+    expect(scene.setOutfit("navy-uniform", true)).toBe(true);
+    expect(scene.outfitNames()).toEqual([{ name: "lilac-dress", on: false }, { name: "navy-uniform", on: true }, { name: "yellow-raincoat", on: false }]);
+    expect(scene.setOutfit("cape", true)).toBe(false);
+    // Each outfit is a bodice, a skirt and two sleeves in the file, every node of it marked with its name.
+    const json = glbJson(bytes()) as { nodes: { name: string; extras?: { clover?: { outfit?: string; on?: boolean } } }[] };
+    for (const [i, outfit] of OUTFITS.entries()) {
+      const marked = json.nodes.filter((n) => n.extras?.clover?.outfit === outfit);
+      expect(marked.map((n) => n.name.replace(/Navy|Raincoat/, "")).sort()).toEqual(["Bodice", "Skirt", "leftSleeve", "rightSleeve"]);
+      expect(marked.every((n) => (n.extras!.clover!.on === false) === (i > 0))).toBe(true);
+    }
+    scene.dispose();
+  });
+
+  test("a part is a mark on a node's extras: one name may span nodes, \"on\": false starts it hidden, an unnamed or overlong mark is no part, and a model names at most so many", () => {
+    const root = new Object3D();
+    const add = (userData: Record<string, unknown>) => { const o = new Object3D(); o.userData = userData; root.add(o); return o; };
+    const hat = add({ clover: { outfit: "hat" } });
+    const hatBand = add({ clover: { outfit: "hat" } });
+    const coat = add({ clover: { outfit: "coat", on: false } });
+    add({ clover: { outfit: "" } });
+    add({ clover: { outfit: "x".repeat(65) } });
+    add({ clover: { outfit: 3 } });
+    add({ outfit: "not ours" });
+    const parts = outfitParts(root);
+    expect([...parts.keys()]).toEqual(["hat", "coat"]);
+    expect(parts.get("hat")).toEqual([hat, hatBand]);
+    expect([hat.visible, coat.visible]).toEqual([true, false]);
+    const many = new Object3D();
+    for (let i = 0; i < OUTFIT_PARTS_MAX + 5; i++) { const o = new Object3D(); o.userData = { clover: { outfit: `part${i}` } }; many.add(o); }
+    expect(outfitParts(many).size).toBe(OUTFIT_PARTS_MAX);
   });
 
   test("refuses bad bytes with a sentence", async () => {

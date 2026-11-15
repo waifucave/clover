@@ -80,7 +80,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "yi-large",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

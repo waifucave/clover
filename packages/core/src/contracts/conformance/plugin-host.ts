@@ -14,6 +14,9 @@ import {
 } from "../plugin-host";
 import type { HandlerContext } from "../sdk-types";
 
+/** `keys.*` as the forwarder assumed it: listed, not served yet (the catalog's `notYet`), so typed here. */
+type LegacyKeys = { open(name: string, input: unknown): Promise<unknown>; publicKey(name: string): Promise<unknown> };
+
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
 export type PluginHostHarness = Pick<FakePluginHost, keyof FakePluginHost>;
@@ -269,11 +272,11 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("browser", {
         start: async (api: HandlerContext["api"]) => void (startApi = api),
         // A plugin can't speak for anyone else: what it passes as a caller is only an argument.
-        tabs: async (_a: unknown, ctx: HandlerContext) => ctx.api.browser!.tabs({ owner: { kind: "user" } }),
+        tabs: async (_a: unknown, ctx: HandlerContext) => ctx.api.settings.get("owner", { bot: "sol" }),
       });
       await host.invoke({ pluginId: "browser", handler: "tabs", args: { _meta: { "clover/caller": USER } }, caller: SESSION, session: "s_alpha" });
-      await startApi!.browser!.tabs();
-      expect(callers).toEqual([["browser.tabs", SESSION], ["browser.tabs", { kind: "plugin", pluginId: "browser" }]]);
+      await startApi!.settings.get("owner");
+      expect(callers).toEqual([["settings.get", SESSION], ["settings.get", { kind: "plugin", pluginId: "browser" }]]);
     });
 
     test("a call's ctx.api ends with the call: kept and used later, it is closed (#179's review, S1)", async () => {
@@ -285,12 +288,12 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("browser", {
         tabs: async (_a: unknown, ctx: HandlerContext) => {
           kept = ctx.api;
-          await ctx.api.browser!.tabs();
+          await ctx.api.settings.get("owner");
         },
       });
       await host.invoke({ pluginId: "browser", handler: "tabs", args: null, caller: SESSION, session: "s_alpha" });
-      expect(isContractError(await rejection(Promise.resolve(kept!.browser!.tabs())), "closed")).toBe(true);
-      expect(callers).toEqual(["browser.tabs"]);
+      expect(isContractError(await rejection(Promise.resolve(kept!.settings.get("owner"))), "closed")).toBe(true);
+      expect(callers).toEqual(["settings.get"]);
     });
 
     test("the core's call id on an MCP request never reaches the plugin's server (R7)", async () => {
@@ -324,7 +327,9 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.define("third-party", {
         spoof: async (_a: unknown, ctx: HandlerContext) => {
           await ctx.api.net.fetch("https://hooks.waifucave.com/x", {}, { auth: "waifucave" });
-          await (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "clover/forwarder" });
+          // A member the catalog doesn't have fails at once, by name; a real call's arguments can't name a plugin.
+          expect(() => (ctx.api as unknown as { call(o: unknown): Promise<unknown> }).call({ pluginId: "clover/forwarder" })).toThrow("api.call doesn't exist");
+          await (ctx.api.settings.get as unknown as (o: unknown) => Promise<unknown>)({ pluginId: "clover/forwarder" });
         },
       });
       await host.invoke({ pluginId: "third-party", handler: "spoof", args: 0, caller: USER });
@@ -360,13 +365,15 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       host.serveApi(guardApiRouter(inner, (id) => records.get(id)));
       host.define("clover/forwarder", {
         next: async (_a: unknown, ctx: HandlerContext) => {
-          await ctx.api.keys!.open("forwarder", { enc: new Uint8Array(32), ciphertext: new Uint8Array(16) });
+          // `keys.*` isn't served yet (the catalog's `notYet`): the process gate is what this case pins, through the
+          // suite's own router, so the call is made past the SDK's types.
+          await (ctx.api.keys as unknown as LegacyKeys).open("forwarder", { enc: new Uint8Array(32), ciphertext: new Uint8Array(16) });
           await ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH });
         },
       }, { source: "bundled" });
       host.define("luna", {
         sneak: async (_a: unknown, ctx: HandlerContext) => ctx.api.net.fetch("https://hooks.waifucave.com/v1/next", undefined, { auth: WAIFUCAVE_AUTH }),
-        keys: async (_a: unknown, ctx: HandlerContext) => ctx.api.keys!.publicKey("mine"),
+        keys: async (_a: unknown, ctx: HandlerContext) => (ctx.api.keys as unknown as LegacyKeys).publicKey("mine"),
         fine: async (_a: unknown, ctx: HandlerContext) => ctx.api.storage.synced.get("x"),
       }, { source: "index" });
       expect([host.processOf("clover/forwarder"), host.processOf("luna")]).toEqual(["clover", "shared"]);

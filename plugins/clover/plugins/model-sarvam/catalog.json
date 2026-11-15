@@ -109,7 +109,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "sarvam-105b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "sarvam/sarvam-30b",
@@ -185,7 +186,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "sarvam-30b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

@@ -30,6 +30,8 @@ export interface Attachment {
 }
 
 export interface UserItem extends ItemBase {
+  /** The `seq` of the `user_message` in the session's log: how a message action names it. */
+  seq?: number;
   kind: "user";
   text: string;
   attachments?: Attachment[];
@@ -48,6 +50,8 @@ export interface BotItem extends ItemBase {
   streaming?: boolean;
   /** The user's message cut this answer off (spec §6.4). */
   interrupted?: boolean;
+  /** The `seq` of the `assistant_message` that finished it, in the session's log: how the speak button names it. */
+  seq?: number;
 }
 
 /** `summary | update | exposed | hidden`: what kind of reasoning the block carried. */
@@ -79,6 +83,13 @@ export interface ToolDiff {
   diffId: string;
 }
 
+export interface ToolDisplay {
+  kind: string;
+  label: string;
+  value: string;
+  swatch?: string;
+}
+
 export interface ToolCall {
   callId: string;
   /** The tool's name as the model sees it: `Bash`, `Read`, `mcp__clover__WebSearch`… */
@@ -96,6 +107,10 @@ export interface ToolCall {
   sites?: { url: string; icon?: string }[];
   /** The safety reviewer is judging this call right now. */
   reviewing?: boolean;
+  /** A plugin tool's own title for the call (plain text, one line): shown only with the plugin's name, or in its bot's own strip. */
+  displayTitle?: string;
+  /** A plugin tool's own short result (plain text; `swatch` is a validated #RRGGBB, used only as a colour). */
+  display?: ToolDisplay;
   /** MCP Apps: the tool named a `ui://` page, which shows where the result shows (spec §5.5). */
   app?: { resourceUri: string };
 }
@@ -239,6 +254,8 @@ export interface NoteItem extends ItemBase {
   from?: NoteSource;
   /** `divider` draws it across the conversation, as for a compaction. */
   variant?: "line" | "divider";
+  /** The error that ends the conversation's latest turn, with nothing after it: the host may offer Try again here. */
+  retry?: true;
 }
 
 /** A run of consecutive tool calls, as the `tool` key of `conversation.message` gets it. */
@@ -287,6 +304,30 @@ export interface QuestionAnswer {
 
 /** Callbacks the host routes back. Every one is optional: a view without one draws that control as
  *  plain text. */
+/** A plugin's small button in a message's row of actions (`conversation.message.action`, data the view draws). */
+export interface MessageAction {
+  /** The entry's ref (`<plugin>#<id>`): all a press names; main finds the handler from it. */
+  ref: string;
+  /** Its tooltip and its name to a screen reader. */
+  title: string;
+  /** Its picture, as the app serves a plugin's own image (`/_t/…`); a plain glyph without one. */
+  icon?: string;
+  /** Which messages carry it: a finished reply, the user's own, or both. */
+  on: "assistant" | "user" | "both";
+}
+
+/** What a message action's handler answered: done, or one sentence to show under the message. */
+export interface ActionOutcome {
+  ok?: boolean;
+  note?: string;
+}
+
+/** What a speak request came to: speaking, or not, with the core's one sentence why. */
+export interface SpeakOutcome {
+  speaking: boolean;
+  note?: string;
+}
+
 export interface ConversationActions {
   /** May return a promise: if it rejects, the card takes answers again. */
   onAnswerQuestion?: (callId: string, answer: QuestionAnswer) => void | Promise<unknown>;
@@ -299,6 +340,14 @@ export interface ConversationActions {
   /** Open a background agent's live tab (spec §9.3). */
   onOpenAgent?: (agentId: string) => void;
   onCopy?: (text: string) => void;
+  /** Speak one finished reply aloud, as the user asked (it replaces whatever is playing). The host passes it only for a bot
+   *  that has a voice; without it, no speak button shows. */
+  onSpeak?: (item: BotItem) => Promise<SpeakOutcome | void>;
+  /** Runs a plugin's message action for one message from the log (its `seq`), by the user's click. */
+  onMessageAction?: (action: MessageAction, item: { seq?: number }) => Promise<ActionOutcome | void>;
+  /** Send the message that began the failed turn again (the host checks all of it and refuses what it can't). It rejects
+   *  with the host's reason, a short plain sentence. */
+  onTryAgain?: () => Promise<unknown>;
 }
 
 /** Formatting the host pins (tests and the gallery pin both, so output is stable). */

@@ -1,7 +1,9 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, mcpServerKey, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { AVATAR_FILE_CAPS, clampAvatarCap, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -100,7 +102,7 @@ describe("the envelope", () => {
 describe("code, engines and platforms", () => {
   test("data, web or code is worked out from the manifest (§5.3)", () => {
     expect(validateManifest(min()).class).toBe("data");
-    const web = validateManifest({ ...min(), contributes: { ui: [{ spot: "panel", key: "luna", web: { url: "https://luna.example.com/", partition: "main" } }] } });
+    const web = validateManifest({ ...min(), contributes: { ui: [{ spot: "panel", key: "luna", title: "Luna", web: { url: "https://luna.example.com/", partition: "main" } }] } });
     expect(web.class).toBe("web");
     expect(web.networkHosts).toEqual(["luna.example.com"]);
     const stdio = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { blender: { type: "stdio", command: "uvx", args: ["blender-mcp"] } } } });
@@ -144,6 +146,25 @@ describe("code, engines and platforms", () => {
       expect(r.manifest?.contributes?.commands).toEqual([]);
       expect(codes(r)).toContain(`error:entry:args_schema:${path}`);
     }
+  });
+
+  test("`availability: not-yet` is Clover's own mark: its parked plugins carry it; any other plugin is refused for it", () => {
+    const parked = { status: "not-yet", reason: "webhook-keys" };
+    // Clover's parked plugins, as they are in the tree, validate as its children.
+    for (const folder of ["companion-ios", "companion-web", "forwarder", "provider-gcp", "provider-hetzner", "push", "relay-cloudflare", "trigger-webhook"]) {
+      const text = readFileSync(join(import.meta.dir, "..", "..", "..", "plugins", "clover", "plugins", folder, "clover.json"), "utf8");
+      const r = validateManifest(text, { folderName: folder, parent: { id: "clover", namespace: "clover" }, bundled: true });
+      expect([folder, r.ok, r.issues.filter((i) => i.severity === "error").map((i) => i.code)]).toEqual([folder, true, []]);
+      expect((r.manifest as { availability?: { status: string } }).availability?.status).toBe("not-yet");
+    }
+    // Another plugin, top-level or a child of its own: refused, naming the field.
+    const other = validateManifest({ ...min(), availability: parked });
+    expect([other.ok, has(other, "availability_bundled_only", "plugin")]).toEqual([false, true]);
+    const child = validateManifest({ manifest: 1, name: "Eyes", availability: parked }, { folderName: "eyes", parent: { id: "tarot", namespace: "tarot" } });
+    expect([child.ok, has(child, "availability_bundled_only", "plugin")]).toEqual([false, true]);
+    // Only `not-yet`, with a short key.
+    expect(has(validateManifest({ manifest: 1, name: "X", availability: { status: "later", reason: "x" } }, { folderName: "x", parent: { id: "clover", namespace: "clover" }, bundled: true }), "schema", "plugin")).toBe(true);
+    expect(has(validateManifest({ manifest: 1, name: "X", availability: { status: "not-yet", reason: "Has Spaces" } }, { folderName: "x", parent: { id: "clover", namespace: "clover" }, bundled: true }), "schema", "plugin")).toBe(true);
   });
 
   test("a built plugin (`built: true`, the release build's) names JavaScript modules only", () => {
@@ -213,7 +234,16 @@ describe("contributes", () => {
     const base = { ...min(), engines: { clover: "^1.0.0" }, client: { entry: "client/index.tsx" } };
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status" }] } }), "ui_one_of")).toBe(true);
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A", hide: true }] } }), "ui_one_of")).toBe(true);
-    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", style: "composer.json" }, { spot: "status", hide: true }] } }).issues).toEqual([]);
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", style: "composer.json" }, { spot: "status", hide: true, target: "acme#line" }] } }).issues).toEqual([]);
+    // A list spot's hide names the one entry it takes out; with none it hides nothing (a warning). A target needs a hide.
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "status", hide: true }] } }).issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:ui_hide_list"]);
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", hide: true, target: "acme" }] } }).issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:ui_target"]);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A", target: "acme" }] } }), "ui_target")).toBe(true);
+    // A layout patch: only on bot.tab, its bots by when.bot.
+    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", layout: "tab/move.json", when: { bot: ["luna", "alpha"] } }] } }).issues).toEqual([]);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", layout: "tab/move.json" }] } }), "ui_layout_spot")).toBe(true);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", key: "luna", layout: "tab/move.json" }] } }), "ui_layout_spot")).toBe(true);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", layout: "tab/move.json", component: "A" }] } }), "ui_one_of")).toBe(true);
     const twice = validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A" }, { spot: "status", component: "B" }] } });
     expect(has(twice, "ui_id_required", "entry")).toBe(true);
     const ids = validateManifest({ ...base, contributes: { ui: [{ spot: "status", id: "a", component: "A" }, { spot: "status", id: "b", component: "B" }] } });
@@ -227,15 +257,68 @@ describe("contributes", () => {
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "S", window: { type: "overlay" } }] } }), "ui_window_not_surface")).toBe(true);
   });
 
-  test("a bot's plugin fills only spots in its own tab, and `when.bot` is the bot itself (§5.5)", () => {
+  test("a `panel` entry whose key isn't a stock panel's adds a panel: it needs a title and a plain key; inside a bot it is the bot's tab's (§5.5)", () => {
+    const base = { ...min(), id: "sheets", engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
+    const ui = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, contributes: { ui: entries } });
+    const said = (r: ReturnType<typeof validateManifest>, code: string) => r.issues.find((i) => i.code === code)?.message;
+    // An ordinary plugin: a key that is not a stock one, a title, an optional icon, `when.session` for the kinds.
+    expect(ui({ spot: "panel", key: "sheets", component: "Sheets", title: "Sheets", icon: "i.svg", when: { session: ["coding", "bot"] } }).issues).toEqual([]);
+    expect(ui({ spot: "panel", key: "sheets", component: "Sheets", title: { en: "Sheets", ja: "シート" } }).issues).toEqual([]);
+    expect(said(ui({ spot: "panel", key: "sheets", component: "Sheets" }), "panel_title")).toBe("The panel \"sheets\" adds a panel of its own: it needs a `title`, which names its button.");
+    expect(has(ui({ spot: "panel", key: "Sheets 2", component: "Sheets", title: "S" }), "panel_key")).toBe(true);
+    expect(has(ui({ spot: "panel", key: "x".repeat(33), component: "Sheets", title: "S" }), "panel_key")).toBe(true);
+    // A stock key keeps its meaning: a replacement, no title needed.
+    expect(ui({ spot: "panel", key: "browser", component: "B" }).issues).toEqual([]);
+    // Inside a bot's plugin: its own panel is offered on its tab; the stock keys keep the old rule.
     const bot = { name: "Luna", instructions: "bot/instructions.md" };
-    const base = { ...min(), engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
-    const inTab = validateManifest({ ...base, contributes: { bot, ui: [{ spot: "composer", component: "C" }, { spot: "conversation.message", key: "bot", component: "Bubble" }] } });
-    expect(inTab.issues).toEqual([]);
-    const outside = validateManifest({ ...base, contributes: { bot, ui: [{ spot: "island.tab", component: "T", title: "Tarot" }] } });
-    expect(has(outside, "bot_spot_outside_tab", "entry")).toBe(true);
-    const other = validateManifest({ ...base, contributes: { bot, ui: [{ spot: "composer", component: "C", when: { bot: "alpha" } }] } });
-    expect(has(other, "bot_when_other_bot", "entry")).toBe(true);
+    const inBot = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, id: "luna", contributes: { bot, ui: entries } });
+    expect(inBot({ spot: "panel", key: "notes", component: "Notes", title: "Notes" }).issues).toEqual([]);
+    expect(has(inBot({ spot: "panel", key: "notes", component: "Notes" }), "panel_title")).toBe(true);
+    expect(has(inBot({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe(true);
+    expect(inBot({ spot: "panel", key: "notes", component: "Notes", title: "Notes", app: true, when: { session: "coding" } }).issues).toEqual([]);
+  });
+
+  test("a bot's plugin fills only what Bots offers on its own tab, unless a part says `\"app\": true` (§5.5, the owner's rule of November 14)", () => {
+    const bot = { name: "Luna", instructions: "bot/instructions.md" };
+    const base = { ...min(), id: "luna", engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" } };
+    const ui = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, contributes: { bot, ui: entries } });
+    const said = (r: ReturnType<typeof validateManifest>, code: string) => r.issues.find((i) => i.code === code)?.message;
+    // Inside its tab, its top bar, its Browser and agent panels.
+    expect(ui({ spot: "composer", component: "C" }, { spot: "conversation.message", key: "bot", component: "Bubble" }, { spot: "bar", component: "Bar" },
+      { spot: "panel", key: "browser", component: "Browser" }, { spot: "panel", key: "agent", id: "agent", style: "a.json" }).issues).toEqual([]);
+    // Anything else: refused with what to do instead.
+    expect(said(ui({ spot: "island.tab", component: "T", title: "Tarot" }), "bot_spot_not_offered")).toBe(
+      "Bots doesn't offer \"island.tab\" to Luna: a bot's plugin dresses only its own tab (inside it, its top bar, its Browser and agent panels). To show it everywhere, add \"app\": true; it then gets a switch of its own.");
+    expect(has(ui({ spot: "status", component: "S" }), "bot_spot_not_offered")).toBe(true);
+    expect(said(ui({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab, and a panel of its own (any other key, with a title); \"terminal\" isn't one of them.");
+    expect(said(ui({ spot: "panel", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab, and a panel of its own (any other key, with a title); an entry with no key would fill every panel.");
+    expect(said(ui({ spot: "bot.editor.section", component: "E" }), "bot_editor_stock")).toBe("Luna's Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.");
+    expect(said(ui({ spot: "composer", component: "C", when: { bot: "alpha" } }), "bot_when_other_bot")).toBe("\"composer\" inside Luna's tab is Luna's; dressing other bots' tabs is an app part: add \"app\": true.");
+    // Beside the bot (`app`): the app's rules, as any plugin's: other bots' tabs and the island included.
+    expect(ui({ spot: "island.tab", component: "T", title: "Tarot", app: true }, { spot: "composer", component: "C", when: { bot: "alpha" }, app: true }).issues).toEqual([]);
+    // The sidebar, Settings and the Edit page look the same on every tab: nothing tied to a bot's tab dresses them,
+    // whichever plugin's it is; a part beside the bot for every tab may.
+    expect(said(ui({ spot: "sidebar", component: "S", when: { bot: "luna" }, app: true }), "bot_tied_not_offered")).toBe("\"sidebar\" looks the same on every tab: nothing tied to a bot's tab dresses it.");
+    expect(ui({ spot: "sidebar.app", component: "A", title: "Tarot", icon: "i.svg", opens: "tarot", app: true }).issues).toEqual([]);
+    for (const spot of ["sidebar", "sidebar.bot", "sidebar.app", "settings.section", "bot.editor.section"]) {
+      const any = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" }, contributes: { ui: [{ spot, component: "X", title: "X", icon: "i.svg", opens: "x", key: "x", when: { bot: "luna" } }] } });
+      expect([spot, has(any, "bot_tied_not_offered")]).toEqual([spot, true]);
+    }
+  });
+
+  test("per-entry `own-bot`: a server, a skill, an agent definition and a command may each be inside the bot", () => {
+    const r = validateManifest({
+      ...min(), id: "luna", engines: { clover: "^1.0.0" }, host: { entry: "h.ts" },
+      contributes: {
+        bot: { name: "Luna", instructions: "i.md" },
+        mcpServers: { stage: { type: "host", scope: "own-bot" }, tools: { type: "host" } },
+        skills: [{ path: "skills/mine/SKILL.md", scope: "own-bot" }, "skills/shared/*/SKILL.md"],
+        agents: [{ id: "helper", name: "Helper", backend: "clover-code", scope: "own-bot" }],
+        commands: [{ name: "scene", description: "Scene", handler: "scene", scope: "own-bot" }],
+      },
+    });
+    expect(r.issues).toEqual([]);
+    expect(has(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { skills: [{ path: "s/SKILL.md", scope: "mine" }] } }), "schema")).toBe(true);
   });
 
   test("a bot's theme names one of its plugin's themes; a typo only warns", () => {
@@ -337,8 +420,12 @@ describe("declared points (§5.4)", () => {
   const base = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "h.ts", start: "main" }, client: { entry: "c.tsx" } };
 
   test("a new point's name starts with the plugin's id and a dot", () => {
-    const ok = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object" } } } } });
+    const ok = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object", properties: { id: { type: "string" } } } } } } });
     expect(ok.issues).toEqual([]);
+    // A point that names no fields is warned about (its declarer would read each entry's whole value), not refused.
+    const loose = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list", fields: { type: "object" } } } } });
+    expect(loose.issues.map((i) => [i.code, i.severity, i.path])).toEqual([["point_fields", "warning", "/host/declares/luna.cards/fields"]]);
+    expect(loose.ok).toBe(true);
     expect(ok.declares).toEqual([{ name: "luna.cards", by: "host", shape: "list", spot: false, wellKnown: false }]);
     const bad = validateManifest({ ...base, host: { ...base.host, declares: { "cards.deck": { shape: "list" } } } });
     expect(has(bad, "point_name", "plugin")).toBe(true);
@@ -347,7 +434,7 @@ describe("declared points (§5.4)", () => {
   test("a UI spot is declared only by a ui entry with a component", () => {
     const spot = { "luna.deck": { shape: "list", props: {} } };
     expect(has(validateManifest({ ...base, host: { ...base.host, declares: spot } }), "spot_declarer", "plugin")).toBe(true);
-    const ok = validateManifest({ ...base, contributes: { ui: [{ spot: "panel", key: "luna", component: "Panel", declares: spot }] } });
+    const ok = validateManifest({ ...base, contributes: { ui: [{ spot: "panel", key: "luna", title: "Luna", component: "Panel", declares: spot }] } });
     expect(ok.issues).toEqual([]);
     expect(ok.declares[0]).toEqual({ name: "luna.deck", by: "ui/0", shape: "list", spot: true, wellKnown: false });
   });
@@ -362,24 +449,13 @@ describe("declared points (§5.4)", () => {
     expect(two.declares.map((d) => [d.name, d.by])).toEqual([["file.preview", "ui/0"], ["file.preview", "ui/1"]]);
     const own = (props: Record<string, unknown>) => ({ "luna.deck": { shape: "list", props } });
     const differ = validateManifest({ ...base, contributes: { ui: [
-      { id: "a", spot: "panel", key: "a", component: "A", declares: own({}) },
-      { id: "b", spot: "panel", key: "b", component: "B", declares: own({ type: "object" }) },
+      { id: "a", spot: "panel", key: "a", title: "A", component: "A", declares: own({}) },
+      { id: "b", spot: "panel", key: "b", title: "B", component: "B", declares: own({ type: "object" }) },
     ] } });
     expect(codes(differ)).toContain("error:entry:point_duplicate:/contributes/ui/1/declares/luna.deck");
     const data = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list" } } },
       contributes: { triggers: [{ type: "t", title: "T", handler: "t", declares: { "luna.cards": { shape: "list" } } }] } });
     expect(has(data, "point_duplicate")).toBe(true);
-  });
-
-  test("a message menu item runs one of the plugin's own commands, never another plugin's (F-M3)", () => {
-    const item = (command: unknown, extra: Record<string, unknown> = {}) => validateManifest({ ...min(), contributes: { ui: [{ spot: "menu.message", id: "quote", title: "Quote it", command, ...extra }] } });
-    expect(codes(item("luna.quote"))).toEqual([]);
-    for (const command of ["tarot.quote", "quote", ".quote", 3]) {
-      expect([command, codes(item(command)).some((c) => c.includes("menu_command_namespace") || c.includes(":schema:"))]).toEqual([command, true]);
-      expect(item(command).manifest?.contributes?.ui ?? []).toEqual([]);
-    }
-    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "moon.quote" }] } }))).toEqual([]);
-    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "luna.quote" }] } }))).toContain("error:entry:menu_command_namespace:/contributes/ui/0/command");
   });
 
   test("core points can't be declared; well-known names take the catalog's declaration", () => {
@@ -399,21 +475,100 @@ describe("declared points (§5.4)", () => {
 });
 
 describe("the OK's text", () => {
+  test("says each panel a plugin adds, with its title and where it shows (§5.5)", () => {
+    const ok = (id: string, contributes: Record<string, unknown>) => describeOk(validateManifest({ ...min(), id, engines: { clover: "^1.0.0" }, client: { entry: "c.tsx" }, contributes }), { os: "macos" });
+    expect(ok("sheets", { ui: [{ spot: "panel", key: "sheets", component: "S", title: "Sheets", when: { session: ["coding", "bot"] } }] }))
+      .toContain("It adds a panel, \"Sheets\", on the right of coding sessions, bots' tabs, with a button of its own beside the right panels' buttons.");
+    expect(ok("docs", { ui: [{ spot: "panel", key: "docs", component: "D", title: { en: "Documents" } }] }))
+      .toContain("It adds a panel, \"Documents\", on the right of every tab, with a button of its own beside the right panels' buttons.");
+    const bot = { name: "Luna", instructions: "bot/instructions.md" };
+    expect(ok("luna", { bot, ui: [{ spot: "panel", key: "notes", component: "N", title: "Notes" }] }))
+      .toContain("It adds a panel, \"Notes\", to Luna's tab, with a button of its own beside the right panels' buttons.");
+    // A replacement of a stock panel adds no panel.
+    expect(ok("browsy", { ui: [{ spot: "panel", key: "browser", component: "B" }] }).some((l) => l.startsWith("It adds a panel"))).toBe(false);
+  });
   test("says what the plugin is, what it adds, what it reaches and what it warns about", () => {
     const r = validateManifest({
       ...min(), engines: { clover: "^1.0.0" }, capabilities: ["approvals", "network:api.luna.example"], addons: { description: "Tarot decks" },
       contributes: { mcpServers: { tarot: { type: "stdio", command: "npx", args: ["tarot-mcp"] } } },
     });
-    const lines = describeOk(r, { os: "linux", source: "other" });
+    const lines = describeOk(r, { os: "linux" });
     expect(lines).toContain("luna runs code on your computers.");
     expect(lines).toContain("Its code could read Clover's logins and approve its own cards.");
     expect(lines).toContain("It restyles approval cards.");
     expect(lines).toContain("Its components reach only api.luna.example; its host code can reach any host.");
     expect(lines).toContain("It fetches code when it runs: npx tarot-mcp.");
     expect(lines).toContain("It loads add-ons of its own, which Clover doesn't check.");
-    expect(lines).toContain("Not reviewed: it isn't from the official index.");
+    // No "reviewed" mark of any kind (the owner's ruling, 2026-11-13: no official index).
+    expect(lines.some((l) => /reviewed/i.test(l))).toBe(false);
     expect(lines.filter((l) => l === "It restyles approval cards.")).toHaveLength(1);
     expect(r.restylesCards).toBe(true);
+  });
+
+  test("host code: said to be held to the network list only where the fence holds it (#371's review), and a local grant warns", () => {
+    const code = { contributes: { mcpServers: { tarot: { type: "stdio" as const, command: "tarot-mcp" } } } };
+    const listed = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:api.luna.example"], ...code });
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true })).toContain("Its components reach only api.luna.example; so does its host code.");
+    // macOS without the fence on says what's true there.
+    expect(describeOk(listed, { os: "macos" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    expect(describeOk(listed, { os: "windows" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    const none = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...code });
+    expect(none.class).toBe("code");
+    expect(describeOk(none, { os: "macos", hostNetworkHeld: true })).toContain("Its code reaches no host.");
+    expect(describeOk(none, { os: "linux" })).toContain("Its components reach no host; its host code can reach any host.");
+    // Grants of this computer or the local network say so.
+    const caps = ["network:localhost:3000", "network:127.0.0.1:8080", "network:*.local" /* not a grant: too wide */, "network:printer.local", "network:10.0.0.5", "network:192.168.1.2:80", "network:[::1]:9000", "network:api.luna.example"];
+    expect(localNetworkHosts(caps)).toEqual(["localhost:3000", "127.0.0.1:8080", "printer.local", "10.0.0.5", "192.168.1.2:80", "[::1]:9000"]);
+    const local = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:localhost:3000", "network:api.luna.example"], ...code });
+    expect(describeOk(local, { os: "macos", hostNetworkHeld: true })).toContain("It can reach services on this computer or your local network: localhost:3000.");
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true }).some((l) => l.includes("local network"))).toBe(false);
+    // A remote MCP server on this computer or the local network says so too: the core's own client reaches it.
+    const servers = (url: string) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { ollama: { type: "http", url } } } });
+    expect(describeOk(servers("http://localhost:11434/mcp"), { os: "macos" })).toContain("It can reach services on this computer or your local network: localhost:11434.");
+    expect(describeOk(servers("http://studio.local/mcp"), { os: "macos" })).toContain("It can reach services on this computer or your local network: studio.local.");
+    expect(describeOk(servers("http://dev.localhost:8080/mcp"), { os: "macos" })).toContain("It can reach services on this computer or your local network: dev.localhost:8080.");
+    expect(describeOk(servers("https://mcp.example.com/mcp"), { os: "macos" }).some((l) => l.includes("local network"))).toBe(false);
+  });
+
+  // The controller's ruling on #377: a third-party server's environment is readable by other processes of the user.
+  test("a stdio server given a secret through its environment is disclosed on the OK", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: {
+        keyed: { type: "stdio", command: "luna-mcp", env: { LUNA_API_KEY: "${secret:LUNA_KEY}", MODE: "fast" } },
+        plain: { type: "stdio", command: "luna-tools", env: { MODE: "fast" } },
+      } },
+    });
+    expect(r.envSecrets).toEqual(["keyed"]);
+    expect(describeOk(r, { os: "macos" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this Mac could read.");
+    expect(describeOk(r, { os: "linux" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this computer could read.");
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { plain: { type: "stdio", command: "luna-tools" } } } }).envSecrets).toEqual([]);
+  });
+
+  // The controller's ruling on #377: a key handed over as a 0600 file instead of the environment.
+  test("${secretFile:k} is a stdio server's env or args only, and a server given its key that way shows no env warning", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: { filed: { type: "stdio", command: "luna-mcp", args: ["--key-file", "${secretFile:LUNA_KEY}"], env: { LUNA_KEY_FILE: "${secretFile:LUNA_KEY}" } } } },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.envSecrets).toEqual([]);
+    expect(describeOk(r, { os: "macos" }).some((l) => l.includes("environment"))).toBe(false);
+    const http = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { web: { type: "http", url: "https://x.example/mcp", headers: { Authorization: "${secretFile:LUNA_KEY}" } } } } });
+    expect(http.issues.some((i) => i.code === "secret_file_outside_stdio")).toBe(true);
+    expect(parseInterpolation("${secretFile:LUNA_KEY}")).toEqual({ ok: true, parts: [{ kind: "secretFile", key: "LUNA_KEY" }] });
+    expect(interpolate("--key=${secretFile:K}", { plugin: "", data: "", setting: () => undefined, secret: () => "v", secretFile: (k) => `/run/${k}` })).toBe("--key=/run/K");
+  });
+
+  // #406's review: where there's no plugin fence, a plugin's programs run unconfined, and the OK says so.
+  test("without Clover's sandbox on this computer, a code plugin's OK says its programs run without it", () => {
+    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "luna-mcp" } } } });
+    const line = "Its programs run without Clover's sandbox on this computer.";
+    expect(describeOk(r, { os: "linux", sandboxed: false })).toContain(line);
+    expect(describeOk(r, { os: "macos", sandboxed: true })).not.toContain(line);
+    expect(describeOk(r, { os: "macos" })).not.toContain(line);
+    // A data plugin runs nothing.
+    expect(describeOk(validateManifest(min()), { sandboxed: false })).not.toContain(line);
   });
 
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
@@ -489,16 +644,244 @@ describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun proce
 });
 
 describe("a host runs under Bun (#234's check 3)", () => {
-  test("a Node host is refused outside Clover's own plugins; programs of its own say so in the OK", () => {
+  test("a Node host is refused for every plugin, Clover's own too; programs of its own say so in the OK", () => {
     const node = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.js", runtime: "node" } };
-    expect(has(validateManifest(node), "host_runtime_bundled_only", "plugin")).toBe(true);
+    expect(has(validateManifest(node), "host_runtime_node", "plugin")).toBe(true);
     const own = validateManifest({ ...node, id: "clover" }, { bundled: true });
-    expect([has(own, "host_runtime_bundled_only"), own.ownPrograms]).toEqual([false, true]);
+    expect([has(own, "host_runtime_node", "plugin"), own.ok]).toEqual([true, false]);
     const bun = validateManifest({ ...node, host: { entry: "host/index.ts" } });
     expect([bun.ok, bun.ownPrograms, describeOk(bun).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, false, false]);
-    for (const extra of [{ contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } }, { helper: { bin: { macos: "bin/helper" } } }]) {
-      const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra });
-      expect([r.ownPrograms, describeOk(r).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    const stdio = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } });
+    expect([stdio.ownPrograms, describeOk(stdio).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    // The refusal says what to do instead: Bun runs Node-style code; programs go through host.programs or a stdio server.
+    const why = validateManifest(node).issues.find((i) => i.code === "host_runtime_node")!.message;
+    expect([why.startsWith("node is not supported"), why.includes("Node-style code"), why.includes("host.programs"), why.includes("stdio"), why.includes("helper")]).toEqual([true, true, true, true, false]);
+  });
+  test("a helper is refused everywhere, saying what to use instead; the OK card never names one", () => {
+    for (const bundled of [false, true]) {
+      const r = validateManifest({ ...min(), ...(bundled ? { id: "clover" } : {}), engines: { clover: "^1.0.0" }, helper: { bin: { macos: "bin/helper" }, permissions: ["microphone"] } }, { bundled });
+      expect([r.ok, has(r, "helper_not_supported", "plugin")]).toEqual([false, true]);
+      const msg = r.issues.find((i) => i.code === "helper_not_supported")!.message;
+      expect([msg.includes("host.programs"), msg.includes("stdio")]).toEqual([true, true]);
+      expect(describeOk(r).some((l) => l.includes("helper"))).toBe(false);
     }
+  });
+});
+
+describe("a host of its own that runs programs (`host.programs`, the owner's video-editor test)", () => {
+  test("only with a process of its own; its OK line says programs are held to its folder and the user's picks", () => {
+    const base = { ...min(), engines: { clover: "^1.0.0" } };
+    // A worker-hosted half (shared process) can't: refused at validation, with or without `runtime: "bun"`.
+    for (const host of [{ entry: "host/index.ts", programs: true }, { entry: "host/index.ts", runtime: "bun", programs: true }]) {
+      const r = validateManifest({ ...base, host });
+      expect([r.ok, has(r, "host_programs_own_process", "plugin")]).toEqual([false, true]);
+    }
+    expect(validateManifest({ ...base, host: { entry: "host/index.ts", process: "own", programs: false } }).ok).toBe(false); // only `true`
+    const own = validateManifest({ ...base, host: { entry: "host/index.ts", process: "own", programs: true } });
+    expect([own.ok, own.hostPrograms, own.ownPrograms]).toEqual([true, true, false]);
+    const lines = describeOk(own, { os: "macos", sandboxed: true });
+    expect(lines).toContain("It runs programs on this computer, limited to its own folder and the files you pick.");
+    expect(lines).not.toContain("It runs its own programs, which Clover doesn't confine.");
+    // Where there's no plugin fence, no promise of limits; the no-sandbox line follows.
+    const bare = describeOk(own, { os: "linux", sandboxed: false });
+    expect(bare).toContain("It runs programs on this computer.");
+    expect(bare.indexOf("It runs programs on this computer.")).toBeLessThan(bare.indexOf("Its programs run without Clover's sandbox on this computer."));
+    // A child's host can't: the OK card that would say so is the top plugin's.
+    const child = validateManifest({ manifest: 1, name: "Cut", host: { entry: "host/index.ts", process: "own", programs: true } }, { folderName: "cut", parent: { id: "tarot", namespace: "tarot" } });
+    expect([child.ok, has(child, "host_programs_top_only", "plugin"), child.hostPrograms]).toEqual([false, true, false]);
+    // Without the declaration, an own host's OK says nothing of programs.
+    const plain = validateManifest({ ...base, host: { entry: "host/index.ts", process: "own" } });
+    expect([plain.hostPrograms, describeOk(plain).some((l) => l.startsWith("It runs programs"))]).toEqual([false, false]);
+  });
+});
+
+describe("the OK says a plugin puts a line on the island", () => {
+  test("a plugin that fills island.line says so, once, after what it adds; a plugin that doesn't says nothing of it", () => {
+    const withLine = validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts" }, contributes: { "island.line": [{ id: "job", handler: "islandLine" }] } });
+    expect(withLine.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const lines = describeOk(withLine);
+    expect(lines.filter((l) => l === ISLAND_LINE_OK_LINE)).toHaveLength(1);
+    expect(lines).toContain("It adds: island.line.");
+    expect(lines.indexOf(ISLAND_LINE_OK_LINE)).toBe(lines.indexOf("It adds: island.line.") + 1);
+    const without = validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts" }, contributes: {} });
+    expect(describeOk(without)).not.toContain(ISLAND_LINE_OK_LINE);
+  });
+});
+
+describe("the OK says what a plugin runs without being asked", () => {
+  const m = (host: Record<string, unknown>, contributes: Record<string, unknown> = {}) =>
+    validateManifest({ manifest: 1, id: "svc", name: "Svc", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", ...host }, contributes });
+  test("host.start, by where; on demand says nothing", () => {
+    expect(backgroundOkLines([m({ start: "each" })])).toEqual(["It runs in the background from the moment Clover starts, on every computer it's installed on."]);
+    expect(backgroundOkLines([m({ start: "main" })])).toEqual(["It runs in the background from the moment Clover starts, on your main computer."]);
+    expect(backgroundOkLines([m({ start: "chosen" })])).toEqual(["It runs in the background from the moment Clover starts, on the computer you add it on."]);
+    expect(backgroundOkLines([m({})])).toEqual([]);
+  });
+  test("a pill target says it can be picked in the Dispatch pill and receives what is typed there; it comes from the tree, children's too", () => {
+    const t = m({}, { ui: [{ spot: "pill.target", id: "t", title: "Lights", handler: "target" }] });
+    expect(backgroundOkLines([t])).toEqual([PILL_TARGET_OK_LINE]);
+    expect(backgroundOkLines([m({}), t])).toEqual([PILL_TARGET_OK_LINE]);
+    expect(backgroundOkLines([m({}, { ui: [{ spot: "status", id: "s", component: "S" }] })])).toEqual([]);
+    expect(PILL_TARGET_OK_LINE).toContain("Dispatch pill");
+  });
+  test("a notifier says what it is told, and that it gets no words", () => {
+    const n = m({}, { notifiers: [{ id: "banner", handler: "banner" }] });
+    expect(backgroundOkLines([n])).toEqual(["It is told when your bots need you or have answered, so it can notify you; it does not get the words."]);
+    expect(backgroundOkLines([n, n])).toEqual([NOTIFIER_OK_LINE]);
+    expect(backgroundOkLines([m({})])).toEqual([]);
+  });
+  test("triggers start routines and run on every computer; a tree's children count, each line once", () => {
+    const trig = m({}, { triggers: [{ type: "svc-ping", title: "Ping", handler: "ping" }] });
+    expect(backgroundOkLines([trig])).toEqual(["It adds routine triggers (svc-ping): a routine that uses one runs whenever the plugin says so.", HOST_START_OK_LINES.each]);
+    expect(backgroundOkLines([validateManifest({ manifest: 1, id: "tree", name: "Tree" }), trig, m({ start: "each" }), m({ start: "main" })])).toEqual([
+      "It adds routine triggers (svc-ping): a routine that uses one runs whenever the plugin says so.", HOST_START_OK_LINES.each, HOST_START_OK_LINES.main,
+    ]);
+  });
+});
+
+describe("the OK names what a plugin's hooks see", () => {
+  const withHooks = (on: string[][]) => validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { hooks: on.map((events, i) => ({ id: `h${i}`, on: events, command: "sh hook.sh" })) } });
+  test("the conversation and tool results, and what they can change; never 'approve'", () => {
+    expect(hookOkLines([withHooks([["tool.after"], ["message.in"]])])).toEqual([
+      "Its hooks see your conversations: your messages, what each tool returns; they can change messages, change what a tool returns.",
+      "Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session.",
+    ]);
+    const before = hookOkLines([withHooks([["tool.before"]])]);
+    expect(before[0]).toContain("each tool call before it runs; they can change or refuse a tool call (never approve one)");
+    expect(before[1]).toBe("Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session; they can refuse starting one.");
+    expect(hookOkLines([withHooks([["turn.start", "turn.end"]])])).toEqual([
+      "Its hooks run when a conversation's turns start, end or are compacted.",
+      "Its hooks don't see what a coding agent such as Claude Code or Codex does inside its own session.",
+    ]);
+    expect(hookOkLines([validateManifest({ manifest: 1, id: "plain", name: "Plain" })])).toEqual([]);
+  });
+  test("one line for a tree: a child's hooks count", () => {
+    const top = validateManifest({ manifest: 1, id: "tree", name: "Tree" });
+    expect(hookOkLines([top, withHooks([["message.out"]])])[0]).toBe("Its hooks see your conversations: the bots' replies; they can change messages.");
+  });
+  test("own-bot from the plugin: hooks without a scope take their plugin's, or their tree's top plugin's", () => {
+    const own = "Its hooks see only what its own bot does: your messages to it; they can change messages.";
+    const hooked = (id: string, scope?: string) => {
+      const child = id.includes("/");
+      const m = { manifest: 1, ...(child ? {} : { id }), name: id, engines: { clover: `^${PLUGIN_API_VERSION}` }, ...(scope === undefined ? {} : { scope }), host: { entry: "host/index.ts", runtime: "bun" }, contributes: { hooks: [{ id: "h", on: ["message.in"], handler: "onIn" }] } };
+      return child ? validateManifest(m, { parent: { id: id.split("/")[0]!, namespace: id.split("/")[0]! }, folderName: id.split("/")[1]! }) : validateManifest(m);
+    };
+    const r = hooked("mine", "own-bot");
+    expect(r.issues.filter((i) => i.path.includes("scope"))).toEqual([]);
+    expect(hookOkLines([r])[0]).toBe(own);
+    // A child's hooks take the top plugin's own-bot.
+    expect(hookOkLines([validateManifest({ manifest: 1, id: "mine", name: "Mine", scope: "own-bot" }), hooked("mine/child")])[0]).toBe(own);
+    // A plugin that says bots: every bot's conversations.
+    expect(hookOkLines([hooked("ours", "bots")])[0]).toContain("Its hooks see your conversations");
+  });
+});
+
+
+describe("a hook's command never runs its stdin (its input) as a script", () => {
+  const hook = (command: string, args?: string[]) =>
+    validateManifest({ manifest: 1, id: "watcher", name: "Watcher", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { hooks: [{ id: "h", on: ["tool.after"], command, ...(args !== undefined ? { args } : {}) }] } });
+  test("refused: a bare interpreter, one told to read stdin, through env, in a list", () => {
+    for (const [command, args] of [
+      ["sh"], ["bash"], ["python3"], ["node"], ["/usr/bin/env python3"], ["env -i bash"], ["true && sh"], ["echo hi; ruby"],
+      ["sh", []], ["bash", ["-s"]], ["node", ["-"]], ["python3", ["-u"]], ["/bin/zsh", ["/dev/stdin"]], ["env", ["perl"]],
+      ["/bin/dash"], ["./bin/ksh"], ["/usr/local/bin/fish"], ["time python3"], ["nice -n 5 ruby"], ["xargs sh -c"], ["xargs -I {} bash -c {}"],
+      ["env -S 'python3 -'"], ["env", ["-S", "node -"]], ["env", ["-Sbash"]], ["timeout 5 sh"], ["C:\\Python\\python.exe"],
+    ] as [string, string[]?][]) {
+      const r = hook(command, args);
+      expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, true]);
+    }
+    expect(hook("sh").issues.find((i) => i.code === "hook_reads_stdin")!.message).toContain("never a script");
+  });
+  test("allowed: a script file, -c or -e, a program that isn't an interpreter, a pipe's later command", () => {
+    for (const [command, args] of [
+      ["sh ${plugin}/hook.sh"], ["python3 ${plugin}/x.py --flag"], ["node -e 'console.log(1)'"], ["jq .tool_input"], ["cat | jq ."],
+      ["${plugin}/bin/hook"], ["sh", ["-c", "echo hi"]], ["python3", ["-m", "tool"]], ["${plugin}/hook.sh", ["${setting:label}"]], ["bun", ["run", "x.ts"]], ["command -v bun"], ["nice -n 5 ${plugin}/hook"], ["env -S 'python3 x.py'"], ["xargs echo"], ["/bin/dash ${plugin}/h.sh"],
+    ] as [string, string[]?][]) {
+      const r = hook(command, args);
+      expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, false]);
+    }
+  });
+
+  describe("avatar.formats: what a renderer declares about its format", () => {
+    const fmt = (over: Record<string, unknown> = {}) => ({
+      id: "pngtuber", format: "pngtuber", name: "PNGtuber", entry: { extensions: [".pngtuber.json"] },
+      files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".png", ".webp"], type: "image", maxBytes: 4194304 }], find: "folder" },
+      import: { accepts: ["folder", "zip"] }, capabilities: ["lipsync"], ...over,
+    });
+    const run = (entry: unknown) => validateManifest({ ...min(), contributes: { "avatar.formats": [entry] } });
+    test("a declaration of kinds from the closed set passes, with the default finder", () => {
+      const r = run(fmt({ files: { kinds: [{ ext: [".png"], type: "image" }] } }));
+      expect(r.issues).toEqual([]);
+      expect((r.manifest?.contributes?.["avatar.formats"] as { files: { find: string } }[])[0]!.files.find).toBe("folder");
+    });
+    test("a kind outside the closed set (svg, html, script, wasm) is refused", () => {
+      for (const type of ["svg", "html", "script", "wasm", "css", "xml"]) {
+        const r = run(fmt({ files: { kinds: [{ ext: [".x"], type }], find: "folder" } }));
+        expect(has(r, "schema", "entry"), type).toBe(true);
+        expect(r.manifest?.contributes?.["avatar.formats"] ?? []).toEqual([]);
+      }
+    });
+    test("a cap above the kind's limit and a finder the core does not have are refused", () => {
+      expect(has(run(fmt({ files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 9 * 1024 * 1024 }], find: "folder" } })), "schema", "entry")).toBe(true);
+      expect(has(run(fmt({ files: { kinds: [{ ext: [".json"], type: "json" }], find: "my-script" } })), "schema", "entry")).toBe(true);
+    });
+    test("extensions are plain lower-case suffixes", () => {
+      expect(has(run(fmt({ entry: { extensions: ["../x"] } })), "schema", "entry")).toBe(true);
+      expect(has(run(fmt({ files: { kinds: [{ ext: [".PNG"], type: "image" }], find: "folder" } })), "schema", "entry")).toBe(true);
+    });
+    test("the caps clamp what a renderer asks for", () => {
+      expect(clampAvatarCap("json", undefined)).toBe(AVATAR_FILE_CAPS.json);
+      expect(clampAvatarCap("json", 1 << 30)).toBe(AVATAR_FILE_CAPS.json);
+      expect(clampAvatarCap("image", 1000)).toBe(1000);
+    });
+  });
+
+  test("a bot's avatar file is checked early: a path inside the folder that names a file", () => {
+    const bot = (file: string, format = "live2d") => validateManifest({ ...min(), contributes: { bot: { name: "L", instructions: "bot/i.md", avatar: { file, format } } } });
+    expect(has(bot("assets/live2d/a.model3.json"), "schema")).toBe(false);
+    for (const file of ["../a.model3.json", "assets/../../a.model3.json", "/etc/a.model3.json", "C:/a.model3.json", "assets/live2d/", "assets/.."]) {
+      const r = bot(file);
+      expect(r.issues.length, file).toBeGreaterThan(0);
+    }
+    expect(bot("", "vrm").issues.length).toBeGreaterThan(0);
+    // The same for any format, a folder is no file.
+    expect(bot("assets/", "spine").issues.length).toBeGreaterThan(0);
+  });
+});
+
+describe("a pill target (`pill.target`) is data: a title and a handler, with no component", () => {
+  const target = (extra: Record<string, unknown>) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts", runtime: "bun" }, contributes: { ui: [{ spot: "pill.target", id: "lights", title: "Lights", ...extra }] } });
+  test("a handler alone is enough; with neither a handler nor a component it is still refused", () => {
+    expect(codes(target({ handler: "target" }))).toEqual([]);
+    expect(codes(target({}))).toContain("error:entry:ui_one_of:/contributes/ui/0");
+  });
+});
+
+describe("a message action (`conversation.message.action`): data the conversation draws, a press runs a `ui` handler", () => {
+  const withAction = (action: Record<string, unknown>, extra: Record<string, unknown> = { host: { entry: "host/index.ts" } }) =>
+    validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra, contributes: { ui: [{ spot: "conversation.message.action", id: "pin", ...action }] } });
+
+  test("title, icon, call and on: no component, and it validates", () => {
+    const r = withAction({ title: "Pin to her stage", icon: "assets/pin.png", call: "pinReply", on: "assistant" });
+    expect([r.ok, r.issues.filter((i) => i.severity === "error").map((i) => i.code)]).toEqual([true, []]);
+    expect(withAction({ title: "Pin", call: "pinReply" }).ok).toBe(true);
+  });
+
+  test("a plugin with no host half has no handler to run: refused", () => {
+    const r = withAction({ title: "Pin", call: "pinReply" }, { client: { entry: "client/index.tsx" } });
+    expect(has(r, "message_action_needs_host", "entry")).toBe(true);
+  });
+
+  test("a component, a web page, a style or a hide on it: refused (the conversation draws the button itself)", () => {
+    const r = withAction({ title: "Pin", call: "pinReply", component: "Pin" }, { host: { entry: "host/index.ts" }, client: { entry: "client/index.tsx" } });
+    expect(has(r, "message_action_data", "entry")).toBe(true);
+  });
+
+  test("its fields are checked: a title, a handler's name, one of the three `on`s (the entry is refused)", () => {
+    const refused = (r: ReturnType<typeof withAction>) => r.issues.some((i) => i.severity === "error" && i.refuses === "entry");
+    expect(refused(withAction({ call: "pinReply" }))).toBe(true);
+    expect(refused(withAction({ title: "Pin", call: "start" }))).toBe(true);
+    expect(refused(withAction({ title: "Pin", call: "pinReply", on: "everyone" }))).toBe(true);
+    expect(refused(withAction({ title: "Pin", call: "pinReply", on: "both" }))).toBe(false);
   });
 });

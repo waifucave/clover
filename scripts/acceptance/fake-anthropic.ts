@@ -1,10 +1,49 @@
 // A fake model provider on 127.0.0.1 that speaks Anthropic's Messages API (`POST /v1/messages`, JSON or SSE), for the
 // acceptance run. It never forwards anything anywhere. It is scripted by the user's message:
+//   ACCEPTANCE-CALL <tool> <json> → a `tool_use` of the tool named <tool>, or whose name ends in `__<tool>`, with that
+//                       input, once in the turn (a deferred one loaded through Glossary first); the examples' steps
 //   ACCEPTANCE-ECHO   → a `tool_use` of the tool whose name ends in `Echo` (the fixture plugin's MCP tool)
-//   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it
+//   ACCEPTANCE-STDIO  → a `tool_use` of the tool whose name ends in `StdioProbe` (the fixture's stdio server's tool)
+//   ACCEPTANCE-STAGE <mood> → a `tool_use` of the tool whose name ends in `__set_mood` (Alpha's stage) with that mood
+//   ACCEPTANCE-AGENT <root> → a `tool_use` of `Agent`: Alpha's study-buddy definition on clover-code in <root>, with
+//                       the brief `ACCEPTANCE-CHILD …`
+//   ACCEPTANCE-CHILD  → the child agent's own turn: text, `CHILD_REPORT`
+//   ACCEPTANCE-AGENT-ECHO <root> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//                       `ACCEPTANCE-CHILD-ECHO …`
+//   ACCEPTANCE-CHILD-ECHO → an agent's turn (a bot's or the user's coding session): a `tool_use` of the echo plugin's
+//                       tool on its bridge (`BRIDGE_ECHO`: never a bot's own Echo) with `acceptance-child-ping`; its
+//                       result is then said back (`ACCEPTANCE-DONE: …`), or `ACCEPTANCE-CHILD-NO-ECHO <its tools>`
+//   ACCEPTANCE-STAGE-STATUS → a `tool_use` of the tool whose name ends in `__stage_status` (Alpha's read-only tool)
+//   ACCEPTANCE-EDIT   → a `tool_use` of `Edit` (a few lines out, a few in) on a file in the write path's folder, for the card renders
+//   ACCEPTANCE-BASH   → a `tool_use` of `Bash` with a two-line command, for the same
+//   ACCEPTANCE-HOLDTOOL → the same tool with `acceptance-hold`, which the fixture never answers (a call left running)
+//   ACCEPTANCE-WRITE  → a `tool_use` of `Write` to the path the run gave it (a sensitive place: a dot-folder)
+//   ACCEPTANCE-WRITE-ORDINARY → a `tool_use` of `Write` to the run's ordinary path (a file in Downloads)
+//   ACCEPTANCE-READ <path> → a `tool_use` of `Read` for that path
+//   ACCEPTANCE-FETCH <url> → a `tool_use` of the tool whose name ends in `WebFetch`, for that address
+//   ACCEPTANCE-FETCH-COMPOSED → the same, for the run's made-up address (one the user's message never gave)
+//   ACCEPTANCE-FETCH-LINKED → the same, for the address a page the bot read named (one the user's message never gave)
+//   ACCEPTANCE-FETCH-HIT → the same, for the run's search hit's address (a search's hit, which the user never gave)
+//   ACCEPTANCE-SHELL-INSIDE → a `Bash` that writes a file in its own working folder and prints it
+//   ACCEPTANCE-SHELL-OUTSIDE <path> → a `Bash` that writes <path>; after its result, `RequestAccess` for <path>'s
+//                       folder; after that result (the turn going on under the wider sandbox), the same `Bash` again
+//   ACCEPTANCE-SHELL-NETWORK <host> → `RequestAccess` for the network host <host>
+//   ACCEPTANCE-NETCMD <url> → a `Bash` that needs the network (`netCommand(url)`), in the sandbox
+//   ACCEPTANCE-NETCMD-OUTSIDE <url> → the same `Bash` with `dangerouslyDisableSandbox: true` (it asks to leave the sandbox)
+//   ACCEPTANCE-ROUTINE-NETCMD <url> → a `Routine` (name `Outside probe`, a once-a-year schedule) whose instructions are
+//                       `ACCEPTANCE-NETCMD-OUTSIDE <url>`: its side thread makes the flagged call (`routine.runNow`)
+//   ACCEPTANCE-AGENT-NETCMD <root> <url> → an `Agent`: Alpha's study-buddy on clover-code in <root>, with the brief
+//                       `ACCEPTANCE-NETCMD-OUTSIDE <url>`: the child agent makes the flagged call
+//                       (each of these four is called once in its turn, a deferred tool loaded through Glossary first)
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
+//   ACCEPTANCE-SLOW   → a turn that keeps running: the stream starts (`ACCEPTANCE-SLOW-PARTIAL`) and doesn't end for two
+//                       minutes, or until the daemon drops the request (the reopen steps quit the app mid-turn)
+//   ACCEPTANCE-STREAM → a reply of about 300 words streamed two words at a time, 40 ms apart (about 6 s), ending
+//                       `ACCEPTANCE-STREAM-DONE`: what a long reply costs the window while it streams
+//   ACCEPTANCE-FAIL-<id> → a turn that fails: a 400 `invalid_request_error` (nothing the runtime retries), until the run
+//                       calls `heal(<id>)`; then the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-<id>` (Try again's step)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
 // and after a `tool_result`, the text `ACCEPTANCE-DONE: <the result's text>`. A request whose `x-api-key` isn't the
 // run's dummy key gets the 401 the real provider gives; the run reports only whether it matched, never a key.
@@ -24,8 +63,13 @@ export interface FakeRequest {
   stream: boolean;
   tools: string[];
   lastUserText: string;
-  toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "400" | "401" | "404";
+  /** The last tool result's text, whether it was an error, and how many images came with it (an `image` block). */
+  toolResult?: { text: string; isError: boolean; images?: number };
+  answered: "text" | "tool_use" | "slow" | "stream" | "400" | "401" | "404" | "torn" | "failed";
+  /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
+   *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
+  at?: number;
+  torn?: string;
   /** The documented rule a refused request broke (a 400). */
   refused?: string;
   /** The request as sent, for a test of the wire (holds the dummy key's run's prompt text, never a key). */
@@ -38,6 +82,8 @@ export interface FakeRequest {
 export interface FakeProvider {
   url: string;
   requests: FakeRequest[];
+  /** Stops failing the turns `ACCEPTANCE-FAIL-<id>` asks for: the next request with that id gets its reply. */
+  heal(id: string): void;
   close(): void;
 }
 
@@ -48,6 +94,29 @@ function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.map((b: Block) => (b.type === "text" && typeof b.text === "string" ? b.text : b.type === "tool_result" ? textOf(b.content) : "")).join("\n");
+}
+
+/** The shell directives' steps (stage 2 of "bots ask less"), by how many tool rounds the turn made since its message:
+ *  each a `tool_use`, then the text `ACCEPTANCE-DONE: <the last result>`. Undefined for a tool the bot wasn't offered. */
+function shellStep(said: string, messages: Message[], lastUser: Message | undefined, record: FakeRequest): Record<string, unknown>[] | undefined {
+  const since = lastUser === undefined ? messages : messages.slice(messages.lastIndexOf(lastUser) + 1);
+  const rounds = since.filter((m) => m.role === "assistant" && Array.isArray(m.content) && m.content.some((b) => b.type === "tool_use")).length;
+  const use = (name: string, input: Record<string, unknown>) => (record.tools.includes(name) ? [{ type: "tool_use", id: `toolu_acceptance_shell_${rounds}_${Date.now()}`, name, input }] : [{ type: "text", text: `ACCEPTANCE-NO-${name.toUpperCase()}-TOOL` }]);
+  const done = [{ type: "text", text: `ACCEPTANCE-DONE: ${(record.toolResult?.text ?? "").slice(0, 500)}` }];
+  if (said.includes("ACCEPTANCE-SHELL-INSIDE")) {
+    return rounds === 0 ? use("Bash", { command: "printf ACCEPTANCE-SHELL-INSIDE > acceptance-shell-inside.txt && cat acceptance-shell-inside.txt", description: "write in the bot's own folder" }) : done;
+  }
+  const outside = /ACCEPTANCE-SHELL-OUTSIDE (\S+)/.exec(said);
+  if (outside !== null) {
+    const path = outside[1]!;
+    const write = { command: `printf ACCEPTANCE-SHELL-LANDED > '${path}' && cat '${path}'`, description: "write the user's file" };
+    if (rounds === 0 || rounds === 2) return use("Bash", write);
+    if (rounds === 1) return use("RequestAccess", { folder: path.slice(0, path.lastIndexOf("/")), why: "to save the acceptance file there" });
+    return done;
+  }
+  const network = /ACCEPTANCE-SHELL-NETWORK (\S+)/.exec(said);
+  if (network !== null) return rounds === 0 ? use("RequestAccess", { network: [network[1]!], why: "to fetch the acceptance package" }) : done;
+  return undefined;
 }
 
 type WireMessage = { role?: unknown; content?: unknown; output_config?: { effort?: unknown } };
@@ -121,8 +190,45 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
   return undefined;
 }
 
-export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string }): FakeProvider {
+/** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-HOLDTOOL`, `-ECHO`, `-STDIO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
+ *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
+const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|STREAM|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
+
+/** The echo plugin's tool on an agent's bridge: `mcp__<the session's bridge, clover_ and 16 hex>__<its server's key>__Echo`. */
+export const BRIDGE_ECHO = /^mcp__clover_[0-9a-f]{16}__acceptance-echo-echo__Echo$/;
+
+/** The command that needs the network (the outside-the-sandbox step's): one request to <url>, its body printed. The
+ *  run's own loopback server is the target, never the real network. */
+export function netCommand(url: string): string {
+  return `curl -sS --max-time 5 ${url}`;
+}
+
+/** The outside-the-sandbox step's scripted calls (`ACCEPTANCE-NETCMD…`, `-ROUTINE-NETCMD`, `-AGENT-NETCMD`): the tool
+ *  and its input, or undefined for any other text. Checked longest name first. */
+export function netCommandCall(said: string): { tool: string; input: Record<string, unknown> } | undefined {
+  const routine = /ACCEPTANCE-ROUTINE-NETCMD (\S+)/.exec(said);
+  if (routine !== null) return { tool: "Routine", input: { name: "Outside probe", instructions: `ACCEPTANCE-NETCMD-OUTSIDE ${routine[1]}`, schedule: "0 3 1 1 *" } };
+  const agent = /ACCEPTANCE-AGENT-NETCMD (\S+) (\S+)/.exec(said);
+  if (agent !== null) return { tool: "Agent", input: { agent: "alpha:study-buddy", backend: "clover-code", root: agent[1], description: "Outside probe", prompt: `ACCEPTANCE-NETCMD-OUTSIDE ${agent[2]}` } };
+  const outside = /ACCEPTANCE-NETCMD-OUTSIDE (\S+)/.exec(said);
+  if (outside !== null) return { tool: "Bash", input: { command: netCommand(outside[1]!), description: "Fetch the probe page", dangerouslyDisableSandbox: true } };
+  const inside = /ACCEPTANCE-NETCMD (\S+)/.exec(said);
+  if (inside !== null) return { tool: "Bash", input: { command: netCommand(inside[1]!), description: "Fetch the probe page" } };
+  return undefined;
+}
+/** What the child agent answers (`ACCEPTANCE-CHILD`): a mark no directive matches, for the run to find in the parent's
+ *  transcript. */
+export const CHILD_REPORT = "ACCEPTANCE_CHILD_REPORT: notes written";
+
+export function newestDirective(text: string): string {
+  let at = -1;
+  for (const m of text.matchAll(new RegExp(DIRECTIVE.source, "g"))) at = m.index;
+  return at < 0 ? text : text.slice(at);
+}
+
+export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string; ordinaryWritePath?: string; composedFetchUrl?: string; linkedFetchUrl?: string; hitFetchUrl?: string }): FakeProvider {
   const requests: FakeRequest[] = [];
+  const healed = new Set<string>();
   let n = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -136,7 +242,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         return Response.json({ type: "error", error: { type: "not_found_error", message: `the acceptance fake serves only POST /v1/messages, not ${req.method} ${path}` } }, { status: 404 });
       }
       let body: { model?: string; stream?: boolean; tools?: { name?: string }[]; messages?: Message[] } = {};
-      try { body = await req.json(); } catch { /* an empty body */ }
+      record.at = Date.now();
+      let raw: string;
+      try {
+        raw = await req.text();
+      } catch (err) {
+        // The body never came whole: not a request the fake answered, and the step must say so (try 10's upgrade pair
+        // counted one as answered, with the sender's ECONNRESET as the only trace).
+        record.answered = "torn";
+        record.torn = `${err instanceof Error ? err.message : String(err)} (content-length ${req.headers.get("content-length") ?? "none"}, ${((Date.now() - record.at) / 1000).toFixed(1)} s after its headers)`;
+        requests.push(record);
+        console.error(`acceptance fake: ${new Date(record.at).toISOString()} POST ${path}: the body never arrived whole: ${record.torn}`);
+        return new Response(null, { status: 400 });
+      }
+      try { body = JSON.parse(raw); } catch { /* an empty body */ }
       record.model = body.model;
       record.body = body;
       record.beta = req.headers.get("anthropic-beta");
@@ -145,21 +264,39 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       const messages = body.messages ?? [];
       // Tools added mid-conversation (a plugin installed after the first turn) come as `tool_addition` blocks in a
       // `role: "system"` message, by definition or by reference to a deferred `tools` entry, not in `tools` (the cached
-      // prefix stays as it was): Anthropic's mid-conversation system messages. They're offered from then on.
+      // prefix stays as it was): Anthropic's mid-conversation system messages. They're offered from then on. Tools taken
+      // away (a plugin removed, or its parts switched off) come the same way, as `tool_removal` blocks naming each by
+      // reference: no longer offered from there, until a later `tool_addition` brings one back.
       for (const m of messages) {
         if (m.role !== "system" || !Array.isArray(m.content)) continue;
         for (const b of m.content as { type?: string; tool?: { definition?: { name?: unknown }; name?: unknown } }[]) {
-          if (b.type !== "tool_addition") continue;
           const name = b.tool?.definition?.name ?? b.tool?.name;
-          if (typeof name === "string" && !record.tools.includes(name)) record.tools.push(name);
+          if (typeof name !== "string") continue;
+          if (b.type === "tool_addition" && !record.tools.includes(name)) record.tools.push(name);
+          else if (b.type === "tool_removal") record.tools = record.tools.filter((t) => t !== name);
         }
       }
       const last = messages[messages.length - 1];
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
-      const result = lastBlocks.find((b) => b.type === "tool_result");
-      if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
-      const lastUser = [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
-      record.lastUserText = textOf(lastUser?.content).slice(-4000);
+      // A user turn that carries results AND a new message with a directive (the runtime's own results for calls a stop
+      // cut off, sent with the next message): the message is what this request asks, not the results.
+      const lastSaid = last?.role === "user" ? textOf(lastBlocks.filter((b) => b.type === "text")) : "";
+      const carriesMessage = DIRECTIVE.test(lastSaid);
+      const result = carriesMessage ? undefined : lastBlocks.find((b) => b.type === "tool_result");
+      if (result !== undefined) {
+        const images = Array.isArray(result.content) ? (result.content as Block[]).filter((b) => b.type === "image").length : 0;
+        record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true, ...(images > 0 ? { images } : {}) };
+      }
+      const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
+      record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
+      if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
+      // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
+      // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
+      // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
+      const said = newestDirective(record.lastUserText);
+      if (said !== record.lastUserText && DIRECTIVE.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+        console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
+      }
       requests.push(record);
       const refused = requestRefusal(body as WireBody, record.beta);
       if (refused !== undefined && record.keyMatched) {
@@ -171,24 +308,192 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         record.answered = "401";
         return Response.json({ type: "error", error: { type: "authentication_error", message: record.keyPresent ? "invalid x-api-key" : "x-api-key header is required" } }, { status: 401 });
       }
+      const failTag = /ACCEPTANCE-FAIL-([A-Z0-9]+)/.exec(said)?.[1];
+      if (failTag !== undefined && !healed.has(failTag) && result === undefined) {
+        // A failure the runtime does not retry (a retried one would only wait): the turn ends in an error.
+        record.answered = "failed";
+        return Response.json({ type: "error", error: { type: "invalid_request_error", message: "ACCEPTANCE scripted failure" } }, { status: 400 });
+      }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
+      if (said.includes("ACCEPTANCE-STREAM") && result === undefined) {
+        record.answered = "stream";
+        return streamTurn(req.signal, id, model, record.stream);
+      }
+      if (said.includes("ACCEPTANCE-SLOW") && result === undefined) {
+        record.answered = "slow";
+        return slowTurn(req.signal, id, model, record.stream);
+      }
       let content: Record<string, unknown>[];
       let stop: string;
-      if (result !== undefined) {
+      // A shell directive's turn, also when Clover's note after a grant came as a user message of its own: the
+      // directive is then the user message before it.
+      const shellFrom = said.includes("ACCEPTANCE-SHELL-") ? lastUser
+        : record.lastUserText.includes("Clover granted your shell commands")
+          ? [...messages].reverse().find((m) => m.role === "user" && textOf(m.content).includes("ACCEPTANCE-SHELL-") && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")))
+          : undefined;
+      const shell = shellFrom === undefined ? undefined : shellStep(newestDirective(textOf(shellFrom.content)), messages, shellFrom, record);
+      // A plugin's network probe, the one whose tool name names the given server (two plugins offer one), called once
+      // in this turn; a deferred one (a pasted server's: on-demand) is loaded through Glossary first, as a model does.
+      const netWant = /ACCEPTANCE-NETPROBE (\S+)/.exec(said)?.[1];
+      const netTool = netWant === undefined ? undefined : record.tools.find((t) => t.endsWith("NetProbe") && t.includes(netWant));
+      const turnStart = Math.max(0, messages.lastIndexOf(lastUser as Message));
+      const since = messages.slice(turnStart + 1);
+      const usedSince = (name: string) => since.some((m) => m.role === "assistant" && Array.isArray(m.content) && (m.content as Block[]).some((b) => b.type === "tool_use" && (b as { name?: unknown }).name === name));
+      const netDeferred = netTool !== undefined && (body.tools ?? []).some((t) => t.name === netTool && (t as { defer_loading?: unknown }).defer_loading === true);
+      const netLoaded = netTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === netTool));
+      const glossary = record.tools.find((t) => t === "Glossary" || t.endsWith("__Glossary"));
+      // Any tool by the end of its name, with the input the line gives (`ACCEPTANCE-CALL <suffix> <json>`), called once in
+      // this turn; a deferred one is loaded through Glossary first, as a model does.
+      // The outside-the-sandbox step's calls (`netCommandCall`) go the same way.
+      const callLine = /ACCEPTANCE-CALL (\S+) (\{.*\})\s*$/s.exec(said);
+      const callWant = netCommandCall(said) ?? (callLine === null ? undefined : {
+        tool: callLine[1]!,
+        input: (() => { try { return JSON.parse(callLine[2]!) as Record<string, unknown>; } catch { return undefined; } })(),
+      });
+      const callTool = callWant === undefined ? undefined : record.tools.find((t) => t === callWant.tool || t.endsWith(`__${callWant.tool}`));
+      const callInput = callWant?.input;
+      const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
+      const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
+      // A plugin's Review (the internal `reviewer.model` job, registry/plugin-review.ts): its report, naming the plugin
+      // it was given, so the run sees the job got that plugin's tree.
+      const reviewing = JSON.stringify((body as { system?: unknown }).system ?? "").includes("You review a plugin for Clover");
+      if (reviewing) {
+        const reviewed = /PLUGIN: (\S+)/.exec(record.lastUserText)?.[1] ?? /PLUGIN: (\S+)/.exec(textOf(messages[0]?.content))?.[1] ?? "unknown";
+        content = [{ type: "text", text: `${REVIEW_MARK} ${reviewed}: it echoes text back. Nothing odd found.` }];
+        stop = "end_turn";
+      } else if (shell !== undefined) {
+        content = shell;
+        stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
+        if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
+      } else if (callWant !== undefined && (callTool === undefined || callInput === undefined) && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-CALL-TOOL ${callWant.tool}${callInput === undefined ? " (its input isn't JSON)" : ""}` }];
+        stop = "end_turn";
+      } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool) && callDeferred && !callLoaded && glossary !== undefined && !usedSince(glossary)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: callTool } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (callTool !== undefined && callInput !== undefined && !usedSince(callTool)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: callTool, input: callInput }];
+        stop = "tool_use";
+        record.toolUse = callTool;
+      } else if (netWant !== undefined && netTool === undefined && result === undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-NO-NETPROBE-TOOL ${netWant}` }];
+        stop = "end_turn";
+      } else if (netTool !== undefined && !usedSince(netTool) && netDeferred && !netLoaded && glossary !== undefined && !usedSince(glossary)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: netTool } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (netTool !== undefined && !usedSince(netTool)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: netTool, input: {} }];
+        stop = "tool_use";
+        record.toolUse = netTool;
+      } else if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
-      } else if (record.lastUserText.includes("ACCEPTANCE-ECHO")) {
+      } else if (said.includes("ACCEPTANCE-FETCH-HIT") && o.hitFetchUrl !== undefined) {
+        const tool = record.tools.find((t) => t.endsWith("WebFetch"));
+        content = tool === undefined ? [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }] : [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: o.hitFetchUrl } }];
+        stop = tool === undefined ? "end_turn" : "tool_use";
+        if (tool !== undefined) record.toolUse = tool;
+      } else if (said.includes("ACCEPTANCE-ECHO") || said.includes("ACCEPTANCE-HOLDTOOL")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-ECHO-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-ping" } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: said.includes("ACCEPTANCE-HOLDTOOL") ? "acceptance-hold" : "acceptance-ping" } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-SEARCH")) {
+      } else if (said.includes("ACCEPTANCE-CHILD-ECHO")) {
+        const tool = record.tools.find((t) => BRIDGE_ECHO.test(t));
+        if (tool === undefined) {
+          content = [{ type: "text", text: `ACCEPTANCE-CHILD-NO-ECHO ${record.tools.filter((t) => t.startsWith("mcp__")).join(", ") || "no MCP tools"}` }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { text: "acceptance-child-ping" } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-AGENT-ECHO")) {
+        const tool = record.tools.find((t) => t === "Agent");
+        const root = /ACCEPTANCE-AGENT-ECHO (\S+)/.exec(said)?.[1] ?? "";
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-AGENT-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "clover-code", root, description: "Echo probe", prompt: "ACCEPTANCE-CHILD-ECHO: call the echo tool and say what it answered." } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-CHILD")) {
+        content = [{ type: "text", text: CHILD_REPORT }];
+        stop = "end_turn";
+      } else if (said.includes("ACCEPTANCE-AGENT")) {
+        const tool = record.tools.find((t) => t === "Agent");
+        const root = /ACCEPTANCE-AGENT (\S+)/.exec(said)?.[1] ?? "";
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-AGENT-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { agent: "alpha:study-buddy", backend: "clover-code", root, description: "Study notes", prompt: "ACCEPTANCE-CHILD: read the folder and say you're done." } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STAGE-STATUS")) {
+        const tool = record.tools.find((t) => t.endsWith("__stage_status"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STAGE-STATUS-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: {} }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STAGE")) {
+        const tool = record.tools.find((t) => t.endsWith("__set_mood"));
+        const mood = /ACCEPTANCE-STAGE (\w+)/.exec(said)?.[1] ?? "joy";
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STAGE-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { mood } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-STDIO")) {
+        const tool = record.tools.find((t) => t.endsWith("StdioProbe"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-STDIO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: {} }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if ((said.includes("ACCEPTANCE-FETCH-COMPOSED") && o.composedFetchUrl !== undefined) || (said.includes("ACCEPTANCE-FETCH-LINKED") && o.linkedFetchUrl !== undefined)) {
+        const tool = record.tools.find((t) => t.endsWith("WebFetch"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
+          stop = "end_turn";
+        } else {
+          const url = said.includes("ACCEPTANCE-FETCH-LINKED") ? o.linkedFetchUrl! : o.composedFetchUrl!;
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (/ACCEPTANCE-FETCH (\S+)/.test(said)) {
+        const tool = record.tools.find((t) => t.endsWith("WebFetch"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(said)![1] } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-SEARCH")) {
         const tool = record.tools.find((t) => t.endsWith("WebSearch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-SEARCH-TOOL" }];
@@ -198,7 +503,41 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-WRITE")) {
+      } else if (/ACCEPTANCE-READ (\S+)/.test(said)) {
+        const tool = record.tools.find((t) => t === "Read");
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-READ-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { file_path: /ACCEPTANCE-READ (\S+)/.exec(said)![1] } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-EDIT") || said.includes("ACCEPTANCE-BASH")) {
+        const edit = said.includes("ACCEPTANCE-EDIT");
+        const tool = record.tools.find((t) => t === (edit ? "Edit" : "Bash"));
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-TOOL" }];
+          stop = "end_turn";
+        } else {
+          const input = edit
+            ? { file_path: o.writePath.replace(/[^/\\]+$/, "story_of_egypt.md"), old_string: "The river rose each year.\nThe farmers waited.\nThen the fields were green.", new_string: "The Nile rose each summer.\nThe farmers waited for the silt.\nThen the fields were green again.\nThe harvest came in autumn." }
+            : { command: "mkdir -p build\nrm -rf build/cache\nls build", description: "Clean the build folder" };
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-WRITE-ORDINARY") && o.ordinaryWritePath !== undefined) {
+        const tool = record.tools.find((t) => t === "Write");
+        if (tool === undefined) {
+          content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
+          stop = "end_turn";
+        } else {
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { file_path: o.ordinaryWritePath, content: o.writeContent } }];
+          stop = "tool_use";
+          record.toolUse = tool;
+        }
+      } else if (said.includes("ACCEPTANCE-WRITE")) {
         const tool = record.tools.find((t) => t === "Write");
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
@@ -208,8 +547,11 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(record.lastUserText)) {
-        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(record.lastUserText)![0]}` }];
+      } else if (failTag !== undefined) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ACCEPTANCE-FAIL-${failTag}` }];
+        stop = "end_turn";
+      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(said)) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(said)![0]}` }];
         stop = "end_turn";
       } else {
         content = [{ type: "text", text: "ACCEPTANCE-REPLY-OK" }];
@@ -237,5 +579,65 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       return new Response(text, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
     },
   });
-  return { url: `http://127.0.0.1:${server.port}`, requests, close: () => server.stop(true) };
+  return { url: `http://127.0.0.1:${server.port}`, requests, heal: (id: string) => void healed.add(id), close: () => server.stop(true) };
 }
+
+/** A long reply streamed slowly (ACCEPTANCE-STREAM): about 300 words in paragraphs, two words a delta, 40 ms apart. */
+const STREAM_WORDS = Array.from({ length: 300 }, (_, i) => (i > 0 && i % 60 === 0 ? `\n\nword${i}` : `word${i}`));
+function streamTurn(signal: AbortSignal, id: string, model: string, stream: boolean): Response {
+  const usage = { input_tokens: 10, output_tokens: 300, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const whole = `${STREAM_WORDS.join(" ")} ACCEPTANCE-STREAM-DONE`;
+  if (!stream) return Response.json({ id, type: "message", role: "assistant", model, content: [{ type: "text", text: whole }], stop_reason: "end_turn", stop_sequence: null, usage });
+  const enc = new TextEncoder();
+  const ev = (event: string, data: unknown): Uint8Array => enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const body = new ReadableStream<Uint8Array>({
+    async start(c) {
+      c.enqueue(ev("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage } }));
+      c.enqueue(ev("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }));
+      for (let i = 0; i < STREAM_WORDS.length; i += 2) {
+        if (signal.aborted) { try { c.close(); } catch { /* gone */ } return; }
+        c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `${STREAM_WORDS.slice(i, i + 2).join(" ")} ` } }));
+        await Bun.sleep(40);
+      }
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-STREAM-DONE" } }));
+      c.enqueue(ev("content_block_stop", { type: "content_block_stop", index: 0 }));
+      c.enqueue(ev("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 300 } }));
+      c.enqueue(ev("message_stop", { type: "message_stop" }));
+      c.close();
+    },
+  });
+  return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
+}
+
+/** A turn that keeps running (ACCEPTANCE-SLOW): the stream's start and a partial text at once, then nothing for two
+ *  minutes or until the caller drops the request; a non-streaming request waits the same and then answers. */
+function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolean): Response | Promise<Response> {
+  const usage = { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const hold = (): Promise<void> => new Promise((resolve) => {
+    const t = setTimeout(resolve, 120_000);
+    signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+  if (!stream) {
+    return hold().then(() => Response.json({ id, type: "message", role: "assistant", model, content: [{ type: "text", text: "ACCEPTANCE-SLOW-DONE" }], stop_reason: "end_turn", stop_sequence: null, usage }));
+  }
+  const enc = new TextEncoder();
+  const ev = (event: string, data: unknown): Uint8Array => enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const body = new ReadableStream<Uint8Array>({
+    async start(c) {
+      c.enqueue(ev("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage } }));
+      c.enqueue(ev("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }));
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-SLOW-PARTIAL " } }));
+      await hold();
+      if (signal.aborted) { try { c.close(); } catch { /* gone */ } return; }
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-SLOW-DONE" } }));
+      c.enqueue(ev("content_block_stop", { type: "content_block_stop", index: 0 }));
+      c.enqueue(ev("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 5 } }));
+      c.enqueue(ev("message_stop", { type: "message_stop" }));
+      c.close();
+    },
+  });
+  return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
+}
+
+/** What the fake's plugin Review report starts with (the acceptance run's Review clause looks for it). */
+export const REVIEW_MARK = "ACCEPTANCE-REVIEW";

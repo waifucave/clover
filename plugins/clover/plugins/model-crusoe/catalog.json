@@ -94,7 +94,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "crusoe/deepseek-ai/DeepSeek-V4-Pro",
@@ -158,7 +159,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "crusoe/google/gemma-4-31b-it",
@@ -222,7 +224,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "crusoe/moonshotai/Kimi-K2.6",
@@ -286,7 +289,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "crusoe/nvidia/Nemotron-3-Nano-30B-A3B",
@@ -350,7 +354,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3-nano-30b-a3b",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "weak"
     },
     {
       "key": "crusoe/nvidia/Nemotron-3-Super-120B-A12B",
@@ -414,7 +419,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3-super-120b-a12b",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "medium"
     },
     {
       "key": "crusoe/nvidia/nemotron-3.5-lightning-30b-a3b",
@@ -478,7 +484,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3.5-lightning-30b-a3b",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "weak"
     },
     {
       "key": "crusoe/openai/gpt-oss-120b",
@@ -542,7 +549,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "crusoe/qwen/Qwen3.8-27B",
@@ -595,7 +603,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "crusoe/zai/GLM-5.3",
@@ -659,7 +668,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "zai/glm-5.3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "strong"
     },
     {
       "key": "crusoe/zai/GLM-5.3-Flash",
@@ -723,7 +733,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "zai/glm-5.3-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     }
   ]
 }

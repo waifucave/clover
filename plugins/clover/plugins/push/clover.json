@@ -5,6 +5,7 @@
     "en": "Wakes your phone and your browsers when something happens, through push.waifucave.com. The push says only how many updates there are; your phone then fetches what happened from your own computer, so waifucave never sees it."
   },
   "engines": { "clover": "^1.0.0" },
+  "availability": { "status": "not-yet", "reason": "push-origin" },
   "host": { "entry": "host/index.ts", "runtime": "bun" },
   "capabilities": ["network:push.waifucave.com"],
   "contributes": {

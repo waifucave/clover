@@ -105,7 +105,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "agnes-1.5-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "agnes/agnes-2.0-flash",
@@ -177,7 +178,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "agnes-2.0-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "agnes/agnes-2.5-flash",
@@ -260,7 +262,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "agnes-2.5-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

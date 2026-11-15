@@ -10,10 +10,11 @@ import type { Caller, HostProcess, PluginSource } from "@waifucave/clover-protoc
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CRASH_LIMIT, CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, hostProcessFor, resolveHandler,
+  CRASH_LIMIT, CRASH_WINDOW_MS, MCP_INVOCATION_META, PLUGIN_CALL_MAX_TIMEOUT_MS, PLUGIN_CALL_TIMEOUT_MS, RELOAD_GRACE_MS, crashBackoffMs, crashStopReason, hostProcessFor, resolveHandler,
   type ApiRouter, type HostedState, type HostedStatus, type InvokeRequest, type McpChannel, type PluginHost, type StreamRequest,
 } from "../plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../sdk-types";
+import { apiHas, apiMemberValue, isDataFolder } from "../../plugin-host/api-members";
 
 interface Call {
   reject: (err: unknown) => void;
@@ -52,8 +53,8 @@ export class FakePluginHost implements PluginHost {
   /** Installs a plugin's host module, with what its install record says (default: a local plugin on Bun). For a
    *  plugin already running, the new module takes over at its next start (a reload, a restart, or after a crash), as
    *  a new worker would; the running one keeps serving until then. */
-  define(pluginId: string, module: HostModule, record: { source?: PluginSource; runtime?: "bun" | "node" } = {}): void {
-    const process = hostProcessFor({ id: pluginId, source: record.source ?? "local", ...(record.runtime ? { runtime: record.runtime } : {}) });
+  define(pluginId: string, module: HostModule, record: { source?: PluginSource; runtime?: "bun" | "node"; process?: "own" } = {}): void {
+    const process = hostProcessFor({ id: pluginId, source: record.source ?? "local", ...(record.runtime ? { runtime: record.runtime } : {}), ...(record.process ? { process: record.process } : {}) });
     const h = this.#hosted.get(pluginId);
     if (!h) this.#hosted.set(pluginId, { module, process, state: "idle", crashTimes: [], calls: new Set(), waiters: [] });
     else if (h.state === "idle" || h.state === "stopped") [h.module, h.process] = [module, process];
@@ -310,7 +311,7 @@ export class FakePluginHost implements PluginHost {
     h.crashTimes = [...h.crashTimes.filter((t) => now - t < CRASH_WINDOW_MS), now];
     if (h.crashTimes.length >= CRASH_LIMIT) {
       delete h.restartAt;
-      this.#set(pluginId, h, "stopped", `crashed ${CRASH_LIMIT} times in 10 minutes: ${reason}`);
+      this.#set(pluginId, h, "stopped", crashStopReason(reason));
       return;
     }
     const delay = crashBackoffMs(h.crashTimes.length);
@@ -381,9 +382,13 @@ export class FakePluginHost implements PluginHost {
   #apiFor(pluginId: string, caller: Caller, live?: () => boolean): PluginApi {
     const router = () => this.#router;
     const process = () => this.#hosted.get(pluginId)?.process ?? "shared";
+    const self = () => ({ id: pluginId, namespace: pluginId.split("/")[0]!, version: "0.0.0", computer: this.computer });
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
-        get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
+        // The plugin host's own rule (plugin-host/api-members.ts): a member the catalog doesn't have throws, by name;
+        // `api.plugin` and `api.storage.dataFolder` are data (a made-up folder path here: this host has no home).
+        get: (_t, prop) => (path.length === 0 && prop === "plugin" ? self() : isDataFolder(path, prop) ? `/plugin-data/${pluginId}` : apiMemberValue(path, prop, make)),
+        has: (_t, prop) => isDataFolder(path, prop) || apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           if (live && !live()) return Promise.reject(new ContractError("closed", `${path.join(".")}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`));
           return router()({ pluginId, process: process(), path: path.join("."), args, caller });

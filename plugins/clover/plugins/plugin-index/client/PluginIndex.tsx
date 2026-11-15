@@ -1,8 +1,8 @@
 // The plugin index browser: a page in the main area (`main` keyed `plugins`). A search over the indexes the user
-// added, each result with where it comes from, whether it is reviewed, and Install, which asks for the plugin's OK on a
+// added, each result with where it comes from, and Install, which asks for the plugin's OK on a
 // sealed card; then the indexes themselves. Opened from a placeholder (a panel no plugin fills), it says what it is
 // looking for and starts with that search.
-import { IconOfficial, IconPlugin, IconSearch } from "./icons";
+import { IconPlugin, IconSearch } from "./icons";
 import { S } from "./strings";
 import type { IndexResult, InstallState, PluginIndexProps } from "./types";
 
@@ -32,11 +32,6 @@ function Result({ r, state, onInstall }: { r: IndexResult; state: InstallState |
         <span className="cl-plugin-index__name">
           {r.name}
           {r.adult && <span className="cl-plugin-index__badge" data-tone="danger">{S.adult}</span>}
-          {!r.official && (
-            <span className="cl-plugin-index__badge" data-tone="attention" title={S.notReviewedDetail}>
-              {S.notReviewed}
-            </span>
-          )}
         </span>
         <span className="cl-plugin-index__meta">
           {[r.id, r.version, S.from(r.indexName)].filter(Boolean).join(" · ")}
@@ -62,18 +57,8 @@ function Result({ r, state, onInstall }: { r: IndexResult; state: InstallState |
 
 export function PluginIndex(props: PluginIndexProps) {
   const { query, results, indexes } = props;
-  return (
-    <div className="cl-plugin-index">
-      <div className="cl-plugin-index__page">
-        <header className="cl-plugin-index__head">
-          <h1 className="cl-plugin-index__title">{S.title}</h1>
-          {props.onOpenInstalled && (
-            <button type="button" className="cl-plugin-index__button" onClick={props.onOpenInstalled}>
-              {S.installed}
-            </button>
-          )}
-        </header>
-        <p className="cl-plugin-index__intro">{S.intro}</p>
+  const body = (
+      <>
 
         <form
           className="cl-plugin-index__search"
@@ -117,19 +102,7 @@ export function PluginIndex(props: PluginIndexProps) {
         <ul className="cl-plugin-index__indexes" aria-label={S.indexes}>
           {indexes.map((i) => (
             <li key={i.url} className="cl-plugin-index__index">
-              <span className="cl-plugin-index__name">
-                {i.name ?? i.url}
-                {i.official ? (
-                  <span className="cl-plugin-index__badge" data-tone="accent">
-                    <IconOfficial />
-                    {S.official}
-                  </span>
-                ) : (
-                  <span className="cl-plugin-index__badge" data-tone="attention">
-                    {S.notReviewed}
-                  </span>
-                )}
-              </span>
+              <span className="cl-plugin-index__name">{i.name ?? i.url}</span>
               <span className="cl-plugin-index__meta">
                 {i.name ? `${i.url} · ` : ""}
                 {i.lastCheckedAt ? S.checked(whenText(i.lastCheckedAt, props.now, props.format)) : S.neverChecked}
@@ -137,6 +110,23 @@ export function PluginIndex(props: PluginIndexProps) {
             </li>
           ))}
         </ul>
+      </>
+  );
+  // Inside the Plugins page's Find tab: its content only (the page draws the frame, the title and the tabs).
+  if (props.bare) return body;
+  return (
+    <div className="cl-plugin-index">
+      <div className="cl-plugin-index__page">
+        <header className="cl-plugin-index__head">
+          <h1 className="cl-plugin-index__title">{S.title}</h1>
+          {props.onOpenInstalled && (
+            <button type="button" className="cl-plugin-index__button" onClick={props.onOpenInstalled}>
+              {S.installed}
+            </button>
+          )}
+        </header>
+        <p className="cl-plugin-index__intro">{S.intro}</p>
+        {body}
       </div>
     </div>
   );

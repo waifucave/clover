@@ -33,6 +33,7 @@
     "test/runtime-sdk/worker-churn-soak.test.ts": "a soak, run on demand with its env, on every OS"
   },
   "darwinGateAllowed": {
+    "src/agents/tests/sandbox-writers.test.ts": "\"darwin\" picks the OS each rendering is written for (`OS`), not a gate; its gates skip on win32 only",
     "test/lock.test.ts": "\"darwin\" is classifyLockFailure's platform argument (the errno table per OS), not a gate"
   }
 }

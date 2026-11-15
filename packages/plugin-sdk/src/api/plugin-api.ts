@@ -19,6 +19,8 @@ import {
   topPluginIdOf,
 } from "@waifucave/clover-protocol";
 
+import type { AvatarApi, AvatarReport } from "../catalogs/avatar-cues";
+
 export type Unsubscribe = () => void;
 
 /** A plugin-API call's default limit, and the longest a caller may set. */
@@ -54,7 +56,7 @@ export interface HandlerContext {
    *  record of the call. In a `host` MCP server, which gets no context, the host runs each `tools/call` inside its
    *  call, so `api` calls awaited from that handler act the same way; a call from work started outside it (a timer, a
    *  `start` task) acts as the plugin. */
-  readonly api: PluginApi;
+  readonly api: HostPluginApi;
   /** A streamed call's input, when the caller streams one (a voice's microphone audio). */
   readonly input?: AsyncIterable<unknown>;
 }
@@ -93,15 +95,16 @@ export interface NotifierHandler {
 
 /** A notifier's context. `desktop` is the local app's notifications on the computer the notifier runs on (lane G's
  *  ask: a `runsOn: "each"` notifier reaches its own computer's app), present only for the bundled `clover` tree's
- *  notifiers and only while this computer's app is connected; the core sends them as `app.notify`. */
+ *  notifiers; the core sends them as `app.notify`. The same calls are `PluginApi.desktop` in that tree's process. */
 export interface NotifierContext extends HandlerContext {
   readonly desktop?: DesktopNotifications;
 }
 
 export interface DesktopNotifications {
-  /** Shows or replaces the banner with this id. `shown: false` when the app showed nothing, because it is in front
-   *  showing that session already. */
-  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean }): Promise<{ shown: boolean }>;
+  /** Shows or replaces the banner with this id, on this computer's app. `shown: false` when no app is connected here,
+   *  or the core held it back: a plugin's notification never shows while an approval card waits on this computer.
+   *  `silent`: no sound (the user's setting). A banner has no buttons: a click only brings the app forward. */
+  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
   /** Closes one banner, or every banner this notifier showed. */
   close(id?: string): Promise<void>;
 }
@@ -140,6 +143,22 @@ export interface NotifierUpdate {
    *  bot ("Luna") speaks as one. */
   sender: { pluginId: string; name: string; bundled: boolean };
 }
+
+/** What an `island.line` entry's handler returns (`points.call` of the entry's `handler`, no args): the line it wants on the
+ *  island now, or nothing (`undefined` or `null`) for none. The island draws it in its own style, so every field is only
+ *  data the island checks again: `text` is plain text (no markup; control characters become spaces; cut at 80 characters
+ *  with an ellipsis), `icon` one of the island's named icons (`bolt`, `check`, `clock`, `info`, `sync`, `link`; any other
+ *  name draws no icon), `progress` a number from 0 to 1 (clamped; anything else draws no bar), and `bot` the id of the bot
+ *  the line is about (an id that doesn't look like one is dropped). The line's id is its entry's. A handler that takes more
+ *  than 1.5 seconds, or throws, shows no line that time. */
+export interface IslandLine {
+  text: string;
+  icon?: string;
+  progress?: number;
+  bot?: string;
+}
+/** An `island.line` entry's handler: called with no arguments, as the plugin. */
+export type IslandLineHandler = (args: undefined, ctx: HandlerContext) => Promise<IslandLine | null | undefined> | IslandLine | null | undefined;
 
 /** A `webhook.ingress` entry's handler (§7): an object of handlers the webhook trigger calls through `points.call`
  *  with `method`. Provisional for lanes D (the trigger) and I (the forwarder). Webhooks reach the trigger by pull:
@@ -239,10 +258,38 @@ export async function webhookKeyHash(key: string): Promise<string> {
 /** What `host.entry` may export besides its handlers. `mcp` serves the plugin's `host` MCP servers by name, each on
  *  the in-process transport the SDK provides (§5.3 "Handlers"); `start` runs when the host half starts, `stop` before
  *  it is replaced or stopped (§5.1 "Live changes"). */
+/** The plugin API as a host half gets it: every call crosses to the core, so the component-only `t` and
+ *  `conversation.answer` aren't there (calling them is a type error; the core refuses them too: they are `ui` in
+ *  `API_CALLS`).
+ *
+ *  Reading a member the plugin API doesn't have (`api.env`, `api.log`, `api.settings.nope`) throws a TypeError that
+ *  names it, at once. To feature-test, use `in`, which never throws: `"files" in api` and `"get" in api.settings` are
+ *  true for a call a host half can make (or an area holding one), and false for anything else, a call the catalog marks
+ *  not served yet included (`"memory" in api` is false in this build); the core still decides each call (your
+ *  capabilities, your process). Don't write `if (api.foo)` for a member that may not exist.
+ *
+ *  Symbols and a closed list of keys that other code reads on any object read as undefined, at any depth, and never
+ *  throw: promises and serialising (`then`, `catch`, `finally`, `toJSON`, `toString`, `valueOf`); inspection
+ *  (`inspect`, `constructor`, `prototype`, `__proto__`, `$$typeof`, `nodeType`, `nodeName`, `tagName`, `length`,
+ *  `name`, `displayName`, `caller`, `arguments`); ES-module interop (`__esModule`, `default`); and test frameworks'
+ *  equality and spies (`asymmetricMatch`, `toAsymmetricMatcher`, `_isMockFunction`, `getMockName`, `mock`,
+ *  `mockImplementation`, `calls`, and Immutable.js's `@@__IMMUTABLE_…@@` keys). So `await api`, `console.log(api)`,
+ *  `expect({ api }).toEqual({ api })` and a bundle's `import * as ns` are safe. A call's `bind`, `call` and `apply`
+ *  work, and `JSON.stringify(api)` gives undefined; `api` is calls, not data, so `structuredClone(api)` fails as
+ *  cloning any function does. `api.plugin` is plain data. */
+export type HostPluginApi = Omit<PluginApi, "t" | "conversation"> & {
+  /** `answer` is a component's alone (the user's own answer): a host half never answers a question as the user. */
+  readonly conversation?: Partial<Omit<ConversationApi, "answer">>;
+};
+
 export interface HostModule {
-  start?(api: PluginApi): void | Promise<void>;
+  start?(api: HostPluginApi): void | Promise<void>;
   stop?(reason: "reload" | "stop" | "removed"): void | Promise<void>;
-  mcp?: Record<string, (transport: McpServerTransport, api: PluginApi) => void | Promise<void>>;
+  mcp?: Record<string, (transport: McpServerTransport, api: HostPluginApi) => void | Promise<void>>;
+  /** What the plugin's components may call (`host.call(name, args)`), by name: `export const ui = { setCatalog }`.
+   *  Default-deny: a component reaches only this table, never the module's other exports (its tool, hook, command
+   *  and trigger handlers), and each call runs as the plugin, never the user. */
+  ui?: Record<string, (args: unknown, ctx: HandlerContext) => unknown>;
   [handler: string]: unknown;
 }
 
@@ -445,7 +492,10 @@ export interface SettingsApi {
 export interface ConversationApi {
   list(filter?: { bot?: string; kinds?: SessionView["kind"][] }): Promise<SessionView[]>;
   get(session: string): Promise<SessionView>;
+  /** Every session's view as it changes: a new one (a coding session started from the CLI, another window or a bot's agent), a status change, a title. */
+  watch(listener: (session: SessionView) => void): Unsubscribe;
   history(session: string, page: { before?: number; limit: number }): Promise<{ events: Record<string, unknown>[]; hasMore: boolean }>;
+  /** A follow whose replay can't read the session's history ends with one `{ type: "follow_ended", reason }` event. */
   follow(session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe;
   note(session: string, note: { label?: string; text: string }): Promise<void>;
   send(session: string, text: string): Promise<void>;
@@ -466,6 +516,27 @@ export interface BotsApi {
 export interface RoutinesApi {
   list(filter?: { bot?: string }): Promise<RoutineView[]>;
   runs(routine: string, page?: { cursor?: string; limit?: number }): Promise<{ runs: RoutineRunView[]; next?: string }>;
+  /** A trigger of this plugin's fired for a routine its handler was armed for (`TriggerHandler.arm`): the routine runs
+   *  on this computer. Host halves only, and only for a trigger `type` the plugin's own `triggers` entry has; needs no
+   *  capability (its card says it starts routines). `payload` (at most `ROUTINE_FIRE_PAYLOAD_MAX` characters) reaches
+   *  the run as text marked as the trigger's, never as the user's. */
+  fire(routine: string, type: string, payload?: string): Promise<void>;
+}
+
+/** The longest payload a trigger hands a routine's run (`RoutinesApi.fire`), in characters. */
+export const ROUTINE_FIRE_PAYLOAD_MAX = 64 * 1024;
+
+/** A `triggers` entry's handler (§7): an object the routine engine calls with `method`, as the core (never a user). A
+ *  routine file that names the trigger's `type` arms it with its fields; the plugin then watches whatever it watches
+ *  and calls `api.routines.fire(routine, type, payload?)` when it should run, with the API its `start` was given (a
+ *  call's own `ctx.api` ends with the call). The engine arms each such routine on the
+ *  computer that holds its file, and arms it again whenever the plugin's host half starts (a restart, an update, a
+ *  crash), so `arm` replaces what it had for that routine. */
+export interface TriggerHandler {
+  /** Start watching for a routine. Throws when the fields don't read; the engine notes it on the routine. */
+  arm(args: { routine: string; type: string; fields: Record<string, unknown> }, ctx: HandlerContext): Promise<void> | void;
+  /** Stop: the routine is gone, paused, changed (armed again after), or names the trigger no more. */
+  disarm(args: { routine: string; type: string }, ctx: HandlerContext): Promise<void> | void;
 }
 
 /** `computers.read` gives the registry; `computers.control` gives holds, the user-working mark, Clover's own windows
@@ -485,6 +556,12 @@ export interface ComputersApi {
   cloverWindows(computer: string): Promise<CloverWindow[]>;
 }
 
+/** The stage's own call (bundled `clover` tree, components only): which renderer drew a bot's figure, what its model has
+ *  and where it stands; `undefined` clears it. */
+export interface AvatarReportApi {
+  report(bot: string, report: AvatarReport | undefined): Promise<void>;
+}
+
 /** `devices.read`: the user's devices, for the island's Devices tab and the like: names, kinds, links, online state
  *  and which one is the main (review S16). */
 export interface DevicesApi {
@@ -492,8 +569,9 @@ export interface DevicesApi {
   watch(listener: (device: DeviceView) => void): Unsubscribe;
 }
 
-/** `approvals`: which cards are pending and where, never their text. A component places one with the UI API's
- *  `<Card id>` and its parts. */
+/** `approvals`: which cards are pending and where, never their text, and only the cards of the plugin's own bot (the
+ *  bundled `clover` tree: all). A component places one with the UI API's `<Card id>` and its parts. `watch` hands the
+ *  whole pending list each time it changes. */
 export interface ApprovalsApi {
   pending(): Promise<CardMeta[]>;
   watch(listener: (cards: CardMeta[]) => void): Unsubscribe;
@@ -509,6 +587,10 @@ export interface FilesApi {
   readBytes(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<Uint8Array>;
   write(path: string, data: string | Uint8Array, opts?: { createDirs?: boolean }): Promise<void>;
   list(path: string): Promise<FileStat[]>;
+  /** The real path of a file or folder the user picked in this plugin's page (`grant:<uuid>`, or `grant:<uuid>/<path>`
+   *  under a picked folder), for a program the host half starts (ffmpeg takes paths). The host half only, never the
+   *  page; another plugin's pick is refused. Its own processes' fence opens the same path. */
+  path(path: string): Promise<string>;
   remove(path: string, opts?: { recursive?: boolean }): Promise<void>;
   move(from: string, to: string): Promise<void>;
   glob(pattern: string, opts: { cwd: string; limit?: number }): Promise<{ paths: string[]; truncated: boolean }>;
@@ -516,7 +598,31 @@ export interface FilesApi {
   /** Changes under a folder (lane J's ask, for a code session's Files panel): the tree paths that changed, coalesced,
    *  or `resync` when the holder's watch dropped and the folder must be listed again. The unsubscribe ends it. */
   watch(path: string, listener: (event: { type: "changed"; paths: string[] } | { type: "resync" }) => void): Promise<Unsubscribe>;
+  /** Files the user hands a plugin: components only, so absent in a host half (the page asks; the app's own dialog shows; the user chooses). Each pick
+   *  needs the user's own key press or click in the page, and returns TOKENS, never paths: a token is `grant:<uuid>`, bound to
+   *  this plugin. The page passes a token to its host half (`host.call`), which uses it as the path of `files.stat`,
+   *  `readText`, `readBytes`, `write` and `list` (a folder grant also as `grant:<uuid>/<relative path>`), and, host half only,
+   *  `files.path(token)` (lane A's) for the real path to hand its own process (ffmpeg). An open grant is read-only; a save grant is
+   *  write on that one file (and reads it); a folder picked for writing carries read too. The core keeps the grants
+   *  (`plugin.grant.add/remove/list`, app role) until the user removes one in Settings or the plugin is removed, and refuses
+   *  places no plugin may hold (the Clover home, secrets, the plugins folder, the user's home itself) with a reason. */
+  pickOpen?(opts?: { multiple?: boolean; filters?: FilePickFilter[] }): Promise<FilePickResult>;
+  pickFolder?(opts?: { forWriting?: boolean }): Promise<FilePickResult>;
+  pickSave?(opts?: { suggestedName?: string; filters?: FilePickFilter[] }): Promise<FilePickResult>;
+  /** The page's media URL for a file grant it holds a read on (an open grant, or a save grant): a `<video>`, `<audio>` or
+   *  `<img>` takes it directly, served from the plugin's own layer origin with HTTP range support. Pure: the grant is
+   *  checked when the URL is fetched, so a token of another plugin's, a folder's or a removed one's fetches nothing. */
+  url?(token: string): string;
+  /** A drop of files or folders on the page, as tokens like a pick's (the app reads the paths of a real drop in its own code; a
+   *  page's script can't make one up). The page opts in to receiving drops the usual way, by cancelling `dragover`. */
+  onDrop?(listener: (grants: FileGrant[], refused?: string) => void): Unsubscribe;
 }
+
+/** One native-dialog filter: a label and plain extensions (`mp4`, no dot). */
+export interface FilePickFilter { name: string; extensions: string[] }
+/** What a pick hands the page: never a path. */
+export interface FileGrant { token: string; name: string; kind: "file" | "folder"; access: "read" | "write" | "readwrite"; size?: number }
+export type FilePickResult = { grants: FileGrant[] } | { cancelled: true };
 
 /** `terminal`: the user's terminals on their computers (lane F's request; lane J's PTY), for the component that draws
  *  one. Only the bundled `clover` tree holds it (`bundledOnly`, review T1); its OK says it runs commands on the user's
@@ -529,6 +635,87 @@ export interface FilesApi {
  *  never runs before the user's OK (F-M2's review, S1). Components only. */
 export interface PluginsApi {
   install(source: InstallSource): Promise<{ id: string; state: PluginState; card?: string }>;
+}
+
+/** Where the window is now: what `shell.state` answers and `shell.watch` hears. Never a draft, a message or a path. */
+export interface ShellState {
+  /** The tab showing: a bot's (`bot`, with `id`), a coding session's or an agent's (`agent`), `settings`, `plugins`, an app (`app`, its `opens` key), `archive`, a bot's editor (`bot-editor`). */
+  readonly tab: { readonly kind: "bot" | "agent" | "settings" | "plugins" | "app" | "archive" | "bot-editor" | "other"; readonly id?: string };
+  /** The bot whose tab shows, if one does. */
+  readonly bot?: string;
+  /** A window over the tab: `settings` while Settings shows over it (the tab under it stays `tab`). */
+  readonly dialog?: "settings";
+  /** The sidebar: rested as a rail of icons, which side it shows (the bots' or the code's), and how wide it is drawn at the
+   *  window's left, its rule included (CSS pixels, as measured; absent until the window has measured it). A tab starts at
+   *  its right edge. */
+  readonly sidebar: { readonly collapsed: boolean; readonly side: "bots" | "code"; readonly width?: number };
+  /** The panels of the tab: the views open now, and the ones it offers. */
+  readonly panels: {
+    readonly open: readonly string[];
+    readonly available: readonly string[];
+    /** The names of the panels plugins add (their ids, `<plugin id>#<key>`, are in `open` and `available`): what a button for one says. */
+    readonly titles?: Readonly<Record<string, string>>;
+  };
+  /** How far the window's own native controls (the traffic lights) reach from the window's top left, in CSS pixels: nothing
+   *  drawn may sit under them (0 where the system draws them at the other end). A tab beside the sidebar is under them only
+   *  for `left` less `sidebar.width`: none when the sidebar, open or a rail, already lies under them. */
+  readonly safeArea: { readonly left: number; readonly top: number };
+}
+
+/** An app button the sidebar offers: its title, icon (a file URL) and the `main`/`panel` key it opens. */
+export interface ShellApp {
+  readonly id: string;
+  readonly title: string;
+  readonly icon?: string;
+}
+
+/** The signed-in account the sidebar shows beside its settings gear. `name` is empty when nobody is signed in. */
+export interface ShellAccount {
+  readonly name: string;
+  readonly detail?: string;
+}
+
+/** Where `shell.go` takes the window. */
+export type ShellTarget =
+  | { readonly bot: string }
+  | { readonly session: string }
+  | { readonly side: "bots" | "code" }
+  | { readonly app: string }
+  | { readonly page: "plugins" | "archive" };
+
+/**
+ * The window itself: what a plugin that draws its own bar, its own sidebar or its own controls asks of the app, so
+ * the app never has to draw a plugin's styles for it. The reads (`shell.read`) answer with where the window is; the acts
+ * (`shell.control`) are the user's own: each one counts only inside the user's own key press or click in the frame that
+ * calls it (any other is refused and does nothing), and none of them changes anything but the window's own place. Components
+ * only. What they reach is the window of the tab the plugin's bot shows (an act for another bot's tab is refused).
+ */
+export interface ShellApi {
+  state(): Promise<ShellState>;
+  watch(listener: (state: ShellState) => void): Unsubscribe;
+  /** The app buttons of the sidebar (`sidebar.app`), in its order. */
+  apps(): Promise<readonly ShellApp[]>;
+  /** The account row of the sidebar: who is signed in (`name`) and which computer this is when that differs (`detail`). Its press is `openSettings`. */
+  account(): Promise<ShellAccount>;
+  /** The bot's editor (the pencil): this tab's bot by default. */
+  openBotEditor(bot?: string): Promise<void>;
+  /** A panel view of this tab (`session`, `browser`, ...): open it, close it, or whichever the other. */
+  openPanel(view: string): Promise<void>;
+  closePanel(view: string): Promise<void>;
+  togglePanel(view: string): Promise<void>;
+  /** Rest the sidebar as a rail of icons (`true`) or open it (`false`); `toggleSidebar` is the other of the two. */
+  setSidebar(collapsed: boolean): Promise<void>;
+  toggleSidebar(): Promise<void>;
+  /** Show a bot's tab, a session's, the code side or the bots' side, an app, or the Plugins or Archive page. */
+  go(target: ShellTarget): Promise<void>;
+  /** The settings screen, at a section if it has one. */
+  openSettings(section?: string): Promise<void>;
+  /** Says which of the window's two essential handles this plugin's own controls offer while its frame is shown: the sidebar's toggle (`sidebar`: its
+   *  top bar draws the button that folds and opens the window's sidebar) and a region that drags the window (`drag`). With no bar, the shell adds its own
+   *  minimal handle for each one nothing offers, so the user is never stranded. It never drops the window's sidebar, which looks the same on every tab. */
+  provide(parts: readonly ("sidebar" | "drag")[]): Promise<void>;
+  /** From a press on a region this plugin marks: the window follows the pointer until it lets go (a bar of its own that drags the window). */
+  dragWindow(): Promise<void>;
 }
 
 export interface TerminalApi {
@@ -561,6 +748,9 @@ export interface TerminalInputEvent {
  *  (L's question). A layer's calls carry `{ kind: "plugin", pluginId }`, never the user. `computer` is a computer's
  *  name, as `api.plugin.computer` gives this one. */
 export interface BrowserApi {
+  /** Whose tool call this is (the bundled `clover` tree's host halves): the session the core bound to it, its kind and
+   *  its bot. A call made outside a tool call is refused. */
+  toolCaller(): Promise<{ kind: "session"; sessionId: string; sessionKind: string; bot?: string }>;
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
   /** Opens a tab headless, or shown at once in the view `show` names (L's question). */
   open(opts: { owner: TabOwner; url?: string; computer?: string; show?: { view: string; viewport: Viewport } }): Promise<TabView>;
@@ -585,17 +775,98 @@ export interface UsageApi {
   watch(listener: (since: number) => void): Unsubscribe;
 }
 
+/** Logs: the last `lines` lines (default 200, at most 2,000), and each line from now on. A plugin's own tree's (its own
+ *  id or a child's, as its Settings page shows them) with no capability; with `logs.read`, Clover's own (`"core"`) and
+ *  any other plugin's. */
 export interface LogsApi {
   read(source: "core" | { plugin: string }, opts?: { lines?: number }): Promise<string[]>;
   follow(source: "core" | { plugin: string }, listener: (line: string) => void): Unsubscribe;
 }
 
+/** `notify`: a notification to the user through the notifiers (§10), always under the plugin's own name. The core
+ *  holds it to a rate per plugin (`NOTIFY_PER_MINUTE`, `NOTIFY_PER_HOUR`), drops it when the user muted the plugin, and
+ *  refuses it while an approval card waits on this computer. A title of at most 120 characters and a body of at most
+ *  400 are shown; no buttons, a click only brings the app forward. `session` is not taken yet. */
 export interface NotifyApi {
   send(notification: { title: string; body?: string; session?: string }): Promise<void>;
 }
 
-/** `audio`: the app records and plays audio and hands it to plugins (§6.6). It records only while push-to-talk is
- *  held, unless the user turns listening on; the OK says it "can hear your microphone". Provisional for lanes D and E. */
+/** `audio`: the app plays a plugin's audio as a bot's speech (the plugin's own bot's unless `opts.bot` names another live
+ *  bot), and hands it the user's push-to-talk audio for every bot as it comes (§6.6). The OK says it "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices".
+ *  `play`'s `done` settles when the last piece is handed to the app, not when the app finishes playing it. */
+/** `speech`: the active voice mode's own door to this device's player, the one sink (§6.6). Any other plugin, an
+ *  inactive voice mode included, is refused (`modes` excepted). */
+export interface SpeechApi {
+  /** One piece of a bot's speech to the player: pcm16-24k (16-bit little-endian mono at 24 kHz), the last `final`.
+   *  `utterance` is the mode's own name for it (`[A-Za-z0-9_-]`, at most 64). The last piece's answer waits until the
+   *  player says the utterance ended (`ended: true`), or until its length and a few seconds have passed (`false`): when
+   *  it resolves, the next sound may start. Other pieces answer `null`. */
+  piece(p: { bot: string; session: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ ended: boolean } | null>;
+  /** Plays a sound a plugin offered as a bot's voice (`audio.play`; its ticket from `VoiceModeHandler.offer`): its
+   *  pieces so far and those still coming. Resolves once it ended on the player (or its deadline passed), with how long
+   *  it sounds. */
+  play(req: { ticket: string }): Promise<SpeechDone>;
+  /** Ends what an utterance (or everything a bot) is sounding now; its last piece goes, so the player knows. */
+  stop(req: { utterance?: string; bot?: string }): Promise<void>;
+  /** The voice modes on and running here, and which is active. */
+  modes(): Promise<{ pluginId: string; id: string; name: string; active: boolean }[]>;
+}
+
+export interface SpeechDone {
+  bytes: number;
+  /** How long it sounds (pcm16-24k: two bytes a sample at 24 kHz). */
+  seconds: number;
+  /** Stopped before its end. */
+  cut: boolean;
+  /** The player said it ended; `false` when its deadline passed with no word from it (no window, say). */
+  ended: boolean;
+}
+
+/** One provider on `voices` (§6.6), as a voice mode sees it. */
+export interface VoiceProviderView {
+  pluginId: string;
+  id: string;
+  name: string;
+  speak: boolean;
+  listen: boolean;
+}
+
+/** `voices`: the providers' endpoints (§6.6), for a plugin with `voices.use` and for any voice mode. A provider
+ *  plugin's `voices` entry is its endpoint; the core carries the calls (as it carries `points.call`) and places no key:
+ *  the provider's own keyed fetch does, and the caller sees only audio and text, its own data: nothing sounds through
+ *  these (the player is the active voice mode's, `speech`). At most VOICES_CALLS_PER_PLUGIN open at once a plugin;
+ *  each use is logged with the caller's id. */
+export interface VoicesApi {
+  providers(): Promise<VoiceProviderView[]>;
+  /** `text` (or, for the active voice mode, a reply's `ticket`, whose text stays in the core) said by `provider` with
+   *  `voice`. A ticket's bot gets the user's provider check first. Each piece of audio (pcm16-24k) comes to
+   *  `listener` as it is made, then `done` (or `error`); the returned function cancels. */
+  speak(provider: string, req: { ticket?: string; text?: string; voice?: string; model?: string }, listener: (e: { audio?: Uint8Array; done?: { bytes: number }; error?: string }) => void): Unsubscribe;
+  /** Opens `provider`'s listening under the caller's own `id` (for the active voice mode, a push-to-talk utterance's,
+   *  from `VoiceModeHandler.listenStart`); the caller feeds it (`feed`), and what it heard comes to `listener`. */
+  listen(provider: string, req: { id: string; format: "pcm16-16k" | "opus" }, listener: (e: { text?: string; error?: string }) => void): Unsubscribe;
+  /** One piece of an open listening, the last `final`. */
+  feed(id: string, data: Uint8Array, final: boolean): Promise<void>;
+}
+
+/** What the core calls on the active voice mode's handler (its `voiceModes` entry's `handler`, an exported object). */
+export interface VoiceModeHandler {
+  /** A bot's reply to say: at its turn's end, or `asked` by the user's speak button; `voice` is the bot's voice choice.
+   *  The text stays in the core: the ticket goes to `voices.speak`. `queued`: it waits its turn. */
+  reply(args: { ticket: string; bot: string; session: string; asked: boolean; voice: { provider: string; voice: string; model?: string } }): Promise<{ queued: boolean }>;
+  /** The user's stop on a bot: what it says ends, and what it has waiting goes. */
+  stop(args: { bot: string }): Promise<void>;
+  /** The user holds push-to-talk on this device: whatever sounds stops and nothing starts until the last piece.
+   *  `voice` is the bot's voice choice; the mode opens a provider's listening for `utterance` (`voices.listen`). */
+  listenStart(args: { bot: string; utterance: string; format: "pcm16-16k" | "opus"; voice: { provider: string; voice: string; model?: string } }): Promise<void>;
+  /** One push-to-talk piece; the mode feeds it on. On the last (`final`) it answers what the provider heard. */
+  listenPiece(args: { bot: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ text?: string }>;
+  /** A push-to-talk utterance ended without its last piece (the app went away): resume. */
+  listenEnd(args: { bot: string; utterance: string }): Promise<void>;
+  /** A plugin plays sound as a bot's voice (`audio.play`): its ticket, to play in its turn (`speech.play`). */
+  offer(args: { ticket: string; bot: string; from: string }): Promise<void>;
+}
+
 export interface AudioApi {
   play(audio: { format: "pcm16-24k" | "mp3" | "opus"; data: Uint8Array | AsyncIterable<Uint8Array> }, opts?: { bot?: string }): Promise<{ stop(): void; done: Promise<void> }>;
   onRecording(listener: (chunk: { utterance: string; format: "pcm16-16k" | "opus"; data: Uint8Array; final: boolean }) => void): Unsubscribe;
@@ -605,9 +876,15 @@ export interface AudioApi {
 // The object
 // -------------------------------------------------------------------------------------------------
 
+/** Members the catalog lists that no side serves yet (`ApiCallInfo.notYet` in `catalogs/api-calls.ts`): typed absent,
+ *  so calling one is a type error, and the core refuses it with why ("isn't available yet"). The area's own interface
+ *  keeps their shape for when they are served. */
+export type NotYet<T, K extends keyof T = keyof T> = Omit<T, K> & { readonly [P in K]?: never };
+
 export interface PluginApi {
   readonly plugin: PluginSelf;
   readonly points: PointsApi;
+  /** Its own tree's commands, and another plugin's with `call:<its top-level id>` (§5.4). */
   readonly commands: CommandsApi;
   /** In components: their own host half. */
   readonly host: HostApi;
@@ -617,7 +894,7 @@ export interface PluginApi {
   readonly net: NetApi;
   /** Only in a process of the plugin's own (§5.2). */
   readonly secrets?: SecretsApi;
-  /** Only in host halves. */
+  /** The `clover` process's per-computer keys: the plugin's own X25519 pairs, whose private half stays in the core. */
   readonly keys?: KeysApi;
   readonly settings: SettingsApi;
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
@@ -626,26 +903,47 @@ export interface PluginApi {
   /** `confirm`, with the card's id for a record that names it (lane I's ask: `PairingProof`'s `{ via: "code", card }`).
    *  A separate call, so `if (await confirm(...))` never meets an object, which is always true. */
   confirmCard?(text: string): Promise<{ allowed: boolean; card: string }>;
-  /** A string from the plugin's own keys, in the user's language (§5.5). */
+  /** A string from the plugin's own keys, in the user's language (§5.5). In components only: a host half's API
+   *  (`HostPluginApi`) has no `t`, and the core refuses it there. */
   t(key: string, params?: Record<string, string | number>): string;
 
   /** `conversation.read`, `conversation.post`: each gives its own members. */
   readonly conversation?: Partial<ConversationApi>;
-  readonly memory?: MemoryApi;
+  /** Its own bot's memory with no capability (a bot plugin); every bot's with `memory.read`. Read-only. */
+  readonly memory: MemoryApi;
   readonly bots?: BotsApi;
-  readonly routines?: RoutinesApi;
+  /** Its own bot's routines with no capability (a bot plugin); every bot's with `routines.read`. Read-only, but for
+   *  `fire`, a host half's own triggers. */
+  readonly routines: RoutinesApi;
   /** `computers.read`, `computers.control`: each gives its own members. */
   readonly computers?: Partial<ComputersApi>;
   readonly devices?: DevicesApi;
+  /** Components only, with `approvals`: the cards that wait for this plugin's own bot, without their text. */
   readonly approvals?: ApprovalsApi;
   readonly files?: FilesApi;
-  readonly browser?: BrowserApi;
+  /** The bundled `clover` tree's host halves only (its Browser tool, for the session a tool call serves): `tabs`, `open`,
+   *  `close`, `navigate`, `screenshot`, `cdp` (the tool's own nine DevTools methods) and `caller`. `show`, `hide`,
+   *  `onCdpEvent` and `watch` are the person's panel's (a component's), not a host half's; a third-party plugin's `browser` isn't served. */
+  readonly browser?: NotYet<BrowserApi, "show" | "hide" | "onCdpEvent" | "watch">;
+  /** Components only. `shell.read`, `shell.control`: each gives its own members. */
+  readonly shell?: Partial<ShellApi>;
   /** Components only. */
   readonly terminal?: TerminalApi;
   /** Components only, of the bundled `clover` tree. */
   readonly plugins?: PluginsApi;
+  /** `usage.read`: the usage rows and plan readings, read-only. */
   readonly usage?: UsageApi;
-  readonly logs?: LogsApi;
+  /** Its own tree's logs with no capability; Clover's and every other plugin's with `logs.read`. */
+  readonly logs: LogsApi;
   readonly notify?: NotifyApi;
+  /** `audio`: the app plays its audio as a bot's speech (its own bot's unless `opts.bot`), and it hears push-to-talk. */
   readonly audio?: AudioApi;
+  /** The active voice mode's player door (§6.6); refused to every other plugin. */
+  readonly speech?: SpeechApi;
+  /** The voice providers' endpoints, for the active voice mode (§6.6). */
+  readonly voices?: VoicesApi;
+  /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
+  readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
+  /** Only the bundled `clover` tree's process: this computer's desktop notifications, for its notifier. */
+  readonly desktop?: DesktopNotifications;
 }

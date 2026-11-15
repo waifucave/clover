@@ -1,0 +1,36 @@
+{
+  "manifest": 1,
+  "id": "acceptance-island",
+  "name": "Acceptance island",
+  "description": "The stage row's island clause's own fixture: one host command, say, that says its text back. Nothing else: no server, no hook, no network. The row installs it, presses its OK card on the island's window and removes it.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "name": "say",
+        "description": "Says the text back",
+        "handler": "say",
+        "args": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

@@ -66,8 +66,12 @@ beforeAll(async () => {
 });
 
 // Every test file shares one document: take the gallery out of it, so no other file finds it.
-afterAll(() => {
+afterAll(async () => {
   Date.now = realNow;
+  // Unmount the gallery's React tree (its effects, among them the document's Escape listener of every dialog story, are removed with it), then let
+  // React run the cleanups it schedules; removing the node alone leaves them live for the next file (window.test.tsx's Escape test saw one).
+  (globalThis as { __galleryUnmount?: () => void }).__galleryUnmount?.();
+  await new Promise((r) => setTimeout(r, 50));
   root?.remove();
   document.documentElement.removeAttribute("data-theme");
   rmSync(outdir, { recursive: true, force: true });
@@ -80,7 +84,7 @@ describe("the gallery", () => {
     ...archiveStories, ...shellStories,
   ];
   /** The screens of a tab (a bot's, an agent's, a coding session's), not a page of its own. */
-  const PAGES = ["screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
+  const PAGES = ["screen/plugins-installed-1440", "screen/plugins-detail-1440", "screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
   const tabScreens = screenStories.filter((s) => !PAGES.includes(s.id));
 
   test("builds a page, a script and a stylesheet", () => {
@@ -101,8 +105,8 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(40);
-    expect(M2_SCREENS).toHaveLength(11);
+    expect(screenStories.length).toBe(42);
+    expect(M2_SCREENS).toHaveLength(13);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
     for (const story of tabScreens) {
@@ -118,8 +122,9 @@ describe("the gallery", () => {
     const frame = (id: string) => root!.querySelector(`[data-story="screen/${id}-1440"]`)!;
     expect(frame("terminal").querySelector(".cl-panel .cl-term")).toBeTruthy();
     expect(frame("diff").querySelector(".cl-panel .cl-diff")).toBeTruthy();
-    // The browser panel is lane L's: the host's placeholder holds its place.
-    expect(frame("browser").querySelector('.cl-panel [data-empty-view="browser"]')).toBeTruthy();
+    // No browser plugin is in this build: no toggle for it, and a browser panel asked for is not left open on the placeholder.
+    expect(frame("browser").querySelector(".cl-panel")).toBeNull();
+    expect(frame("browser").querySelector('.cl-panel-toggle[aria-label="Browser"]')).toBeNull();
     expect(frame("files").querySelector(".cl-panel .cl-files")).toBeTruthy();
     expect(frame("two-panels").querySelectorAll(".cl-panel__view")).toHaveLength(2);
     expect(frame("code").querySelector(".cl-window__side .cl-session")).toBeTruthy();
@@ -147,14 +152,14 @@ describe("the gallery", () => {
       if (PAGES.includes(story.id)) {
         expect([story.id, kind]).toEqual([story.id, undefined]);
       } else if (kind === "bot") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details", "Browser"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details"]]);
         expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
         // The slim column, if open, has nothing about a folder.
         expect([story.id, frame.querySelector('.cl-session[data-kind="coding"]')]).toEqual([story.id, null]);
       } else if (kind === "agent") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Browser"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session"]]);
       } else {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Browser", "Files"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Files"]]);
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
@@ -222,8 +227,11 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
   test("each page fills `main` from its own part", () => {
     expect(frame("plugin-index").querySelector(".cl-window__content .cl-plugin-index .cl-plugin-index__result")).toBeTruthy();
     expect(frame("plugin-index-for-panel").querySelector(".cl-plugin-index__looking")?.textContent).toContain("the terminal panel");
+    // The Plugins page: what is installed, by group, and one opened.
+    expect([...frame("plugins-installed").querySelectorAll(".cl-plugin-index__subhead")].map((h) => h.textContent)).toContain("On");
+    expect(frame("plugins-detail").querySelector(".cl-plugin-index__detail .cl-plugin-index__title")?.textContent).toBe("Alpha");
     expect(frame("bot-editor").querySelector(".cl-window__content .cl-bot-editor__title")?.textContent).toBe("Edit Alpha");
-    expect(frame("bot-editor").querySelectorAll(".cl-bot-editor__avatar")).toHaveLength(4);
+    expect(frame("bot-editor").querySelectorAll(".cl-avatar-section__avatar")).toHaveLength(4);
     expect(frame("archive").querySelectorAll(".cl-archive__session")).toHaveLength(5);
     // The old session reads through the conversation part, its approval as a note.
     const old = frame("archive-session").querySelector(".cl-archive__transcript .cl-conv")!;
@@ -235,7 +243,8 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     const plugins = frame("settings-plugins").querySelector(".cl-window__dialog .cl-settings")!;
     expect(plugins.textContent).toContain("Waits for your OK");
     expect(plugins.textContent).toContain("Stopped after three crashes in two minutes");
-    expect(plugins.textContent).toContain("Reaches api.weather.example");
+    // What each may do is the Plugins page's (one plugin opened), not Settings' list.
+    expect(plugins.textContent).toContain("Details");
     const levels = [...frame("settings-levels").querySelectorAll(".cl-window__dialog select")].map((s) => (s as HTMLSelectElement).value);
     expect(levels).toEqual(["ask-risky", "ask", "automatic"]);
     const devices = frame("settings-devices").querySelector(".cl-window__dialog .cl-settings")!;

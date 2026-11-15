@@ -110,7 +110,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/deepseek-v4-pro",
@@ -185,7 +186,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "qwen-cloud/glm-5.2",
@@ -272,7 +274,8 @@
         }
       },
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qwen-cloud/glm-5.2-fast-preview",
@@ -336,7 +339,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "glm-5.2-fast-preview",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "qwen-cloud/kimi-k2.7-code",
@@ -418,7 +422,8 @@
         }
       },
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/qwen3.5-122b-a10b",
@@ -499,7 +504,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-122b-a10b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/qwen3.5-397b-a17b",
@@ -580,7 +586,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/qwen3.5-plus-2026-04-20",
@@ -663,7 +670,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-plus-2026-04-20",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/qwen3.6-27b",
@@ -744,7 +752,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "qwen-cloud/qwen3.6-35b-a3b",
@@ -825,7 +834,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-35b-a3b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "qwen-cloud/qwen3.6-plus",
@@ -931,7 +941,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/qwen3.7-flash",
@@ -1062,7 +1073,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.7-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "qwen-cloud/qwen3.7-max-2026-06-08",
@@ -1168,7 +1180,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.7-max-2026-06-08",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "qwen-cloud/qwen3.7-plus",
@@ -1274,7 +1287,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.7-plus",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "qwen-cloud/qwen3.8-2.4t-a95b",
@@ -1375,7 +1389,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.8-2.4t-a95b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "qwen-cloud/qwen3.8-flash",
@@ -1499,7 +1514,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.8-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "qwen-cloud/qwen3.8-max",
@@ -1610,7 +1626,8 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     }
   ]
 }

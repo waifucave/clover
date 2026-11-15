@@ -1,8 +1,8 @@
 // D-M3 on the bot side: the `Routine` tool writes a file the engine runs in a side thread whose result posts into the
 // bot's conversation; the routine methods; webhooks through the ingress; sessions' ends reach lane J.
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { CLOVER_ERR, RoutineResultEvent, SESSIONS_METHODS as M, type Caller } from "@waifucave/clover-protocol";
 import { projectRecords } from "../../sessions/wire";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -129,6 +129,159 @@ describe("the Routine tool and the engine on the bot side", () => {
     await b.host.stop("s_code");
     await b.host.stop("s_code");
     expect(ended).toEqual(["s_code"]);
+    await b.shutdown();
+  });
+});
+
+describe("webhook triggers where none can work (no active webhook trigger or ingress in the registry)", () => {
+  /** A registry with an active webhook trigger type (clover/trigger-webhook's) and an active ingress only as asked. */
+  const registryWith = (o: { trigger?: boolean; ingress?: boolean }) => ({
+    entries: (point: string) => (point === "triggers" && o.trigger ? [{ pluginId: "clover/trigger-webhook", entryId: "webhook", state: "active", value: { type: "webhook" } }]
+      : point === "webhook.ingress" && o.ingress ? [{ pluginId: "clover/forwarder", entryId: "waifucave", state: "active", value: { handler: "ingress" } }] : []),
+  }) as never;
+  const noIngress = (trigger = false) => registryWith({ trigger });
+  const hostWith = (calls: string[]) => {
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    host.define("clover/forwarder", { ingress: { register: async () => (calls.push("register"), { url: "https://hooks.waifucave.com/x" }) } } as never);
+    return host;
+  };
+
+  test("the Routine tool refuses a webhook up front: no file, no key minted, nothing registered, and it says a schedule works", async () => {
+    const calls: string[] = [];
+    const secrets = new MemorySecretStore();
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
+      routines: { secrets, watchFiles: false, ingress: { registry: noIngress(true), host: hostWith(calls), poll: false } },
+    });
+    const routine = b.side.tools("b_alpha").find((t) => t.name === "Routine")!;
+    for (const input of [{ webhook: true }, { webhook: true, schedule: "every 1h" }]) {
+      const r = await routine.run({ name: "Deploys", instructions: "Check the deploy.", ...input });
+      expect(r).toEqual({ isError: true, text: "Webhook triggers aren't available in this build, so nothing was created. It can run on a schedule instead: call Routine again with a `schedule` and without `webhook`." });
+    }
+    expect(existsSync(routineFilePath(b.home, "alpha", "deploys"))).toBe(false);
+    expect(b.side.routines!.list("alpha")).toEqual([]);
+    expect(await secrets.list()).toEqual([]);
+    expect(calls).toEqual([]);
+    // A schedule alone still makes one.
+    expect((await routine.run({ name: "Deploys", instructions: "Check the deploy.", schedule: "every 1h" })).isError).toBe(false);
+    await b.shutdown();
+  });
+
+  test("an active ingress without an active webhook trigger type (clover/trigger-webhook listed as not available) refuses the same way", async () => {
+    const calls: string[] = [];
+    const secrets = new MemorySecretStore();
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
+      routines: { secrets, watchFiles: false, triggers: registryWith({ ingress: true }), ingress: { registry: registryWith({ ingress: true }), host: hostWith(calls), poll: false } },
+    });
+    const r = await b.side.tools("b_alpha").find((t) => t.name === "Routine")!.run({ name: "Deploys", instructions: "Check the deploy.", webhook: true });
+    expect(r.isError).toBe(true);
+    expect(r.text).toStartWith("Webhook triggers aren't available in this build, so nothing was created.");
+    expect([existsSync(routineFilePath(b.home, "alpha", "deploys")), await secrets.list(), calls]).toEqual([false, [], []]);
+    await b.shutdown();
+  });
+
+  test("a webhook that is available but fails to register: the routine was created (its file is there), and the bot is told it has no URL yet", async () => {
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    host.define("clover/forwarder", { ingress: { register: async () => { throw new Error("the forwarder is offline"); } } } as never);
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
+      routines: { secrets: new MemorySecretStore(), watchFiles: false, triggers: registryWith({ trigger: true, ingress: true }), ingress: { registry: registryWith({ trigger: true, ingress: true }), host, poll: false } },
+    });
+    const r = await b.side.tools("b_alpha").find((t) => t.name === "Routine")!.run({ name: "Deploys", instructions: "Check the deploy.", webhook: true, schedule: "every 1h" });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/^Created the routine r_[a-z0-9]+ in home\/Studio\/\.clover\/routines\/alpha\/deploys\.md, run by Studio\. It has no webhook URL yet \(.*the forwarder is offline.*\); it runs on its schedule meanwhile\.$/);
+    expect(r.text).not.toContain("Settings");
+    expect(existsSync(routineFilePath(b.home, "alpha", "deploys"))).toBe(true);
+    await b.shutdown();
+  });
+
+  test("available, then not, then again: registrations let go with one log line, an inbound webhook refused and nothing fired, then the same key registered again", async () => {
+    const live = { trigger: true, ingress: true };
+    const registry = { entries: (point: string) => (registryWith(live) as { entries(p: string): unknown[] }).entries(point) } as never;
+    const calls: { method: string; args: { routine?: string; keyHash?: string } }[] = [];
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    host.define("clover/forwarder", {
+      ingress: {
+        register: async (a: { routine: string; keyHash: string }) => (calls.push({ method: "register", args: a }), { url: `https://hooks.waifucave.com/t/${a.routine}` }),
+        unregister: async (a: { routine: string }) => (calls.push({ method: "unregister", args: a }), {}),
+      },
+    } as never);
+    const secrets = new MemorySecretStore();
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
+      routines: { secrets, watchFiles: false, triggers: registry, ingress: { registry, host, poll: false } },
+    });
+    const r = await b.side.tools("b_alpha").find((t) => t.name === "Routine")!.run({ name: "Deploys", instructions: "Check the deploy.", webhook: true, schedule: "every 1h" });
+    const id = r.text.match(/routine (r_[a-z0-9]+)/)![1]!;
+    await b.side.ingress!.sync();
+    const ref = { owner: { kind: "core" as const }, name: `routine-webhook:${id}` };
+    const key = (await secrets.get(ref))!.value.reveal();
+    const first = calls.filter((c) => c.method === "register").map((c) => c.args.keyHash);
+    expect(first.length).toBeGreaterThan(0);
+
+    // Unavailable (the trigger plugin listed as not available): let go, said once, however many rounds.
+    live.trigger = false;
+    await b.side.ingress!.sync();
+    await b.side.ingress!.sync();
+    await b.side.ingress!.sync();
+    expect(b.warnings.filter((w) => /webhook/i.test(w))).toEqual(["webhook triggers aren't available any more (no active webhook trigger or ingress here): letting go of the webhooks of 1 routine; their keys are kept"]);
+    expect(calls.filter((c) => c.method === "unregister").map((c) => c.args.routine)).toEqual([id]);
+    // An inbound webhook now is refused, by either door, and fires nothing.
+    expect(await b.side.routines!.deliverWebhook({ ingress: "clover/forwarder", id: "d1", routine: id, receivedAt: Date.now(), body: "{}" })).toBe("refused");
+    expect(await b.side.routines!.receiveWebhook({ routine: id, key, body: "{}" })).toBe("refused");
+    await flush();
+    expect(b.host.list({ kind: "side-thread" })).toEqual([]);
+    expect((await secrets.get(ref))!.value.reveal()).toBe(key);
+
+    // Available again: registered again under the same key, unchanged.
+    live.trigger = true;
+    await b.side.ingress!.sync();
+    const all = calls.filter((c) => c.method === "register").map((c) => c.args.keyHash);
+    expect(all.length).toBe(first.length + 1);
+    expect(all.at(-1)).toBe(first[0]);
+    expect((await secrets.get(ref))!.value.reveal()).toBe(key);
+    expect(b.warnings.filter((w) => /webhook/i.test(w)).length).toBe(1);
+    await b.shutdown();
+  });
+
+  test("a webhook trigger entry outside the bundled tree doesn't make webhooks available", async () => {
+    const registry = {
+      entries: (point: string) => (point === "triggers" ? [{ pluginId: "pack/hooks", entryId: "webhook", state: "active", value: { type: "webhook" } }]
+        : point === "webhook.ingress" ? [{ pluginId: "clover/forwarder", entryId: "waifucave", state: "active", value: { handler: "ingress" } }] : []),
+    } as never;
+    const b = await boot({
+      home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
+      routines: { secrets: new MemorySecretStore(), watchFiles: false, triggers: registry, ingress: { registry, host: hostWith([]), poll: false } },
+    });
+    expect(b.side.routines!.webhooksAvailable()).toBe(false);
+    const r = await b.side.tools("b_alpha").find((t) => t.name === "Routine")!.run({ name: "Deploys", instructions: "Check the deploy.", webhook: true });
+    expect(r.isError).toBe(true);
+    await b.shutdown();
+  });
+
+  test("a routine file from an earlier build with a webhook lists it with one plain note, keeps its key, and nothing retries or warns", async () => {
+    const calls: string[] = [];
+    const secrets = new MemorySecretStore();
+    const home = tempDir();
+    const b = await boot({
+      home, plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs, clock: new FakeClock(),
+      routines: { secrets, watchFiles: false, ingress: { registry: noIngress(), host: hostWith(calls), poll: false } },
+    });
+    const path = routineFilePath(home, "alpha", "deploys");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "---\nid: r_deploy01\nname: Deploys\ntriggers:\n  - schedule: \"every 1h\"\n  - webhook: true\n---\nCheck the deploy.\n");
+    const ref = { owner: { kind: "core" as const }, name: "routine-webhook:r_deploy01" };
+    await secrets.set(ref, "kept-key");
+    await b.side.routines!.rescan();
+    const [view] = b.side.routines!.list("alpha");
+    expect(view!.triggers).toEqual([{ type: "schedule", summary: "every 1h" }, { type: "webhook", summary: "not available in this build: it doesn't run from a webhook, and its key is kept" }]);
+    await b.side.ingress!.sync();
+    await b.side.ingress!.sync();
+    expect(b.warnings.filter((w) => /webhook/i.test(w))).toEqual([]);
+    await expect(b.side.routines!.webhook("r_deploy01")).rejects.toThrow("Webhook triggers aren't available in this build, so r_deploy01 has no webhook URL");
+    expect((await secrets.get(ref))?.value.reveal()).toBe("kept-key");
+    expect(calls).toEqual([]);
     await b.shutdown();
   });
 });

@@ -8,6 +8,25 @@ export interface LoginConfig {
   scope: string;
   timeoutMs?: number;          // default 5 min
   openBrowser: (url: string) => Promise<void>;
+  /** How the code is exchanged at `tokenUrl` (a third party's sign-in: its pinned fetch, a timeout, no redirect). */
+  exchange?: ExchangeOptions;
+}
+
+/** How a token request is sent: through `fetch` (default: the platform's), given up after `timeoutMs` (default: none),
+ *  and with `noRedirect` a redirect answer is taken as a failure, never followed to another host. */
+export interface ExchangeOptions {
+  fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  timeoutMs?: number;
+  noRedirect?: boolean;
+}
+
+/** A token endpoint's refusal: its HTTP status and, when its body is OAuth's JSON error, the error code
+ *  (`invalid_grant`). The message keeps its old shape ("token exchange failed: HTTP <status>…"). */
+export class TokenExchangeError extends Error {
+  constructor(readonly status: number, readonly oauthError: string | undefined, snippet: string) {
+    super(`token exchange failed: HTTP ${status}${snippet ? ` — ${snippet}` : ""}`);
+    this.name = "TokenExchangeError";
+  }
 }
 
 export interface OAuthTokens {
@@ -31,16 +50,23 @@ export function decodeAccountId(idToken: string): string | null {
   } catch { return null; }
 }
 
-async function exchange(tokenUrl: string, params: Record<string, string>): Promise<OAuthTokens> {
-  const res = await fetch(tokenUrl, {
+async function exchange(tokenUrl: string, params: Record<string, string>, o: ExchangeOptions = {}): Promise<OAuthTokens> {
+  const send = o.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
+  const res = await send(tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params).toString(),
+    ...(o.timeoutMs !== undefined ? { signal: AbortSignal.timeout(o.timeoutMs) } : {}),
+    ...(o.noRedirect === true ? { redirect: "manual" as const } : {}),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    const snippet = body.slice(0, 200);
-    throw new Error(`token exchange failed: HTTP ${res.status}${snippet ? ` — ${snippet}` : ""}`);
+    let oauthError: string | undefined;
+    try {
+      const e = (JSON.parse(body) as { error?: unknown }).error;
+      if (typeof e === "string" && /^[\x20-\x7e]{1,64}$/.test(e)) oauthError = e;
+    } catch { /* not OAuth's JSON */ }
+    throw new TokenExchangeError(res.status, oauthError, body.slice(0, 200));
   }
   const j = (await res.json()) as { access_token: string; refresh_token?: string; id_token?: string; expires_in?: number };
   return {
@@ -52,8 +78,8 @@ async function exchange(tokenUrl: string, params: Record<string, string>): Promi
   };
 }
 
-export function refreshTokens(tokenUrl: string, clientId: string, refreshToken: string): Promise<OAuthTokens> {
-  return exchange(tokenUrl, { grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken });
+export function refreshTokens(tokenUrl: string, clientId: string, refreshToken: string, o?: ExchangeOptions): Promise<OAuthTokens> {
+  return exchange(tokenUrl, { grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken }, o);
 }
 
 export async function runLoginFlow(cfg: LoginConfig): Promise<OAuthTokens> {
@@ -111,7 +137,7 @@ export async function runLoginFlow(cfg: LoginConfig): Promise<OAuthTokens> {
       code,
       redirect_uri: redirectUri,
       code_verifier: verifier,
-    });
+    }, cfg.exchange);
   } finally {
     clearTimeout(timeout);
     server.stop(true);

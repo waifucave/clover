@@ -3,6 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PushedSpeech } from "@waifucave/clover-plugin-vrm/lipsync";
+import type { FigureBox, FigureCue, FigureNames } from "@waifucave/clover-plugin-vrm/control";
 import { placeholderFiles } from "../src/placeholder/model";
 import { Live2dAvatar, VIEW_OPTIONS, type AvatarFrames, type Live2dView, type ViewFactory } from "../src/ui/Live2dAvatar";
 import { Live2dAvatarEntry } from "../src/ui/entry";
@@ -45,6 +46,7 @@ function fakeView(hasLipSync = true) {
         };
       },
       advance: (s) => void log.push(`advance ${s.toFixed(3)}`),
+      figureRect: () => ({ left: 10, top: 20, right: 110, bottom: 220 }),
       resize: () => {},
       dispose: () => void log.push("dispose"),
     };
@@ -82,6 +84,61 @@ function manualFrames() {
 
 const settle = () => act(async () => {});
 
+describe("Live2dAvatar with the app's avatar control", () => {
+  function control() {
+    const listeners = new Set<(c: FigureCue) => void>();
+    const names: (FigureNames | undefined)[] = [];
+    const boxes: (FigureBox | undefined)[] = [];
+    return {
+      listeners, names, boxes,
+      c: { onCue: (l: (c: FigureCue) => void) => { listeners.add(l); return () => listeners.delete(l); }, setCatalogue: (n: FigureNames | undefined) => void names.push(n), setBox: (b: FigureBox | undefined) => void boxes.push(b) },
+    };
+  }
+
+  test("it publishes the model's names and the figure's box once shown, plays a cue, and takes both back when it goes", async () => {
+    const v = fakeView();
+    const k = control();
+    const { unmount } = render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={manualFrames().frames} control={k.c} />);
+    await settle();
+    expect(k.names.at(-1)).toMatchObject({ expressions: expect.any(Array), motions: expect.any(Array), outfits: expect.any(Array) });
+    expect(k.listeners.size).toBe(1);
+    // The model's rectangle, in the figure's own pixels (the element sits at 0, 0 here), with portrait anchors from it.
+    expect(k.boxes.at(-1)).toMatchObject({ figure: { x: 10, y: 20, width: 100, height: 200 }, anchors: { headTop: { x: 60, y: 20 }, face: { x: 60, y: 60 } } });
+    k.listeners.forEach((l) => l({ type: "lookAt", point: { x: 0, y: 0 } }));
+    unmount();
+    expect(k.listeners.size).toBe(0);
+    expect(k.names.at(-1)).toBeUndefined();
+    expect(k.boxes.at(-1)).toBeUndefined();
+  });
+
+  test("it frames the figure by the stage's crop (its CSS variables) and by nothing when the stage asks for none", async () => {
+    const asked: (unknown)[] = [];
+    const v = fakeView();
+    const create: ViewFactory = (c, o) => { const view = v.create(c, o); view.frame = (crop) => { asked.push(crop); return true; }; return view; };
+    const sheet = document.createElement("style");
+    sheet.textContent = ".clvl-avatar { --clover-avatar-crop: 0.56; --clover-avatar-headroom: 0.12; }";
+    document.head.append(sheet);
+    const { unmount } = render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={create} frames={manualFrames().frames} />);
+    await settle();
+    expect(asked.at(-1)).toEqual({ show: 0.56, headroom: 0.12 });
+    // A framing that moved is drawn again, once.
+    expect(v.log.filter((l) => l === "advance 0.000").length).toBeGreaterThan(1);
+    unmount();
+    sheet.remove();
+    asked.length = 0;
+    render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={create} frames={manualFrames().frames} />);
+    await settle();
+    expect(asked.at(-1)).toBeNull();
+  });
+
+  test("with no control it just lives: nothing is published", async () => {
+    const v = fakeView();
+    render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={manualFrames().frames} />);
+    await settle();
+    expect(v.log).toContain("advance 0.000");
+  });
+});
+
 describe("Live2dAvatar", () => {
   test("checks the model, then shows only its checked files, with the caps' options: no pointer, no own loop, a texture budget", async () => {
     const v = fakeView();
@@ -92,7 +149,7 @@ describe("Live2dAvatar", () => {
     expect(v.loaded().sort()).toEqual(["alpha.moc3", "alpha.model3.json", "alpha.png"]);
     expect(v.options()).toEqual(VIEW_OPTIONS);
     expect(VIEW_OPTIONS).toMatchObject({ autoStart: false, look: "off", zoom: false, pan: false, textureBudget: 256, background: "transparent" });
-    expect(v.effects.get("look")).toBe(false);
+    expect(v.effects.get("look")).toBe(true); // the view follows no pointer (look: "off"); she looks only where the stage aims her
     expect(v.effects.get("breath")).toBe(true);
     // The first picture, mouth shut, whatever a motion would open it to: the mouth goes through the live input.
     expect(v.live.source).not.toBeNull();
@@ -112,7 +169,7 @@ describe("Live2dAvatar", () => {
     expect(errors).toEqual(["The avatar's textures can't be drawn here. | texture 0 is not a PNG"]);
   });
 
-  test("the mouth follows the speech feed, at most 60 frames a second while it speaks and 30 at rest", async () => {
+  test("the mouth follows the speech feed, at most 60 frames a second while it speaks and at rest", async () => {
     const v = fakeView();
     const clock = { t: 0 };
     const feed = new PushedSpeech(() => clock.t);
@@ -120,11 +177,11 @@ describe("Live2dAvatar", () => {
     render(<Live2dAvatar src={`${URL_BASE}alpha.model3.json`} name="Alpha" fetcher={serve} createView={v.create} frames={f.frames} speech={feed} />);
     await settle();
     const draws = () => v.log.filter((l) => l.startsWith("advance")).length;
-    // Quiet: 30 a second.
+    // Quiet: every one of a 60 Hz display's frames while someone is about, never two in one.
     const before = draws();
     for (let i = 0; i < 60; i++) f.step(1000 / 60);
-    expect(draws() - before).toBeGreaterThanOrEqual(29);
-    expect(draws() - before).toBeLessThanOrEqual(31);
+    expect(draws() - before).toBeGreaterThanOrEqual(58);
+    expect(draws() - before).toBeLessThanOrEqual(61);
     // A bright, loud vowel for the next second.
     clock.t = 10;
     feed.push(Array.from({ length: 200 }, (_, i) => ({ t: 10 + i * 0.005, rms: 0.3, centroid: 3000 })));
@@ -213,5 +270,14 @@ describe("the entry the manifest names", () => {
   test("takes the spot's props: the bot's name and its file", () => {
     render(<Live2dAvatarEntry props={{ bot: { id: "alpha", name: "Alpha" }, file: "https://plugins.test/none.model3.json", format: "live2d", speaking: false }} />);
     expect(screen.getByRole("status").textContent).toBe("Getting Alpha ready…");
+  });
+});
+
+describe("Live2dAvatar pace", () => {
+  test("the rest rates: never under 30 a second (lower reads as a stutter), never over 60, calm no faster than about", async () => {
+    const { AVATAR_FPS, CALM_AFTER_MS } = await import("../src/ui/Live2dAvatar");
+    for (const rate of Object.values(AVATAR_FPS)) { expect(rate).toBeGreaterThanOrEqual(30); expect(rate).toBeLessThanOrEqual(60); }
+    expect(AVATAR_FPS.calm).toBeLessThanOrEqual(AVATAR_FPS.quiet);
+    expect(CALM_AFTER_MS).toBeGreaterThanOrEqual(5000);
   });
 });

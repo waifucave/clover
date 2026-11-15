@@ -97,7 +97,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3-nano-omni-30b-tee",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "weak"
     },
     {
       "key": "chutes/Qwen/Qwen3-235B-A22B-Thinking-2507-TEE",
@@ -186,7 +187,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-235b-a22b-thinking-2507-tee",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "chutes/Qwen/Qwen3-32B-TEE",
@@ -275,7 +277,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-32b-tee",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "chutes/Qwen/Qwen3.5-397B-A17B-TEE",
@@ -365,7 +368,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-397b-a17b-tee",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "chutes/Qwen/Qwen3.6-27B-TEE",
@@ -455,7 +459,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-27b-tee",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "chutes/Qwen/Qwen3.8-27B-TEE",
@@ -545,7 +550,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-27b-tee",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "chutes/Qwen2.5-72B-Instruct",
@@ -591,7 +597,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen2.5-72b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "chutes/deepseek-ai/DeepSeek-V3.2-TEE",
@@ -680,7 +687,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3.2-tee",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "chutes/deepseek-ai/DeepSeek-V4-Flash-0731-TEE",
@@ -769,7 +777,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash-0731-tee",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "chutes/google/gemma-4-31B-turbo-TEE",
@@ -859,7 +868,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-turbo-tee",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "chutes/moonshotai/Kimi-K2.6-TEE",
@@ -950,7 +960,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.6-tee",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "chutes/moonshotai/Kimi-K3-TEE",
@@ -1041,7 +1052,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3-tee",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "chutes/unsloth/Mistral-Nemo-Instruct-2407-TEE",
@@ -1105,7 +1117,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "unsloth/mistral-nemo-instruct-2407-tee",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "chutes/zai-org/GLM-5.1-TEE",
@@ -1194,7 +1207,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.1-tee",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "chutes/zai-org/GLM-5.2-TEE",
@@ -1283,7 +1297,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.2-tee",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     }
   ]
 }

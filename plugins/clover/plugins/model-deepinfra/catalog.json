@@ -116,7 +116,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "bytedance/seed-1.8",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/ByteDance/Seed-2.0-code",
@@ -199,7 +200,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "bytedance/seed-2.0-code",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/ByteDance/Seed-2.0-mini",
@@ -282,7 +284,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "bytedance/seed-2.0-mini",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/ByteDance/Seed-2.0-pro",
@@ -365,7 +368,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "bytedance/seed-2.0-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/Gryphe/MythoMax-L2-13b",
@@ -446,7 +450,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gryphe/mythomax-l2-13b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/MiniMaxAI/MiniMax-M2.7-Turbo",
@@ -528,7 +533,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimaxai/minimax-m2.7-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/MiniMaxAI/MiniMax-M3",
@@ -619,7 +625,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimaxai/minimax-m3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/NousResearch/Hermes-3-Llama-3.1-405B",
@@ -700,7 +707,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nousresearch/hermes-3-llama-3.1-405b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/NousResearch/Hermes-3-Llama-3.1-70B",
@@ -781,7 +789,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nousresearch/hermes-3-llama-3.1-70b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen2.5-72B-Instruct",
@@ -862,7 +871,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen2.5-72b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-14B",
@@ -943,7 +953,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-14b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-235B-A22B-Instruct-2507",
@@ -1013,7 +1024,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-235b-a22b-instruct-2507",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-30B-A3B",
@@ -1094,7 +1106,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-30b-a3b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-32B",
@@ -1175,7 +1188,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-32b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
@@ -1264,7 +1278,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-coder-480b-a35b-instruct-turbo",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-Max",
@@ -1346,7 +1361,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-Max-Thinking",
@@ -1428,7 +1444,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-max-thinking",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-Next-80B-A3B-Instruct",
@@ -1509,7 +1526,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-next-80b-a3b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-VL-235B-A22B-Instruct",
@@ -1592,7 +1610,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-vl-235b-a22b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/Qwen/Qwen3-VL-30B-A3B-Instruct",
@@ -1674,7 +1693,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-vl-30b-a3b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.5-27B",
@@ -1764,7 +1784,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.5-35B-A3B",
@@ -1855,7 +1876,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-35b-a3b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.5-397B-A17B",
@@ -1946,7 +1968,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-397b-a17b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.5-9B",
@@ -2025,7 +2048,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.5-9b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.6-27B",
@@ -2115,7 +2139,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.6-35B-A3B",
@@ -2205,7 +2230,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.6-35b-a3b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.7-Max",
@@ -2287,7 +2313,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.7-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.8-2.4T-A95B",
@@ -2376,7 +2403,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-2.4t-a95b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.8-27B",
@@ -2460,7 +2488,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.8-Flash",
@@ -2549,7 +2578,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-flash",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Qwen/Qwen3.8-Max",
@@ -2631,7 +2661,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-max",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/Sao10K/L3-8B-Lunaris-v1-Turbo",
@@ -2712,7 +2743,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "sao10k/l3-8b-lunaris-v1-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/Sao10K/L3.1-70B-Euryale-v2.2",
@@ -2793,7 +2825,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "sao10k/l3.1-70b-euryale-v2.2",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/XiaomiMiMo/MiMo-V2.6-Flash",
@@ -2878,7 +2911,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "xiaomimimo/mimo-v2.6-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/XiaomiMiMo/MiMo-V2.6-Pro",
@@ -2963,7 +2997,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "xiaomimimo/mimo-v2.6-pro",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/anthropic/claude-fable-5",
@@ -3045,7 +3080,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-fable-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/anthropic/claude-haiku-4-5",
@@ -3127,7 +3163,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-haiku-4.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/anthropic/claude-opus-4-7",
@@ -3209,7 +3246,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.7",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/anthropic/claude-opus-4-8",
@@ -3291,7 +3329,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.8",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/anthropic/claude-opus-5",
@@ -3373,7 +3412,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/anthropic/claude-opus-5-5",
@@ -3456,7 +3496,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-5.5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/anthropic/claude-sonnet-4-6",
@@ -3538,7 +3579,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/anthropic/claude-sonnet-5",
@@ -3620,7 +3662,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-R1-0528",
@@ -3709,7 +3752,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-r1-0528",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V3",
@@ -3790,7 +3834,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V3.1",
@@ -3879,7 +3924,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3.1",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V3.2",
@@ -3961,7 +4007,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3.2",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V4-Flash",
@@ -4050,7 +4097,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
@@ -4139,7 +4187,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash-0731",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
@@ -4229,7 +4278,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-flash-vision-exp",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V4-Pro",
@@ -4311,7 +4361,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V4-Pro-0813",
@@ -4393,7 +4444,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro-0813",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/deepseek-ai/DeepSeek-V4.1-Flash",
@@ -4483,7 +4535,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4.1-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/google/gemini-2.5-flash",
@@ -4566,7 +4619,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemini-2.5-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/google/gemini-2.5-pro",
@@ -4649,7 +4703,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemini-2.5-pro",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/google/gemini-3.1-flash-lite",
@@ -4732,7 +4787,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemini-3.1-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemini-3.1-pro",
@@ -4815,7 +4871,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemini-3.1-pro",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/google/gemini-3.5-flash",
@@ -4898,7 +4955,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemini-3.5-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/google/gemini-3.7-flash",
@@ -4981,7 +5039,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemini-3.7-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/google/gemma-3-12b-it",
@@ -5063,7 +5122,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-3-12b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemma-3-27b-it",
@@ -5145,7 +5205,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-3-27b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemma-3-4b-it",
@@ -5227,7 +5288,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-3-4b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemma-4-26B-A4B-it",
@@ -5309,7 +5371,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-26b-a4b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemma-4-31B-it",
@@ -5393,7 +5456,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemma-4-31B-it-Ultra",
@@ -5476,7 +5540,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-it-ultra",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/google/gemma-4-31B-it-turbo",
@@ -5567,7 +5632,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-it-turbo",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/ibm-granite/granite-4.2-30b",
@@ -5642,7 +5708,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ibm-granite/granite-4.2-30b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/ibm-granite/granite-4.2-3b",
@@ -5717,7 +5784,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ibm-granite/granite-4.2-3b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/ibm-granite/granite-4.2-8b",
@@ -5792,7 +5860,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "ibm-granite/granite-4.2-8b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/inclusionAI/Ling-3.0-flash",
@@ -5881,7 +5950,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "inclusionai/ling-3.0-flash",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/inclusionAI/Ling-3.0-flash-Fin",
@@ -5963,7 +6033,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "inclusionai/ling-3.0-flash-fin",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/inclusionAI/Ling-3.0-flash-VL",
@@ -6054,7 +6125,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "inclusionai/ling-3.0-flash-vl",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo",
@@ -6135,7 +6207,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "llama-3.3-70b-instruct-turbo",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/meta-llama/Llama-4-Scout-17B-16E-Instruct",
@@ -6217,7 +6290,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "llama-4-scout-17b-16e-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
@@ -6298,7 +6372,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "meta-llama-3.1-70b-instruct-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
@@ -6372,7 +6447,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "meta-llama-3.1-8b-instruct-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/meta-models/Muse-Glimmer-30B",
@@ -6455,7 +6531,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "meta-models/muse-glimmer-30b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/microsoft/phi-4",
@@ -6536,7 +6613,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "microsoft/phi-4",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/mistralai/Mistral-Nemo-Instruct-2407",
@@ -6617,7 +6695,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "mistral-nemo-instruct-2407",
-      "modelFamily": "mistral"
+      "modelFamily": "mistral",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/mistralai/Mistral-Small-24B-Instruct-2501",
@@ -6698,7 +6777,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "mistral-small-24b-instruct-2501",
-      "modelFamily": "mistral"
+      "modelFamily": "mistral",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
@@ -6780,7 +6860,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "mistral-small-3.2-24b-instruct-2506",
-      "modelFamily": "mistral"
+      "modelFamily": "mistral",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/moonshotai/Kimi-K2.6",
@@ -6863,7 +6944,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/moonshotai/Kimi-K3",
@@ -6935,7 +7017,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
@@ -7016,7 +7099,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nvidia-nemotron-3-super-120b-a12b",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B",
@@ -7105,7 +7189,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nvidia-nemotron-3-ultra-550b-a55b",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/nvidia/NVIDIA-Nemotron-3.5-Lightning",
@@ -7194,7 +7279,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nvidia-nemotron-3.5-lightning",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/nvidia/Nemotron-3-Nano-30B-A3B",
@@ -7276,7 +7362,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3-nano-30b-a3b",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/openai/gpt-oss-120b",
@@ -7364,7 +7451,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/openai/gpt-oss-120b-Turbo",
@@ -7445,7 +7533,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b-turbo",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/openai/gpt-oss-120b-Ultra",
@@ -7526,7 +7615,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b-ultra",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/openai/gpt-oss-20b",
@@ -7614,7 +7704,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/tencent/Hy3",
@@ -7703,7 +7794,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "tencent/hy3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/tencent/Hy4-preview",
@@ -7785,7 +7877,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "tencent/hy4-preview",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/thinkingmachines/Inkling",
@@ -7876,7 +7969,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "thinkingmachines/inkling",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/thinkingmachines/Inkling-Small",
@@ -7967,7 +8061,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "thinkingmachines/inkling-small",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "deepinfra/zai-org/GLM-4.6",
@@ -8056,7 +8151,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-4.6",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/zai-org/GLM-4.7",
@@ -8145,7 +8241,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-4.7",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     },
     {
       "key": "deepinfra/zai-org/GLM-5.2",
@@ -8234,7 +8331,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/zai-org/GLM-5.3",
@@ -8323,7 +8421,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "deepinfra/zai-org/GLM-5.3-Flash",
@@ -8414,7 +8513,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

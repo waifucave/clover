@@ -36,7 +36,7 @@ async function answerFrom(from: { role: "app" | "cli"; testHarness?: true }, fra
 
 describe("a real build (this process: no test-build define)", () => {
   test("the role gate refuses card.list, card.get, card.frame and card.answer to the cli role", () => {
-    for (const m of ["card.list", "card.get", "card.frame", "card.answer"]) expect(gateCloverRequest("cli", USER_CLI, m)?.message).toContain(`the cli role may not call ${m}`);
+    for (const m of ["card.list", "card.get", "card.frame", "card.answer", "layer.token"]) expect(gateCloverRequest("cli", USER_CLI, m)?.message).toContain(`the cli role may not call ${m}`);
     expect(gateCloverRequest("app", { kind: "user", client: "app" }, "card.answer")).toBeNull();
   });
 
@@ -70,9 +70,10 @@ const CHILD = `
   };
   const gate = (role, caller, m) => gateCloverRequest(role, caller, m)?.message ?? null;
   const out = {
-    userCli: ["card.list", "card.get", "card.frame", "card.answer"].map((m) => gate("cli", ${JSON.stringify(USER_CLI)}, m)),
+    userCli: ["card.list", "card.get", "card.frame", "card.answer", "layer.token"].map((m) => gate("cli", ${JSON.stringify(USER_CLI)}, m)),
     sessionCli: gate("cli", ${JSON.stringify(SESSION)}, "card.answer"),
     sessionCliGet: gate("cli", ${JSON.stringify(SESSION)}, "card.get"),
+    sessionLayerToken: gate("cli", ${JSON.stringify(SESSION)}, "layer.token"),
     otherMethod: gate("cli", ${JSON.stringify(USER_CLI)}, "card.confirm"),
     harness: await answerFrom({ role: "cli", testHarness: true }),
     plainCli: (await answerFrom({ role: "cli" })).result,
@@ -86,10 +87,11 @@ describe("a test-marked build (a child under the test build's define)", () => {
   test("the harness's own cli connection may frame and answer; nothing else is relaxed, and every other check holds", () => {
     const r = spawnSync(process.execPath, ["--define", `__CLOVER_TEST_BUILD__="CLOVER-TEST-BUILD"`, "-e", CHILD], { encoding: "utf8", timeout: 60_000 });
     expect(r.status).toBe(0);
-    const out = JSON.parse(r.stdout) as { userCli: (string | null)[]; sessionCli: string | null; sessionCliGet: string | null; otherMethod: string | null; harness: { result: string; stale: string; logs: string[] }; plainCli: string; harnessWrongFrame: string; remoteMarked: string };
+    const out = JSON.parse(r.stdout) as { userCli: (string | null)[]; sessionCli: string | null; sessionCliGet: string | null; sessionLayerToken: string | null; otherMethod: string | null; harness: { result: string; stale: string; logs: string[] }; plainCli: string; harnessWrongFrame: string; remoteMarked: string };
     // The gate: the user's cli (the harness token, outside any session) may call the four (card.get only reads); a
     // session's may not, nor any other card method (card.confirm stays refused).
-    expect(out.userCli).toEqual([null, null, null, null]);
+    expect(out.userCli).toEqual([null, null, null, null, null]);
+    expect(out.sessionLayerToken).toContain("may not call layer.token");
     expect(out.sessionCli).toContain("may not call card.answer");
     expect(out.sessionCliGet).toContain("may not call card.get");
     expect(out.otherMethod).toContain("may not call card.confirm");

@@ -3,7 +3,10 @@
 // only its own words around them (the outcome). Nothing here may sit over a sealed frame or fade,
 // filter or shrink it, or the core stops counting clicks on it; the stylesheet test holds that line.
 // Each sealed part sits in an element of the view's own, which carries the layout; the parts get no
-// classes. A field the card doesn't have draws nothing, and its holder collapses.
+// classes. A field the card doesn't have draws nothing, and its holder collapses. A tool card reads as the
+// island's does: the app's composed line and preview (`summary`, `preview`) and what "Always allow" would
+// store, never the call's raw input (`detail`, the owner's rule: no card shows raw JSON); the other kinds
+// place their own fields.
 import type { ReactElement } from "react";
 import type { MessageContext } from "../context";
 import { IconCheck, IconClock, IconCross, IconDash, IconShield } from "../icons";
@@ -88,6 +91,7 @@ export function ApprovalMessage({ item }: { item: ApprovalItem; ctx: MessageCont
       </section>
     );
   }
+  const tool = (item.cardKind ?? "tool") === "tool";
   return (
     <section
       className="cl-conv-approval"
@@ -104,17 +108,26 @@ export function ApprovalMessage({ item }: { item: ApprovalItem; ctx: MessageCont
               <Card.Field name="title" />
             </div>
           </div>
-          <Slot name="source" />
-          <Slot name="what" />
-          <Slot name="host" />
-          <Slot name="command" />
-          <Slot name="paths" />
+          {tool ? (
+            <>
+              <Slot name="summary" />
+              <Slot name="preview" />
+            </>
+          ) : (
+            <>
+              <Slot name="source" />
+              <Slot name="what" />
+              <Slot name="host" />
+              <Slot name="command" />
+              <Slot name="paths" />
+            </>
+          )}
           <div className="cl-conv-approval__facts">
             <Slot name="computer" />
             <Slot name="risk" />
           </div>
           <Slot name="reason" />
-          <Slot name="detail" />
+          <Slot name="always" />
           <Slot name="expires" />
           <Buttons options={item.options} />
         </div>

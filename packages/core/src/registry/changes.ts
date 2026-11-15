@@ -8,7 +8,7 @@
 // * waits alone (`card-styling`) when it changes only how the tree styles approval cards (§5.5);
 // * applies at once (`applies`) otherwise: themes, layouts, CSS, Markdown, assets.
 import { posix } from "node:path";
-import { MANIFEST_FILE, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, pluginParts, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import { canonicalJson } from "@waifucave/clover-protocol";
 
 /** What a change since the OK does (the fake's `FakePluginInput.change`). */
@@ -32,6 +32,21 @@ export interface PluginFingerprint {
   reaches: string;
   /** Some host comes from its settings. */
   dynamicHosts: boolean;
+  /** How it is named to the user, as canonical JSON: its display name and its author (the publisher). An update that
+   *  changes either asks again (the controller's ruling), so it can't rename itself to look like another plugin.
+   *  Absent in snapshots kept before it: read as changed. */
+  label?: string;
+  /** Its agent backends, each with what it starts (id, protocol, command, args, handler), as canonical JSON: adding or
+   *  changing one asks again on an update. Absent in older snapshots: read as changed. */
+  agentBackends?: string;
+  /** Its agent definitions (`agents`), each with what steers the agent (its id, name, backend, model, effort and its
+   *  instructions file's hash), as canonical JSON: words an agent follows with the bot's reach, so adding or changing
+   *  one asks again, on an edit and on an update. Absent in older snapshots: read as none. */
+  agentDefinitions?: string;
+  /** For a plugin with a bot (§5.5, the owner's rule of November 14): its parts inside the bot and beside it, by keys
+   *  that stay when its lists are reordered (`pluginParts`). A part that moves from inside to beside reaches more (every
+   *  bot, every tab), so it asks again. Absent in snapshots kept before it: not compared. */
+  parts?: { inside: string[]; beside: string[] };
 }
 
 /** The tree as its OK saw it, kept beside the OK (`plugins-state/oks/<id>.json`). */
@@ -42,9 +57,16 @@ export interface OkSnapshot {
   plugins: Record<string, PluginFingerprint>;
   /** The files that style approval cards, and whether the tree places sealed frames. */
   cards: string;
+  /** The `shell` blocks of the tree's themes (`TreeReport.windowSkin`): a change to one asks again, like a card-styling
+   *  change but not held, since a skin has no held layer. Absent in an older snapshot. */
+  skin?: string;
   /** The tree's paths that a field of what runs names (a `stdio` server's script, a hook's file, an entry): code
    *  whatever their extension (#197's review). A folder counts with everything under it. */
   codePaths: string[];
+  /** The OK card's lines that come from the tree itself (not from where it came from, or this computer), as they read
+   *  at the OK: an update that adds or alters one asks again (the controller's principle: every line the card shows is
+   *  covered). Absent in older snapshots: read as changed. */
+  okLines?: string[];
 }
 
 /** The fields of a plugin point whose format is `program` or `code`, from its declaration (the catalog's for a
@@ -120,7 +142,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
   const mcp = Object.entries(c.mcpServers ?? {})
     .filter(([, s]) => s.type === "stdio")
     .map(([name, s]) => ({ name, command: s.command, args: s.args ?? [], env: s.env ?? {} }));
-  const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler }));
+  // A hook's scope is what it sees (an own-bot hook sees no other bot): a change to it asks again. Only a hook that
+  // names one carries the key, so every other plugin's snapshot reads as before.
+  const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler, ...(h.scope === undefined ? {} : { scope: h.scope }) }));
   // An agent backend runs what its whole entry says (lane K's ask): its command and args, its handler, its protocol
   // and its quirks file, which names the command and the env it gets. Only its display name is data.
   const backends = (c.agentBackends ?? []).map(({ name: _name, ...run }) => run);
@@ -132,7 +156,12 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
     if (fields === undefined) dotted[point] = list; // no declaration: the whole entry counts as code
     else if (fields.length > 0) dotted[point] = list.map((e) => Object.fromEntries(fields.map((f) => [f, (e as Record<string, unknown> | null)?.[f]])));
   }
-  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted });
+  // The tools a server declares read-only run without a card (lane C's ask): any change to that list asks again. Only a
+  // manifest that has one carries the key, so every other plugin's snapshot reads as before.
+  const readOnly = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.readOnly ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.readOnly)].sort() }));
+  // The same for the display-only tools (`contained`), which run without a card too.
+  const contained = Object.entries(c.mcpServers ?? {}).filter(([, s]) => (s.contained ?? []).length > 0).map(([name, s]) => ({ name, tools: [...new Set(s.contained)].sort() }));
+  return canonicalJson({ host: m.host, client: m.client, helper: m.helper, mcp, hooks, backends, dotted, ...(readOnly.length > 0 ? { readOnly } : {}), ...(contained.length > 0 ? { contained } : {}) });
 }
 
 function defaultsOf(m: Manifest | undefined): string {
@@ -255,7 +284,29 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     defaults: defaultsOf(m),
     reaches: reachesOf(m),
     dynamicHosts: report.dynamicHosts,
+    label: canonicalJson({ name: m?.name ?? null, author: (m as { author?: { name?: string } } | undefined)?.author?.name ?? null }),
+    agentBackends: canonicalJson((m?.contributes?.agentBackends ?? []).map((b) => ({ id: b.id, protocol: b.protocol, command: b.command ?? null, args: b.args ?? [], handler: b.handler ?? null })).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
+    parts: partsKeysOf(m),
   };
+}
+
+/** A plugin's parts inside its bot and beside it, by key (`pluginParts`), sorted. */
+function partsKeysOf(m: Manifest | undefined): { inside: string[]; beside: string[] } {
+  const { inside, beside } = pluginParts(m);
+  return { inside: sorted(inside.map((p) => p.key)), beside: sorted(beside.map((p) => p.key)) };
+}
+
+/** Whether a part beside the bot now wasn't beside it at the OK: `moved`, one that was inside the bot (an `own-bot` scope
+ *  dropped, an `"app": true` added), what it reaches grown from one bot's tab and sessions to every tab and every bot;
+ *  `added`, a new one (a second island tab, a new server with no `own-bot`), even when the OK card's words for the parts
+ *  beside it read the same. A snapshot kept before `parts` isn't compared. */
+function besideGrew(before: PluginFingerprint, after: PluginFingerprint): "moved" | "added" | undefined {
+  if (before.parts === undefined || after.parts === undefined) return undefined;
+  const inside = new Set(before.parts.inside);
+  const beside = new Set(before.parts.beside);
+  const grown = after.parts.beside.filter((k) => !beside.has(k));
+  if (grown.length === 0) return undefined;
+  return grown.some((k) => inside.has(k)) ? "moved" : "added";
 }
 
 /** The files that style approval cards (theme and `style` files), with the tree's flag. */
@@ -303,16 +354,50 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
     const dir = treeKey(`plugins/${c.folder}`) + "/";
     for (const k of fileSet) if (k.startsWith(dir) && k !== dir + treeKey(MANIFEST_FILE)) codePaths.add(k);
   }
-  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
+  const sha = new Map(files.map((f) => [treeKey(f.path), f.sha256]));
+  plugins[""]!.agentDefinitions = definitionsOf(tree.top.manifest, "", sha);
+  for (const c of tree.children) plugins[c.folder]!.agentDefinitions = definitionsOf(c.report.manifest, `plugins/${c.folder}/`, sha);
+  return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), ...(tree.windowSkin ? { skin: tree.windowSkin } : {}), codePaths: [...codePaths].sort() };
 }
+
+/** A manifest's agent definitions with their instructions files' hashes (`PluginFingerprint.agentDefinitions`). */
+function definitionsOf(m: Manifest | undefined, base: string, sha: ReadonlyMap<string, string>): string {
+  const list = (m?.contributes?.agents ?? []) as (string | { id: string; name?: unknown; backend?: string; model?: string; effort?: string; instructions?: string })[];
+  const fileHash = (p: string | undefined) => (p === undefined ? null : sha.get(treeKey(`${base}${p.replace(/^\.\//, "")}`)) ?? "missing");
+  const defs = list.map((e) => (typeof e === "string"
+    ? { file: e, sha: fileHash(e) }
+    : { id: e.id, name: e.name ?? null, backend: e.backend ?? null, model: e.model ?? null, effort: e.effort ?? null, file: e.instructions ?? null, sha: fileHash(e.instructions) }));
+  return canonicalJson(defs);
+}
+const NO_DEFINITIONS = canonicalJson([]);
+const definitionsChanged = (before: PluginFingerprint | undefined, after: PluginFingerprint) =>
+  (after.agentDefinitions ?? NO_DEFINITIONS) !== (before?.agentDefinitions ?? NO_DEFINITIONS);
 
 const CLASS_RANK = { data: 0, web: 1, code: 2 } as const;
 const adds = (before: readonly string[], after: readonly string[]) => after.some((x) => !before.includes(x));
 
+/** Where a fingerprint's keys and calls go (`reaches`), as one set of places: each model endpoint, http server and web
+ *  page URL once, a UI entry with no web page (`null`) not a place at all. Order and repeats say nothing. */
+function reachPlaces(fp: PluginFingerprint): string[] {
+  try {
+    const r = JSON.parse(fp.reaches) as { models?: unknown[]; http?: unknown[]; web?: unknown[] };
+    return [...new Set([
+      ...(r.models ?? []).map((x) => `model:${canonicalJson(x)}`),
+      ...(r.http ?? []).map((x) => `http:${canonicalJson(x)}`),
+      ...(r.web ?? []).filter((x) => x !== null && x !== undefined).map((x) => `web:${canonicalJson(x)}`),
+    ])];
+  } catch {
+    return [fp.reaches];
+  }
+}
+/** Whether `after` sends its keys or calls to a place `before` didn't (two UI entries with no web page against one,
+ *  or the same places in another order, add nothing). */
+const reachesMore = (before: PluginFingerprint, after: PluginFingerprint) => adds(reachPlaces(before), reachPlaces(after));
+
 /** Whether a plugin's fingerprint hits a trigger or changes what runs. A new plugin in the tree (a child) asks again
  *  when it is code; a data child applies, like any data file. */
 function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFingerprint): boolean {
-  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0
+  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0 || definitionsChanged(undefined, after)
     || after.networkHosts.length > 0 || after.helperPermissions.length > 0 || after.hookEvents.length > 0 || after.dynamicHosts;
   return CLASS_RANK[after.class] > CLASS_RANK[before.class]
     || adds(before.capabilities, after.capabilities)
@@ -324,7 +409,9 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || (after.adult && !before.adult)
     || after.runs !== before.runs
     || after.defaults !== before.defaults
-    || after.reaches !== before.reaches
+    || reachesMore(before, after)
+    || definitionsChanged(before, after)
+    || besideGrew(before, after) !== undefined
     || (after.dynamicHosts && !before.dynamicHosts);
 }
 
@@ -344,6 +431,9 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   // folder (#197's review). Other data edits apply at once, as §5.6 promises. That is safe because the plugins folder
   // is fenced (the `plugins` kind, #197's check 2): sessions, agents and plugin code can't write a plugin's files, so a
   // data file there changes only by the user's own hand or an install's OK, never by a bot slipping code past the OK.
+  // The one exception is a plugin a bot built (the workshop rule, §5.6): its builder's own sessions write its folder,
+  // and the registry then judges each change by `workshopAdds` (folders.ts), which lets it apply only while it asks for
+  // nothing the user's last OK didn't list.
   const code = [...(ok.codePaths ?? []), ...now.codePaths];
   const named = (path: string) => {
     const p = treeKey(path);
@@ -352,6 +442,158 @@ export function classifyChange(ok: OkSnapshot, now: OkSnapshot): ChangeKind {
   // A name a disk may read as another file's (an 8.3 short name, a stream, a trailing dot or space) counts as code.
   if (touched.some((f) => !isDataFile(f) || named(f.path) || aliasName(f.path))) return "asks-again";
   for (const [key, fp] of Object.entries(now.plugins)) if (pluginAsksAgain(ok.plugins[key], fp)) return "asks-again";
+  // A bot's skin dresses the user's window: changing it is a plugin change like any other, and the user is asked again.
+  if ((now.skin ?? "") !== (ok.skin ?? "")) return "asks-again";
   if (now.cards !== ok.cards) return "card-styling";
   return "applies";
+}
+
+/** The read-only tools in a fingerprint's `runs` (b-api's key), by server, as canonical JSON. */
+function readOnlyOf(fp: PluginFingerprint): string {
+  try {
+    return canonicalJson((JSON.parse(fp.runs) as { readOnly?: unknown }).readOnly ?? null);
+  } catch {
+    return fp.runs;
+  }
+}
+
+/** For an update from an index or npm (§5.1): the OK given covers a later version that adds none of the triggers of
+ *  §5.6, its code changes included; one that adds a trigger waits for a new OK, from any source (the owner's answer
+ *  E). What it adds, in a few words, or undefined for none. Besides §5.6's list (web or code where it was data, more
+ *  capabilities, network hosts, helper permissions, hook events, `stdio` commands that fetch code, add-ons, adult
+ *  content, a child with code or grants), a change to where its keys and calls go (`reaches`), to its read-only
+ *  tools (which run without a card), or to its name or author (the controller's rulings) asks again too. */
+export function updateAddsTrigger(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  for (const [key, after] of Object.entries(now.plugins)) {
+    const who = key === "" ? "it" : `its child ${key}`;
+    const before = ok.plugins[key];
+    if (!before) {
+      if (pluginAsksAgain(undefined, after)) return `${who} is new, with code or grants`;
+      continue;
+    }
+    if (CLASS_RANK[after.class] > CLASS_RANK[before.class]) return `${who} now ${after.class === "code" ? "runs code" : "shows web pages"}`;
+    if (adds(before.capabilities, after.capabilities)) return `${who} asks for more capabilities`;
+    if (adds(before.networkHosts, after.networkHosts) || (after.dynamicHosts && !before.dynamicHosts)) return `${who} reaches more hosts`;
+    if (adds(before.helperPermissions, after.helperPermissions)) return `${who} asks for more helper permissions`;
+    if (adds(before.hookEvents, after.hookEvents)) return `${who} hooks more events`;
+    if (adds(before.fetchesCode, after.fetchesCode)) return `${who} fetches more code when it runs`;
+    if (after.addons && !before.addons) return `${who} loads add-ons`;
+    if (after.adult && !before.adult) return `${who} has adult content`;
+    if (reachesMore(before, after)) return `${who} sends its keys or calls somewhere else`;
+    if (readOnlyOf(after) !== readOnlyOf(before)) return `${who} changes the tools that run without asking`;
+    if (after.label !== before.label) return `${who} changes its name or its author`;
+    if (hostProgramsOf(after) && !hostProgramsOf(before)) return `${key === "" ? "its" : `its child ${key}'s`} host code now runs programs`;
+    if (after.agentBackends !== before.agentBackends) return `${who} adds or changes an agent backend`;
+    if (definitionsChanged(before, after)) return `${who} adds or changes an agent definition`;
+    const grew = besideGrew(before, after);
+    if (grew === "moved") return `${who} moves a part from inside its bot to beside it, for every bot and every tab`;
+    if (grew === "added") return `${who} adds a part beside its bot, for every bot and every tab`;
+  }
+  // Every line the OK card shows from the tree: one it didn't show, or shows differently, asks again.
+  if (now.okLines !== undefined) {
+    if (ok.okLines === undefined) return "its OK card can't be compared with the one you OK'd";
+    const added = now.okLines.find((l) => !ok.okLines!.includes(l));
+    if (added !== undefined) return `its OK card now says: ${added.length > 160 ? `${added.slice(0, 159)}…` : added}`;
+  }
+  return undefined;
+}
+
+/** Whether a fingerprint's host half runs programs (`host.programs`, from its own process). */
+function hostProgramsOf(fp: PluginFingerprint): boolean {
+  try {
+    const host = (JSON.parse(fp.runs) as { host?: { programs?: unknown; process?: unknown } | null }).host;
+    return host?.programs === true;
+  } catch {
+    return true; // unreadable: read as running programs, so adding it never passes unasked
+  }
+}
+
+/** The programs a fingerprint's `runs` starts (each `stdio` server's and hook's `command`, the `helper` part, and every
+ *  code field a plugin point declares), as canonical JSON per kind: its arguments, environment and files are code like
+ *  any other, which a workshop edit may change; a different program is not. */
+function programsOf(fp: PluginFingerprint): string {
+  try {
+    const r = JSON.parse(fp.runs) as { helper?: unknown; mcp?: { command?: unknown }[]; hooks?: { command?: unknown; scope?: unknown }[] };
+    return canonicalJson({
+      mcp: [...new Set((r.mcp ?? []).map((s) => canonicalJson(s.command ?? null)))].sort(),
+      hooks: [...new Set((r.hooks ?? []).map((h) => canonicalJson({ command: h.command ?? null, scope: h.scope ?? null })))].sort(),
+      helper: r.helper ?? null,
+    });
+  } catch {
+    return fp.runs;
+  }
+}
+
+/** Whether a fingerprint's points' code fields (`runs.dotted`) hold code its OK'd one didn't: an entry of `after` whose
+ *  code fields no entry of `before` holds the same. A point whose declaration says fewer code fields than before (an OK
+ *  kept from a read that counted a whole entry as code, before `ownPointsFirst`) adds nothing; nor does an entry gone. */
+function dottedAdds(before: PluginFingerprint, after: PluginFingerprint): boolean {
+  const read = (fp: PluginFingerprint): Record<string, unknown[]> | undefined => {
+    try {
+      const d = (JSON.parse(fp.runs) as { dotted?: unknown }).dotted;
+      return d !== null && typeof d === "object" ? (d as Record<string, unknown[]>) : {};
+    } catch {
+      return undefined;
+    }
+  };
+  const was = read(before);
+  const now = read(after);
+  if (was === undefined || now === undefined) return before.runs !== after.runs;
+  for (const [point, entries] of Object.entries(now)) {
+    const prior = was[point] ?? [];
+    for (const e of Array.isArray(entries) ? entries : [entries]) {
+      if (e === null || typeof e !== "object") {
+        if (!prior.some((p) => canonicalJson(p) === canonicalJson(e))) return true;
+        continue;
+      }
+      // An entry with none of the code fields set holds no code.
+      const fields = Object.entries(e as Record<string, unknown>).filter(([, v]) => v !== undefined && v !== null);
+      if (fields.length === 0) continue;
+      const held = prior.some((p) => p !== null && typeof p === "object" && fields.every(([k, v]) => canonicalJson((p as Record<string, unknown>)[k] ?? null) === canonicalJson(v)));
+      if (!held) return true;
+    }
+  }
+  return false;
+}
+
+/** The tools a fingerprint runs without a card that aren't read-only (`contained`), as one list. */
+function containedOf(fp: PluginFingerprint): string[] {
+  try {
+    const r = JSON.parse(fp.runs) as { contained?: { name: string; tools: string[] }[] };
+    return (r.contained ?? []).flatMap((s) => s.tools.map((t) => `${s.name}/${t}`));
+  } catch {
+    return [];
+  }
+}
+
+/** The setting defaults a fingerprint writes into what it runs (`${setting:<key>}` in a field of `runs`). */
+function runDefaultsOf(fp: PluginFingerprint): string {
+  try {
+    const defaults = JSON.parse(fp.defaults) as Record<string, unknown>;
+    return canonicalJson(Object.fromEntries(Object.entries(defaults).filter(([key]) => fp.runs.includes(`\${setting:${key}}`))));
+  } catch {
+    return fp.defaults;
+  }
+}
+
+/** For a plugin a bot built (its install record's `by: "bot"`, the workshop rule): its builder's edits apply without a
+ *  card while they ask for nothing the user's last OK didn't list. Everything an update from an index is held to
+ *  (`updateAddsTrigger`: every OK-card line included), and three more: a program it runs that it didn't (a `stdio`
+ *  server's or a hook's command, its helper, a point's code field, a hook's scope), a tool that runs without a card
+ *  that didn't, a changed setting default it writes into what it runs, and its window skin. What it adds, in a few
+ *  words, or undefined for none. An applied edit becomes the new OK snapshot, so the ceiling only goes down: a grant one
+ *  edit drops, a later edit asks for again. */
+export function workshopAdds(ok: OkSnapshot, now: OkSnapshot): string | undefined {
+  const update = updateAddsTrigger(ok, now);
+  if (update !== undefined) return update;
+  for (const [key, after] of Object.entries(now.plugins)) {
+    const who = key === "" ? "it" : `its child ${key}`;
+    const before = ok.plugins[key];
+    if (!before) continue; // a new child is judged by updateAddsTrigger above
+    if (programsOf(after) !== programsOf(before) || dottedAdds(before, after)) return `${who} runs a program it didn't`;
+    if (adds(containedOf(before), containedOf(after))) return `${who} has more tools that run without asking`;
+    if (runDefaultsOf(after) !== runDefaultsOf(before)) return `${who} changes a setting's default that it runs with`;
+  }
+  if ((now.skin ?? "") !== (ok.skin ?? "")) return "it changes how it dresses your window";
+  return undefined;
 }

@@ -41,6 +41,8 @@ interface CardBase {
 
 export interface ApprovalCard extends CardBase {
   kind: "approval";
+  /** A tool call (not a plugin's OK or a provider's): the app says it in a line and a preview, which the card places. */
+  tool?: boolean;
   /** Its answers' ids and kinds; absent, one approve and one deny. */
   options?: readonly CardOptionMeta[];
 }
@@ -91,6 +93,15 @@ export interface QuestionCard extends CardBase {
 export type IslandCard = ApprovalCard | LinkCard | QuestionCard;
 
 /** Every card compacts by itself after a while; nothing in 1.111.1 counts down on its own. */
+/** How long a card stays up, untouched, before it folds into the strip (seconds). A card someone has to read (a tool call's
+ *  diff or command, a question with options) gets time to be read; a short one folds sooner. Any touch starts it again,
+ *  and a hovered card never folds (`IslandQueue`). */
+export function readSeconds(card: IslandCard): number {
+  if (card.kind === "question") return 20;
+  if (card.kind === "approval" && card.tool === true) return 25;
+  return 12;
+}
+
 export function selfCompacts(_card: IslandCard): boolean {
   return true;
 }

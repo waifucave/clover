@@ -21,6 +21,8 @@ import type { TokenValue } from "@waifucave/clover-plugin-sdk";
 export interface SealedCard {
   id: string;
   kind: string;
+  /** A `change` card's subject (`plugin-update`…), as the core sent it. */
+  change?: string;
   computer: string | null;
   session?: string;
   bot?: string;
@@ -81,6 +83,8 @@ interface Channel {
   at: number;
   windowId?: number;
   tokens?: Readonly<Record<string, TokenValue>>;
+  /** A button's look: the mark the core draws on it (✓ ✕ ↗), when the part asked for one the button may wear. */
+  look?: "label" | "check" | "cross" | "open";
   /** The binding's own key, as `token()` in the store makes it: `p:<pid>:<rid>` for a parent, `m:<pid>:<rid>` for the
    *  main frame. */
   bound?: string;
@@ -103,10 +107,13 @@ export class SealedFrames {
   /** A card whose proof the core accepted: served pages' answers carry, and a second answer is "answered already". */
   private readonly answered = new Set<string>();
   /** The frame's channels: one per element of a pending card. */
-  private readonly channels = new Map<string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; bound?: string; served?: boolean }>();
+  private readonly channels = new Map<string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; look?: "label" | "check" | "cross" | "open"; bound?: string; served?: boolean }>();
   /** The answers whose own `card.answer` went out and is not answered back yet: `buildAnswer` burns the channel, the
    *  core's own result (`confirmedAnswer`) sets the card's fate (S6). */
   private readonly pending = new Map<string, string>();
+  /** The channel an answer in flight spent, by card: put back if the core refuses the answer (the same frame, on its
+   *  own binding and within its own time, may answer again: "Couldn't confirm — try again"), gone once it accepts. */
+  private readonly spent = new Map<string, [string, { cardId: string; element: string; at: number; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; look?: "label" | "check" | "cross" | "open"; bound?: string; served?: boolean }]>();
   /** The frame tokens whose page has reported itself visible (IOv2), for the fallback rule (§5.5: only show the
    *  fallback when no plugin has both buttons visible within 2 s). */
   private readonly visible = new Set<string>();
@@ -118,7 +125,7 @@ export class SealedFrames {
     const c = card as Partial<SealedCard>;
     if (c === null || typeof c !== "object" || typeof c.id !== "string" || typeof c.hash !== "string" || !Array.isArray(c.options)) return;
     this.cards.set(c.id, {
-      id: c.id, kind: String(c.kind ?? "tool"), computer: c.computer ?? null, session: c.session, bot: c.bot,
+      id: c.id, kind: String(c.kind ?? "tool"), ...(typeof c.change === "string" ? { change: c.change } : {}), computer: c.computer ?? null, session: c.session, bot: c.bot,
       pluginId: c.pluginId, origin: String(c.origin ?? "user"), issuedAt: Number(c.issuedAt ?? this.now()),
       expiresAt: c.expiresAt == null ? null : Number(c.expiresAt), hash: c.hash, fields: c.fields ?? {}, options: c.options,
     });
@@ -136,6 +143,17 @@ export class SealedFrames {
     return false;
   }
 
+  /** Every card that still waits, oldest first (known, not answered or resolved, not past its expiry). */
+  pendingIds(): string[] {
+    return [...this.cards.keys()].filter((id) => this.isPending(id));
+  }
+
+  /** Whether one card still waits (known, not answered or resolved, not past its expiry). */
+  isPending(id: string): boolean {
+    const c = this.cards.get(id);
+    return c !== undefined && !this.resolved.has(id) && !this.answered.has(id) && (c.expiresAt === null || c.expiresAt > this.now());
+  }
+
   /** One card, pending or resolved. */
   get(id: string): SealedCard | undefined {
     return this.cards.get(id);
@@ -150,31 +168,43 @@ export class SealedFrames {
 
   private dropChannels(cardId: string): void {
     for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId) this.channels.delete(t);
+    this.spent.delete(cardId);
   }
 
   /** Mints one frame's channel: one per element of a pending card, `card.frame`'s channel in the app's own hands. The
    *  binding carries the frame that may answer (a part's token hangs on its document's own frame; the fallback's
    *  `own` on its window's main frame), the window it sits in, and the part's `card.*` tokens (the page's own tokens
-   *  go in alone, the part's resolved ones). Same element, same card: replaces the older token. A card past its
-   *  non-user expiry, or resolved, mints none. */
-  mint(cardId: string, element: string, bind?: FrameKey, windowId?: number, tokens?: Readonly<Record<string, TokenValue>>): { token: string; card: SealedCard } | undefined {
+   *  go in alone, the part's resolved ones). Same element, same card, same document's frame: replaces the older token
+   *  (two documents placing the same card's button, the island's and the conversation's, each keep their own: a token
+   *  bound to one frame never answers for another). A card past its non-user expiry, or resolved, mints none. */
+  mint(cardId: string, element: string, bind?: FrameKey, windowId?: number, tokens?: Readonly<Record<string, TokenValue>>, look?: "label" | "check" | "cross" | "open"): { token: string; card: SealedCard } | undefined {
     if (this.resolved.has(cardId) || this.answered.has(cardId)) return undefined;
     const card = this.cards.get(cardId);
     if (card === undefined) return undefined;
     if (card.expiresAt !== null && card.expiresAt <= this.now()) return undefined;
     const token = `se_${randomBytes(20).toString("hex")}`;
-    for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId && ch.element === element) this.channels.delete(t);
-    this.channels.set(token, { cardId, element, at: this.now(), ...(windowId !== undefined ? { windowId } : {}), ...(tokens !== undefined ? { tokens: { ...tokens } } : {}), ...(bind !== undefined ? { bound: bindKey(bind) } : {}) });
+    const bound = bind !== undefined ? bindKey(bind) : undefined;
+    for (const [t, ch] of [...this.channels]) if (ch.cardId === cardId && ch.element === element && ch.bound === bound) this.channels.delete(t);
+    this.channels.set(token, { cardId, element, at: this.now(), ...(windowId !== undefined ? { windowId } : {}), ...(tokens !== undefined ? { tokens: { ...tokens } } : {}), ...(look !== undefined ? { look } : {}), ...(bound !== undefined ? { bound } : {}) });
+    this.onMinted?.(cardId, element, windowId);
     return { token, card };
+  }
+
+  /** Hears each frame minted (the card, the element, the window): the app's timing lines. */
+  onMinted?: (cardId: string, element: string, windowId: number | undefined) => void;
+
+  /** The element a frame token was minted for (`field:<name>`, `button:<option>`, `own`). */
+  elementOf(token: string): string | undefined {
+    return this.channels.get(token)?.element;
   }
 
   /** The scheme's single serve of a frame's page: once, before its ttl runs. The token is 20 crypto-random bytes
    *  and single-use, so no header gate is needed. The answer's channel stays. */
-  serve(token: string): { card: SealedCard; element: string; windowId?: number; tokens?: Readonly<Record<string, TokenValue>> } | undefined {
+  serve(token: string): { card: SealedCard; element: string; windowId?: number; tokens?: Readonly<Record<string, TokenValue>>; look?: "label" | "check" | "cross" | "open" } | undefined {
     const ch = this.channels.get(token);
     if (ch === undefined || ch.served === true || this.now() - ch.at > SERVE_TTL_MS) return undefined;
     ch.served = true;
-    return { card: this.cards.get(ch.cardId)!, element: ch.element, ...(ch.windowId !== undefined ? { windowId: ch.windowId } : {}), ...(ch.tokens !== undefined ? { tokens: ch.tokens } : {}) };
+    return { card: this.cards.get(ch.cardId)!, element: ch.element, ...(ch.windowId !== undefined ? { windowId: ch.windowId } : {}), ...(ch.tokens !== undefined ? { tokens: ch.tokens } : {}), ...(ch.look !== undefined ? { look: ch.look } : {}) };
   }
 
   /** Who a token's channel belongs to, for the sender's own binding's check: the frame key the mint bound it to, or
@@ -186,6 +216,11 @@ export class SealedFrames {
   /** The card a token's channel belongs to. */
   cardOf(token: string): string | undefined {
     return this.channels.get(token)?.cardId;
+  }
+
+  /** The window a frame token was minted for, if it was minted for one. */
+  windowOf(token: string): number | undefined {
+    return this.channels.get(token)?.windowId;
   }
 
   /** Records that a frame's page has reported itself visible or not (IOv2). */
@@ -203,8 +238,8 @@ export class SealedFrames {
   /** Whether a card's approve and deny buttons both show (the fallback rule: only show the fallback when no
    *  plugin has both buttons on screen and visible within 2 s). Matched to the card's own options: at least one
    *  visible button channel for an approve option, and at least one for a deny option. A plugin that places only
-   *  Approve never cancels the fallback alone. */
-  buttonsVisible(cardId: string): boolean {
+   *  Approve never cancels the fallback alone. With a window, only that window's frames count (which surface shows them). */
+  buttonsVisible(cardId: string, windowId?: number): boolean {
     const card = this.cards.get(cardId);
     if (card === undefined) return false;
     const approveIds = new Set(card.options.filter((o) => o.kind === "approve").map((o) => o.id));
@@ -214,6 +249,7 @@ export class SealedFrames {
     let denySeen = false;
     for (const [t, ch] of this.channels) {
       if (ch.cardId !== cardId || !ch.element.startsWith("button:")) continue;
+      if (windowId !== undefined && ch.windowId !== windowId) continue;
       if (!this.visible.has(t)) continue;
       const optionId = ch.element.slice("button:".length);
       if (approveIds.has(optionId)) approveSeen = true;
@@ -263,6 +299,7 @@ export class SealedFrames {
     if (this.answered.has(card.id)) return { error: "that card is answered already" };
     if (this.pending.has(card.id)) return { error: "that card is answering already" };
     this.channels.delete(token);
+    this.spent.set(card.id, [token, ch]);
     const kids = children === undefined ? undefined : [...children];
     const sig = signer.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: pick, at, children: kids })));
     this.pending.set(card.id, pick);
@@ -282,6 +319,16 @@ export class SealedFrames {
     // the card's frames. An accepted answer burns them.
     this.pending.delete(cardId);
     if (accepted === true) this.dropChannels(cardId);
+    else {
+      // The refused answer's frame answers again, on the channel it had (its binding and its time unchanged), unless
+      // the card was resolved or the channel replaced meanwhile.
+      const back = this.spent.get(cardId);
+      this.spent.delete(cardId);
+      if (back !== undefined && !this.resolved.has(cardId) && !this.answered.has(cardId) && this.cards.has(cardId)) {
+        const [token, ch] = back;
+        if (![...this.channels.values()].some((c) => c.cardId === cardId && c.element === ch.element)) this.channels.set(token, ch);
+      }
+    }
   }
 
   /** The core events' reason to drop or keep a card's frames: an outcome names what closed it, and every outcome ends

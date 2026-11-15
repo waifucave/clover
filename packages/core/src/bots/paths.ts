@@ -54,6 +54,11 @@ export function userLayersDir(home: string): string {
   return join(home, "user-layers");
 }
 
+/** The user's own avatar models, one folder per bot (`bot.importAvatar`): fenced with the user layers. */
+export function userAvatarsDir(home: string, botId: string): string {
+  return join(userLayersDir(home), "avatars", botSegment(botId));
+}
+
 export function userLayerFile(home: string, botId: string): string {
   return join(userLayersDir(home), `${botSegment(botId)}.json`);
 }

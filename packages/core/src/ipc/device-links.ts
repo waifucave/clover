@@ -92,6 +92,10 @@ export interface DaemonLinksInput {
   /** Replacing this desktop's answer key: lane C's broker and this computer's name, read at each call
    *  (`DevicesMethodsDeps.answerKeyRotation`). */
   answerKeyRotation?: DevicesMethodsDeps["answerKeyRotation"];
+  /** The device registry as soon as it opens (`DeviceLinksOptions.onRegistry`), and that `device.answerKey.set` is
+   *  served from there (the daemon's own `answerKeyMethods`), so the links don't serve a second one. */
+  onRegistry?: DeviceLinksOptions["onRegistry"];
+  answerKeyServed?: true;
   /** The daemon's update gate (`RunningDaemon.updateGate`, lane M): the lease renews just before an update's restart. */
   updateGate?: UpdateRestartGate;
   /** The handshake: at the account settings' `handshakeUrl` (production's unless a dev or test build overrides it) by
@@ -164,6 +168,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     ...(driver !== undefined ? { driver } : {}),
     ...(input.updateGate ? { updateGate: input.updateGate } : {}),
     openCard,
+    ...(input.onRegistry ? { onRegistry: input.onRegistry } : {}),
     log,
   });
   const offs: Array<() => void> = [];
@@ -172,6 +177,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
       registry: links.registry, pairing: links.pairing, transport: links.transport, clock: links.clock, openCard,
       revoke: links.revokeOptions(), ...(links.main ? { main: links.main } : {}),
       ...(input.answerKeyRotation ? { answerKeyRotation: input.answerKeyRotation } : {}),
+      ...(input.answerKeyServed ? { answerKey: false as const } : {}),
     })));
     if (links.main) offs.push(mountMainChoiceRequests({ transport: links.transport, registry: links.registry, main: links.main, openCard }));
     const self = links.key.id;

@@ -1,6 +1,6 @@
 // Small pieces several messages share.
 import { useEffect, useRef, useState } from "react";
-import { IconCheck, IconCopy, IconCross, IconDash, IconDots, IconPause } from "./icons";
+import { IconCheck, IconCopy, IconCross, IconDash, IconDots, IconPause, IconSpeaker } from "./icons";
 import { S } from "./strings";
 import type { ToolStatus } from "./types";
 
@@ -20,6 +20,25 @@ export function CopyButton({ text, label, onCopy }: { text: string; label: strin
     <button type="button" className="cl-conv-copy" onClick={copy} aria-label={label} data-copied={copied || undefined}>
       {copied ? <IconCheck /> : <IconCopy />}
       <span className="cl-conv-copy__label">{copied ? S.copied : S.copy}</span>
+    </button>
+  );
+}
+
+/** The speak button under a finished reply: asking (sent, no answer yet) and speaking (this reply, now) show on it. */
+export function SpeakButton({ state, onSpeak }: { state: "idle" | "asking" | "speaking"; onSpeak: () => void }) {
+  const label = state === "speaking" ? S.speaking : S.speakMessage;
+  return (
+    <button
+      type="button"
+      className="cl-conv-speak"
+      onClick={onSpeak}
+      aria-label={label}
+      title={state === "speaking" ? S.speaking : S.speak}
+      data-state={state === "idle" ? undefined : state}
+      aria-busy={state === "asking" || undefined}
+    >
+      <IconSpeaker />
+      <span className="cl-conv-speak__label">{state === "speaking" ? S.speaking : S.speak}</span>
     </button>
   );
 }

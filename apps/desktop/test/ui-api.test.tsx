@@ -12,14 +12,16 @@ GlobalRegistrator.register({ settings: { navigation: { disableChildFrameNavigati
 process.env.RTL_SKIP_AUTO_CLEANUP = "true";
 const { act, cleanup, render } = await import("@testing-library/react");
 const ui = await import("@waifucave/clover-plugin-sdk/ui");
-const { createElement: h } = await import("react");
+const { createElement: h, useState } = await import("react");
+// The SDK's example renderer, as a third-party `avatar` entry (its own frame in the app).
+const pngtuber = await import("../../../packages/plugin-sdk/examples/example-pngtuber/client/index");
 
 afterAll(async () => {
   cleanup();
   await GlobalRegistrator.unregister();
 });
 
-const CTX = { os: "macos" as const, material: "vibrancy" as const, safeMode: false };
+const CTX = { os: "macos" as const, material: "vibrancy" as const, safeMode: false, window: { narrow: false } };
 
 function fakeBridge(views: Record<string, SpotView>) {
   const listeners = new Set<(m: LayerMessage) => void>();
@@ -32,8 +34,16 @@ function fakeBridge(views: Record<string, SpotView>) {
       return views[`${mount}:${spot}${key !== undefined ? `[${key}]` : ""}`] ?? { spot, shape: "single", items: [], hidden: false, conflict: false, undeclared: true };
     },
     setProps: (child, props) => calls.push({ op: "setProps", args: [child, props] }),
+    speech: (child, message) => calls.push({ op: "speech", args: [child, message] }),
+    avatar: (child, message) => calls.push({ op: "avatar", args: [child, message] }),
+    avatarUp: (message) => calls.push({ op: "avatarUp", args: [message] }),
     callback: (id, args) => calls.push({ op: "callback", args: [id, args] }),
     reportSize: () => {},
+    shell: async (mount, method, args) => {
+      calls.push({ op: "shell", args: [mount, method, args] });
+      return undefined;
+    },
+    shellReport: (mount, report) => calls.push({ op: "shellReport", args: [mount, report] }),
     release: (mounts) => calls.push({ op: "release", args: [mounts] }),
     reload: async (child) => {
       calls.push({ op: "reload", args: [child] });
@@ -65,7 +75,8 @@ function fakeBridge(views: Record<string, SpotView>) {
     },
     api: async (mount, method, params) => {
       calls.push({ op: "api", args: [mount, method, params] });
-      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } } : { ok: true };
+      return method === "terminal.open" ? { terminalId: "term_1" } : method === "session.get" ? { session: { id: "s", computer: "Laptop" } }
+        : method === "card.pending" ? { cards: pendingAtMount.map((id) => ({ id, computers: ["Studio"] })) } : { ok: true };
     },
     terminalInput: async (mount, terminalId, input) => {
       calls.push({ op: "terminalInput", args: [mount, terminalId, input] });
@@ -116,7 +127,45 @@ const observers = new Set<{ cb: (e: { isIntersecting: boolean }[]) => void; els:
 function setNear(near: boolean) {
   for (const o of observers) if (o.els.size > 0) o.cb([{ isIntersecting: near }]);
 }
-const hooks: { api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+/** The cards `card.pending` answers with (what was pending before a part mounted). */
+const pendingAtMount: string[] = ["card_before"];
+
+let vnApi: ReturnType<typeof ui.usePluginApi> | undefined;
+/** A third-party plugin's page, in its own layer. */
+const VnPage = () => {
+  vnApi = ui.usePluginApi();
+  return h("p", null, "vn");
+};
+const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; loaded?: () => boolean; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
+
+/** The stage's speech, as the app would feed it: frames pushed by the test, on a clock of its own. */
+const stageSpeech = (() => {
+  const listeners = new Set<(frames: readonly { t: number; rms: number; centroid: number }[]) => void>();
+  return {
+    feed: { subscribe: (l: (frames: readonly { t: number; rms: number; centroid: number }[]) => void) => { listeners.add(l); return () => void listeners.delete(l); }, now: () => performance.now() / 1000 },
+    push: (frames: { t: number; rms: number; centroid: number }[]) => listeners.forEach((l) => l(frames)),
+    listeners,
+  };
+})();
+let setStageSpeaking: ((speaking: boolean) => void) | undefined;
+/** A bot's stage: the `avatar` spot under the stage's speech (the character part's place for the feed). */
+/** The stage's avatar hub, as the character part makes it: what the renderer publishes lands in `published`. */
+const published: { names: unknown; box: unknown }[] = [];
+const stageHub = new ui.AvatarControlHub((state) => published.push({ names: state.names, box: state.box }));
+const Stage = () => {
+  const [speaking, setSpeaking] = useState(false);
+  setStageSpeaking = setSpeaking;
+  return h(ui.AvatarControlProvider, { hub: stageHub }, h(ui.AvatarSpeechProvider, { feed: stageSpeech.feed, speaking }, h(ui.Spot, { name: "avatar", spotKey: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" } })));
+};
+/** A window's columns: its `main` and `panel` spots, and the `sidebar` for a frame that is not a fill spot. */
+const Columns = () => h("div", null, h(ui.Spot, { name: "main", spotKey: "editor" }), h(ui.Spot, { name: "panel", spotKey: "side" }), h(ui.Spot, { name: "bar" }));
+const NarrowProbe = () => {
+  const ctx = ui.useMountContext();
+  return h("p", { "data-narrow-probe": String(ctx.window.narrow) });
+};
+const wait = (ms: number) => act(async () => {
+  await new Promise((r) => setTimeout(r, ms));
+});
 
 describe("the UI API in a layer", () => {
   let fake: ReturnType<typeof fakeBridge>;
@@ -140,10 +189,13 @@ describe("the UI API in a layer", () => {
       hooks.t = ui.useT();
       const list = ui.useSpotEntries("island.tab");
       hooks.entries = () => list.entries;
+      hooks.loaded = () => list.loaded;
       const q = ui.useQuestions();
       hooks.questions = () => q.questions;
       hooks.userSend = ui.useUserSend();
       hooks.api = ui.usePluginApi();
+      const approvals = ui.useApprovals();
+      hooks.cards = () => approvals.cards;
       const menu = ui.useMenu();
       const drag = ui.useDrag();
       const open = ui.useOpen();
@@ -155,7 +207,7 @@ describe("the UI API in a layer", () => {
       hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar } }, sleepAfterMs: 30 });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "clover/shell": { Window: Shell }, "clover/sidebar": { Sidebar }, vn: { VnPage }, "clover/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar }, "test/fill": { Columns, NarrowProbe } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
@@ -172,6 +224,15 @@ describe("the UI API in a layer", () => {
     expect((nav.parentElement as HTMLElement).style.getPropertyValue("--clover-color-accent")).toBe("#123456");
     // Tokens reach the document as custom properties.
     expect(document.documentElement.style.getPropertyValue("--clover-color-accent")).toBe("#2F6FDF");
+    // Light to dark: one message updates the document's and the part's; the part keeps its new ones (the parent's
+    // change never puts back the tokens it was resolved with).
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#0A0A0A" }, m2: { "color.accent": "#FEDCBA" } } }));
+    await tick();
+    expect(container.querySelector("nav")!.getAttribute("data-accent")).toBe("#FEDCBA");
+    expect((container.querySelector("nav")!.parentElement as HTMLElement).style.getPropertyValue("--clover-color-accent")).toBe("#FEDCBA");
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#2F6FDF" }, m2: { "color.accent": "#123456" } } }));
+    await tick();
+    expect(container.querySelector("nav")!.getAttribute("data-accent")).toBe("#123456");
   });
 
   test("a part from another layer is a frame; its props cross with callbacks as markers the core routes back", async () => {
@@ -184,6 +245,17 @@ describe("the UI API in a layer", () => {
     expect(seen).toEqual(["hello"]);
     await act(async () => fake.emit({ type: "child-size", child: "m3", height: 64 }));
     expect(frame.style.height).toBe("64px");
+  });
+
+  test("a frame's props cross when they changed, not at every draw of the part that holds it (an equal object each draw is no message)", async () => {
+    const sets = () => fake.calls.filter((c) => c.op === "setProps" && c.args[0] === "m3").length;
+    expect(sets()).toBe(1);
+    // The shell draws again (a token change redraws it, and its spot's props are a new object each draw): nothing goes.
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#111111" } } }));
+    await tick();
+    await act(async () => fake.emit({ type: "tokens", tokens: { m1: { "color.accent": "#2F6FDF" } } }));
+    await tick();
+    expect(sets()).toBe(1);
   });
 
   test("a hidden part and an undeclared spot show nothing", () => {
@@ -322,6 +394,8 @@ describe("the UI API in a layer", () => {
   test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the clover tree's parts have useUserSend", async () => {
     await tick();
     expect(hooks.entries!().map((e) => e.ref)).toEqual(["clover/island#usage", "vn#tab"]);
+    // Answered: a list that is empty before the first answer says so (`loaded` false), so a host does not read it as the spot being unfilled.
+    expect(hooks.loaded!()).toBe(true);
     expect(fake.calls).toContainEqual({ op: "entries", args: ["m2", "island.tab", undefined] });
     // The questions the core sends (to a plugin that may read them), kept current.
     expect(hooks.questions!()).toEqual([]);
@@ -359,6 +433,95 @@ describe("the UI API in a layer", () => {
     expect((await hooks.api!.conversation!.get!("s")) as unknown).toEqual({ id: "s", computer: "Laptop" });
   });
 
+  test("the plugin API in a layer: its own plugin's host half and store, on its own connection; its messages only", async () => {
+    const api = hooks.api!;
+    fake.calls.length = 0;
+    await api.host.call("draw", { card: "The Star" });
+    await api.storage.synced.get("stage");
+    await api.storage.synced.keys();
+    const mine = fake.calls.filter((c) => c.op === "api");
+    const mount = mine[0]!.args[0];
+    expect(mine.map((c) => c.args)).toEqual([
+      [mount, "plugin.layer.call", { call: "host.call", args: ["draw", { card: "The Star" }] }],
+      [mount, "plugin.layer.call", { call: "storage.synced.get", args: ["stage"] }],
+      [mount, "plugin.layer.call", { call: "storage.synced.keys", args: [] }],
+    ]);
+    // A component never writes its store (its host half does) and has no ui.send.
+    await expect(api.storage.synced.set("stage", 1)).rejects.toThrow("its host half does");
+    await expect(api.storage.synced.delete("stage")).rejects.toThrow("its host half does");
+    expect(() => api.ui.send("x", 1)).toThrow("host.call");
+    // Its host half's messages and its store's changes: its own plugin's only, by topic.
+    const heard: unknown[] = [];
+    const keys: string[] = [];
+    const off = api.host.on("stage", (v) => heard.push(v));
+    const offKeys = api.storage.synced.watch((k) => keys.push(k));
+    await act(async () => {
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "clover/sidebar", event: "stage", value: { v: 1, scene: "beach" } } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "clover/sidebar", event: "other", value: 2 } });
+      fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_ui_message", pluginId: "someone-else", event: "stage", value: "not mine" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_ui_message", pluginId: "someone-else", event: "stage", value: "not mine either" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_store_changed", pluginId: "clover/sidebar", key: "stage" } });
+      fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_store_changed", pluginId: "someone-else", key: "x" } });
+    });
+    off();
+    offKeys();
+    expect(heard).toEqual([{ v: 1, scene: "beach" }]);
+    expect(keys).toEqual(["stage"]);
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "events.subscribe", { areas: ["plugins"] }] });
+  });
+
+  test("settings.get and .set: a third-party page reaches its own settings on its own connection (plugin.layer.call, no id, no bot); the bundled tree's parts as before", async () => {
+    render(h(ui.LayerRoot, { info: { mount: "m9", pluginId: "vn", entryId: "page", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] } }));
+    await tick();
+    const vn = vnApi!;
+    fake.calls.length = 0;
+    await vn.settings.get("order");
+    await vn.settings.set("order", "oldest");
+    await vn.settings.set("order", undefined);
+    await hooks.api!.settings.get("deck").catch(() => undefined); // the fake core answers no settings list
+    await hooks.api!.settings.set("deck", "tarot").catch(() => undefined);
+    const got = fake.calls.filter((c) => c.op === "api").map((c) => c.args.slice(1));
+    expect(got).toEqual([
+      ["plugin.layer.call", { call: "settings.get", args: ["order"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["order", "oldest"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["order", null] }],
+      ["plugin.settings.get", { id: "clover/sidebar" }],
+      ["plugin.settings.set", { id: "clover/sidebar", key: "deck", value: "tarot" }],
+    ]);
+    // A page names no bot: a bot's value is its host half's to read or change.
+    await expect(vn.settings.get("nick", { bot: "alpha" })).rejects.toThrow("with no bot");
+    await expect(vn.settings.set("nick", "Lu", { bot: "alpha" })).rejects.toThrow("with no bot");
+  });
+
+  test("settings.watch hears its own plugin's settings changes (the key, never a value); never another plugin's, nor a plugin_changed", async () => {
+    const api = hooks.api!;
+    const all: string[] = [];
+    const deck: string[] = [];
+    const offAll = api.settings.watch(null, (k) => all.push(k));
+    const offDeck = api.settings.watch("deck", (k) => deck.push(k));
+    await act(async () => {
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "clover/sidebar", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "clover/sidebar", key: "TAROT_KEY" } });
+      fake.emit({ type: "api-event", pluginId: "someone-else", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_settings_changed", pluginId: "someone-else", key: "deck" } });
+      fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "plugin_changed", id: "clover/sidebar", state: "running", enabled: true } });
+    });
+    offAll();
+    offDeck();
+    expect(all).toEqual(["deck", "TAROT_KEY"]);
+    expect(deck).toEqual(["deck"]);
+  });
+
+  test("useApprovals has the cards already pending when the part mounts (card.pending), and a card answered meanwhile doesn't come back", async () => {
+    await tick();
+    expect(hooks.cards!().map((c) => c.id)).toContain("card_before");
+    // The same card heard again (its event, after the read) is still one card: shown once, never twice.
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_pending", card: { id: "card_before", computers: ["Studio"] } } }));
+    expect(hooks.cards!().filter((c) => c.id === "card_before").length).toBe(1);
+    await act(async () => fake.emit({ type: "api-event", pluginId: "clover/sidebar", method: "core.event", params: { type: "card_resolved", id: "card_before", outcome: "approved" } }));
+    expect(hooks.cards!().map((c) => c.id)).not.toContain("card_before");
+  });
+
   test("props across a frame's edge: functions become markers; markers become functions", () => {
     const fns: Function[] = [];
     const encoded = ui.encodeProps({ a: 1, nested: { f: () => 2 }, list: [() => 3, "x"], date: new Date(0) }, (fn) => {
@@ -370,6 +533,174 @@ describe("the UI API in a layer", () => {
     const decoded = ui.decodeProps(encoded, (id, args) => called.push([id, args])) as { nested: { f: (x: unknown) => void } };
     decoded.nested.f(() => "a function never crosses");
     expect(called).toEqual([["1", [undefined]]]);
+  });
+
+  test("an avatar renderer in its own frame gets the stage's speech as batches of numbers, ~every 40 ms while it speaks, nothing while quiet, hidden or gone", async () => {
+    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", layer: "example-pngtuber", url: "clover-plugin://example-pngtuber/?mount=a1" }] };
+    const info: MountInfo = { mount: "s1", pluginId: "clover/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
+    const stage = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const speech = () => fake.calls.filter((c) => c.op === "speech");
+    expect(stage.container.querySelector('iframe[data-clover-mount="s2"]')).toBeTruthy();
+    // The frame's props carry no feed (functions never cross as data): the speech goes its own way.
+    const props = fake.calls.filter((c) => c.op === "setProps" && c.args[0] === "s2").at(-1)?.args[1] as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(["bot", "file", "format"]);
+    // Quiet: nothing crosses.
+    await wait(150);
+    expect(speech()).toHaveLength(0);
+    // Speaking for ~240 ms, a frame every ~12 ms: a handful of batches, not one per frame, every frame there.
+    await act(async () => setStageSpeaking!(true));
+    let n = 0;
+    const start = performance.now() / 1000;
+    for (let i = 0; i < 20; i++) {
+      stageSpeech.push([{ t: start + n * 0.0116, rms: 0.3, centroid: 1500 }]);
+      n++;
+      await new Promise((r) => setTimeout(r, 12));
+    }
+    await wait(100);
+    const sent = speech();
+    expect(sent.every((c) => c.args[0] === "s2")).toBe(true);
+    const messages = sent.map((c) => c.args[1] as { speaking: boolean; clock: { audio: number; wall: number }; frames: { t: number; rms: number; centroid: number }[] });
+    expect(messages.flatMap((m) => m.frames)).toHaveLength(n);
+    expect(messages.length).toBeLessThanOrEqual(12);
+    expect(messages.length).toBeGreaterThanOrEqual(3);
+    expect(messages[0]!.speaking).toBe(true);
+    // Only numbers: the three per frame, the clock, and the flag.
+    for (const m of messages) {
+      expect(Object.keys(m).sort()).toEqual(["clock", "frames", "speaking"]);
+      for (const f of m.frames) expect(Object.keys(f).sort()).toEqual(["centroid", "rms", "t"]);
+    }
+    // Quiet again: one message saying so, then nothing.
+    await act(async () => setStageSpeaking!(false));
+    await wait(200);
+    expect(speech().length).toBe(sent.length + 1);
+    expect((speech().at(-1)!.args[1] as { speaking: boolean }).speaking).toBe(false);
+    // The window hidden: the feed isn't even heard, and nothing is sent.
+    const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    await act(async () => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(stageSpeech.listeners.size).toBe(0);
+    stageSpeech.push([{ t: start + 1, rms: 0.3, centroid: 1500 }]);
+    await wait(100);
+    expect(speech().length).toBe(sent.length + 1);
+    if (visibility) Object.defineProperty(document, "visibilityState", visibility);
+    else delete (document as { visibilityState?: unknown }).visibilityState;
+    await act(async () => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(stageSpeech.listeners.size).toBe(1);
+    // The frame's layer stops: nothing more goes to it.
+    await act(async () => fake.emit({ type: "child-gone", child: "s2", reason: "its layer stopped" }));
+    stageSpeech.push([{ t: start + 2, rms: 0.3, centroid: 1500 }]);
+    await wait(100);
+    expect(speech().length).toBe(sent.length + 1);
+    expect(stageSpeech.listeners.size).toBe(0);
+    stage.unmount();
+  });
+
+  test("an avatar renderer in its own frame: the stage's cues go to it while it can be seen, and what it says about its model and figure reaches the stage's hub", async () => {
+    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", url: "clover-plugin://example-pngtuber/?mount=s2" }] } as never;
+    const info: MountInfo = { mount: "s1", pluginId: "clover/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
+    const stage = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const sentCues = () => fake.calls.filter((c) => c.op === "avatar");
+    const before = sentCues().length;
+    await act(async () => stageHub.cue({ type: "expression", name: "happy" }));
+    expect(sentCues().length).toBe(before + 1);
+    expect(sentCues().at(-1)!.args).toEqual(["s2", { kind: "cue", cue: { type: "expression", name: "happy" } }]);
+    // What the frame says goes into the stage's hub (and is read again: a bad one is dropped).
+    const names = { expressions: ["happy", "sad"], motions: [], outfits: [{ name: "hat", on: false }] };
+    published.length = 0;
+    await act(async () => fake.emit({ type: "avatar-up", child: "s2", message: { kind: "state", names, box: { canvas: { width: 300, height: 500 } } } }));
+    expect(published.at(-1)!.names).toEqual(names);
+    expect((published.at(-1)!.box as { canvas: unknown }).canvas).toEqual({ width: 300, height: 500 });
+    const n = published.length;
+    await act(async () => fake.emit({ type: "avatar-up", child: "s2", message: { kind: "state", names: "nope" } as never }));
+    await act(async () => fake.emit({ type: "avatar-up", child: "s9", message: { kind: "state", names: null } }));
+    expect(published.length).toBe(n);
+    // Gone: no more cues.
+    await act(async () => fake.emit({ type: "child-gone", child: "s2", reason: "its layer stopped" }));
+    const after = sentCues().length;
+    await act(async () => stageHub.cue({ type: "pace", calm: true }));
+    expect(sentCues().length).toBe(after);
+    stage.unmount();
+  });
+
+  test("the example PNGtuber renderer in its own frame: the talk picture while the bot speaks, the idle one after; batches from elsewhere change nothing", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      expect(String(url)).toBe("https://pngtuber.test/pip.pngtuber.json");
+      return new Response(JSON.stringify({ name: "Pip", idle: "idle.png", talk: "talk.png", blink: "blink.png" }));
+    }) as typeof fetch;
+    try {
+      const info: MountInfo = { mount: "p1", pluginId: "example-pngtuber", entryId: "avatar", component: "PngtuberAvatar", spot: "avatar", key: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" }, tokens: {}, context: CTX, css: [] };
+      const frame = render(h(ui.LayerRoot, { info }));
+      const shown = () => frame.container.querySelector("[data-pngtuber]")?.getAttribute("data-pngtuber");
+      const picture = () => frame.container.querySelector("img")?.getAttribute("src") ?? "";
+      await wait(30);
+      expect(shown()).toBe("idle");
+      expect(picture()).toBe("https://pngtuber.test/idle.png");
+      const wall = () => performance.timeOrigin + performance.now();
+      const frames = (from: number, count: number, rms: number) => Array.from({ length: count }, (_, i) => ({ t: from + i * 0.0116, rms, centroid: 1400 }));
+      // A batch for another frame, or one that isn't numbers, is not this renderer's.
+      await act(async () => fake.emit({ type: "speech", mount: "p9", speech: { speaking: true, clock: { audio: 50, wall: wall() }, frames: frames(50, 20, 0.5) } }));
+      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: true, clock: { audio: "50", wall: wall() }, frames: frames(50, 20, 0.5) } as never }));
+      await wait(30);
+      expect(shown()).toBe("idle");
+      // The bot speaks: ~230 ms of loud frames, starting now on the parent's clock.
+      const w0 = wall();
+      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: true, clock: { audio: 50, wall: w0 }, frames: frames(50, 20, 0.3) } }));
+      await wait(50);
+      expect(shown()).toBe("talk");
+      expect(picture()).toBe("https://pngtuber.test/talk.png");
+      // After the speech: the idle picture again (and its timer stops: nothing is due).
+      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: false, clock: { audio: 50 + (wall() - w0) / 1000, wall: wall() }, frames: [] } }));
+      await wait(350);
+      expect(shown()).toBe("idle");
+      frame.unmount();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("a frame in the main or panel spot fills the room it is given and ignores the height its page reports; in another spot it takes the page's height", async () => {
+    const frameItem = (mount: string, spot: string) => ({ kind: "frame" as const, mount, ref: `vn#${spot}`, pluginId: "vn", entryId: spot, layer: "vn", url: `clover-plugin://vn/?mount=${mount}` });
+    views["w1:main[editor]"] = { spot: "main", key: "editor", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w2", "main")] };
+    views["w1:panel[side]"] = { spot: "panel", key: "side", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w3", "panel")] };
+    views["w1:bar"] = { spot: "bar", shape: "single", hidden: false, conflict: false, items: [frameItem("w4", "bar")] };
+    const info: MountInfo = { mount: "w1", pluginId: "test/fill", entryId: "columns", component: "Columns", spot: "app.root", props: {}, tokens: {}, context: CTX, css: [] };
+    const win = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const frame = (mount: string) => win.container.querySelector(`iframe[data-clover-mount="${mount}"]`) as HTMLIFrameElement;
+    await act(async () => { for (const m of ["w2", "w3", "w4"]) fake.emit({ type: "child-size", child: m, height: 64 }); });
+    for (const m of ["w2", "w3"]) {
+      expect(frame(m).getAttribute("data-clover-fill")).toBe("");
+      expect(frame(m).style.height).toBe("100%");
+      expect(frame(m).style.flex).toBe("1 1 0px");
+      expect(["0", "0px"]).toContain(frame(m).style.minHeight);
+    }
+    expect(frame("w4").getAttribute("data-clover-fill")).toBeNull();
+    expect(frame("w4").style.height).toBe("64px");
+    win.unmount();
+  });
+
+  test("a document in the main or panel spot tells the base sheet so (it scrolls in itself there)", async () => {
+    const info: MountInfo = { mount: "w9", pluginId: "vn", entryId: "main", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] };
+    const page = render(h(ui.LayerRoot, { info }));
+    await tick();
+    expect(document.documentElement.getAttribute("data-clover-spot")).toBe("main");
+    page.unmount();
+  });
+
+  test("useMountContext's window.narrow starts as the core said and follows its updates", async () => {
+    const info: MountInfo = { mount: "w10", pluginId: "test/fill", entryId: "probe", component: "NarrowProbe", spot: "main", props: {}, tokens: {}, context: { ...CTX, window: { narrow: true } }, css: [] };
+    const probe = render(h(ui.LayerRoot, { info }));
+    await tick();
+    const read = () => probe.container.querySelector("[data-narrow-probe]")?.getAttribute("data-narrow-probe");
+    expect(read()).toBe("true");
+    await act(async () => fake.emit({ type: "window", narrow: false }));
+    expect(read()).toBe("false");
+    await act(async () => fake.emit({ type: "window", narrow: true }));
+    expect(read()).toBe("true");
+    probe.unmount();
   });
 });
 
@@ -390,5 +721,65 @@ describe("the title area's drag region", () => {
     expect(ui.onDragRegion(icon, style)).toBe(false);
     expect(ui.onDragRegion(document.createElement("p"), style)).toBe(false);
     expect(ui.onDragRegion(null, style)).toBe(false);
+  });
+
+});
+
+describe("a document loaded again keeps the user's place", () => {
+  test("useKept: a value set before the document goes is there from the first render of the one loaded again (the window's session storage), per plugin and key; an unmount drops it", async () => {
+    const seen: unknown[] = [];
+    let set: ((v: string) => void) | undefined;
+    const Keeper = () => {
+      const [v, setV] = ui.useKept<string>("route", () => "home");
+      set = setV;
+      seen.push(v);
+      return h("p", { "data-kept": v });
+    };
+    const first = render(h(Keeper));
+    expect(seen[0]).toBe("home");
+    await act(async () => set!("plugins/installed"));
+    // The document goes with no unmount (a reload runs no cleanup): the storage as it was, under a fresh tree.
+    const atReload = sessionStorage.getItem("clover.kept:clover:route");
+    first.unmount();
+    expect(sessionStorage.getItem("clover.kept:clover:route")).toBeNull();
+    sessionStorage.setItem("clover.kept:clover:route", atReload!);
+    seen.length = 0;
+    const second = render(h(Keeper));
+    // The very first render already shows the kept place: no flash of the start page.
+    expect(seen[0]).toBe("plugins/installed");
+    expect(second.container.querySelector("p")?.getAttribute("data-kept")).toBe("plugins/installed");
+    // Outside a part it is the clover tree's; another key, or another plugin's, is its own.
+    expect(sessionStorage.getItem("clover.kept:clover:route")).toBe(JSON.stringify("plugins/installed"));
+    expect(sessionStorage.getItem("clover.kept:clover:other")).toBeNull();
+    second.unmount();
+    // Left (an unmount, the user going elsewhere): the next mount starts from its initial value.
+    seen.length = 0;
+    render(h(Keeper));
+    expect(seen[0]).toBe("home");
+  });
+});
+
+describe("the example PNGtuber renderer's framing", () => {
+  const host = { width: 600, height: 800 };
+  const natural = { width: 400, height: 800 };
+
+  test("without framing the picture is left to fit its box; with a crop it shows that much of the height from the top, headroom above", () => {
+    expect(pngtuber.framePicture(undefined, natural, host)).toBeUndefined();
+    expect(pngtuber.framePicture({}, natural, host)).toBeUndefined();
+    expect(pngtuber.framePicture({ crop: 0.5 }, { width: 0, height: 0 }, host)).toBeUndefined();
+    // Half the figure from 3% headroom: the box shows 0.53 of the height, so the picture is 800 / (800 * 0.53) = 1.887 times its size, 755 px wide: wider than
+    // the box's 98%, so the width limits it (the top stays where it was asked for).
+    const waist = pngtuber.framePicture({ crop: 0.56, headroom: 0.12 }, natural, host)!;
+    expect(waist.width).toBeCloseTo(588, 0);
+    expect(waist.left).toBeCloseTo(6, 0);
+    expect(waist.top).toBeCloseTo(0.12 * waist.height, 5);
+    const wide = pngtuber.framePicture({ crop: 0.3, headroom: 0.04 }, { width: 400, height: 800 }, { width: 1000, height: 400 })!;
+    // Height-limited here: 400 / (800 * 0.34) = 1.47.
+    expect(wide.height).toBeCloseTo(1176, 0);
+    expect(wide.top).toBeCloseTo(0.04 * 1176, 0);
+    expect(wide.left).toBeCloseTo((1000 - wide.width) / 2, 5);
+    // A preset with no numbers: the whole figure, with a little room above.
+    const full = pngtuber.framePicture({ mode: "full" }, natural, host)!;
+    expect(full.height).toBeCloseTo(800 / 1.03, 0);
   });
 });

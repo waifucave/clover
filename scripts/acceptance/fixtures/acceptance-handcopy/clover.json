@@ -1,0 +1,9 @@
+{
+  "manifest": 1,
+  "id": "acceptance-handcopy",
+  "name": "Acceptance hand copy",
+  "description": "The acceptance run's plugin that arrives by hand: copied into the plugins folder as a user copies a folder in the Finder, found behind its OK card. It holds one skill.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "contributes": { "skills": ["skills/*/SKILL.md"] }
+}

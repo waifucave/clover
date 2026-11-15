@@ -8,6 +8,7 @@ import { MethodError } from "../../bots/rpc";
 import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "../../bots/tests/fixtures";
 import { voicesMethods } from "../rpc";
 import { VoiceService, type VoicePlay } from "../service";
+import { startCloverVoice, withCloverVoice } from "./clover-voice";
 
 const VOICE_PLUGIN = "clover/fish-audio";
 
@@ -86,6 +87,23 @@ describe("the voices point", () => {
     await expect(setup({ listen: false }).voices.listen({ bot: "alpha", utterance: "u", seq: 0, audio: "", format: "opus", final: true })).rejects.toThrow("doesn't listen");
   });
 
+  test("voice.status says whether the bot's voice listens now, by the entry listen() reads: no voice, a plugin that only speaks, or one that is off say no", async () => {
+    const status = (s: ReturnType<typeof setup>, bot = "alpha") => voicesMethods({ voices: s.voices })["voice.status"]!({ bot }, { caller: { kind: "user", client: "app" } });
+    expect(await status(setup())).toEqual({ listens: true });
+    expect(await status(setup({ listen: false }))).toEqual({ listens: false });
+    expect(await status(setup({ voice: false }))).toEqual({ listens: false });
+    expect(await status(setup(), "beta")).toEqual({ listens: false });
+    // Installed but not active (turned off): `listen` would refuse it, so the control stays away.
+    const off = setup();
+    (off.registry as { entries: () => unknown[] }).entries = () => [{ pluginId: VOICE_PLUGIN, entryId: "fish-audio", state: "inactive", value: { handler: "voice", speak: true, listen: true } }];
+    expect(await status(off)).toEqual({ listens: false });
+    await expect(off.voices.listen({ bot: "alpha", utterance: "u0", seq: 0, audio: "", format: "pcm16-16k", final: true })).rejects.toThrow("no voice plugin");
+    // A status read asks nothing of the plugin and raises no card.
+    const asked: unknown[] = [];
+    expect(await status(setup({ mayUse: async (b, at) => (asked.push([b, at]), { ok: true }) }))).toEqual({ listens: true });
+    expect(asked).toEqual([]);
+  });
+
   test("voice.listen is the user's", async () => {
     const { voices } = setup();
     const m = voicesMethods({ voices })["voice.listen"]!;
@@ -108,8 +126,9 @@ describe("the voices point", () => {
     const played: VoicePlay[] = [];
     const b = await boot({
       home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs,
-      voices: { registry, host, play: (p) => void played.push(p) },
+      voices: { registry: { entries: withCloverVoice((registry as { entries: (p: string) => unknown[] }).entries) } as never, host, play: (p) => void played.push(p) },
     });
+    startCloverVoice(host, () => b.side.voiceSlot!);
     const listen = b.side.methods({ localDevice: "studio" })["voice.listen"]!;
     const theUser: Caller = { kind: "user", client: "app" };
     const piece = { bot: "alpha", utterance: "u5", seq: 0, audio: b64("hi"), format: "pcm16-16k", final: true };

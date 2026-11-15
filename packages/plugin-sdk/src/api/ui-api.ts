@@ -151,9 +151,13 @@ export interface CardElementProps {
   className?: string;
   children?: UiNode;
 }
+/** The readable lines the app composes from a card's own sealed fields, drawn sealed like any field: `summary` ("Alpha
+ *  wants to edit ~/Downloads/story.md"), `preview` (a small diff, a command, a file's start) and `always` (what "Always
+ *  allow" would store). A card with nothing to say for one draws nothing there. */
+export type CardComposedField = "summary" | "preview" | "always";
 /** `<Card.Field name>`: one sealed field; a field the card doesn't have draws nothing. */
 export interface CardFieldProps {
-  name: CardFieldName;
+  name: CardFieldName | CardComposedField;
   /** Clamps the field to this many lines; the frame itself offers the rest, so nothing sealed is cut unseen. */
   lines?: number;
   className?: string;
@@ -217,7 +221,7 @@ export interface UiApi {
   useMountContext?(): MountContext;
   /** A spot this component declares, as a list of its entries, to draw one at a time with `<Spot entry>`. Only the
    *  declaring part lists a spot. */
-  useSpotEntries?(name: string, spotKey?: string): { readonly entries: readonly SpotEntryView[]; subscribe(listener: () => void): Unsubscribe };
+  useSpotEntries?(name: string, spotKey?: string, forProps?: string | { readonly bot?: unknown }): { readonly entries: readonly SpotEntryView[]; /** False until the first answer (absent: always answered). */ readonly loaded?: boolean; subscribe(listener: () => void): Unsubscribe };
   /** Shows a menu at a point in the part; resolves with the chosen item's id, or null. */
   useMenu?(): (items: readonly MenuItem[], at: { x: number; y: number }) => Promise<string | null>;
   /** Drags between parts, through the core: `offer` returns a token the drop target `claim`s. */
@@ -238,6 +242,14 @@ export interface UiApi {
   useViewFrame?(name: string): (element: unknown) => void;
   /** Questions waiting in any session the plugin may read, with their text (`conversation.read`). */
   useQuestions?(): { readonly questions: readonly PendingQuestion[]; subscribe(listener: () => void): Unsubscribe };
+  /** In an `avatar` renderer: the speech of the bot it draws (`feed`: frames `{ t, rms, centroid }` on the audio clock,
+   *  and the clock; `speaking`). The same in the app's own renderers and a plugin's frame; numbers only reach a frame. */
+  useAvatarSpeech?(): { readonly feed: SpeechFeed | undefined; readonly speaking: boolean };
+  /** In an `avatar` renderer: take the bot plugin's cues (`onCue`: an expression, a motion, an outfit part, the pace, a
+   *  point to look at, only the kinds its `avatar.formats` `capabilities` list) and publish the model's catalogue
+   *  (`setCatalogue`) and the figure's box with its anchors (`setBox`). The same in the app's own renderers and a
+   *  plugin's frame; plain data only reaches a frame. */
+  useAvatarControl?(): { onCue(listener: (cue: unknown) => void): () => void; setCatalogue(names: unknown): void; setBox(box: unknown): void };
   /** Sends the user's own words (lane G's ask, the pill), in place of `conversation.send`, whose turns are the
    *  plugin's. Only the bundled `clover` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise

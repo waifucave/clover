@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v3-0324",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "scaleway/gpt-oss-120b",
@@ -164,7 +165,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "scaleway/llama-3.1-70b-instruct",
@@ -228,7 +230,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "llama-3.1-70b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "scaleway/llama-3.1-8b-instruct",
@@ -292,7 +295,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "llama-3.1-8b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "scaleway/mistral-small-3.2-24b-instruct-2506",
@@ -374,7 +378,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "mistral-small-3.2-24b-instruct-2506",
-      "modelFamily": "mistral"
+      "modelFamily": "mistral",
+      "strength": "weak"
     },
     {
       "key": "scaleway/qwen3-235b-a22b-instruct-2507",
@@ -455,7 +460,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3-235b-a22b-instruct-2507",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     }
   ]
 }

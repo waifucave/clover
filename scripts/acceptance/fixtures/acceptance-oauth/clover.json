@@ -1,0 +1,38 @@
+{
+  "manifest": 1,
+  "id": "acceptance-oauth",
+  "name": "Acceptance OAuth",
+  "description": "The acceptance run's plugin with an oauth-pkce sign-in (row 1.16): its OAuth server and its provider are the run's own server on this computer (the run writes its port into the auth URLs, `capabilities` and `host/endpoint.json`); its adapter's keyed fetch carries the access token the core's PKCE flow stored.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts"
+  },
+  "capabilities": [
+    "network:127.0.0.1:9"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "acceptance-oauth",
+        "name": "Acceptance OAuth",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "oauth-pkce",
+            "authorizeUrl": "http://127.0.0.1:9/authorize",
+            "tokenUrl": "http://127.0.0.1:9/token",
+            "clientId": "acceptance-oauth-client",
+            "scopes": [
+              "models"
+            ],
+            "secret": "oauth"
+          }
+        ],
+        "adapter": "adapter"
+      }
+    ]
+  }
+}

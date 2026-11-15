@@ -10,6 +10,14 @@ export type SessionKind = "bot" | "side-thread" | "agent" | "coding";
  *  fill any of them instead, or add its own key. */
 export type PanelViewId = "session" | "terminal" | "diff" | "browser" | "files" | "agent";
 
+/** A panel a plugin adds (a `panel` entry whose key isn't a stock panel's): its id in the window is `<plugin id>#<key>`. */
+export interface OwnPanel {
+  id: string;
+  title: string;
+  /** The plugin's icon, when the shell can draw it; else the stock glyph. */
+  icon?: string;
+}
+
 export interface PanelTogglesProps {
   /** The tab's kind: it decides which views are offered at all. */
   kind: SessionKind;
@@ -20,6 +28,8 @@ export interface PanelTogglesProps {
   onMore?: () => void;
   /** The views offered, of those the kind has; every one the kind has when absent. */
   available?: readonly PanelViewId[];
+  /** The panels plugins add on this tab, in order: their buttons follow the stock ones. */
+  own?: readonly OwnPanel[];
 }
 
 /** One view the panel holds: a header (a title, or the view's own header such as a browser's tabs),

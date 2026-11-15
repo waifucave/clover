@@ -1,0 +1,26 @@
+{
+  "manifest": 1,
+  "id": "acceptance-acp",
+  "name": "Acceptance ACP",
+  "description": "The acceptance run's fixture for an agent backend from a plugin: one ACP backend, acceptance-acp, whose program is the run's fake ACP agent (the one the core's backend conformance suite runs). The run writes the program's and its config's absolute paths into this manifest and the quirks file before it installs the plugin.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "acceptance-acp",
+        "name": "Acceptance ACP",
+        "protocol": "acp",
+        "command": "__BUN__",
+        "args": [
+          "__FAKE__",
+          "__CONFIG__",
+          "acp"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

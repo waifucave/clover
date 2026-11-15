@@ -1,5 +1,6 @@
 // The plugin API's core side (B-M2): the router's capability gate, `points.*`, storage, settings, `confirm`, the
 // commands and points lists, the caller binding (R7) and the pipe's listener subscriptions.
+import { API_CALLS } from "@waifucave/clover-plugin-sdk";
 import { afterAll, describe, expect, test } from "bun:test";
 import { catalogPointDecl, SYNCED_STORE_LIMIT_BYTES, type Manifest } from "@waifucave/clover-plugin-sdk";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -13,11 +14,11 @@ import type { InvokeRequest } from "../../contracts/plugin-host";
 import { commandListMethods, commandOwner, commandsApi, commandViews, pointViews } from "../../commands/views";
 import { apiChannel, LISTENER_ARG } from "../api-channel";
 import { confirmApi } from "../api/confirm";
-import { pointsApi } from "../api/points";
+import { pointChanges, pointsApi } from "../api/points";
 import { defaultAssetUrl } from "../daemon-host";
 import { assetPath } from "../paths";
 import { createApiRouter, type ApiHandlers } from "../api/router";
-import { filePluginSettings, memoryPluginSettings, PluginSettings, pluginSettingsMethods, settingsApi } from "../api/settings";
+import { filePluginSettings, LAYER_SETTING_MAX, memoryPluginSettings, PluginSettings, pluginSettingsMethods, settingsApi } from "../api/settings";
 import { fileSyncedStores, memorySyncedStores, pluginDataFolder, storageApi, SyncedStores } from "../api/storage";
 import { InvocationTable } from "../invocations";
 
@@ -127,20 +128,26 @@ describe("the router: the one capability gate", () => {
     expect([e.code, e.message]).toEqual(["refused", "conversation.list needs the capability conversation.read, which this plugin's OK doesn't list"]);
   });
 
-  test("where a call exists: secrets.get only in a process of the plugin's own, keys.* only in clover's, host.call only in components", async () => {
-    const r = routerWith(registry(), [{ "secrets.get": () => "s", "keys.publicKey": () => "k", "host.call": () => 1 }]);
+  test("where a call exists: secrets.get only in a process of the plugin's own, desktop.* and keys.* only in clover's, host.call only in components", async () => {
+    const r = routerWith(registry(), [{ "secrets.get": () => "s", "desktop.show": () => "k", "keys.publicKey": () => "never", "host.call": () => 1 }]);
     expect(await code(call(r, "luna", "secrets.get", ["x"], { process: "shared" }))).toBe("refused");
     expect(await call(r, "luna", "secrets.get", ["x"], { process: "own" })).toBe("s");
+    expect(await code(call(r, "luna", "desktop.show", ["f"], { process: "shared" }))).toBe("refused");
+    expect(await call(r, "luna", "desktop.show", ["f"], { process: "clover" })).toBe("k");
+    expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "own" }))).toBe("refused");
     expect(await code(call(r, "luna", "keys.publicKey", ["f"], { process: "shared" }))).toBe("refused");
-    expect(await call(r, "luna", "keys.publicKey", ["f"], { process: "clover" })).toBe("k");
+    expect(await call(r, "luna", "keys.publicKey", ["f"], { process: "clover" })).toBe("never");
     expect(await code(call(r, "luna", "host.call", ["x"]))).toBe("refused");
   });
 
-  test("commands.run needs call:<the command's top-level plugin>; a command nobody installed fails at once", async () => {
+  test("commands.run is gated by call:<the command's plugin>, read from the plugin's own record; its own tree's need none", async () => {
     const r = routerWith(registry(), [{ "commands.run": (_c, a) => `ran ${String(a[0])}` }]);
-    expect(await call(r, "luna", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
-    expect(await code(call(r, "quiet", "commands.run", ["tarot.shuffle"]))).toBe("refused");
-    expect(await code(call(r, "luna", "commands.run", ["tarot.nope"]))).toBe("not_installed");
+    for (const id of ["luna", "quiet", "tarot"]) {
+      const out = await call(r, id, "commands.run", ["tarot.shuffle"]).then((v) => v as string, (e: { code: string; message: string }) => e);
+      if (typeof out === "string") expect(out).toBe("ran tarot.shuffle");
+      else expect(out.message).toContain("call:tarot");
+    }
+    expect(await call(r, "tarot", "commands.run", ["tarot.shuffle"])).toBe("ran tarot.shuffle");
   });
 
   test("net.fetch reaches only the plugin's network: hosts; a call no area serves yet is refused, never guessed", async () => {
@@ -213,6 +220,49 @@ describe("points.*", () => {
     stop();
     reg.remove("tarot");
     expect(heard.length).toBe(1);
+  });
+
+  test("a contributor that may not run has no entries: off, stopped (and none of its handlers is called)", async () => {
+    const { reg, r } = setup();
+    const ids = async () => ((await call(r, "luna", "points.entries", ["luna.cards"])) as { entryId: string }[]).map((e) => e.entryId);
+    expect(await ids()).toEqual(["fool", "moon"]);
+    reg.setStopped("tarot", "crashed three times");
+    expect(await ids()).toEqual([]);
+    expect(await code(call(r, "luna", "points.call", ["luna.cards", { pluginId: "tarot", entryId: "moon" }, "draw"]))).toBe("not_installed");
+    reg.setStopped("tarot", null);
+    expect(await ids()).toEqual(["fool", "moon"]);
+    await reg.setEnabled("tarot", false);
+    expect(await ids()).toEqual([]);
+  });
+
+  test("an entry carries only the fields the point's declaration names, never the rest of what the contributor wrote", async () => {
+    const nosy: FakePluginInput = {
+      id: "nosy",
+      manifest: manifest({ id: "nosy", name: "Nosy", host: { entry: "host/index.js" }, contributes: { "luna.cards": [{ id: "x", title: "X", draw: "d", folder: "/Users/someone", token: "s3cret" }] } } as Partial<Manifest>),
+    };
+    const reg = registry([nosy]);
+    const r = routerWith(reg, [pointsApi({ registry: reg, host: hostStub(), assetUrl: defaultAssetUrl })]);
+    const entry = ((await call(r, "luna", "points.entries", ["luna.cards"])) as { pluginId: string; value: Record<string, unknown> }[]).find((e) => e.pluginId === "nosy");
+    // Whatever the validator let through, a declarer reads only its own schema's fields.
+    expect(entry).toBeDefined();
+    expect(Object.keys(entry!.value).sort()).toEqual(["draw", "id", "title"]);
+  });
+
+  test("pointChanges: the declaring tree's running plugins hear the point's name when what they see changes; nobody else", async () => {
+    const reg = registry([{ id: "luna/stage", manifest: manifest({ id: "luna/stage", name: "Stage" }) }]);
+    const heard: [string, string][] = [];
+    const stop = pointChanges({ registry: reg, assetUrl: defaultAssetUrl }, (id, point) => heard.push([id, point]), 5);
+    reg.put({ id: "quiet", manifest: manifest({ id: "quiet", name: "Quiet again" }) });
+    await Bun.sleep(30);
+    expect(heard).toEqual([]);
+    reg.setStopped("tarot", "crashed");
+    await Bun.sleep(30);
+    // The declarer and its own tree's running child (a page of the same tree); never tarot, quiet, or anyone else.
+    expect(heard.sort()).toEqual([["luna", "luna.cards"], ["luna/stage", "luna.cards"]]);
+    stop();
+    reg.setStopped("tarot", null);
+    await Bun.sleep(30);
+    expect(heard.length).toBe(2);
   });
 
   test("points.call runs the handler an entry names in a handler field, as the declarer's caller", async () => {
@@ -348,6 +398,59 @@ describe("settings", () => {
     expect(views.find((v) => v.key === "greeting")).toMatchObject({ value: "yo" });
   });
 
+  test("what the plugin's own page reads (layerView): values in effect and defaults, a secret only as { set }, no bot value, nothing too large", async () => {
+    const { settings } = setup();
+    expect(await settings.layerView("luna", "greeting")).toBe("hi");
+    settings.set("luna", "greeting", "hello");
+    settings.set("luna", "nick", "Lu", "alpha");
+    expect(await settings.layerView("luna", "greeting")).toBe("hello");
+    expect(await settings.layerView("luna", "token")).toEqual({ set: false });
+    await settings.setByUser("luna", "token", "never-shown");
+    expect(await settings.layerView("luna", "token")).toEqual({ set: true });
+    expect(await settings.layerView("luna", "nick")).toBeUndefined();
+    const all = (await settings.layerView("luna")) as Record<string, unknown>;
+    expect(all).toMatchObject({ greeting: "hello", token: { set: true } });
+    expect(all).not.toHaveProperty("nick");
+    expect(JSON.stringify(all)).not.toContain("never-shown");
+    expect(await settings.layerView("luna", "nope").catch((e: ContractError) => e.code)).toBe("not_found");
+    // Another plugin's keys are its own: luna's page asking for a key luna doesn't have finds nothing of tarot's.
+    expect(await settings.layerView("tarot", "greeting").catch((e: ContractError) => e.code)).toBe("not_found");
+    expect(LAYER_SETTING_MAX).toBeGreaterThan(8_192);
+  });
+
+  test("what the plugin's own page changes (layerSet), with no card: its own plain settings within the field; never a secret, a bot value, a templated or an unknown key", async () => {
+    const reg = registry([{ id: "ocean", manifest: manifest({
+      id: "ocean", name: "Ocean", host: { entry: "host/index.js" },
+      settings: {
+        order: { type: "enum", title: "Order", options: ["newest", "oldest"], default: "newest" },
+        size: { type: "number", title: "Size", min: 1, max: 9 },
+        region: { type: "string", title: "Region", default: "eu" },
+        key: { type: "secret", title: "Key" },
+        nick: { type: "string", title: "Nick", scope: "bot" },
+      },
+      contributes: { mcpServers: { tides: { type: "stdio", command: "bun", args: ["${plugin}/s.mjs", "${setting:region}"] } } },
+    } as Partial<Manifest>) }]);
+    const changed: unknown[] = [];
+    const settings = new PluginSettings({ registry: reg, backend: memoryPluginSettings() });
+    settings.watch((c) => changed.push(c));
+    settings.layerSet("ocean", "order", "oldest");
+    expect(settings.get("ocean", "order")).toBe("oldest");
+    settings.layerSet("ocean", "order", null);
+    expect(settings.get("ocean", "order")).toBe("newest");
+    expect(changed).toEqual([{ pluginId: "ocean", key: "order" }, { pluginId: "ocean", key: "order" }]);
+    const refusal = (key: string, value: unknown) => { try { settings.layerSet("ocean", key, value); return "set"; } catch (e) { return (e as ContractError).code; } };
+    expect(refusal("key", "s3cret")).toBe("refused");
+    expect(refusal("nick", "Lu")).toBe("refused");
+    expect(refusal("region", "us")).toBe("refused");
+    expect(refusal("nope", 1)).toBe("not_found");
+    for (const [k, v] of [["order", "sideways"], ["order", 3], ["size", 99], ["size", "5"]] as const) expect([k, v, refusal(k, v)]).toEqual([k, v, "invalid"]);
+    expect(refusal("region", "x".repeat(LAYER_SETTING_MAX + 10))).toBe("invalid");
+    // Nothing refused was written, and another plugin's keys are its own (an id is no argument at all).
+    expect(changed).toHaveLength(2);
+    expect(settings.get("ocean", "region")).toBe("eu");
+    expect(() => settings.layerSet("luna", "order", "oldest")).toThrow();
+  });
+
   test("on disk, under the fenced settings folder", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-home-"));
     const settings = new PluginSettings({ registry: registry(), backend: filePluginSettings(home) });
@@ -412,7 +515,9 @@ describe("commands and points, listed", () => {
     const reg = registry();
     expect(commandViews(reg)).toEqual([{ name: "tarot.shuffle", pluginId: "tarot", description: "Shuffle the deck", args: { type: "object" }, key: "Mod+Shift+T" }]);
     const r = routerWith(reg, [commandsApi(reg)]);
-    expect(await call(r, "quiet", "commands.list")).toEqual(commandViews(reg));
+    // The plugin API lists only what the calling plugin may run: its own commands (and those it holds `call:` for).
+    expect(await call(r, "tarot", "commands.list")).toEqual(commandViews(reg));
+    expect(await call(r, "quiet", "commands.list")).toEqual([]);
     expect(await commandListMethods(reg)["command.list"]!({}, { caller: { kind: "user", client: "app" } as Caller })).toEqual({ commands: commandViews(reg) });
   });
 

@@ -2,10 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type WritableSocket } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, SESSIONS_METHODS, ConnWriter, encodeLine, ERR, LineDecoder, METHODS, PROTOCOL_VERSION, type PluginState, type WritableSocket } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
 import { bridgeMethodHandlers, canonicalCallHash, createCloverServer, laneMethodHandlers, type BridgeGate, type BridgeVerdict } from "../../src/ipc/clover";
 import { checkDaemonProof } from "../../src/platform/pair/run-files";
+import { appCaptureHandler, appOpenHandlers } from "../../src/ipc/app-capture";
 import { handler, MethodError } from "../../src/bots/rpc";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
@@ -19,6 +20,7 @@ import { appPeerByRequirement, auditTokenSatisfies, type AppPeerCheck } from "..
 import { spawnSync } from "node:child_process";
 import { resolveEndpoint } from "../../src/platform/transport";
 import { commandMethods } from "../../src/registry/commands";
+import { grantsInForce } from "../../src/contracts/plugin-registry";
 import { darwinTest, onDarwin } from "../helpers/darwin-only";
 
 // C-M1: Clover's roles, tokens, caller check and the pair's methods over the daemon's real endpoint,
@@ -31,6 +33,8 @@ class Client {
   readonly fromDaemon: any[] = [];
   /** Answer the daemon's app.ping, as the app's main process does. */
   answerPings = true;
+  /** Answers to the daemon's other requests, by method: a result, or `{ error }` for an error answer. */
+  answers: Record<string, (params: any) => unknown> = {};
   private socket!: Awaited<ReturnType<typeof Bun.connect>>;
   private writer!: ConnWriter;
   closed = false;
@@ -45,6 +49,11 @@ class Client {
           else if (msg.method) {
             c.fromDaemon.push(msg);
             if (msg.method === "app.ping" && c.answerPings) c.writer.enqueue(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+            const answer = c.answers[msg.method];
+            if (answer !== undefined) {
+              const r = answer(msg.params) as { error?: unknown } | undefined;
+              c.writer.enqueue(encodeLine(r !== undefined && r !== null && typeof r === "object" && "error" in r ? { jsonrpc: "2.0", id: msg.id, error: r.error } : { jsonrpc: "2.0", id: msg.id, result: r }));
+            }
           }
         }
       },
@@ -97,7 +106,9 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default" } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number; now?: () => number }; acceptUpdateExit?: () => boolean; appPeer?: AppPeerCheck | "default"; grants?: Record<string, string[]>; records?: Record<string, { enabled: boolean; state: PluginState; granted: string[] }> } = {}) {
+    // A plugin's record as the registry holds it (on and running unless a test says otherwise), read on every call.
+    const records = opts.records ?? Object.fromEntries(Object.entries(opts.grants ?? {}).map(([id, granted]) => [id, { enabled: true, state: "running" as PluginState, granted }]));
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -143,7 +154,7 @@ describe("Clover connections (C-M1)", () => {
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
       // B: `command.run`, its args checked against the command's schema before the handler runs.
       ...commandMethods({
-        registry: { entries: ((point: string) => point !== "commands" ? [] : [{
+        registry: { get: ((id: string) => records[id]) as never, entries: ((point: string) => point !== "commands" ? [] : [{
           point: "commands", pluginId: "tarot", ref: "commands/0", entryId: "tarot.draw", state: "active",
           value: { name: "draw", description: "Draw", handler: "draw", args: { type: "object", required: ["cards"], properties: { cards: { type: "integer", minimum: 1, maximum: 3 } } } },
         }]) as never },
@@ -153,8 +164,9 @@ describe("Clover connections (C-M1)", () => {
     // The test process says hello as the app: no peer-image check unless a test asks for one (`opts.appPeer`).
     const appPeer = opts.appPeer === "default" ? {} : { appPeer: opts.appPeer ?? ("none" as const) };
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
+      ...(opts.grants || opts.records ? { pluginCapabilities: (id: string) => grantsInForce(records[id]) } : {}),
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
-      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
+      ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers, "app.capture": appCaptureHandler({ connections: () => clover.connections(), ask: (conn, method, params, ms) => clover.ask(conn, method, params, ms) }), ...appOpenHandlers({ connections: () => clover.connections(), ask: (conn, method, params, ms) => clover.ask(conn, method, params, ms) }) },
       ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
@@ -177,6 +189,94 @@ describe("Clover connections (C-M1)", () => {
     const missing = await c.request("command.run", { name: "tarot.nope" });
     expect(missing.error.data).toMatchObject({ code: "not_installed" });
     c.close();
+  });
+
+  test("command.run on a plugin's layer connection: another plugin's command only with call:<it>; its own with none", async () => {
+    const b = await boot({ grants: { "vn-composer": ["conversation.read"], friend: ["call:tarot"], tarot: [] } });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const layerOf = async (pluginId: string) => {
+      const { token } = (await app.request("layer.token", { pluginId })).result;
+      const c = await Client.connect(b.socketPath);
+      await c.hello("layer", token, { pluginId });
+      return c;
+    };
+    const runs = () => b.calls.filter((x) => x.method === "command.run").map((x) => (x.params as { caller: { pluginId?: string } }).caller.pluginId);
+    const vn = await layerOf("vn-composer");
+    const refused = await vn.request("command.run", { name: "tarot.draw", args: { cards: 9 } });
+    expect(refused.error.data).toMatchObject({ code: "refused" });
+    expect(refused.error.message).toContain("call:tarot");
+    // Refused before its args are looked at: the args were out of range, and the answer isn't invalid_args.
+    expect(runs()).toEqual([]);
+    const friend = await layerOf("friend");
+    expect((await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error).toBeUndefined();
+    const tarot = await layerOf("tarot");
+    expect((await tarot.request("command.run", { name: "tarot.draw", args: { cards: 2 } })).error).toBeUndefined();
+    expect(runs()).toEqual(["friend", "tarot"]);
+    // The user's own door (the app's connection, the composer's slash menu) is unchanged.
+    expect((await app.request("command.run", { name: "tarot.draw", args: { cards: 3 } })).error).toBeUndefined();
+    app.close(); vn.close(); friend.close(); tarot.close();
+  });
+
+  test("a layer's method that names a capability is refused, before its handler, for a plugin whose OK doesn't grant it", async () => {
+    const b = await boot({ grants: { "vn-composer": ["conversation.read"], bare: [] } });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const layerOf = async (pluginId: string) => {
+      const { token } = (await app.request("layer.token", { pluginId })).result;
+      const c = await Client.connect(b.socketPath);
+      await c.hello("layer", token, { pluginId });
+      return c;
+    };
+    const bare = await layerOf("bare");
+    const r = await bare.request("session.interrupt", { id: "s_1" });
+    // session.interrupt is the user's: refused at the role gate, as before.
+    expect(r.error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    const read = await bare.request("session.list", {});
+    expect(read.error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+    expect(read.error.message).toContain("conversation.read");
+    // With the capability the call passes the gate and reaches its handler (here a stand-in that refuses on its own).
+    const vn = await layerOf("vn-composer");
+    expect((await vn.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    // An unknown plugin (no record) is granted nothing.
+    const ghost = await layerOf("ghost");
+    expect((await ghost.request("session.list", {})).error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+    app.close(); bare.close(); vn.close(); ghost.close();
+  });
+
+  test("a plugin that may not run gets nothing on its open layer connection: turned off, stopped, blocked, or waiting for its OK", async () => {
+    const records: Record<string, { enabled: boolean; state: PluginState; granted: string[] }> = {
+      tarot: { enabled: true, state: "running", granted: ["conversation.read"] },
+      friend: { enabled: true, state: "running", granted: ["conversation.read", "call:tarot"] },
+    };
+    const b = await boot({ records });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const layerOf = async (pluginId: string) => {
+      const { token } = (await app.request("layer.token", { pluginId })).result;
+      const c = await Client.connect(b.socketPath);
+      await c.hello("layer", token, { pluginId });
+      return c;
+    };
+    const tarot = await layerOf("tarot");
+    const friend = await layerOf("friend");
+    // Running and OK'd: past the gate (the stand-in handler refuses on its own), and friend runs tarot's command.
+    expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect((await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error).toBeUndefined();
+    // Each state in which its host half wouldn't run: the frame's connection is still open, and gets nothing.
+    for (const [enabled, state] of [[false, "off"], [true, "stopped"], [true, "invalid"], [true, "refused"]] as const) {
+      records.tarot = { ...records.tarot!, enabled, state };
+      records.friend = { ...records.friend!, enabled, state };
+      expect([state, (await tarot.request("session.list", {})).error.code]).toEqual([state, CLOVER_ERR.CAPABILITY_REFUSED]);
+      expect([state, (await friend.request("command.run", { name: "tarot.draw", args: { cards: 1 } })).error.data]).toEqual([state, expect.objectContaining({ code: "refused" })]);
+    }
+    // A change waiting for its new OK: what the registry says for its process. Held until the OK (found, nothing granted):
+    // nothing. The old version still running on the old OK (an update waiting for its OK): the old grant.
+    records.tarot = { enabled: true, state: "found", granted: [] };
+    expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.CAPABILITY_REFUSED);
+    records.tarot = { enabled: true, state: "running", granted: ["conversation.read"] };
+    expect((await tarot.request("session.list", {})).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    app.close(); tarot.close(); friend.close();
   });
 
   test("the app says hello with this run's token and counts as the user", async () => {
@@ -246,6 +346,78 @@ describe("Clover connections (C-M1)", () => {
     expect((await bots.request("pair.quit", { handOver: false })).error.code).toBe(CLOVER_ERR.NOT_THE_USER); // userOnly
     expect(b.stops).toHaveLength(0);
     cli.close(); lost.close(); bots.close();
+  });
+
+  test("app.capture: the user's CLI gets the app's own picture; a bot's session, the app's role, a layer and an app that left are refused", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    const asked: unknown[] = [];
+    const shot = { windows: [{ name: "main", bounds: { x: 0, y: 0, width: 4, height: 2 }, scale: 2, visible: true, drawn: true, png: "iVBORw0KGgo=", pixels: { width: 8, height: 4 }, views: [] }] };
+    app.answers["app.window.capture"] = (p) => { asked.push(p); return shot; };
+    await app.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers", "app.capture"] });
+    const cli = await Client.connect(b.socketPath);
+    await cli.hello("cli", b.legacy.harness);
+    const ok = await cli.request("app.capture", { window: "main", frames: true });
+    expect(ok.result).toEqual(shot);
+    expect(asked).toEqual([{ window: "main", frames: true }]);
+    // The app's own role may not ask it (the method is the CLI's), nor a layer.
+    expect((await app.request("app.capture", { window: "main" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    const { token } = (await app.request("layer.token", { pluginId: "vn-composer" })).result;
+    const layer = await Client.connect(b.socketPath);
+    await layer.hello("layer", token, { pluginId: "vn-composer" });
+    expect((await layer.request("app.capture", { window: "main" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    // A bot's session's CLI (a command run inside the session) is not the user.
+    b.setPeer(fenced);
+    b.processes.add(5150, { sessionId: "s-1", sessionKind: "bot", bot: "alpha" });
+    const bots = await Client.connect(b.socketPath);
+    expect((await bots.hello("cli", b.legacy.harness)).result.caller.kind).toBe("session");
+    expect((await bots.request("app.capture", { window: "main" })).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(asked).toHaveLength(1);
+    // The app's error answer comes back as one; an app that leaves while asked, as a retry.
+    app.answers["app.window.capture"] = () => ({ error: { code: ERR.NOT_FOUND, message: "no window named nope" } });
+    const nope = await cli.request("app.capture", { window: "nope" });
+    expect(nope.error).toMatchObject({ code: ERR.NOT_FOUND, message: "no window named nope" });
+    delete app.answers["app.window.capture"];
+    const waiting = cli.request("app.capture", { window: "main" });
+    await Bun.sleep(100);
+    app.close();
+    expect((await waiting).error.code).toBe(ERR.RETRY);
+    expect((await cli.request("app.capture", { window: "main" })).error).toMatchObject({ code: ERR.NOT_FOUND, message: "the app isn't running on this computer" });
+    cli.close(); layer.close(); bots.close();
+  });
+
+  test("app.open and app.where: the user's CLI moves the app's window and reads where it is; a bot's session and a layer are refused", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    const asked: unknown[] = [];
+    app.answers["app.window.open"] = (p) => { asked.push(p); return { ...(p.target !== undefined ? { target: p.target } : {}), shown: true, drawn: true, where: { tab: { kind: p.target === "settings" ? "settings" : "bot", id: "alpha" }, side: "bots" }, frames: [] }; };
+    await app.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers", "app.capture", "app.open"] });
+    const cli = await Client.connect(b.socketPath);
+    await cli.hello("cli", b.legacy.harness);
+    expect((await cli.request("app.open", { target: "settings", frames: true })).result).toMatchObject({ target: "settings", shown: true, where: { tab: { kind: "settings" } } });
+    expect((await cli.request("app.where", {})).result).toMatchObject({ shown: true, where: { tab: { kind: "bot", id: "alpha" } } });
+    expect(asked).toEqual([{ target: "settings", frames: true }, {}]);
+    const { token } = (await app.request("layer.token", { pluginId: "vn-composer" })).result;
+    const layer = await Client.connect(b.socketPath);
+    await layer.hello("layer", token, { pluginId: "vn-composer" });
+    expect((await layer.request("app.open", { target: "settings" })).error.code).toBe(CLOVER_ERR.ROLE_REFUSED);
+    b.setPeer(fenced);
+    b.processes.add(5150, { sessionId: "s-1", sessionKind: "bot", bot: "alpha" });
+    const bots = await Client.connect(b.socketPath);
+    await bots.hello("cli", b.legacy.harness);
+    expect((await bots.request("app.open", { target: "settings" })).error.code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(asked).toHaveLength(2);
+    app.close(); cli.close(); layer.close(); bots.close();
+  });
+
+  test("app.capture: an app whose hello doesn't list app.capture is said to be older", async () => {
+    const b = await boot();
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers"] });
+    const cli = await Client.connect(b.socketPath);
+    await cli.hello("cli", b.legacy.harness);
+    expect((await cli.request("app.capture", { window: "main" })).error.message).toContain("older than app.capture");
+    app.close(); cli.close();
   });
 
   test("roles reach only their own list", async () => {
@@ -397,6 +569,36 @@ describe("Clover connections (C-M1)", () => {
     for (let i = 0; i < 100 && b.killed.length === 0; i++) await Bun.sleep(10);
     expect(b.killed).toEqual([4242]); // the peer's pid, from the caller check
     hung.close(); // what the kill does
+    for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
+    expect(b.pair.status().safeMode).toBe(true);
+  });
+
+  test("the heartbeat after a sleep: the time the computer slept is not the app's silence; a real hang after the wake still ends it", async () => {
+    // The daemon's clock, which a sleep moves on while no timer runs.
+    let slept = 0;
+    const b = await boot({ heartbeat: { intervalMs: 20, timeoutMs: 150, now: () => Date.now() + slept } });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    await Bun.sleep(100);
+    const before = app.fromDaemon.filter((m) => m.method === "app.ping").length;
+    expect(before).toBeGreaterThan(1);
+    // A night's sleep: the next tick comes a minute "later", far past the timeout, with no ping sent in between.
+    slept += 60_000;
+    await Bun.sleep(200);
+    expect(b.killed).toEqual([]);
+    expect(b.pair.status().safeMode).toBe(false);
+    expect(app.fromDaemon.filter((m) => m.method === "app.ping").length).toBeGreaterThan(before); // pinged again after the wake
+    // And twice in a row (a Mac wakes every few minutes through a night).
+    slept += 60_000;
+    await Bun.sleep(100);
+    slept += 60_000;
+    await Bun.sleep(100);
+    expect(b.killed).toEqual([]);
+    // An app that really stops answering after the wake is still ended.
+    app.answerPings = false;
+    for (let i = 0; i < 100 && b.killed.length === 0; i++) await Bun.sleep(10);
+    expect(b.killed).toEqual([4242]);
+    app.close();
     for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
     expect(b.pair.status().safeMode).toBe(true);
   });

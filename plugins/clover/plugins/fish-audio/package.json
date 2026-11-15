@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
+    "@waifucave/clover-plugin-sdk": "workspace:*",
     "typescript": "5.9.3"
   }
 }

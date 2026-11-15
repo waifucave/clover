@@ -123,6 +123,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
   const threadId = record.sessionId;
   switch (record.type) {
     case "input": {
+      // An input put back in line repeats its earlier record, which the client was already shown.
+      if (record.requeues !== undefined) return undefined;
       const input = record.input;
       switch (input.from) {
         case "user":
@@ -154,6 +156,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
           };
         case "note":
           return { type: "note", ...envelope, from: input.by, label: input.label, text: input.text };
+        case "notice":
+          return { type: "note", ...envelope, from: { kind: "core" }, label: input.label, text: input.text };
         case "task":
           return { type: "note", ...envelope, from: { kind: "core" }, label: input.status === "event" ? "Background task event" : `Background task ${input.status}`, text: input.text };
       }

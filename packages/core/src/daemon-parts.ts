@@ -24,11 +24,21 @@
 //   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
+import type { HookSource } from "./runtime-sdk/turn-loop/hooks";
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { AgentDefView } from "@waifucave/clover-protocol";
+import { browserAppHandlers } from "./browser/app-port";
+import { browserRpcHandlers } from "./browser/rpc-handlers";
+import { startBrowser, type DaemonBrowser, type StartBrowserOptions } from "./browser/daemon";
+import { DEFAULT_PROXY_SETTING } from "./browser/proxy";
+import type { AppTabPort, BrowserEvent } from "./browser/service";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
+import { realpathSync } from "node:fs";
+import { pathFolders, pathsClassOnDisk } from "./approvals/ordinary-paths";
+import { requestReviewer } from "./approvals/request-reviewer";
+import { hostOs } from "./tree/names";
 import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
@@ -43,16 +53,18 @@ import { createBotSide } from "./bots/wiring";
 import { LeaseMainComputer, soleComputer, type MainComputer } from "./bots/main-computer";
 import type { DriverFactory } from "./bots/service";
 import type { Clock } from "./contracts/clock";
-import type { PluginRegistry } from "./contracts/plugin-registry";
+import { grantsInForce, type PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import { appTerminals } from "./computers/app-terminals";
 import type { ApprovalBroker } from "./contracts/approval-broker";
+import type { FencedSpawner } from "./fence/spawn";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
 import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
 import { usageMethods } from "./usage/rpc";
+import { sessionPanelMethods, type SessionPanelDeps } from "./sessions/panel-reads";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
 import { botDeliveryCheck, linkBotRelay, mountSessionDelivery } from "./links/bot-relay";
 import { peerSessionMethods } from "./bots/rpc";
@@ -68,9 +80,23 @@ export interface DaemonBotsInput {
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
   /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
    *  on it (lane C's `botApprovalCheck`). */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence; agents(): DaemonAgents | undefined }): DriverFactory;
+  /** The bot side is up: what the drivers keep per bot or session hears the bots' removals and the sessions' ends (lane
+   *  C's shell grants). Its result is called when the side closes. */
+  sideUp?(side: BotSide): () => void;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** Whether a model can be set as a bot's (`bot.setUserLayer`; models-list.ts `modelOffer`). */
+  modelOffer?: BotSideOptions["modelOffer"];
+  /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
+   *  nothing). */
+  bundledChoice?: BotSideOptions["bundledChoice"];
+  /** Lane B's plugin workshop: the bots' `PluginValidate`, `PluginInstall` and `PluginStatus`. */
+  workshop?: BotSideOptions["workshop"];
+  /** The drop: the folders a bot made in the plugins folder that the registry hasn't recorded yet. */
+  drops?: { pending(bot: string): readonly string[] };
+  /** The bots' `AppScreenshot`: this computer's app draws a place for them. */
+  appScreenshot?: BotSideOptions["appScreenshot"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
   /** The URL the app loads a plugin's file from (a bot's portrait). */
   assetUrl?: BotSideOptions["assetUrl"];
@@ -80,12 +106,26 @@ export interface DaemonBotsInput {
   routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
   /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
   pluginHost?: BotPluginHost;
-  /** Sends `voice.play` to the app (with `pluginHost`). */
+  /** Sends `voice.play` to the app (with `pluginHost`, or `voiceHost`). */
   voicePlay?: NonNullable<BotSideOptions["voices"]>["play"];
+  /** The user's choice of voice mode, and how they are told their voice stopped (§6.6, the voice slot). */
+  voiceChosen?: NonNullable<BotSideOptions["voices"]>["chosen"];
+  voiceTell?: NonNullable<BotSideOptions["voices"]>["tell"];
+  voiceForget?: NonNullable<BotSideOptions["voices"]>["forget"];
+  /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
+   *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
+  contextWindowOf?: SessionPanelDeps["contextWindowOf"];
+  connectorsOf?: SessionPanelDeps["connectorsOf"];
+  /** The plugin host the bots' voices stream from, where the daemon gives no `pluginHost` (whose ingress and
+   *  triggers this leaves off). */
+  voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
   /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
   pillTargets?: BotSideOptions["pillTargets"];
+  /** Lane B's plugin triggers' arm and disarm, where the daemon gives no `pluginHost` (whose webhook ingress this
+   *  leaves off): a routine file that names a plugin's trigger type is armed through that plugin. */
+  pluginTriggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
@@ -126,15 +166,37 @@ export interface DaemonPartsInput {
   /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
+  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one CloverFence): the
+   *  computer node's Bash runs through it (`fencedExecutor`, lane J). Without it the node has no executor and Bash on
+   *  its tree is refused; it never runs unsandboxed. A test's own `node.executor` wins. */
+  spawner?: FencedSpawner;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
   agents?: false | DaemonAgentsInput;
+  /** The Clover Browser on this computer (its tabs live in the app; the headless shell where no display is); false for none. */
+  browser?: false | DaemonBrowserInput;
   log?(line: string): void;
+}
+
+/** What the browser needs that the daemon decides. */
+export interface DaemonBrowserInput {
+  /** This computer's name, as the tabs name it. */
+  computer?: string;
+  /** The app's port while the app is connected (`appTabPort` over the Clover server's connections). */
+  app?: () => AppTabPort | undefined;
+  /** No app runs on this computer at all; by default, never (a desktop's tabs live in its app). */
+  headless?: boolean;
+  /** The browser's events (`tab_changed`, `tab_closed`), for the Clover server's core events. */
+  emit?: (event: BrowserEvent) => void;
+  /** For tests: the headless shell's own options. */
+  headlessOptions?: StartBrowserOptions["headlessOptions"];
 }
 
 export interface DaemonParts {
   node?: ComputerNode;
+  /** The Clover Browser, when it runs here. */
+  browser?: DaemonBrowser;
   bots?: BotSide;
   /** Lane K's agents, when they run here. */
   agents?: DaemonAgents;
@@ -144,6 +206,8 @@ export interface DaemonParts {
   broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
   main?: MainComputer;
+  /** Lane D's usage ledger, with the bot side: the plugin API's `usage.*` reads it. */
+  usage?: UsageLedger;
   /** Closes the bot side, then the node: the reverse of their start. The links close after, with their owner. */
   close(): Promise<void>;
 }
@@ -162,6 +226,15 @@ export interface DaemonAgentsInput {
   doors?: LateAgentDoors;
   /** Tests: the backends in place of the registry's and the core's. */
   backends?: AgentsOptions["backends"];
+  /** The plugins' turn hooks (the bots' `pluginHooks`), read at each call: an in-process delegation's tool calls go
+   *  through them as a bot's do. */
+  hooks?: HookSource;
+  /** The bot's own shell write roots for a conversation at a level, its grants among them: a bot's agent in a root they
+   *  cover runs its commands with no card; every other command of a bot's agent asks on a card. */
+  botWriteRoots?: AgentsOptions["botWriteRoots"];
+  /** How the plugins reach the agents (spec §9.3, agents/plugin-reach.ts): their tools on the bridge, their skills and
+   *  agent definitions placed where a backend reads its own, and `Glossary` on the bridge. */
+  plugins?: Pick<AgentsOptions, "pluginTools" | "pluginParts" | "glossary">;
 }
 
 export type DaemonAgents = ReturnType<typeof createAgents>;
@@ -238,6 +311,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
   };
   try {
     let side: BotSide | undefined;
+    let usageLedger: UsageLedger | undefined;
     const nodeLinks = links ? computerNodeLinks(links) : undefined;
     const computer = nodeLinks?.self.name;
     // The lease's main computer, as lane D reads it; a lone computer (no links, or no lease here) is its own.
@@ -254,6 +328,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
     // card), the agents and the bot side all go through these, never a copy of their own.
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
+    // A bot's workshop (the plugins it built: `provenance {by: "bot", bot}` in the registry's install records), followed
+    // on each registry change, so its sessions' file tools and sandbox write inside them (`FenceContext.workshop`).
+    if (input.bots) closers.push(fence.followWorkshop(input.bots.registry, input.bots.drops));
     let broker: CloverApprovalBroker | undefined;
     const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
@@ -261,13 +338,18 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
       // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
       // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
-      // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
-      // not here: the node options below carry what the daemon passes. A test's own node options win.
+      // actions" (the daemon's `BashReviewer`; it fails closed), and its Bash on lane C's fenced process when the daemon
+      // hands over its spawner (`input.spawner`; none, no executor). The fence, MCP and askUser/answers are not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         // The broker below, bound late: it needs the node's own registry for each computer's level.
         approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
+        // `temp`: the fence's temp folder, which the fence lets every runner write: TMPDIR for every Bash run here except
+        // a bot's own, which gets its scratch folder instead (`fencedExecutor`, from `cloverHome`). Read from a fence of
+        // this home until INT's one daemon-wide CloverFence lands here (#365); then it is that fence's `temp`.
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome, temp: new CloverFence({ home: input.userHome, cloverHome: input.cloverHome }).temp } } : {}),
+        answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
@@ -301,13 +383,21 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
         levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
+        // §9.1 at ask for risky actions: an edit of the user's ordinary files runs (the owner's ruling), and what is
+        // left goes to the daemon's one safety reviewer (the node's), a card when it can't judge.
+        // R1: the user's PATH is the login shell's, merged into the daemon's own at start (`login-shell-path.ts`).
+        pathClass: (paths) => pathsClassOnDisk(paths, {
+          home: realOrSelf(input.userHome), os: hostOs(), cloverHome: realOrSelf(input.cloverHome),
+          pathFolders: pathFolders(hostOs() === "windows" ? process.env.Path ?? process.env.PATH : process.env.PATH, hostOs()),
+        }),
+        reviewer: requestReviewer(input.reviewer, (line) => log(`[approvals] ${line}`)),
         log: (line) => log(`[approvals] ${line}`),
       });
       // Its cards as core events (lane C's `approvalCoreEvents`), stamped with the shared clock, from before the bot
       // side starts, so a card raised while it starts is heard too.
       if (input.coreEvent) {
         const send = input.coreEvent;
-        closers.push(approvalCoreEvents(broker, (e) => send(e), () => links.clock.now()));
+        closers.push(approvalCoreEvents(broker, (e, o) => send(e, o), () => links.clock.now()));
       }
     }
 
@@ -328,14 +418,24 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
           const made = createAgents({
             home: input.cloverHome, computer: here, socketPath: a.socketPath, host: d.host, approvals, tree: n.tree, fence, clock: input.clock,
             registry: b.registry, levelOf: d.levelOf, pause, userHome: input.userHome,
+            // The plugins' tool.before hooks see an agent's permission requests (best effort, the manager's header).
+            ...(a.hooks ? { hooks: a.hooks } : {}),
             // A computer's level changing (the user lowers it, or it goes off) reaches every running agent's mode floor.
             watchLevels: (fn) => n.registry.watch(() => fn()),
             cloverCode: {
               baseOptions: (s) => embeddedSessionOptions({ home: input.cloverHome, spawn: a.spawn }, s),
               defaultModel: a.defaultModel, ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
             },
-            inProcess: { home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}) },
+            inProcess: {
+              home: input.cloverHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}),
+              // The plugins' tool hooks cover a delegation's calls as a bot's: a guard a bot holds covers the agents it starts.
+              ...(a.hooks ? { hooks: a.hooks } : {}), computer: () => here,
+            },
             ...(a.backends ? { backends: a.backends } : {}),
+            ...(a.botWriteRoots ? { botWriteRoots: a.botWriteRoots } : {}),
+            ...(a.plugins?.pluginTools ? { pluginTools: a.plugins.pluginTools } : {}),
+            ...(a.plugins?.pluginParts ? { pluginParts: a.plugins.pluginParts } : {}),
+            ...(a.plugins?.glossary ? { glossary: a.plugins.glossary } : {}),
             log: (line) => log(`[agents] ${line}`),
           });
           agents = made;
@@ -346,11 +446,15 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       const s = createBotSide({
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
-        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence }),
+        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence, agents: () => agents }),
         defaultModel: b.defaultModel,
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.modelOffer ? { modelOffer: b.modelOffer } : {}),
+        ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
+        ...(b.workshop ? { workshop: b.workshop } : {}),
+        ...(b.appScreenshot ? { appScreenshot: b.appScreenshot } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
@@ -363,12 +467,23 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       });
       side = s;
       closers.push(() => s.close());
+      // A card's headline that names a bot names it as the user sees it (the user layer's name over its plugin's).
+      if (broker) closers.push(broker.setBotNames((id) => (s.bots.has(id) ? s.bots.effective(id).name : undefined)));
+      if (b.sideUp !== undefined) closers.push(b.sideUp(s));
       closers.push(s.gate.watch(() => pauseChanged.emit()));
       // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.
       if (agents && a && a.doors) {
         const doors = a.doors;
         doors.set(agents);
         closers.push(() => doors.set(undefined));
+      }
+      // The bots' own changes as core events (`bot_changed`, `bot_removed`, `bots_paused`: protocol sessions.ts), so a plugin's
+      // `bots.watch` and the app hear a model pick or a pause as it happens, not only on the next read.
+      if (input.coreEvent) {
+        const send = input.coreEvent;
+        closers.push(s.bots.onEvent((e) => {
+          if (e.type === "bot_changed" || e.type === "bot_removed" || e.type === "bots_paused") send(e);
+        }));
       }
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
       if (links) {
@@ -405,6 +520,25 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));
+      // The session panels' reads: a coding session's or an agent's changes (its folder on this computer, through the
+      // tree), its outputs, its context use and its connectors (sessions/panel-reads.ts).
+      const treeOf = node?.tree;
+      Object.assign(input.handlers, laneMethodHandlers(sessionPanelMethods({
+        home: input.cloverHome,
+        view: (id) => s.host.get(id),
+        history: (id, o) => s.host.history(id, o),
+        length: (id) => s.host.length(id),
+        localFolder: (root) => {
+          if (treeOf === undefined) return { reason: "This computer has no folder tree, so the session's folder can't be read." };
+          let at: { computer: string; path: string };
+          try { at = treeOf.resolve(root); } catch (err) { return { reason: `The session's folder can't be read here (${err instanceof Error ? err.message : String(err)}).` }; }
+          if (at.computer !== runner.self) return { reason: `The session's folder is on ${at.computer}, so its changes are shown there.` };
+          return { path: at.path };
+        },
+        ...(b.contextWindowOf === undefined ? {} : { contextWindowOf: b.contextWindowOf }),
+        ...(b.connectorsOf === undefined ? {} : { connectorsOf: b.connectorsOf }),
+        grantsOf: (pluginId) => grantsInForce(b.registry.get(pluginId)),
+      })));
       // Lane D's usage rows (`usage.rows`, `usage.summary`): its ledger, counting the bot side's sessions as they run.
       const ledger = new UsageLedger({ path: cloverUsageDbPath(input.cloverHome), computer: runner.self });
       const counter = new CloverUsageCounter({ ledger, host: s.host, warn: (line) => log(`[usage] ${line}`) });
@@ -414,6 +548,29 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ledger.close();
       });
       Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
+      usageLedger = ledger;
+    }
+    // The Clover Browser (lane L), started after the bot side and stopped before it. Its tabs live in the app; the app
+    // reports back with `browser.report` and `browser.hold` (its own connection only). The bundled tree's Browser tool
+    // drives it through the plugin API's `browser.*` (`browserApiHandlers`, served by the plugin host's areas off `parts.browser`): the session whose tool call it serves, its own
+    // tabs only, the tool's own nine DevTools methods only. Peers (other computers' browsers) are not served.
+    let browser: DaemonBrowser | undefined;
+    if (input.browser !== false && input.browser !== undefined) {
+      const o = input.browser;
+      const here = o.computer ?? computer ?? "this-computer";
+      const br = startBrowser({
+        computer: here,
+        home: input.cloverHome,
+        headless: o.headless ?? false,
+        ...(o.app ? { app: o.app } : {}),
+        network: { proxy: DEFAULT_PROXY_SETTING, lanBots: [] },
+        ...(o.emit ? { emit: o.emit } : {}),
+        ...(o.headlessOptions ? { headlessOptions: o.headlessOptions } : {}),
+        log: (line) => log(`[browser] ${line}`),
+      });
+      closers.push(() => br.shutdown());
+      browser = br;
+      Object.assign(input.handlers, browserAppHandlers(() => br.service), browserRpcHandlers(() => br.service, (id) => (input.bots === false ? undefined : input.bots)?.registry.get(id)?.source === "bundled"));
     }
     // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
     // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
@@ -422,7 +579,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => b.close());
     }
     const registry = input.bots ? input.bots.registry : undefined;
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    return { ...(node ? { node } : {}), ...(browser ? { browser } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), ...(usageLedger ? { usage: usageLedger } : {}), close };
   } catch (err) {
     await close();
     throw err;
@@ -458,11 +615,12 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
       writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
     } : {}),
     ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
+    ...(!host?.triggers && b.pluginTriggers ? { pluginTriggers: b.pluginTriggers } : {}),
   };
   return {
     ...(relay ? { relay } : {}),
     routines,
-    ...(host && b.voicePlay ? { voices: { registry: b.registry, host, play: b.voicePlay } } : {}),
+    ...((host ?? b.voiceHost) && b.voicePlay ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, play: b.voicePlay, ...(b.voiceChosen ? { chosen: b.voiceChosen } : {}), ...(b.voiceTell ? { tell: b.voiceTell } : {}), ...(b.voiceForget ? { forget: b.voiceForget } : {}) } } : {}),
     ...(b.compaction ? { compaction: b.compaction } : {}),
     ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
   };
@@ -608,4 +766,9 @@ export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefin
       };
     },
   };
+}
+
+/** A folder's real path (the paths the broker judges are real paths), or the folder as given. */
+function realOrSelf(folder: string): string {
+  try { return realpathSync.native(folder); } catch { return folder; }
 }

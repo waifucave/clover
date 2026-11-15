@@ -1,0 +1,5 @@
+/* This plugin's own box around the moved part: a few pixels up, a little in from the sides. */
+.nudge {
+  transform: translateY(-6px);
+  margin: 0 12px;
+}

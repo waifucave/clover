@@ -46,15 +46,21 @@ describe("the real broker's saved rules and records", () => {
     expect(await first.request(bash())).toMatchObject({ allowed: true, by: "card", remembered: true });
     await answered;
     const doc = JSON.parse(readFileSync(savedRulesPath(h), "utf8"));
-    expect(doc).toEqual({ version: 2, rules: [{ keyHash: ruleKeyHash("Bash(git push)"), display: "Bash(git push)", computers: ["Studio"], cardId: expect.any(String), savedAt: expect.any(Number) }] });
+    expect(doc).toEqual({ version: 2, rules: [{ keyHash: ruleKeyHash("Bash(git push)"), display: "Bash(git push)", computers: ["Studio"], cardId: expect.any(String), savedAt: expect.any(Number), bot: "luna" }] });
     expect(JSON.stringify(doc)).not.toContain("ruleKey");
     if (process.platform !== "win32") {
       expect(statSync(savedRulesPath(h)).mode & 0o777).toBe(0o600);
       expect(statSync(join(h, "rules")).mode & 0o777).toBe(0o700);
     }
     const again = new CloverApprovalBroker({ clock, rules: fileRuleStore(h) });
-    expect(again.rules()).toMatchObject([{ ruleKey: "Bash(git push)", computers: ["Studio"] }]);
+    expect(again.rules()).toMatchObject([{ ruleKey: "Bash(git push)", computers: ["Studio"], bot: "luna" }]);
     expect(await again.request(bash())).toEqual({ allowed: true, by: "rule" });
+    // The bot's own "always" (the owner's ruling): not another bot's, nor the user's own session's.
+    for (const over of [{ bot: "sol" }, { bot: undefined }] as const) {
+      const asks = answerNext(again, "deny");
+      expect(await again.request(bash(over))).toMatchObject({ allowed: false, by: "card" });
+      await asks;
+    }
     // Not on another computer, and not another command.
     const other = answerNext(again, "deny");
     expect(await again.request(bash({ computers: ["Laptop"] }))).toMatchObject({ allowed: false, by: "card" });

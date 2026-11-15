@@ -6,8 +6,14 @@
 // armed again with backoff, since changes made while it was down were never reported (S6 review S3). Each computer
 // that watches here has its own budget of folders, and this computer watches a bounded number in all; a code session's
 // folder is one, never a whole home or a bot's whole folder (the holder refuses those; J-M1 review minor 2).
-import { watch as fsWatch, type FSWatcher } from "node:fs";
-import { sep } from "node:path";
+//
+// A watch that has been set up hears every change made after it: the platform's watcher (FSEvents on macOS) starts
+// listening some time after `fs.watch` returns, later under load, and a change made in between is never reported. So
+// the folder's state is noted as the watch is armed and compared again on a few catch-up looks until the watcher has
+// shown it is listening (its first event, after which one last look); what changed in between is reported as the
+// watcher would have. A folder too big to note says `resync` at that point instead.
+import { lstatSync, readdirSync, watch as fsWatch, type FSWatcher } from "node:fs";
+import { join, sep } from "node:path";
 import type { Unsubscribe } from "../contracts/common";
 import { ContractError } from "../contracts/common";
 
@@ -21,6 +27,42 @@ export const WATCH_TOTAL = 256;
 const COALESCE_MS = 50;
 /** The most paths one event names; more says `resync`. */
 const EVENT_PATHS_MAX = 512;
+/** When, after a watch is armed, the folder is looked at again while its watcher hasn't shown it is listening. */
+const CATCH_UP_MS = [50, 150, 400, 1_000, 2_500, 5_000, 10_000, 20_000, 40_000] as const;
+/** The most entries a folder's noted state holds; a bigger folder isn't noted (its catch-up says `resync`). */
+const SNAPSHOT_MAX = 5_000;
+
+/** A folder's state, by path relative to it: what a change to each entry would change. Undefined when it holds more
+ *  than `SNAPSHOT_MAX` entries; empty when it can't be read. Symbolic links are noted, never followed. */
+function snapshotOf(real: string): Map<string, string> | undefined {
+  const out = new Map<string, string>();
+  const stack: string[] = [""];
+  while (stack.length > 0) {
+    const rel = stack.pop()!;
+    let names: string[];
+    try {
+      names = readdirSync(rel === "" ? real : join(real, rel));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const child = rel === "" ? name : `${rel}${sep}${name}`;
+      try {
+        const st = lstatSync(join(real, child));
+        if (st.isDirectory()) {
+          out.set(child, `d:${st.ino}`);
+          stack.push(child);
+        } else {
+          out.set(child, `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`);
+        }
+      } catch {
+        continue;
+      }
+      if (out.size > SNAPSHOT_MAX) return undefined;
+    }
+  }
+  return out;
+}
 
 interface Watched {
   real: string;
@@ -30,6 +72,10 @@ interface Watched {
   flush: ReturnType<typeof setTimeout> | null;
   retry: ReturnType<typeof setTimeout> | null;
   backoffMs: number;
+  /** Until its watcher has shown it is listening: the folder's state as last noted (null: too big to note), and the
+   *  next catch-up look. */
+  noted?: Map<string, string> | null;
+  catchUp: ReturnType<typeof setTimeout> | null;
 }
 
 /** One computer's watches, shared by everyone who watches the same real folder. */
@@ -55,7 +101,7 @@ export class FolderWatches {
     let w = this.#watched.get(real);
     if (!w) {
       if (this.#watched.size >= this.#total) throw new ContractError("refused", `this computer already watches ${this.#total} folders`);
-      w = { real, watcher: null, subscribers: new Set(), pending: new Set(), flush: null, retry: null, backoffMs: 500 };
+      w = { real, watcher: null, subscribers: new Set(), pending: new Set(), flush: null, retry: null, backoffMs: 500, catchUp: null };
       this.#watched.set(real, w);
       this.#arm(w);
     }
@@ -83,8 +129,13 @@ export class FolderWatches {
   }
 
   #arm(w: Watched): void {
+    // Noted before the watcher starts, so a change between the two is a difference at the next look.
+    this.#stopCatchUp(w);
+    w.noted = snapshotOf(w.real) ?? null;
     try {
       w.watcher = this.#watchFn(w.real, { recursive: true }, (_event, filename) => {
+        // It is listening: one last look for what changed before it was, then the watcher alone.
+        if (w.noted !== undefined) this.#lookAgain(w, true);
         if (filename == null) {
           this.#queue(w, null);
           return;
@@ -93,13 +144,59 @@ export class FolderWatches {
       });
       w.watcher.on("error", () => this.#rearm(w));
       w.backoffMs = 500;
+      this.#scheduleCatchUp(w, 0);
     } catch {
+      w.noted = undefined;
       this.#rearm(w);
     }
   }
 
+  #scheduleCatchUp(w: Watched, step: number): void {
+    const after = CATCH_UP_MS[step];
+    if (after === undefined || w.noted === undefined) {
+      w.noted = undefined;
+      return;
+    }
+    const wait = after - (step === 0 ? 0 : CATCH_UP_MS[step - 1]!);
+    w.catchUp = setTimeout(() => {
+      w.catchUp = null;
+      if (!this.#watched.has(w.real) || w.watcher === null) return;
+      this.#lookAgain(w, false);
+      this.#scheduleCatchUp(w, step + 1);
+    }, wait);
+    w.catchUp.unref?.();
+  }
+
+  /** Compares the folder with its noted state and reports what differs, as its watcher would have; `last`: its watcher
+   *  is listening now, so this is the last look. A folder too big to note says `resync` on the last look instead. */
+  #lookAgain(w: Watched, last: boolean): void {
+    const before = w.noted;
+    if (before === undefined) return;
+    if (last) this.#stopCatchUp(w);
+    if (before === null) {
+      if (last) this.#queue(w, null);
+      return;
+    }
+    const now = snapshotOf(w.real);
+    if (now === undefined) {
+      this.#queue(w, null);
+      if (!last) w.noted = null;
+      return;
+    }
+    for (const [rel, sig] of now) if (before.get(rel) !== sig) this.#queue(w, rel);
+    for (const rel of before.keys()) if (!now.has(rel)) this.#queue(w, rel);
+    if (!last) w.noted = now;
+  }
+
+  #stopCatchUp(w: Watched): void {
+    if (w.catchUp) clearTimeout(w.catchUp);
+    w.catchUp = null;
+    w.noted = undefined;
+  }
+
   /** The watch failed: every subscriber hears `resync`, and it is armed again later. */
   #rearm(w: Watched): void {
+    this.#stopCatchUp(w);
     try {
       w.watcher?.close();
     } catch {
@@ -146,6 +243,7 @@ export class FolderWatches {
 
   #drop(w: Watched): void {
     this.#watched.delete(w.real);
+    this.#stopCatchUp(w);
     if (w.flush) clearTimeout(w.flush);
     if (w.retry) clearTimeout(w.retry);
     try {

@@ -9,6 +9,12 @@
 // beneath it, the approval-level pill and the model pill. A menu opens inside the part, in the flow
 // above the box, so it never lies over the conversation where a sealed card's buttons sit (review
 // item 1); it also closes when a card arrives.
+//
+// The slash menu: a line that starts with `/` and a command name lists the running plugins' commands (the bot's own
+// plugin's first) in the flow above the box. Focus stays in the text box (a combobox: the arrows move through the list,
+// Enter runs the one picked with the rest of the line, Tab completes its name, Esc closes the list so Enter sends the line
+// as a message); a click runs one too. A run goes to that command's plugin alone and never sends the line to the bot; its
+// result or refusal shows as a row above the box.
 import {
   useCallback,
   useEffect,
@@ -22,7 +28,8 @@ import {
   type RefObject,
 } from "react";
 import { IconArrowUp, IconCheck, IconChevronDown, IconCross, IconFile, IconMic, IconMoon, IconPlus, IconShield, IconStop } from "./icons";
-import { canSend, keyAction } from "./keys";
+import { canSend, endsTalkKey, isTalkKey, keyAction } from "./keys";
+import { armedFor, matchCommands, slashLine, type SlashItem } from "./slash";
 import { S } from "./strings";
 import type { ComposerActionId, ComposerProps } from "./types";
 
@@ -188,6 +195,7 @@ export function Composer(props: ComposerProps) {
     value,
     onChange,
     onSend,
+    notice,
     attachments = [],
     onAttach,
     onRemoveAttachment,
@@ -203,7 +211,9 @@ export function Composer(props: ComposerProps) {
     placeholder,
     autoFocus,
     renderAction,
+    slash,
     initialMenu,
+    controlsInside = false,
   } = props;
   const field = useRef<HTMLTextAreaElement>(null);
   const modelPill = useRef<HTMLButtonElement>(null);
@@ -221,6 +231,42 @@ export function Composer(props: ComposerProps) {
   const sendable = canSend(value, attachments.length, maxAttachments, asleep !== undefined);
   const empty = value.trim().length === 0 && attachments.length === 0;
   const listening = voice?.listening === true;
+  // What was heard lands in the box to edit: the box takes the focus back when the hold ends.
+  const wasListening = useRef(false);
+  useEffect(() => {
+    if (wasListening.current && !listening) field.current?.focus();
+    wasListening.current = listening;
+  }, [listening]);
+  const slashId = useId();
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const [slashActive, setSlashActive] = useState(0);
+  // The row was picked with the arrows (not just the top of the list): Enter runs it whatever is typed.
+  const [slashPicked, setSlashPicked] = useState(false);
+  const line = slash ? slashLine(value) : undefined;
+  const slashOpen = slash !== undefined && line !== undefined && !slashDismissed && !cardPending && !listening;
+  const slashItems: SlashItem[] = slashOpen && slash.commands ? matchCommands(slash.commands, line!.token) : [];
+  const active = slashItems.length === 0 ? -1 : Math.min(slashActive, slashItems.length - 1);
+  const armed = active >= 0 && (slashPicked || armedFor(slashItems, slashItems[active], line?.token ?? ""));
+  // A line that is no longer a command line forgets an Esc; a new name starts the list at its top.
+  useEffect(() => {
+    if (line === undefined) setSlashDismissed(false);
+  }, [line === undefined]);
+  useEffect(() => {
+    setSlashActive(0);
+    setSlashPicked(false);
+  }, [line?.token]);
+  // Each time the list opens it is read again, and the other menus close.
+  const onSlashOpen = slash?.onOpen;
+  useEffect(() => {
+    if (!slashOpen) return;
+    setMenu(null);
+    onSlashOpen?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slashOpen]);
+  const runSlash = (item: SlashItem) => {
+    if (!slash || !line) return;
+    slash.onRun(item.command, line.rest, item.display);
+  };
 
   // A card arriving closes any menu, so nothing of the composer's competes with it.
   useEffect(() => {
@@ -231,16 +277,62 @@ export function Composer(props: ComposerProps) {
   useLayoutEffect(() => {
     const el = field.current;
     if (!el) return;
+    // Typing more at the end rarely changes the height: then one read decides, with no write and no relayout of the sheet.
+    // A shorter text, or one that no longer fits, is measured from "auto" as before.
+    const grew = value.length > measured.current.length;
+    measured.current = value;
+    if (grew && el.style.height !== "" && el.scrollHeight <= el.clientHeight) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_FIELD_HEIGHT)}px`;
   }, [value]);
+  const measured = useRef("");
 
   const send = () => {
+    // A command line goes to its command's plugin, never to the bot: Send runs the command picked, as Enter does.
+    if (slash && line !== undefined && !slashDismissed) {
+      if (!cardPending && armed) runSlash(slashItems[active]!);
+      return;
+    }
     if (!sendable) return;
     onSend({ text: value, attachments });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Hold Ctrl+Shift+Space in the box to talk (only where the bot's voice listens): a first press starts, a repeat does nothing, and the
+    // chord never types a space.
+    if (voice !== undefined && isTalkKey({ key: e.key, code: e.code, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, isComposing: e.nativeEvent.isComposing, keyCode: e.keyCode })) {
+      e.preventDefault();
+      if (!e.repeat) hold.start();
+      return;
+    }
+    // The slash menu takes the keys while a command line is typed and not set aside with Esc (never mid-composition).
+    if (slash && line !== undefined && !slashDismissed && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setSlashDismissed(true);
+        return;
+      }
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && slashItems.length > 0) {
+        e.preventDefault();
+        const n = slashItems.length;
+        setSlashActive((active + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        setSlashPicked(true);
+        return;
+      }
+      if (e.key === "Tab" && !e.shiftKey && active >= 0) {
+        e.preventDefault();
+        const item = slashItems[active]!;
+        onChange(`/${item.display} ${line.rest}`);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
+        // Enter on a command line runs the command picked, or nothing: the line never goes to the bot from here.
+        e.preventDefault();
+        if (!e.repeat && !cardPending && armed) runSlash(slashItems[active]!);
+        return;
+      }
+    }
     const action = keyAction(
       {
         key: e.key,
@@ -341,7 +433,7 @@ export function Composer(props: ComposerProps) {
           type="button"
           className="cl-composer__icon-button cl-composer__voice"
           aria-label={S.holdToTalk}
-          title={S.holdToTalk}
+          title={S.holdToTalkHint}
           aria-pressed={listening}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
@@ -433,7 +525,7 @@ export function Composer(props: ComposerProps) {
                   items: model.efforts.map((effort) => ({
                     id: `effort-${effort}`,
                     label: effort,
-                    checked: effort === model.effort,
+                    checked: effort === (model.effort ?? model.defaultEffort),
                     onPick: () => model.onChange({ model: model.model, effort }),
                   })),
                 },
@@ -467,6 +559,56 @@ export function Composer(props: ComposerProps) {
       />
     ) : null;
 
+  const slashList = slashOpen ? (
+    <div className="cl-composer__slash" id={`${slashId}-list`} role="listbox" aria-label={S.slashMenu}>
+      {slashItems.map((item, i) => (
+        <div
+          key={item.command.name}
+          id={`${slashId}-${i}`}
+          role="option"
+          aria-selected={i === active}
+          data-armed={(i === active && armed) || undefined}
+          className="cl-composer__slash-item"
+          data-own={item.command.own || undefined}
+          // The text box keeps the focus: the click runs the command inside its own gesture.
+          onMouseDown={(e) => e.preventDefault()}
+          // A hover only highlights: it never arms Enter (an arrow pick does).
+          onMouseEnter={() => {
+            setSlashActive(i);
+            setSlashPicked(false);
+          }}
+          onClick={() => {
+            if (!cardPending) runSlash(item);
+          }}
+        >
+          <span className="cl-composer__slash-name">/{item.display}</span>
+          <span className="cl-composer__slash-plugin">
+            {item.command.own ? <span className="cl-composer__slash-own">{S.slashOwn}</span> : null}
+            {item.command.pluginName}
+            {item.display !== item.command.name ? <span className="cl-composer__slash-full">{item.command.name}</span> : null}
+          </span>
+          {item.command.description !== "" && <span className="cl-composer__slash-description">{item.command.description}</span>}
+        </div>
+      ))}
+      {slashItems.length === 0 && (
+        <div className="cl-composer__slash-empty" role="presentation">
+          {slash?.commands === undefined ? S.slashLoading : S.slashNone(line?.token ?? "")}
+        </div>
+      )}
+      <p className="cl-composer__slash-note">{S.slashNote}</p>
+    </div>
+  ) : null;
+
+  const slashResult = slash?.result ? (
+    <div className="cl-composer__slash-result" role="status" data-refused={slash.result.refused || undefined} aria-label={slash.result.refused ? S.slashRefused(slash.result.name) : S.slashResult(slash.result.name)}>
+      <span className="cl-composer__slash-result-name">/{slash.result.name}</span>
+      <span className="cl-composer__slash-result-text">{slash.result.text}</span>
+      <button type="button" className="cl-composer__slash-dismiss" aria-label={S.dismiss} title={S.dismiss} onClick={slash.onDismissResult}>
+        <IconCross />
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div
       className="cl-composer"
@@ -492,6 +634,8 @@ export function Composer(props: ComposerProps) {
       }}
     >
       {openMenu}
+      {slashList}
+      {slashResult}
       <div className="cl-composer__box">
         {attachments.length > 0 && (
           <ul className="cl-composer__attachments">
@@ -508,6 +652,18 @@ export function Composer(props: ComposerProps) {
             ))}
           </ul>
         )}
+        {listening && (
+          // The clear recording state, visible with text in the box too (the placeholder shows only in an empty one).
+          <div className="cl-composer__listening" role="status" data-recording="">
+            <span className="cl-composer__listening-dot" aria-hidden="true" />
+            {S.listening}
+          </div>
+        )}
+        {notice !== undefined && notice !== "" && (
+          <div className="cl-composer__error" role="alert" data-notice="send">
+            {notice}
+          </div>
+        )}
         {tooMany && (
           <div className="cl-composer__error" role="alert">
             {S.tooManyAttachments(maxAttachments)}
@@ -522,11 +678,23 @@ export function Composer(props: ComposerProps) {
             value={value}
             aria-label={S.label(botName)}
             aria-describedby={note ? noteId : undefined}
+            {...(slashOpen
+              ? {
+                  role: "combobox",
+                  "aria-expanded": true,
+                  "aria-controls": `${slashId}-list`,
+                  "aria-autocomplete": "list" as const,
+                  ...(active >= 0 ? { "aria-activedescendant": `${slashId}-${active}` } : {}),
+                }
+              : {})}
             placeholder={listening ? S.listening : placeholder ?? S.placeholder(botName)}
             readOnly={listening}
             autoFocus={autoFocus}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
+            onKeyUp={(e) => {
+              if (voice !== undefined && endsTalkKey(e)) hold.end();
+            }}
             onPaste={(e) => {
               const files = [...(e.clipboardData?.files ?? [])];
               if (!onAddFiles || files.length === 0) return;
@@ -538,12 +706,22 @@ export function Composer(props: ComposerProps) {
             }}
           />
           {voiceButton}
-          {stopButton}
-          {sendButton}
+          {!controlsInside && stopButton}
+          {!controlsInside && sendButton}
         </div>
+        {controlsInside && (
+          // Inside the box (the theme's arrangement): the level and the model at the start, stop or send at the end.
+          <div className="cl-composer__under" data-inside="">
+            {levelButton}
+            {modelButton}
+            <span className="cl-composer__spacer" />
+            {stopButton}
+            {sendButton}
+          </div>
+        )}
         {dragging && <div className="cl-composer__drop">{S.dropHere}</div>}
       </div>
-      {(levelButton || modelButton) && (
+      {!controlsInside && (levelButton || modelButton) && (
         <div className="cl-composer__under">
           {levelButton}
           <span className="cl-composer__spacer" />

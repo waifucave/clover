@@ -505,6 +505,60 @@ export async function evictSessionsForCredential(deps: CredentialEvictionDeps, p
   return acted;
 }
 
+/**
+ * The model plugins came up or changed (`onModelCatalogChange`): a live child is replaced only when what it was given
+ * for ITS OWN provider changed (`modelProviderKeyOf` against `currentKey`: the provider's catalog rows and how its
+ * adapter is served), so another plugin's install, update or crash-restart leaves it alone. Replaced once idle: a
+ * child mid-turn at its idle boundary, and one running background work (a background shell, a monitor, a child agent)
+ * when that ends, since replacing it would end that work; at once regardless when its provider became unusable
+ * (`absent`: its next turn's error says why). Re-checked at each boundary. The log names the plugins whose change
+ * caused it. Returns the sessions acted on.
+ */
+export async function evictSessionsForModelCatalog(deps: {
+  list(): ReadonlyArray<{ sessionId: string; turnRunning: boolean; idle(): Promise<void>; backgroundRunning?: boolean; backgroundDone?(): Promise<void> }>;
+  modelProviderKeyOf(sessionId: string): { provider: string; key: string } | undefined;
+  currentKey(provider: string): string;
+  evict(sessionId: string): Promise<void>;
+  log?(line: string): void;
+}, plugins: readonly string[] = []): Promise<string[]> {
+  const why = plugins.length > 0 ? ` (${plugins.join(", ")} changed)` : "";
+  const staleNow = (sessionId: string): { provider: string; key: string } | undefined => {
+    const was = deps.modelProviderKeyOf(sessionId);
+    if (was === undefined) return undefined;
+    const key = deps.currentKey(was.provider);
+    return key === was.key ? undefined : { provider: was.provider, key };
+  };
+  const settle = async (session: ReturnType<typeof deps.list>[number]): Promise<void> => {
+    for (;;) {
+      const stale = staleNow(session.sessionId);
+      if (stale === undefined) return;
+      if (session.turnRunning) {
+        await session.idle();
+        continue;
+      }
+      if (session.backgroundRunning === true && stale.key !== "absent" && session.backgroundDone !== undefined) {
+        deps.log?.(`model plugins: ${session.sessionId}'s provider ${stale.provider} changed${why}; its child is replaced once its background work ends`);
+        await session.backgroundDone();
+        continue;
+      }
+      deps.log?.(`model plugins: replacing ${session.sessionId}'s child: its provider ${stale.provider} changed${why}${stale.key === "absent" ? " and is no longer offered" : ""}`);
+      await deps.evict(session.sessionId);
+      return;
+    }
+  };
+  const acted: string[] = [];
+  const waits: Promise<void>[] = [];
+  for (const session of deps.list()) {
+    if (staleNow(session.sessionId) === undefined) continue;
+    acted.push(session.sessionId);
+    const done = settle(session).catch(() => {});
+    if (!session.turnRunning && !(session.backgroundRunning === true)) await done;
+    else waits.push(done);
+  }
+  void Promise.all(waits);
+  return acted;
+}
+
 /** The provider's facing name, for a message that has to say WHICH provider is missing a key.
  *  Falls back to the id — a provider with no catalog row has no better name to offer. */
 export function credentialDisplayNameFor(providerId: string): string {

@@ -77,6 +77,8 @@ import { mainSessionIdFor, mintSessionId, SESSION_ID_PREFIX, sessionLogPath, ses
 export const INTERRUPT_GRACE_MS = 5_000;
 /** How many of the user's client message ids a session remembers, newest kept: a resend comes within minutes. */
 export const CLIENT_IDS_KEPT = 1_000;
+/** How many of a session's last records `resendFailedTurn` reads to find the failed turn and its start. */
+const RESEND_SCAN_RECORDS = 2_000;
 /** After the disk refused a turn's start, when it is tried again. */
 export const PUMP_RETRY_MS = 5_000;
 /** How long the user's message waits for a compaction the runtime started inside a turn before it interrupts anyway:
@@ -108,7 +110,13 @@ export function canCompact(driver: SessionDriver): driver is CompactingDriver {
 }
 
 /** What `deliver` takes: every input but the user's. */
-export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
+/** The longest agent's report a bot is handed (`task-notification`); the rest is in the agent's transcript. */
+export const AGENT_REPORT_MAX = 20_000;
+export function agentReportText(text: string): string {
+  return text.length <= AGENT_REPORT_MAX ? text : `${text.slice(0, AGENT_REPORT_MAX)}\n… (${text.length - AGENT_REPORT_MAX} more characters are in the agent's transcript)`;
+}
+
+export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note", "notice"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
@@ -154,6 +162,7 @@ export interface SessionMeta {
   effort?: string;
   root?: string;
   routine?: string;
+  definition?: string;
   startedAt: number;
   /** This computer's records set aside when its copy forked from the computer running the session (`setAside`). */
   earlier?: EarlierLog[];
@@ -164,7 +173,7 @@ export interface SessionMeta {
 /** The fields `update` and a reattaching `open` may change; who the session is (kind, bot, parent) never changes.
  *  `undefined` leaves a field as it is, and `null` clears it (the session's `computer` can't be cleared). */
 export type SessionSpecPatch = { computer?: string } & {
-  [K in "title" | "backend" | "model" | "effort" | "root" | "routine"]?: string | null;
+  [K in "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition"]?: string | null;
 };
 
 export interface DurableSessionHostOptions {
@@ -197,12 +206,20 @@ interface QueueItem {
   input: TurnInput;
 }
 
-/** What folds into a running turn, held until the driver first subscribes. */
+/** What folds into a running turn, held until the driver first subscribes. Closed when the host ends the turn: what
+ *  it held went back in line, so a driver that subscribes late is handed none of it. */
 class FoldChannel {
   readonly #listeners = new Listeners<TurnInput>();
   #held: QueueItem[] | undefined = [];
+  #closed = false;
+
+  close(): void {
+    this.#closed = true;
+    this.#held = undefined;
+  }
 
   subscribe(fn: (input: TurnInput) => void): Unsubscribe {
+    if (this.#closed) return () => {};
     const off = this.#listeners.add(fn);
     const held = this.#held;
     if (held !== undefined) {
@@ -213,6 +230,7 @@ class FoldChannel {
   }
 
   emit(item: QueueItem): void {
+    if (this.#closed) return;
     if (this.#held !== undefined) this.#held.push(structuredClone(item));
     else this.#listeners.emit(structuredClone(item.input));
   }
@@ -227,6 +245,8 @@ interface Running {
   origin: TurnOrigin;
   abort: AbortController;
   folds: FoldChannel;
+  /** The turn's tool calls with no result yet, by call id: a release ends them interrupted before it ends the turn. */
+  openCalls: Map<string, string>;
 }
 
 interface Hosted {
@@ -246,6 +266,8 @@ interface Hosted {
   stopping: boolean;
   /** `release` is detaching the driver: nothing starts. */
   releasing: boolean;
+  /** The release under way, which a second `release` of the same session waits for. */
+  released?: Promise<void>;
   asleep: boolean;
   clientIds: Map<string, { seq: number; disposition: Disposition }>;
   questions: Set<string>;
@@ -593,6 +615,63 @@ export class DurableSessionHost implements SessionHost {
     return this.#accept(s, full);
   }
 
+  /** Try again: the latest turn of a bot's main conversation ended in an error, and the message that began it was the
+   *  USER's (the turn's recorded origin, `originOf`: an unsigned relay is `peer`, a task notification, a routine, a plugin,
+   *  a bot or an agent are not `user`; a relay the user's own device signed is). Sends the stored input again as a new
+   *  message from `by`, text exactly as stored, its images as stored (`check` may refuse them: it sees the
+   *  stored input before anything is recorded); a message that carried files is refused. Everything is read and the message accepted in this one synchronous
+   *  step, so it is atomic with sends and turn starts: no turn runs, nothing waits, and no turn started or message was
+   *  sent since the failed one. Once per failed turn: the new message's id is derived from that turn's end record, and a
+   *  second call finds that message in the log. The caller chooses no id. */
+  async resendFailedTurn(id: string, by: { device: string }, check?: (input: UserInput) => void): Promise<{ disposition: Disposition; seq: number }> {
+    const s = this.#live(id);
+    const refuse = (why: string): never => { throw new ContractError("refused", why); };
+    const fromComposer = "send it again from the composer";
+    if (s.meta.kind !== "bot") return refuse("only a bot's own conversation is tried again");
+    if (!this.#runHere(s)) return refuse(`this computer doesn't run ${s.meta.bot ?? id}'s conversation now; ${fromComposer}`);
+    if (s.running || s.queue.length > 0) return refuse("a turn is running, or a message is waiting for one");
+    const log = this.#logOf(s);
+    const tail = log.read(Math.max(0, log.length - RESEND_SCAN_RECORDS), log.length);
+    let end = -1;
+    for (let i = tail.length - 1; i >= 0; i--) if (tail[i]!.type === "turn_ended") { end = i; break; }
+    const ended = tail[end];
+    if (ended === undefined || ended.type !== "turn_ended") return refuse("no turn has ended here yet");
+    if (ended.end.reason !== "failed") return refuse("the last turn did not fail");
+    const cid = `resend:${ended.seq}`;
+    for (let i = end + 1; i < tail.length; i++) {
+      const r = tail[i]!;
+      if (r.type === "input" && r.input.from === "user" && r.input.clientMessageId === cid) return refuse("that turn was tried again already");
+      if (r.type === "turn_started" || (r.type === "input" && r.disposition !== "note")) return refuse("something has happened since that turn failed");
+    }
+    let start = -1;
+    for (let i = end - 1; i >= 0; i--) {
+      if (tail[i]!.type === "turn_ended") return refuse("that turn's start is not in the log");
+      if (tail[i]!.type === "turn_started") { start = i; break; }
+    }
+    const started = tail[start];
+    if (started === undefined || started.type !== "turn_started") return refuse(`that turn is too long to read here; ${fromComposer}`);
+    if (started.origin !== "user") return refuse("that turn was not begun by a message you sent");
+    const inputSeq = (started as Partial<TurnStartedBody>).inputSeq;
+    if (typeof inputSeq !== "number") return refuse(`the log doesn't say which message began that turn; ${fromComposer}`);
+    const opener = log.read(inputSeq, inputSeq + 1)[0];
+    if (opener === undefined || opener.seq !== inputSeq || opener.type !== "input" || opener.input.from !== "user" || originOf(opener.input) !== "user") {
+      return refuse("that turn was not begun by a message you sent");
+    }
+    const stored = opener.input;
+    if (stored.text.trim() === "") return refuse("that message has no words");
+    // Files name folder-tree paths this step can't check the way the composer does: only words (and pictures, which the
+    // caller's `check` holds to the composer's own rules) are sent again.
+    if (stored.files !== undefined && stored.files.length > 0) return refuse(`that message had files; ${fromComposer}`);
+    check?.(stored);
+    return this.sendUser(id, {
+      text: stored.text,
+      device: by.device,
+      sentAt: this.#clock.now(),
+      clientMessageId: cid,
+      ...(stored.images === undefined || stored.images.length === 0 ? {} : { images: structuredClone(stored.images) }),
+    });
+  }
+
   /** Another bot's, an agent's, a routine's or a plugin's message, a task notification, or a note. Also returns the
    *  record's `seq`. */
   async deliver(id: string, input: DeliveredInput): Promise<{ disposition: Disposition; seq: number }> {
@@ -661,10 +740,30 @@ export class DurableSessionHost implements SessionHost {
   // -----------------------------------------------------------------------------------------------
 
   /** Detaches a session's driver and leaves the session dormant (a removed bot's conversation, a shutdown): a running
-   *  turn is recorded `interrupted`, what waits stays queued, and `open` with the same id picks it all up again. */
-  async release(id: string): Promise<void> {
+   *  turn is recorded `interrupted`, what waits stays queued, and `open` with the same id picks it all up again.
+   *  The turn's end is recorded FIRST, before the driver is asked to interrupt (which may take up to
+   *  `INTERRUPT_GRACE_MS`): a daemon whose stop is cut off at its bound (`STOP_BUDGET_MS`) still leaves the turn ended,
+   *  and the driver's own end, when it comes, is dropped (`#ended` takes only the running turn's). A second call while
+   *  one is under way waits for it. */
+  release(id: string): Promise<void> {
     const s = this.#sessions.get(id);
-    if (!s?.driver || s.stopping) return;
+    if (s?.released !== undefined) return s.released;
+    if (!s?.driver || s.stopping) return Promise.resolve();
+    const done = this.#release(s).finally(() => { delete s.released; });
+    s.released = done;
+    return done;
+  }
+
+  /** The daemon's stop, before anything else in its bounded tail: every bot conversation and side thread lets its
+   *  driver go, and each running turn's end is recorded at once (synchronously, as each release starts). Resolves when
+   *  every driver has stopped; the bot side's own close waits for the same releases. */
+  endTurnsForStop(): Promise<void> {
+    const ids = [...this.#sessions.values()].filter((s) => s.driver !== undefined && (s.meta.kind === "bot" || s.meta.kind === "side-thread")).map((s) => s.meta.id);
+    return Promise.all(ids.map((id) => this.release(id))).then(() => undefined);
+  }
+
+  async #release(s: Hosted): Promise<void> {
+    const id = s.meta.id;
     s.releasing = true;
     s.compacting?.abort.abort("released");
     try {
@@ -673,11 +772,13 @@ export class DurableSessionHost implements SessionHost {
         this.#setStatus(s, "cancelling");
         running.abort.abort("released");
         this.#approvals?.withdrawSession(id);
-        await this.#bounded(s, s.driver, (d) => d.interrupt(), "interrupt");
-        if (s.running === running) {
-          this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
-          delete s.running;
-        }
+        // Recorded before the driver's interrupt is awaited (see `release`), with what it hadn't taken put back in line.
+        // Each call still open gets its interrupted result first, as a restart's would (`#load`): the turn has ended,
+        // so no boot repair closes it later, and a result the driver sends late is dropped (`ctl.record`).
+        for (const callId of running.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
+        running.openCalls.clear();
+        this.#ended(s, running, { reason: "interrupted" });
+        if (s.driver) await this.#bounded(s, s.driver, (d) => d.interrupt(), "interrupt");
       }
       if (s.driver) await this.#bounded(s, s.driver, (d) => d.stop(), "stop");
     } catch (err) {
@@ -990,7 +1091,7 @@ export class DurableSessionHost implements SessionHost {
         meta: SESSION_META_VERSION, id: view.id, kind: view.kind, startedAt: view.startedAt, computer: view.computer,
         ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
       };
-      for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (view[k] !== undefined) meta[k] = view[k];
+      for (const k of ["title", "backend", "model", "effort", "root", "routine", "definition"] as const) if (view[k] !== undefined) meta[k] = view[k];
       writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
       const file = new SessionLogFile(sessionLogPath(this.#home, meta.bot, meta.id), meta.id, this.#warn);
       file.load();
@@ -1131,7 +1232,7 @@ export class DurableSessionHost implements SessionHost {
     const open = new Map<string, string>();
     if (start >= 0) for (const r of tail.slice(start + 1)) if (r.type === "driver") trackCall(open, r.event);
     for (const callId of open.keys()) {
-      if (!this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(foreign.on), isError: true } })) return 0;
+      if (!this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(foreign.on), isError: true, interrupted: true } })) return 0;
     }
     if (!this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } })) return 0;
     delete s.foreignTurn;
@@ -1288,7 +1389,7 @@ export class DurableSessionHost implements SessionHost {
     s.queue.shift();
     s.turnCompaction = false;
     s.interruptAfterCompaction = false;
-    const running: Running = { origin, abort: new AbortController(), folds: new FoldChannel() };
+    const running: Running = { origin, abort: new AbortController(), folds: new FoldChannel(), openCalls: new Map() };
     s.running = running;
     const pending = driver.canFold ? s.pending : [];
     s.pending = [];
@@ -1299,10 +1400,14 @@ export class DurableSessionHost implements SessionHost {
       signal: running.abort.signal,
       onFold: (fn) => running.folds.subscribe(fn),
       record: (event) => {
+        // A turn the host has already ended (a release records its end before the driver's interrupt) says nothing
+        // more: a late call or delta after its end would read as a turn still running.
+        if (s.running !== running) return;
         if (TRANSIENT_EVENT_TYPES.has(event.type as never)) s.transient.emit(structuredClone(event));
         else if (CORE_ONLY_EVENT_TYPES.has(event.type)) this.#warn(`session ${s.meta.id}: its driver's ${event.type} event was dropped; only the core records those`);
         else {
           this.#tryRecord(s, { type: "driver", event: structuredClone(event) });
+          trackCall(running.openCalls, event);
           if (s.running === running) this.#trackTurnCompaction(s, event);
         }
       },
@@ -1319,13 +1424,25 @@ export class DurableSessionHost implements SessionHost {
   #ended(s: Hosted, running: Running, end: TurnEnd): void {
     if (s.running !== running) return;
     // What the driver never subscribed to take: notes wait for the next turn, and messages get a turn of their own.
-    const unclaimed = running.folds.unclaimed();
+    const held = running.folds.unclaimed();
+    running.folds.close();
     // Recorded first; if the disk refuses it, the turn has still ended, and a restart records it interrupted.
     this.#tryRecord(s, { type: "turn_ended", end });
     delete s.running;
     s.turnCompaction = false;
     s.interruptAfterCompaction = false;
     const waits = (i: QueueItem) => i.input.from === "note" || (i.input.from === "routine" && s.meta.kind === "bot");
+    // Back in line, and recorded so (their first record says `folded`, which a replay drops): a restart right after
+    // keeps them. The record repeats an earlier one (`requeues`), so no client is shown the message twice.
+    const unclaimed = held.map((item): QueueItem => {
+      try {
+        const again = this.#record(s, { type: "input", input: item.input, disposition: waits(item) ? "note" : "queued", requeues: item.seq });
+        return { seq: again.seq, input: item.input };
+      } catch (err) {
+        this.#warn(`session ${s.meta.id}: recording a message put back in line failed: ${errorText(err)}`);
+        return item;
+      }
+    });
     s.pending.unshift(...unclaimed.filter(waits));
     for (const item of unclaimed.filter((i) => !waits(i))) enqueue(s.queue, item, false);
     if (s.stopping || isEnded(s.view.status)) return;
@@ -1366,7 +1483,8 @@ export class DurableSessionHost implements SessionHost {
       agent: s.meta.id,
       backend: s.meta.backend ?? "unknown",
       stopReason,
-      text: end.text ?? "",
+      // Capped: an agent's report is data its bot reads, never a way to fill its context; the whole is in its transcript.
+      text: agentReportText(end.text ?? ""),
       transcript: `bots/${pluginIdToSegment(bot)}/agents/${s.meta.id}/acp.ndjson`,
       ...(end.usage === undefined ? {} : { usage: end.usage }),
     }).catch(() => {
@@ -1454,7 +1572,7 @@ export class DurableSessionHost implements SessionHost {
       // Another computer's turn, synced here: it may still be running there, and is caught up only on a takeover.
       s.foreignTurn = { on: replay.runningOn };
     } else if (replay.running) {
-      for (const callId of replay.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true } });
+      for (const callId of replay.openCalls.keys()) this.#tryRecord(s, { type: "driver", event: { type: "tool_result", callId, output: interruptedCallOutput(), isError: true, interrupted: true } });
       this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } });
     }
     if (s.view.status === "prompting" || s.view.status === "cancelling" || s.view.status === "starting") this.#setStatus(s, "idle");
@@ -1580,9 +1698,9 @@ export class DurableSessionHost implements SessionHost {
   }
 }
 
-function specPatchOf(spec: SessionSpec): Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine">> {
-  const out: Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine">> = { computer: spec.computer };
-  for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (spec[k] !== undefined) out[k] = spec[k];
+function specPatchOf(spec: SessionSpec): Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition">> {
+  const out: Pick<SessionMeta, "computer"> & Partial<Pick<SessionMeta, "title" | "backend" | "model" | "effort" | "root" | "routine" | "definition">> = { computer: spec.computer };
+  for (const k of ["title", "backend", "model", "effort", "root", "routine", "definition"] as const) if (spec[k] !== undefined) out[k] = spec[k];
   return out;
 }
 
@@ -1603,6 +1721,7 @@ function viewOfMeta(meta: SessionMeta, status: SessionStatus, updatedAt: number,
     ...(meta.effort === undefined ? {} : { effort: meta.effort }),
     ...(meta.root === undefined ? {} : { root: meta.root }),
     ...(meta.routine === undefined ? {} : { routine: meta.routine }),
+    ...(meta.definition === undefined ? {} : { definition: meta.definition }),
     ...(meta.earlier === undefined || meta.earlier.length === 0 ? {} : { rebasedAt: meta.earlier[meta.earlier.length - 1]!.at }),
   };
 }

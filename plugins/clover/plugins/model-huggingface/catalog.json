@@ -81,7 +81,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen2.5-7b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "huggingface/deepseek-ai/DeepSeek-V3",
@@ -134,7 +135,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v3",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "huggingface/google/gemma-2-9b-it",
@@ -180,7 +182,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemma-2-9b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     },
     {
       "key": "huggingface/meta-llama/llama-3.1-8b-instruct",
@@ -226,7 +229,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3.1-8b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "huggingface/meta-llama/llama-3.2-11b-instruct",
@@ -272,7 +276,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3.2-11b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "huggingface/mistralai/mistral-7b-instruct",
@@ -318,7 +323,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mistral-7b-instruct",
-      "modelFamily": "mistral"
+      "modelFamily": "mistral",
+      "strength": "weak"
     }
   ]
 }

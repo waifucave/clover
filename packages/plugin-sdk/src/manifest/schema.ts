@@ -128,21 +128,37 @@ export const ModelSchema = z.strictObject({
   ...declares,
 });
 
+/** A part's scope (§5.1): `bots`, `agents`, `both`, or `own-bot`: inside the bot its plugin holds, for that bot alone (its
+ *  conversation, side threads and the agents it starts; the owner's rule of November 14, §5.5). */
+export const PartScope = z.union([Scope, z.literal("own-bot")]);
+
 export const McpServerSchema = z.strictObject({
   /** `host` is the plugin's own code, served as an MCP server. */
   type: z.enum(["host", "stdio", "http"]),
   command: Program.optional(),
-  args: z.array(utf16(4096)).max(256).optional(),
+  /** An argument may be long (a pasted config's inline script or JSON): 16,384 characters, as a secret is. */
+  args: z.array(utf16(16_384)).max(256).optional(),
   env: z.record(utf16(256, 1), utf16(8192)).optional(),
   url: Url.optional(),
   headers: z.record(utf16(256, 1), utf16(8192)).optional(),
   /** Per tool, `preload` or `on-demand`; `"*"` sets the default for the rest (§6.7). */
   tools: z.record(utf16(64, 1), z.enum(["preload", "on-demand"])).optional(),
+  /** The tools of this server that only read (lane C's ask): named on the OK card, and only as that card shows them, a
+   *  call to one runs without an approval card at the default level. Never a hint a server gives at run time; a change
+   *  to the list asks for the OK again. */
+  readOnly: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
+  /** The tools of this server whose only effect is the plugin's own display (an avatar's expression, a stage's scene,
+   *  a pinned card): named on the OK card, and only as that card shows them, a call to one counts as a contained call
+   *  (effect `other`), which runs without a card at the default level, asks at "ask" and is refused at read-only. They
+   *  hold only where the tree can't reach the network and holds no capability beyond reading Clover's own state
+   *  (`containedToolsHold`). Never a tool also listed in `readOnly`; a change to the list asks for the OK again. */
+  contained: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
   /** Extra text for the MCP block, capped at about 4 KB (§6.1). */
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */
   perComputer: z.boolean().optional(),
-  scope: Scope.optional(),
+  /** `own-bot`: the bot this plugin holds only (inside the bot); else beside it, every bot and coding agent the scope says. */
+  scope: PartScope.optional(),
   when: z.strictObject({ os: z.array(Os).min(1).max(3).optional() }).optional(),
   ...declares,
 });
@@ -157,6 +173,8 @@ export const AgentDefSchema = z.strictObject({
   computer: utf16(63, 1).optional(),
   root: utf16(4096, 1).optional(),
   plugins: z.strictObject({ only: z.array(utf16(81, 1)).max(256).optional(), except: z.array(utf16(81, 1)).max(256).optional() }).optional(),
+  /** `own-bot`: an agent definition inside the bot, for that bot alone; else the plugin's scope. */
+  scope: PartScope.optional(),
   ...declares,
 });
 
@@ -174,8 +192,14 @@ export const AgentBackendSchema = z.strictObject({
 });
 
 /** The bare specifiers a client entry may import, which each layer's import map provides (lane E): React 19 and the UI
- *  API. Anything else must be bundled into the entry. */
-export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+ *  API. Anything else must be bundled into the entry. A client always runs on the layer's copy of these, even when the
+ *  plugin ships its own react in its node_modules: the build leaves them as imports and the map serves them, so a
+ *  plugin's react is never bundled into its client (it can't bring another React version to a layer). A file only the
+ *  plugin's client entries reach may import these without shipping them; a file a host, hook, server or command also
+ *  reaches must ship what it imports. */
+export const CLIENT_BARE_IMPORTS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"] as const;
+/** The reason a plugin marked `availability: { status: "not-yet" }` shows, as the registry gives it (state `off`). */
+export { NOT_AVAILABLE_YET } from "@waifucave/clover-protocol";
 /** The React major the layers provide. */
 export const CLIENT_REACT_MAJOR = 19;
 
@@ -191,7 +215,9 @@ export const HookSchema = z.strictObject({
   command: Program.optional(),
   args: z.array(utf16(4096)).max(256).optional(),
   timeoutMs: z.number().int().min(1).max(600_000).optional(),
-  scope: Scope.optional(),
+  /** `own-bot`: only the sessions of the bots this plugin's tree contributes (their conversations, side threads and
+   *  the agents they start), enforced by the host before a hook is called; the OK card says so. */
+  scope: PartScope.optional(),
   ...declares,
 });
 
@@ -202,6 +228,8 @@ export const CommandSchema = z.strictObject({
   handler: HandlerName,
   key: utf16(64).regex(KEY_CHORD_RE).optional(),
   runsOn: RunsOn.optional(),
+  /** `own-bot`: a command inside the bot: the user runs it, and of the bots only the one its plugin holds. */
+  scope: PartScope.optional(),
   ...declares,
 });
 
@@ -219,6 +247,16 @@ export const VoiceSchema = z.strictObject({
   speak: z.boolean().optional(),
   listen: z.boolean().optional(),
   auth: z.array(AuthSchema).max(16).optional(),
+  handler: HandlerName,
+  ...declares,
+});
+
+/** A voice mode (§6.6): the one plugin, of those installed, that speaks the bots' replies, plays sound as their
+ *  voices and hears push-to-talk; the user chooses which is active (Settings › Voice). `handler` names the host
+ *  export the core calls (`reply`, `stop`, `listenStart`, `listenEnd`, `offer`: `VoiceModeHandler`). */
+export const VoiceModeSchema = z.strictObject({
+  id: EntryId,
+  name: Text,
   handler: HandlerName,
   ...declares,
 });
@@ -256,7 +294,11 @@ export const ServiceSchema = z.strictObject({
 // -------------------------------------------------------------------------------------------------
 
 export const ThemeEntrySchema = z.strictObject({ id: EntryId, file: Path, ...declares });
-export const LocaleEntrySchema = z.strictObject({ lang: LangTag, file: Path, ...declares });
+/** `app`: in a plugin with a bot, a table that translates other plugins' keys too, a part beside the bot (§5.5). */
+export const LocaleEntrySchema = z.strictObject({ lang: LangTag, file: Path, app: z.boolean().optional(), ...declares });
+
+/** A `skills` item: a glob, or one with its own scope (`own-bot`: inside the bot, for that bot alone). */
+export const SkillEntrySchema = z.union([PathGlob, z.strictObject({ path: PathGlob, scope: PartScope.optional() })]);
 
 /** A `ui` entry. It has exactly one of `component`, `web`, `style` or `hide` (§5.9); other fields are the spot's own
  *  (title, icon, opens…), which the spot catalog checks. */
@@ -281,12 +323,22 @@ export const UiSchema = z.object({
   /** A theme-format file; restyles what fills this spot or key (§5.5). */
   style: Path.optional(),
   hide: z.boolean().optional(),
+  /** On `bot.tab` only: a layout patch for the bots `when.bot` names (`LayoutContributionSchema`), made on their tab
+   *  after the bot's own layout and before the user's. Any plugin may add one; the user can switch it off. */
+  layout: Path.optional(),
+  /** With `hide` in a list spot: the one entry it hides, `<plugin-id>#<entry-id>` (or `<plugin-id>`: every entry that
+   *  plugin has there). A list spot's `hide` with no `target` hides nothing. */
+  target: utf16(300, 2).regex(/^[a-z][a-z0-9/-]*(#[a-z0-9][a-z0-9._-]*)?$/).optional(),
   window: z.strictObject({
     type: z.enum(["overlay", "window"]),
     alwaysOnTop: z.boolean().optional(),
     transparent: z.boolean().optional(),
     placement: z.partialRecord(Os, utf16(256, 1)).optional(),
   }).optional(),
+  /** In a plugin with a bot: a part beside the bot, which follows the app's rules (any spot an ordinary plugin fills,
+   *  `when.bot` any bots) and has its own switch, rather than one of the bot's tab (§5.5, the owner's rule of November
+   *  14). Without it, a bot's plugin fills only what Bots offers, on its own tab. */
+  app: z.boolean().optional(),
   ...declares,
 }).catchall(z.unknown());
 
@@ -299,13 +351,14 @@ export const CORE_CONTRIBUTION_SCHEMAS = {
   bot: BotSchema,
   models: z.array(ModelSchema).max(64),
   mcpServers: z.record(utf16(64, 1).regex(/^[A-Za-z0-9_-]+$/), McpServerSchema),
-  skills: z.array(PathGlob).max(1000),
+  skills: z.array(SkillEntrySchema).max(1000),
   agents: z.array(z.union([Path, AgentDefSchema])).max(256),
   agentBackends: z.array(AgentBackendSchema).max(32),
   hooks: z.array(HookSchema).max(256),
   commands: z.array(CommandSchema).max(512),
   triggers: z.array(TriggerSchema).max(64),
   voices: z.array(VoiceSchema).max(64),
+  voiceModes: z.array(VoiceModeSchema).max(1),
   computerProviders: z.array(ComputerProviderSchema).max(16),
   computer: ComputerSchema,
   relays: z.array(ServiceSchema).max(16),
@@ -333,6 +386,7 @@ export const ContributionsSchema = z.object({
   commands: CORE_CONTRIBUTION_SCHEMAS.commands.optional(),
   triggers: CORE_CONTRIBUTION_SCHEMAS.triggers.optional(),
   voices: CORE_CONTRIBUTION_SCHEMAS.voices.optional(),
+  voiceModes: CORE_CONTRIBUTION_SCHEMAS.voiceModes.optional(),
   computerProviders: CORE_CONTRIBUTION_SCHEMAS.computerProviders.optional(),
   computer: CORE_CONTRIBUTION_SCHEMAS.computer.optional(),
   relays: CORE_CONTRIBUTION_SCHEMAS.relays.optional(),
@@ -374,8 +428,14 @@ export const ManifestSchema = z.strictObject({
   adult: z.boolean().optional(),
   /** Children only; default true. */
   enabledByDefault: z.boolean().optional(),
-  /** Default "both"; covers mcpServers, skills, agents, hooks. */
-  scope: Scope.optional(),
+  /** Clover's own plugins only (the bundled `clover` tree): a plugin this build lists but can't run yet (`not-yet`),
+   *  with a short reason key (what it waits for is in the owner's PARKED list). The registry never starts it (no host,
+   *  no server, no hooks, no part, no tool, no capability in force) and refuses to switch it; its OK, switch and
+   *  settings stay as they were. A plugin outside Clover's tree carrying it is refused at validation. */
+  availability: z.strictObject({ status: z.literal("not-yet"), reason: utf16(40, 1).regex(/^[a-z0-9][a-z0-9-]*$/) }).optional(),
+  /** Default "both"; covers mcpServers, skills, agents, hooks. `own-bot`: a bot plugin's own parts, only the sessions of
+   *  the bots its tree contributes and the agents they delegate to (a server or hook may still say otherwise). */
+  scope: z.union([Scope, z.literal("own-bot")]).optional(),
   /** Only these Agent backends receive it, e.g. ["claude-code"]. */
   onlyBackends: z.array(EntryId).min(1).max(64).optional(),
   host: z.strictObject({
@@ -385,6 +445,11 @@ export const ManifestSchema = z.strictObject({
     /** A process of its own under Bun too (lane A's ask): for a plugin that signs requests with its secret and keeps
      *  it from other plugins' workers. A Node plugin always has one. */
     process: z.literal("own").optional(),
+    /** It runs programs (ffmpeg on a file the user picked, the owner's video-editor test): its process may start any
+     *  program and fork, fenced as its `stdio` servers are (its own data folder and temp folder, the files the user
+     *  picked for it, its tree's network proxy, nothing more of the user's). Only with `process: "own"`; the OK card
+     *  says so. */
+    programs: z.literal(true).optional(),
     /** Starts at once there (§5.2); otherwise only when needed. */
     start: RunsOn.optional(),
     /** Points the host serves (§5.4). */
@@ -392,11 +457,18 @@ export const ManifestSchema = z.strictObject({
   }).optional(),
   /** Components (§5.5). In an installed plugin `entry` is one built ES module of JavaScript. Its only bare imports are
    *  `CLIENT_BARE_IMPORTS` (React 19 and the UI API), which each layer provides once through an import map (lane E),
-   *  and it imports no CSS. `css` lists the stylesheets its components wear, cleaned like a theme's CSS and loaded in
+   *  and it imports no CSS. The client gets the layer's React whatever react the plugin ships. `css` lists the stylesheets its components wear, cleaned like a theme's CSS and loaded in
    *  each layer that mounts one of them, before them. An entry in TypeScript or TSX (a development folder, or a
    *  plugin shipped unbuilt) the registry builds into a cached module, with CSS imports moved into `css`, and the
-   *  plugin's UI view names that module (`UiPluginView.clientEntry`). */
-  client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional() }).optional(),
+   *  plugin's UI view names that module (`UiPluginView.clientEntry`).
+   *
+   *  `isolated: true` (default false) makes the plugin's own layer cross-origin isolated (`crossOriginIsolated`), so its
+   *  components may use SharedArrayBuffer (multi-threaded ffmpeg.wasm and other threaded WebAssembly). It grants no reach: no
+   *  network, no files, nothing for the OK card to say. The app serves every document and script of its schemes with
+   *  `Cross-Origin-Embedder-Policy: credentialless` (no-cors cross-origin images and media from a declared host load without
+   *  credentials and need no CORP), and sets `allow="cross-origin-isolated"` on the frames of plugins that ask for it, only. Sealed card frames, other plugins' parts in
+   *  an isolated layer's spots and its own workers load as in any other layer (every app scheme sends the headers). */
+  client: z.strictObject({ entry: Path, css: z.array(Path).max(32).optional(), isolated: z.boolean().optional() }).optional(),
   /** A native program the plugin host starts and supervises; a signed .app on macOS, started through Launch Services. */
   helper: z.strictObject({
     bin: z.partialRecord(Platform, Path),

@@ -23,7 +23,7 @@ export interface FilesPanelProps {
   /** Open a file in the viewer. */
   onOpen: (path: string) => void;
   /** The open file, as `files.readText` read it. */
-  open?: { path: string; text: string };
+  open?: { path: string; text: string; mediaType?: string };
   /** Search inside files: a filter that starts with `?` (`files.grep`). */
   onSearch?: (query: string) => void;
   /** What the last search found, shown in place of the tree while the filter still asks for it. */

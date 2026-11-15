@@ -28,6 +28,28 @@ const doc: { processId: number; routingId: number } = { processId: 100, routingI
 const parent = { parent: doc };
 const main0 = { main: { processId: 1, routingId: 2 } };
 
+describe("two documents placing the same card's button", () => {
+  test("each keeps its own token: a mint for one document's frame doesn't kill the other's (the island and the conversation both place a card)", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const island = store.mint(CARD.id, "button:allow_once", parent)!.token;
+    const conversation = store.mint(CARD.id, "button:allow_once", { parent: { processId: 100, routingId: 300 } })!.token;
+    // A token answers only for the frame it was minted for.
+    expect(store.buildAnswer(island, "allow_once", undefined, "p:100:300", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(store.buildAnswer(conversation, "allow_once", undefined, "p:100:300", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    // And the same document asking again still replaces its own older token.
+    const again = store.mint(CARD.id, "button:allow_once", parent)!.token;
+    expect(store.buildAnswer(island, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(again).not.toBe(island);
+  });
+  test("a button's look rides its channel, to its page", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent, undefined, undefined, "check")!;
+    expect(store.serve(made.token)).toMatchObject({ look: "check" });
+  });
+});
+
 describe("the sealed frames' store", () => {
   test("a card in, its elements' channels minted and looked up, one each; a mint replaces the element's older token", () => {
     const store = new SealedFrames();
@@ -78,6 +100,39 @@ describe("the sealed frames' store", () => {
     expect(again).not.toBeUndefined();
   });
 
+  test("a refused answer's button answers again on its own channel (\"Couldn't confirm — try again\"); an accepted one doesn't", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent)!;
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    // In flight: the channel is spent, so a second press can't send a second answer.
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: expect.any(String) });
+    store.confirmedAnswer(CARD.id, false);
+    // Back on the same binding only: another frame still can't use it.
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:999:999", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    store.confirmedAnswer(CARD.id, true);
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+  });
+
+  test("a refused answer's channel isn't put back once the card resolved, or once a newer mint replaced it", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent)!;
+    store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a");
+    store.resolvedOutcome(CARD.id, "withdrawn" as never);
+    store.confirmedAnswer(CARD.id, false);
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    const s2 = new SealedFrames();
+    s2.fromCore(CARD);
+    const first = s2.mint(CARD.id, "button:allow_once", parent)!;
+    s2.buildAnswer(first.token, "allow_once", undefined, "p:100:200", signer, "dev_a");
+    const newer = s2.mint(CARD.id, "button:allow_once", parent)!;
+    s2.confirmedAnswer(CARD.id, false);
+    expect(s2.buildAnswer(first.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(s2.buildAnswer(newer.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+  });
+
   test("a button answers its own option: named and minted independently", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);
@@ -101,6 +156,33 @@ describe("the sealed frames' store", () => {
     expect(store.isTokenVisible(made.token)).toBe(true);
     store.markVisible(made.token, false);
     expect(store.isTokenVisible(made.token)).toBe(false);
+  });
+
+  test("both buttons visible, anywhere or in one window: which surface shows them", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const island = { parent: { processId: 300, routingId: 7 } };
+    const islandApprove = store.mint(CARD.id, "button:allow_once", island, 7)!;
+    const islandDeny = store.mint(CARD.id, "button:deny", island, 7)!;
+    const mainDeny = store.mint(CARD.id, "button:deny", parent, 1)!;
+    expect(store.windowOf(islandApprove.token)).toBe(7);
+    store.markVisible(islandApprove.token, true);
+    store.markVisible(mainDeny.token, true);
+    expect(store.buttonsVisible(CARD.id)).toBe(true);
+    expect(store.buttonsVisible(CARD.id, 7)).toBe(false);
+    expect(store.buttonsVisible(CARD.id, 1)).toBe(false);
+    store.markVisible(islandDeny.token, true);
+    expect(store.buttonsVisible(CARD.id, 7)).toBe(true);
+  });
+
+  test("each mint is heard (card, element, window), and a token says its element: the app's timing lines", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const heard: [string, string, number | undefined][] = [];
+    store.onMinted = (c, e, w) => heard.push([c, e, w]);
+    const made = store.mint(CARD.id, "button:deny", parent, 3)!;
+    expect(heard).toEqual([[CARD.id, "button:deny", 3]]);
+    expect(store.elementOf(made.token)).toBe("button:deny");
   });
 
   test("the serving: once per token, on an iframe's load, and the ttl is the serve's alone (S5)", () => {

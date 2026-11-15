@@ -1,0 +1,22 @@
+{
+  "name": "@waifucave/clover-plugin-plugin-builder",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/plugin-builder: skills and tools a bot follows to build a Clover plugin (scaffold, validate, the manifest, the catalogs, the loop).",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p .",
+    "gen": "bun test/gen-catalog.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@waifucave/clover-core": "workspace:*",
+    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

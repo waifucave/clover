@@ -1,0 +1,15 @@
+{
+  "manifest": 1,
+  "id": "acceptance-start",
+  "name": "Acceptance start",
+  "description": "The acceptance run's fixture for host.start: a host half with nothing to call, which starts at once on every computer and says so in its log.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun",
+    "start": "each"
+  }
+}

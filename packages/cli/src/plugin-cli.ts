@@ -134,7 +134,7 @@ export async function runPluginInstallRoute(deps: PluginRouteDeps, specOrPath: s
       const names = readMarketplacePluginNames(dir);
       if (!Array.isArray(names)) return { ok: false, message: names.error };
       if (names.length !== 1) {
-        return { ok: false, message: `${dir}: this folder lists ${names.length} plugin(s) — add it as a marketplace first (clover plugin marketplace add ${dir}) and install "<plugin>@<marketplace>" explicitly` };
+        return { ok: false, message: `${dir}: this folder lists ${names.length} plugin(s) — add it as a marketplace first (clover plugin claude marketplace add ${dir}) and install "<plugin>@<marketplace>" explicitly` };
       }
       const mktRes = await deps.door.pluginMarketplaceAdd(dir);
       const spec = `${names[0]}@${mktRes.marketplace.name}`;

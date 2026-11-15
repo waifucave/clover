@@ -15,6 +15,7 @@ import type { ComputerRegistry } from "../contracts/computer-registry";
 import { mayRelease, type HoldRouter } from "./holds";
 import type { CoreTree } from "../tree/tree";
 import type { TreeWatchEvent } from "../tree/watch";
+import type { grantFiles } from "../fence/plugin-grants";
 
 /** One call's handler: the call's arguments, as the plugin passed them, and who made it. */
 export type ApiRoute = (args: unknown[], ctx: { pluginId: string; caller: Caller }) => Promise<unknown>;
@@ -82,8 +83,22 @@ export function computersApiRoutes(registry: ComputerRegistry, holds?: HoldRoute
   };
 }
 
-export function filesApiRoutes(tree: CoreTree): Record<string, ApiRoute> {
+/** A path naming a file or folder the user picked in the plugin's page (`grant:<uuid>`, lane G's pickers): served from
+ *  the plugin's own grant (`fence/plugin-grants.ts`), never the tree. */
+const isGrantRef = (p: string) => p.startsWith("grant:");
+
+export function filesApiRoutes(tree: CoreTree, picked?: () => ReturnType<typeof grantFiles> | undefined): Record<string, ApiRoute> {
   const as = (ctx: { pluginId: string }): { as: Caller } => ({ as: { kind: "plugin", pluginId: ctx.pluginId } });
+  const grant = () => {
+    const g = picked?.();
+    if (g === undefined) throw new ContractError("refused", "picked files aren't served on this computer");
+    return g;
+  };
+  /** A call that takes no picked file: a `grant:` path is refused rather than read as a tree path. */
+  const plain = (p: string): string => {
+    if (isGrantRef(p)) throw new ContractError("refused", "this call doesn't take a picked file");
+    return p;
+  };
   const range = (o: Record<string, unknown>) => ({
     ...(typeof o.offset === "number" ? { offset: o.offset } : {}),
     ...(typeof o.length === "number" ? { length: o.length } : {}),
@@ -92,32 +107,46 @@ export function filesApiRoutes(tree: CoreTree): Record<string, ApiRoute> {
   // Passed on as given: the tree refuses a value other than true or false, never reads it as false (#234's check 2).
   const noFollow = (o: Record<string, unknown>) => (o.noFollow !== undefined ? { noFollow: o.noFollow as boolean } : {});
   return {
-    "files.stat": async ([path, o], ctx) => tree.stat(s(path, "path"), { ...as(ctx), ...noFollow(opt(o)) }),
+    "files.stat": async ([path, o], ctx) => {
+      const p = s(path, "path");
+      if (isGrantRef(p)) return grant().stat(ctx.pluginId, p);
+      return tree.stat(p, { ...as(ctx), ...noFollow(opt(o)) });
+    },
     "files.readText": async ([path, o], ctx) => {
+      if (isGrantRef(s(path, "path"))) return grant().read(ctx.pluginId, s(path, "path"), range(opt(o))).toString("utf8");
       const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), ...noFollow(opt(o)), encoding: "utf8" });
       return d.encoding === "utf8" ? d.text : Buffer.from(d.data, "base64").toString("utf8");
     },
     "files.readBytes": async ([path, o], ctx) => {
+      if (isGrantRef(s(path, "path"))) return new Uint8Array(grant().read(ctx.pluginId, s(path, "path"), range(opt(o))));
       const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), ...noFollow(opt(o)), encoding: "base64" });
       return new Uint8Array(Buffer.from(d.encoding === "base64" ? d.data : d.text, d.encoding === "base64" ? "base64" : "utf8"));
     },
-    "files.write": async ([path, data], ctx) => {
+    "files.write": async ([path, data, o], ctx) => {
       const p = s(path, "path");
+      if (isGrantRef(p)) {
+        const bytes = typeof data === "string" ? Buffer.from(data, "utf8") : data instanceof Uint8Array ? Buffer.from(data) : undefined;
+        if (bytes === undefined) throw new ContractError("invalid", "data is a string or bytes");
+        return grant().write(ctx.pluginId, p, bytes, opt(o).createDirs === true ? { createDirs: true } : {});
+      }
       if (typeof data === "string") return tree.write(p, { encoding: "utf8", text: data }, as(ctx));
       if (data instanceof Uint8Array) return tree.write(p, { encoding: "base64", data: Buffer.from(data).toString("base64") }, as(ctx));
       throw new ContractError("invalid", "data is a string or bytes");
     },
-    "files.list": async ([path], ctx) => tree.list(s(path, "path"), as(ctx)),
-    "files.remove": async ([path, o], ctx) => tree.remove(s(path, "path"), { ...as(ctx), ...(opt(o).recursive === true ? { recursive: true } : {}) }),
-    "files.move": async ([from, to], ctx) => tree.move(s(from, "from"), s(to, "to"), as(ctx)),
+    "files.list": async ([path], ctx) => (isGrantRef(s(path, "path")) ? grant().list(ctx.pluginId, s(path, "path")) : tree.list(s(path, "path"), as(ctx))),
+    // The real path of a picked file, for the host half to hand to a program of its own (ffmpeg takes paths). The
+    // catalog serves it to the host half only, never the page.
+    "files.path": async ([path], ctx) => grant().path(ctx.pluginId, s(path, "path")),
+    "files.remove": async ([path, o], ctx) => tree.remove(plain(s(path, "path")), { ...as(ctx), ...(opt(o).recursive === true ? { recursive: true } : {}) }),
+    "files.move": async ([from, to], ctx) => tree.move(plain(s(from, "from")), plain(s(to, "to")), as(ctx)),
     "files.glob": async ([pattern, o], ctx) => {
       const p = opt(o);
-      return tree.globAll(s(pattern, "pattern"), { ...as(ctx), cwd: s(p.cwd, "cwd"), ...(typeof p.limit === "number" ? { limit: p.limit } : {}) });
+      return tree.globAll(s(pattern, "pattern"), { ...as(ctx), cwd: plain(s(p.cwd, "cwd")), ...(typeof p.limit === "number" ? { limit: p.limit } : {}) });
     },
     "files.grep": async ([pattern, o], ctx) => {
       const p = opt(o);
       return tree.grepAll(s(pattern, "pattern"), {
-        ...as(ctx), cwd: s(p.cwd, "cwd"),
+        ...as(ctx), cwd: plain(s(p.cwd, "cwd")),
         ...(typeof p.glob === "string" ? { glob: p.glob } : {}), ...(typeof p.limit === "number" ? { limit: p.limit } : {}),
       });
     },

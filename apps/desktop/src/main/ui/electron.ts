@@ -5,21 +5,28 @@ import { readFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
-import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
+import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
+import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, MICROPHONE_ORIGIN, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, pluginFile } from "./files";
+import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
+import { SEALED_PRESS_WORDS } from "../sealed-pages";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
-import { routeCall } from "./tree-calls";
+import { FileGrants, PICK_METHODS, grantResponse, routeDrop, routePick, type DialogRequest, type Grant } from "./file-grants";
+import { PickTokens, routeCall, type KeyTarget, type PickUse } from "./tree-calls";
+import { iconRequest } from "./plugin-icon";
 import { routeComposer } from "./composer-calls";
+import { cleanReport, hearsShell, providedNow, routeShell } from "./shell-calls";
 import type { UiPlugin } from "./model";
+import type { IpcStats } from "./ipc-stats";
 
 /** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
  *  `bypassCSP` are never granted. */
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME].map((scheme) => ({
     scheme,
-    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+    // `stream`: a layer's <video> and <audio> may play from the app's own scheme (the granted-file route answers Range requests).
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
   })));
 }
 
@@ -69,7 +76,18 @@ export interface UiSessionOptions {
   /** Layers served without `Connection-Allowlist`: only the UI test's positive control for the DNS probe, and only in
    *  an unpackaged run (index.ts decides). */
   unguardedLayers?: ReadonlySet<string>;
+  /** The core's folder of the user's own avatar models, `<home>/user-layers/avatars` (`bot.importAvatar`): served at
+   *  `/_a/<bot>/…` to the layers, and only for a bot that is installed. */
+  avatarsDir?: string;
+  /** A plugin's own icon for the Plugins page's lists (`plugin-icon.ts`): served at `/_icon/<id>` in the clover tree's
+   *  layer only, a raster picture or nothing. */
+  pluginIcon?: (id: string) => Promise<{ data: Buffer; type: string } | undefined>;
+  /** The files the user handed plugins' pages (`files.pick*`), served at `/_g/<id>` on the plugin's own layer: the same
+   *  record `installIpc` fills. Without it nothing is served there. */
+  grants?: FileGrants;
 }
+
+/** The most one file of the user's own model may be (the core's import refuses more). */
 
 export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core: string; layer: string }, log: (line: string) => void, options: UiSessionOptions = {}): void {
   ses.protocol.handle(CORE_SCHEME, (request) => {
@@ -80,7 +98,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     if (!isInside(dirs.core, file)) return forbidden();
     const type = mediaType(file) ?? (file.endsWith(".html") ? "text/html; charset=utf-8" : undefined);
     if (type === undefined) return notFound();
-    return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP } : {}) });
+    // The core's document is the top of every window: same-origin opener policy (with the embedder policy of `commonHeaders`) is
+    // what lets a frame of it be cross-origin isolated; it severs `window.opener`, which no window of the app uses (popups are denied).
+    return fileResponse(file, type, { ...(type.startsWith("text/html") ? withMicrophone(commonHeaders(), `(self "${MICROPHONE_ORIGIN}")`) : commonHeaders()), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP, "Cross-Origin-Opener-Policy": "same-origin" } : {}) });
   });
 
   // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
@@ -90,6 +110,12 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // itself is 20 crypto-random bytes, so no header gate is needed.
   ses.protocol.handle(SEALED_SCHEME, (request) => {
     const url = new URL(request.url);
+    // A render window's placeholder (`clover-sealed://placeholder/<id>`, runtime.ts): served once, a page with no
+    // token and no answer bridge.
+    if (url.host === "placeholder") {
+      const served = runtime.servePlaceholder(url.pathname.replace(/^\//, "").slice(0, 64));
+      return served === undefined ? notFound() : new Response(served.html, { headers: served.headers });
+    }
     // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
     // single use is the real gate.
     if (url.host !== "card") {
@@ -116,10 +142,29 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers);
+      // The clover layer's document alone may open the microphone (push-to-talk's shell, listen.ts); the policy still needs the frame's `allow`.
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover");
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
+    }
+    if (url.pathname.startsWith("/_icon/")) {
+      // The Plugins page's lists: a plugin's icon, even one off or waiting for its OK, as a small still raster picture
+      // only (plugin-icon.ts). Who asks is checked before this, by the requesting frame (`onBeforeRequest`); this
+      // host check is a second lock, not the gate.
+      if (layer !== "clover" || options.pluginIcon === undefined) return forbidden();
+      let id: string;
+      try {
+        id = decodeURIComponent(url.pathname.slice("/_icon/".length));
+      } catch {
+        return notFound();
+      }
+      return options.pluginIcon(id).then(
+        (icon) => (icon === undefined
+          ? notFound()
+          : new Response(new Uint8Array(icon.data), { headers: { ...commonHeaders(), "Content-Type": icon.type, "Content-Security-Policy": THEME_ASSET_CSP } })),
+        () => notFound(),
+      );
     }
     if (url.pathname.startsWith("/_clover/")) {
       const file = normalize(join(dirs.layer, ...url.pathname.slice("/_clover/".length).split("/")));
@@ -154,8 +199,47 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       if (type === undefined) return forbidden();
       return fileResponse(file, type, layerHeaders(type));
     }
+    if (url.pathname.startsWith("/_b/")) {
+      // A plugin's client the core built at load (its view's `clientBuild`): on its own layer's origin only, with a
+      // shipped client's headers, and only while the file is the one the core built.
+      const [, , encoded, key, name, ...more] = url.pathname.split("/");
+      if (more.length > 0) return notFound();
+      let id: string;
+      let file: string;
+      try {
+        id = decodeURIComponent(encoded ?? "");
+        file = decodeURIComponent(name ?? "");
+      } catch {
+        return notFound();
+      }
+      const plugin = runtime.registry.find((p) => p.id === id && p.layer === layer);
+      if (plugin === undefined) return forbidden();
+      const bytes = builtClientFile(plugin, key ?? "", file);
+      if (bytes === undefined) return notFound();
+      const type = "text/javascript; charset=utf-8";
+      return new Response(bytes, { headers: { ...layerHeaders(type), "Content-Type": type } });
+    }
+    if (url.pathname.startsWith("/_a/") && options.avatarsDir !== undefined) {
+      // The user's own avatar model (the core copied it here): data only, the kinds the installed renderers declared, one bot's folder.
+      const served = userAvatarFile(options.avatarsDir, runtime.registry, url.pathname);
+      if (served === "forbidden") return forbidden();
+      if (served === "missing") return notFound();
+      return modelResponse(served.file, served.type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, served.maxBytes);
+    }
+    if (url.pathname.startsWith("/_g/") && options.grants !== undefined) {
+      // A file the user handed this plugin's page (`files.pickOpen`, `files.pickSave`): only its own READ-capable grant on
+      // a file, with Range support, never a listing. The id alone names it; whose it is, is the layer's plugin.
+      const rest = url.pathname.slice("/_g/".length);
+      if (rest.includes("/")) return notFound();
+      const range = request.headers.get("range");
+      for (const p of runtime.registry) {
+        if (p.layer !== layer) continue;
+        if (options.grants.byId(p.id, rest) !== undefined) return grantResponse(options.grants, p.id, rest, range, commonHeaders());
+      }
+      return forbidden();
+    }
     if (url.pathname.startsWith("/_t/")) {
-      // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
+      // A theme's or a layout's images and fonts, a bot's portrait (the core's `assetUrl`) and a plugin's icon, in every layer they
       // reach (§5.5): only a plugin with themes, style entries, a bot's layout or a bot, only images and fonts, inside
       // its folder. Never a document: an SVG opened as a page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
@@ -167,7 +251,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
+      // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists.
+      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path)));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {
@@ -175,6 +260,11 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
+      // A bot's own model files (a VRM, a Live2D `.moc3` and its JSON, a sprite's picture list…) are the bot plugin's inert data its stage's
+      // avatar entry reads: served by the kinds the installed renderer of the bot's format declared (`avatar.formats`), inside the folder
+      // its avatar sits in, capped, nosniff and sandboxed, never as a document.
+      const model = avatarModelFile(plugin, runtime.registry, file);
+      if (model !== undefined) return modelResponse(file, model.media, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP }, model.maxBytes);
       const type = mediaType(file);
       if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/"))) return forbidden();
       return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
@@ -185,12 +275,34 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
   // The sealed frames' scheme: handled above with its own single-use serving (E-M3's own registration). The web
   // scheme never carries a card (§5.5 "Where cards appear").
   const refused = new Set<string>();
+  const iconRefusals = new Set<string>();
   ses.webRequest.onBeforeRequest((details, callback) => {
     let protocolName = "";
     try {
       protocolName = new URL(details.url).protocol;
     } catch {
       /* refused */
+    }
+    // A plugin's icon (`/_icon/`): only for a frame main bound to the clover tree's layer, by the frame that asks.
+    if (protocolName === `${LAYER_SCHEME}:`) {
+      const f = details.frame;
+      const layer = f === undefined || f === null || f.detached ? undefined : runtime.layerOfFrame({ processId: f.processId, routingId: f.routingId });
+      if (iconRequest(layer, details.url) === "refuse") {
+        // Said once per icon and asker: a frame main doesn't know, or another layer's.
+        const id = (() => {
+          try {
+            return decodeURIComponent(new URL(details.url).pathname.slice("/_icon/".length)).slice(0, 64);
+          } catch {
+            return "?";
+          }
+        })();
+        const said = `${layer ?? ""}\u0000${id}`;
+        if (!iconRefusals.has(said) && iconRefusals.size < 1000) {
+          iconRefusals.add(said);
+          log(`layers: cancelled ${id}'s icon for ${layer === undefined ? "a frame main doesn't know" : `the ${layer} layer's frame`}`);
+        }
+        return callback({ cancel: true });
+      }
     }
     if (ALLOWED_PROTOCOLS.has(protocolName)) return callback({});
     const origin = details.initiatorOrigin ?? "unknown";
@@ -252,6 +364,8 @@ function str(v: unknown, max = 256): string | undefined {
 }
 
 export interface IpcHooks {
+  /** What a window's shell said of its place (`app.open` waits on it). */
+  shellState?(windowId: number, state: ShellState): void;
   /** The root's measured title-bar area, for the frame's variables. */
   frameMetrics(windowId: number, m: { top: number; start: number; end: number }): void;
   /** A command from the root (restart normally, open the plugin manager…). */
@@ -270,8 +384,21 @@ export interface IpcHooks {
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
   /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
   takeGesture(windowId: number): boolean;
+  /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
+  listens?: import("./listen").ListenHolds;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
+  /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
+  pick?(windowId: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse): Promise<string | undefined>;
+  /** Main's native open, folder or save dialog over a window, for a plugin page's `files.pick*`: the chosen paths, none on cancel. */
+  pickFiles?(windowId: number, request: DialogRequest): Promise<string[]>;
+  /** Tells the core about a grant (`plugin.grant.add`): throws with a reason the user may be shown when the core refuses it,
+   *  answers `"unserved"` when the core has no such call yet. */
+  registerGrant?(grant: Grant): Promise<"ok" | "unserved">;
+  /** The grants main holds (shared with `installUiSession`'s media route). */
+  grants?: FileGrants;
+  /** Opens the app's own key dialog for a plugin's key (the Plugins page's `ui.secret`, checked as one). */
+  openKey?(target: KeyTarget): Promise<boolean>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
@@ -288,11 +415,17 @@ export interface IpcHooks {
   /** A sealed button's answer: the app signs it with the answer key over the frame's own channel (§5.5; E-M3), the
    *  computer-use gate first, in the main process (B3). `senderKey` is the sender frame's own key, checked against the
    *  mint's binding (B4). */
-  sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string }>;
+  sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string; key?: "changed" | "fault" }>;
   /** A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
    *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
    *  token was served to. */
   sealedVisible(token: string, visible: boolean): void;
+  /** A press the sealed page saw and what it did with it (one of `SEALED_PRESS_WORDS`). */
+  sealedPress(token: string, what: string): void;
+  /** The app's own card page says how tall it is, so its window fits it (a number, nothing else). */
+  sealedSize(token: string, height: number): void;
+  /** The app's own card page asks for its card's Review (`plugin.review`): only that page, on its own token. */
+  sealedReview(token: string, peek: boolean): Promise<{ state: string; report?: string; why?: string; model?: string }>;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -302,16 +435,34 @@ function rect(v: unknown): Rect | undefined {
 }
 
 /** The IPC the preload's bridge speaks. Every call is bound to its sender's frame. */
-export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void): () => void {
+export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: string) => void, stats?: IpcStats): () => void {
+  /** What the shell last said of each window's place, for the plugin frames that read it (`shell.state`). */
+  const shellWindows = new Map<number, { state: ShellState; apps: ShellApp[] }>();
+  /** Which essential handles a shown bot's own frames offer (`shell.provide`), by window and frame; only while a bot of the plugin shows its tab. */
+  const shellProvides = new Map<number, Map<string, Set<string>>>();
+  const sayProvides = (windowId: number): void => {
+    const state = shellWindows.get(windowId)?.state;
+    const alive = (key: string): boolean => {
+      const [, processId, routingId] = key.split(":");
+      const f = webFrameMain.fromId(Number(processId), Number(routingId));
+      return f !== undefined && f !== null && !f.detached;
+    };
+    runtime.shellMessage(windowId, { type: "shell-provides", ...providedNow(shellProvides.get(windowId) ?? new Map(), state, alive) });
+  };
   runtime.send = (frame, message: LayerMessage) => {
     const f = webFrameMain.fromId(frame.processId, frame.routingId);
     if (f === undefined || f === null || f.detached) return;
+    stats?.sent(message.type);
     f.send("clover:message", message);
   };
   const handle = (channel: string, fn: (event: IpcMainInvokeEvent, arg: Record<string, unknown>) => unknown) =>
-    ipcMain.handle(channel, (event, arg) => fn(event, (arg ?? {}) as Record<string, unknown>));
+    ipcMain.handle(channel, (event, arg) => {
+      stats?.received(channel);
+      return fn(event, (arg ?? {}) as Record<string, unknown>);
+    });
   const on = (channel: string, fn: (event: IpcMainEvent, arg: Record<string, unknown>) => void) =>
     ipcMain.on(channel, (event, arg) => {
+      stats?.received(channel);
       try {
         fn(event, (arg ?? {}) as Record<string, unknown>);
       } catch (err) {
@@ -328,15 +479,15 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const mount = str(a.mount, 32);
     const spot = str(a.spot, 128);
     if (mount === undefined || spot === undefined) throw new LayerError("bad request");
-    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown; entry?: unknown }) : {};
-    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}), ...(str(hints.entry, 300) ? { entry: str(hints.entry, 300)! } : {}) });
+    const hints = typeof a.hints === "object" && a.hints !== null ? (a.hints as { session?: unknown; entry?: unknown; bot?: unknown }) : {};
+    return runtime.resolve(s.frame, mount, spot, str(a.key), { ...(str(hints.session, 32) ? { session: str(hints.session, 32)! } : {}), ...(str(hints.entry, 300) ? { entry: str(hints.entry, 300)! } : {}), ...(str(hints.bot, 81) ? { bot: str(hints.bot, 81)! } : {}) });
   });
   handle("clover:entries", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     const spot = str(a.spot, 128);
     if (mount === undefined || spot === undefined) throw new LayerError("bad request");
-    return runtime.entries(s.frame, mount, spot, str(a.key));
+    return runtime.entries(s.frame, mount, spot, str(a.key), str(a.bot, 81), str(a.session, 32));
   });
   handle("clover:reload", (event, a) => {
     const s = sender(event);
@@ -351,6 +502,25 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       return;
     }
     runtime.setProps(sender(event).frame, child, a.props);
+  });
+  // An `avatar` child frame's speech, from the document that placed it: numbers only, or dropped.
+  on("clover:speech", (event, a) => {
+    const child = str(a.child, 32);
+    const message = cleanSpeechMessage(a.message);
+    if (child === undefined || message === undefined) return;
+    runtime.speech(sender(event).frame, child, message);
+  });
+  // An `avatar` child frame's cue, from the document that placed it; and its state, to its parent only: plain data, or dropped.
+  on("clover:avatar", (event, a) => {
+    const child = str(a.child, 32);
+    const message = cleanAvatarDown(a.message);
+    if (child === undefined || message === undefined) return;
+    runtime.avatarDown(sender(event).frame, child, message);
+  });
+  on("clover:avatar-up", (event, a) => {
+    const message = cleanAvatarUp(a.message);
+    if (message === undefined) return;
+    runtime.avatarUp(sender(event).frame, message);
   });
   on("clover:callback", (event, a) => {
     const id = str(a.id, 32);
@@ -474,24 +644,106 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.webFrame(place.windowId, mount, web, bounds);
     });
   });
+  // The Plugins page's picked folders, as one-use tokens (tree-calls.ts): their paths stay in main.
+  const pickTokens = new PickTokens();
   handle("clover:api", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     const method = str(a.method, 128);
     if (mount === undefined || method === undefined) throw new LayerError("bad request");
     const pluginId = runtime.partOf(s.frame, mount);
+    // The pickers are main's own: a plugin that holds `files`, the user's own click, main's dialog; the page gets tokens.
+    if (PICK_METHODS.has(method)) {
+      if (pluginId === "core" || hooks.pickFiles === undefined || hooks.registerGrant === undefined || hooks.grants === undefined) throw new LayerError("this part can't ask for a file");
+      return routePick({
+        method,
+        params: a.params,
+        plugin: { id: pluginId, capabilities: runtime.capabilitiesOf(s.frame, mount) },
+        windowId: s.windowId,
+        takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
+        dialog: hooks.pickFiles,
+        grants: hooks.grants,
+        register: hooks.registerGrant,
+        log,
+        refuse: (why) => new LayerError(why),
+      });
+    }
     return routeCall({
       tree: runtime.treePart(s.frame, mount),
       method,
       params: a.params,
+      tokens: pickTokens,
+      ...(hooks.listens ? { listens: hooks.listens } : {}),
+      ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
+      ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame (its own transient activation, read in the preload) and be
       // one the main process saw come to the window; a refused call spends nobody's gesture.
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
       request: hooks.treeRequest,
+      entries: (spot) => runtime.entries(s.frame, mount, spot),
       layer: () => hooks.api(pluginId, method, a.params),
       log,
       refuse: (why) => new LayerError(why),
     });
+  });
+  // A file dropped on a plugin's page (the preload read the real paths of a trusted drop): tokens like a pick's, for a plugin
+  // that holds `files`, sent back to that frame's page as `files-dropped`.
+  on("clover:drop-files", (event, a) => {
+    const s = sender(event);
+    const who = runtime.documentPlugin(s.frame);
+    if (hooks.registerGrant === undefined || hooks.grants === undefined) return;
+    void routeDrop({
+      paths: a.paths,
+      plugin: who === undefined ? undefined : { id: who.pluginId, capabilities: who.capabilities },
+      grants: hooks.grants,
+      register: hooks.registerGrant,
+      log,
+    }).then((out) => {
+      if (out !== undefined) runtime.send(s.frame, { type: "files-dropped", grants: out.grants, ...(out.refused !== undefined ? { refused: out.refused } : {}) });
+    }, () => undefined);
+  });
+  // `PluginApi.shell` (spec §5.4: `shell.read`, `shell.control`): every rule is in shell-calls.ts.
+  handle("clover:shell", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) throw new LayerError("bad request");
+    const plugin = { id: runtime.partOf(s.frame, mount), capabilities: runtime.capabilitiesOf(s.frame, mount) };
+    if (plugin.id.split("/")[0] === "clover") throw new LayerError("the shell's own parts do not ask");
+    let r;
+    try {
+      r = routeShell({ method: a.method, args: a.args, plugin, window: shellWindows.get(s.windowId), appButtons: () => runtime.appButtons(), takeGesture: () => frameGesture(a.active, () => hooks.takeGesture(s.windowId)) });
+    } catch (err) {
+      throw new LayerError(err instanceof Error ? err.message : "refused");
+    }
+    if (r.kind === "answer") return Promise.resolve(r.value);
+    if (r.kind === "provide") {
+      const key = `${plugin.id}:${s.frame.processId}:${s.frame.routingId}`;
+      const mine = shellProvides.get(s.windowId) ?? new Map<string, Set<string>>();
+      if (r.parts.length === 0) mine.delete(key); else mine.set(key, new Set(r.parts));
+      shellProvides.set(s.windowId, mine);
+      sayProvides(s.windowId);
+      return Promise.resolve();
+    }
+    if (r.kind === "drag") {
+      hooks.windowDrag(s.windowId, true);
+      return Promise.resolve();
+    }
+    runtime.shellMessage(s.windowId, { type: "shell-act", act: r.act });
+    return Promise.resolve();
+  });
+  on("clover:shell-report", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) return;
+    // Only the app's own shell says where the window is.
+    if (runtime.partOf(s.frame, mount).split("/")[0] !== "clover") return;
+    const report = cleanReport(a.report);
+    if (report === undefined) return;
+    const before = JSON.stringify(shellWindows.get(s.windowId)?.state);
+    shellWindows.set(s.windowId, report);
+    hooks.shellState?.(s.windowId, report.state);
+    sayProvides(s.windowId);
+    if (JSON.stringify(report.state) !== before) runtime.windowPluginMessage(s.windowId, (p) => hearsShell(p, report.state), { type: "shell-state", state: report.state });
   });
   handle("clover:terminal-input", (event, a) => {
     const s = sender(event);
@@ -510,6 +762,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const pluginId = runtime.partOf(s.frame, mount);
     return routeComposer({
       composer: runtime.composerOf(s.frame, mount),
+      ...(hooks.listens ? { listens: hooks.listens } : {}),
       op: a.op,
       args: a.args,
       takeGesture: (w) => frameGesture(a.active, () => hooks.takeGesture(w)),
@@ -520,6 +773,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     });
   });
   handle("clover:user-send", (event, a) => {
+    try {
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
@@ -529,6 +783,11 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
     if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
     return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) }, a.active === true);
+    } catch (err) {
+      // Refused before the core's own checks (the part, the target, the words): the reason, never the words.
+      if (err instanceof LayerError) log(`send: refused (${err.message})`);
+      throw err;
+    }
   });
   on("clover:window-drag", (event, a) => {
     const s = sender(event);
@@ -558,6 +817,16 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
+  // The app's own page for a plugin's OK card a part places, for its Review: navigation the user's click asks for, never an
+  // answer (the runtime holds the same placing rule as for its frames).
+  handle("clover:card-page", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const cardId = str(a.cardId, 64);
+    if (mount === undefined || cardId === undefined) throw new LayerError("bad card page");
+    if (a.active !== true) throw new LayerError("opening a card's page takes the user's click");
+    return runtime.cardPageOf(s.frame, mount, cardId);
+  });
   // A sealed frame's own single-use URL: its part asks, the runtime mints (the plugin's `approvals` capability's own
   // gate), and the scheme's handler serves once from the store's own copy of the card's sealed content.
   handle("clover:sealed-frame", (event, a) => {
@@ -566,16 +835,29 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const cardId = str(a.cardId, 64);
     const element = typeof a.element === "string" && (a.element.startsWith("field:") || a.element.startsWith("button:")) && a.element.length <= 80 ? a.element : undefined;
     if (mount === undefined || cardId === undefined || element === undefined) throw new LayerError("bad sealed frame");
-    return runtime.sealedFrameOf(s.frame, mount, cardId, element);
+    const look = typeof a.look === "string" && a.look.length <= 8 ? a.look : undefined;
+    // The part's own `card.*` style values: names of the card's own family, plain values, a handful (the page keeps only
+    // what its own grammar accepts).
+    const given: Record<string, string> = {};
+    if (a.tokens !== null && typeof a.tokens === "object") {
+      for (const [name, value] of Object.entries(a.tokens as Record<string, unknown>).slice(0, 40)) {
+        if (/^card\.[a-z0-9.]{1,60}$/.test(name) && typeof value === "string" && value.length <= 300) given[name] = value;
+      }
+    }
+    return runtime.sealedFrameOf(s.frame, mount, cardId, element, look, given);
   });
 
   // The sealed frames' answer: the sender is the sealed page itself (its own scheme), and the sender's key is what the
   // mint bound (a part's channel, its document's own frame; the fallback's `own`, its window's main frame). The app
   // signs it out of doors and takes the core's answer, with the gate first (B3, B4).
+  // Nothing a render window's page says about a card counts (an answer, a visibility, a press): it has placeholders, never
+  // a minted frame, and this holds even if one ever got a token.
+  const inRender = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => runtime.isRenderWindow(BrowserWindow.fromWebContents(event.sender)?.id);
   handle("clover:sealed-answer", (event, a) => {
     try {
       const f = event.senderFrame;
       if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+      if (inRender(event)) throw new LayerError("a render window answers no card");
       const token = str(a.token, 128);
       const option = str(a.option, 64);
       const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
@@ -601,6 +883,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   on("clover:sealed-visible", (event, a) => {
     const f = event.senderFrame;
     if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    if (inRender(event)) return;
     const token = str(a.token, 128);
     const visible = typeof a.visible === "boolean" ? a.visible : undefined;
     if (token === undefined || visible === undefined) throw new LayerError("bad sealed visibility");
@@ -612,6 +895,43 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const bound = runtime.boundOf(token);
     if (bound === undefined || bound !== key) throw new LayerError("bad sealed visibility");
     return hooks.sealedVisible(token, visible);
+  });
+  // A press the sealed page saw, in one word of a fixed set: logged with the card's id, so a press that did nothing says why.
+  // Checked like the visibility report: the sender is the sealed frame its token was served to, on the channel the mint bound.
+  on("clover:sealed-press", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://") || inRender(event)) return;
+    const token = str(a.token, 128);
+    const what = str(a.what, 24);
+    if (token === undefined || what === undefined || !SEALED_PRESS_WORDS.includes(what)) return;
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) return;
+    const key = f.parent !== null && !f.parent.detached ? `p:${f.parent.processId}:${f.parent.routingId}` : `m:${f.processId}:${f.routingId}`;
+    if (runtime.boundOf(token) !== key) return;
+    hooks.sealedPress(token, what);
+  });
+  // The app's own card page says how tall it is (a number): only its own window's main frame, on its own token, which the
+  // mint bound to that frame, so a plugin's sealed frame can't size a card window.
+  on("clover:sealed-size", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://") || inRender(event)) return;
+    const token = str(a.token, 128);
+    const height = typeof a.height === "number" && Number.isFinite(a.height) ? Math.min(4000, Math.max(0, Math.round(a.height))) : undefined;
+    if (token === undefined || height === undefined) return;
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) return;
+    if (runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) return;
+    hooks.sealedSize(token, height);
+  });
+  // The Review on the app's own card page: like the size, only its own window's main frame, on its own token, bound to
+  // that frame (a plugin's sealed frame, a part's, can't ask for a review's report).
+  handle("clover:sealed-review", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || f.parent !== null || !f.url.startsWith("clover-sealed://")) throw new LayerError("not the app's own card page");
+    const token = str(a.token, 128);
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (token === undefined || urlToken === null || urlToken !== token || runtime.boundOf(token) !== `m:${f.processId}:${f.routingId}`) throw new LayerError("not the app's own card page");
+    return hooks.sealedReview(token, a.peek === true);
   });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
@@ -637,8 +957,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:shell", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag", "clover:shell-report", "clover:sealed-size", "clover:sealed-press"]) ipcMain.removeAllListeners(c);
   };
 }
 

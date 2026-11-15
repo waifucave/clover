@@ -48,7 +48,7 @@ async function world(opts: { fetch?: (url: string, init: RequestInit) => Promise
   const host = new FakePluginHost({ clock: new FakeClock() });
   for (const id of Object.keys(CODE_PLUGINS)) {
     const record = registry.get(modelPluginId(id))!;
-    host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+    host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun", ...(record.manifest!.host!.process === "own" ? { process: "own" as const } : {}) });
   }
   const secrets = new MemorySecretStore();
   serveApiHandlers(host, registry).addApiHandlers(modelPluginApiHandlers({ registry, ...secretStoreCredentials(secrets), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }));
@@ -334,7 +334,7 @@ describe("a third party's row never names a built-in adapter (SDK 0.0.75's compi
     expect(merged.models.some((m) => m.providerId === "rogue-code")).toBe(false);
   });
 
-  test("a third party's code model adapter is never described until the fence and network rules land: no rows, rather than rows that error", async () => {
+  test("a third party's code model adapter is described like a bundled one's (row 1.91); one whose host can't answer is left out: no rows, rather than rows that error", async () => {
     const bedrockFile = JSON.parse(readFileSync(join(BUNDLED_CHILDREN_DIR, "model-bedrock", "catalog.json"), "utf8")) as { rows: { providerId: string; key: string }[] };
     const rows = bedrockFile.rows.map((r) => ({ ...r, providerId: "rogue-code", key: r.key.replace(/^bedrock\//, "rogue-code/") }));
     const code: FakePluginInput = {
@@ -354,7 +354,8 @@ describe("a third party's row never names a built-in adapter (SDK 0.0.75's compi
     const plugins = new ModelPlugins({ registry, host, home: tempDir("clover-a2-rogue-") });
     const snap = await plugins.start();
     try {
-      expect(invoked).not.toContain("rogue-code");
+      // Asked who it is (nothing is defined for it on this host, so it can't answer).
+      expect(invoked).toContain("rogue-code");
       expect(snap.refused.some((r) => r.pluginId === "rogue-code" && r.code === "adapter-unavailable")).toBe(true);
       expect(plugins.catalog!.providers.some((p) => p.id === "rogue-code")).toBe(false);
       expect(plugins.catalog!.models.some((m) => m.providerId === "rogue-code")).toBe(false);

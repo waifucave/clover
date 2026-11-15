@@ -23,7 +23,7 @@ import { serveClover, type TestCloverEndpoint } from "../testing/clover-endpoint
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
-import { AgentManager, type AgentPauseGate } from "../manager";
+import { AgentManager, type AgentPauseGate , type AgentManagerOptions } from "../manager";
 import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
@@ -51,6 +51,10 @@ export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level
 }
 
 export interface WorldOptions {
+  /** The manager's log lines. */
+  log?: (line: string) => void;
+  /** The plugins' turn hooks, as the manager reads them (`AgentManagerOptions.hooks`). */
+  hooks?: AgentManagerOptions["hooks"];
   quirks?: AgentQuirks;
   script?: FakeAcpStep[][];
   history?: AgentEvent[];
@@ -82,6 +86,8 @@ export interface WorldOptions {
   /** The bridge tokens' life, on the world's clock. */
   tokenTtlMs?: number;
   /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
+  /** Whether the bot holds its agent's root (a grant covering it): the manager's `childCommandsHeld`. */
+  childCommandsHeld?: (child: { bot: string; parent?: string; rootPath: string; level: Level | undefined }) => boolean;
   extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
   /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
   bridgeServerName?: string;
@@ -142,7 +148,11 @@ export class World {
     mkdirSync(this.project, { recursive: true });
     mkdirSync(this.cloverHome, { recursive: true });
     this.level = o.level ?? "automatic";
-    this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome });
+    // The fence's temp folder is the world's own: the default, /tmp, holds the world's folders when the machine's temp is /tmp (Linux), and a
+    // bot's agent's sandbox takes out every write root that holds its folder, leaving it no temp to write.
+    const fenceTemp = join(this.root, "fence-temp");
+    mkdirSync(fenceTemp, { recursive: true });
+    this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome, temp: fenceTemp });
     const others = Object.fromEntries(Object.entries(o.otherComputers ?? {}).map(([name, home]) => [name, { home }]));
     this.tree = new FakeTree({ clock: this.clock, computers: { ...others, [this.computer]: { home: this.userHome } }, botComputer: () => "Studio" });
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });
@@ -169,11 +179,14 @@ export class World {
     });
     const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
-      home: this.cloverHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
+      home: this.cloverHome, userHome: this.userHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
+      ...(o.log ? { log: o.log } : {}),
+      ...(o.hooks ? { hooks: o.hooks } : {}),
+      ...(o.childCommandsHeld === undefined ? {} : { childCommandsHeld: o.childCommandsHeld }),
       levelOf: () => this.level,
       watchLevels: (fn) => {
         this.#levelWatchers.add(fn);
@@ -195,11 +208,12 @@ export class World {
     return this.host.history("s_alpha").filter((r): r is SessionRecord & { type: "input" } => r.type === "input" && (from === undefined || r.input.from === from));
   }
 
-  async delegate(prompt = "Fix the tests.", extra: { root?: string; backend?: string; computer?: string; model?: string } = {}) {
+  async delegate(prompt = "Fix the tests.", extra: { root?: string; backend?: string; computer?: string; model?: string; definition?: { pluginId: string; id: string } } = {}) {
     return this.manager.start({
       caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
       backend: extra.backend ?? "fake", prompt, root: extra.root ?? "home/Studio/project1", title: "Fix the tests",
       ...(extra.computer ? { computer: extra.computer } : {}), ...(extra.model ? { model: extra.model } : {}),
+      ...(extra.definition ? { definition: extra.definition } : {}),
     });
   }
 

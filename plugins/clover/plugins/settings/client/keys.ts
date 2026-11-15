@@ -5,7 +5,7 @@ import type { SettingsValues } from "./types";
 type Appearance = SettingsValues["appearance"];
 type Notifications = SettingsValues["notifications"];
 
-export const APPEARANCE_KEYS = ["theme", "textSize"] as const satisfies readonly (keyof Appearance)[];
+export const APPEARANCE_KEYS = ["textSize"] as const satisfies readonly (keyof Appearance)[];
 export const NOTIFICATION_KEYS = ["needsYou", "agentDone", "routineFailed", "sounds"] as const satisfies readonly (keyof Notifications)[];
 
 export const settingKey = (group: "appearance" | "notifications", field: string): string => `${group}.${field}`;

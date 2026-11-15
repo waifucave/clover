@@ -6,8 +6,22 @@ import type { ConversationFormat, SharedTime } from "./types";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
+/** One formatter per locale, time zone and options, kept: making one costs far more than using it, and the timeline
+ *  reads every message's day on each draw (4 ms a draw at 135 messages when each made its own). */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function formatter(locale: string | undefined, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale ?? ""}\u0000${JSON.stringify(options)}`;
+  let f = formatters.get(key);
+  if (f === undefined) {
+    if (formatters.size > 64) formatters.clear();
+    f = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, f);
+  }
+  return f;
+}
+
 function dateParts(at: SharedTime, format: ConversationFormat): { y: number; m: number; d: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = formatter("en-CA", {
     timeZone: format.timeZone,
     year: "numeric",
     month: "2-digit",
@@ -19,14 +33,23 @@ function dateParts(at: SharedTime, format: ConversationFormat): { y: number; m: 
 
 /** A calendar day in the formatting time zone, as `YYYY-MM-DD`. */
 export function dayKey(at: SharedTime, format: ConversationFormat = {}): string {
+  // Each message's day is read on every draw of the timeline: kept by time and zone (a time's day in a zone never
+  // changes), a bounded few thousand.
+  const memo = `${format.timeZone ?? ""}\u0000${at}`;
+  const was = dayKeys.get(memo);
+  if (was !== undefined) return was;
   const { y, m, d } = dateParts(at, format);
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const key = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (dayKeys.size >= 4096) dayKeys.clear();
+  dayKeys.set(memo, key);
+  return key;
 }
+const dayKeys = new Map<string, string>();
 
 /** "10:42" (or "10:42 AM", by locale). Newer ICU puts a narrow no-break space before "AM"; it is
  *  read as a plain space, so every platform writes the same text. */
 export function formatTime(at: SharedTime, format: ConversationFormat = {}): string {
-  return new Intl.DateTimeFormat(format.locale, {
+  return formatter(format.locale, {
     timeZone: format.timeZone,
     hour: "numeric",
     minute: "2-digit",
@@ -41,7 +64,7 @@ export function dayLabel(at: SharedTime, now: SharedTime, format: ConversationFo
   if (day === dayKey(now, format)) return S.today;
   if (day === dayKey(now - 24 * HOUR, format)) return S.yesterday;
   const sameYear = dateParts(at, format).y === dateParts(now, format).y;
-  return new Intl.DateTimeFormat(format.locale, {
+  return formatter(format.locale, {
     timeZone: format.timeZone,
     weekday: "long",
     month: "long",

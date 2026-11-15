@@ -150,7 +150,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "moonshot-cn/kimi-k2.7-code",
@@ -266,7 +267,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "moonshot-cn/kimi-k2.7-code-highspeed",
@@ -382,7 +384,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.7-code-highspeed",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "moonshot-cn/kimi-k3",
@@ -511,7 +514,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "moonshot-cn/kimi-k3.1-pro",
@@ -640,7 +644,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "kimi-k3.1-pro",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "moonshot-cn/kimi-k3.1-pro-highspeed",
@@ -769,7 +774,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "kimi-k3.1-pro-highspeed",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     }
   ]
 }

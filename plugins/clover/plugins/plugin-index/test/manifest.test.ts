@@ -11,9 +11,16 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const CAPABILITIES = new Set([
   "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
   "computers.control", "approvals", "files", "browser", "usage.read", "logs.read", "notify", "audio",
-  // Lane B's, beyond the spec's list: the terminal (F's request) and the devices list.
-  "terminal", "devices.read",
+  // Lane B's, beyond the spec's list: the terminal (F's request), the devices list, and the Plugins page's events-only
+  // capability (the controller's ruling: the plugin events and card notes, nothing callable).
+  "terminal", "devices.read", "plugins.watch",
 ]);
+
+describe("what the Plugins page holds", () => {
+  test("only plugins.watch: no approvals, no plugins.install, nothing that opens a call", () => {
+    expect(manifest.capabilities).toEqual(["plugins.watch"]);
+  });
+});
 
 describe("clover.json (spec §5.9, format 1)", () => {
   test("a child of `clover`: no id of its own, a name, format 1", () => {

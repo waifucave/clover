@@ -36,6 +36,10 @@ export const ISLAND = {
   waitingHeight: 32,
   waitingWidth: 280,
   waitingGap: 8,
+  /** The closed strip's line (a plugin's `island.line`): a small pill just below the strip. */
+  stripLineWidth: 320,
+  stripLineHeight: 28,
+  stripLineGap: 6,
   rowCorner: 16,
   rowGap: 8,
   listInset: 14,
@@ -47,6 +51,8 @@ export const ISLAND = {
   islandCorner: 32,
   islandShoulder: 14,
   islandMaxScreenFraction: 0.6,
+  /** The most the open island grows to fit a card with its buttons: the overlay's own room below the top band. */
+  islandMaxHeight: 420,
   /** Without a housing the open island's header is its own row. */
   headerHeight: 46,
 } as const;
@@ -84,6 +90,12 @@ export function stripRect(shape: ScreenShape, showsWings: boolean): Rect | null 
   }
   const height = Math.max(shape.menuBarHeight, 22);
   return { x: -ISLAND.stripWidthWithoutHousing / 2, y: 0, width: ISLAND.stripWidthWithoutHousing, height };
+}
+
+/** Where the closed strip's line sits: centred under the strip (its room is the strip's height with wings, or the menu bar's). */
+export function stripLineRect(shape: ScreenShape): Rect {
+  const top = stripRect(shape, true)?.height ?? 22;
+  return { x: -ISLAND.stripLineWidth / 2, y: top + ISLAND.stripLineGap, width: ISLAND.stripLineWidth, height: ISLAND.stripLineHeight };
 }
 
 export type StripPart = "waitingWing" | "housing" | "workingWing";
@@ -130,9 +142,12 @@ export function stripAction(tab: string | null, isOpen: boolean, selectedTab: st
   return { kind: "close" };
 }
 
-/** The open island's rect (x from the centre): fixed for every tab; a short screen clamps its height. */
-export function islandRect(shape: ScreenShape, screenHeight?: number): Rect {
+/** The open island's rect (x from the centre): one size for every tab; a short screen clamps its height. `fit` is the
+ *  height one card with its buttons needs (measured by the island): the open island grows to it, never past
+ *  `islandMaxHeight` and never past the screen's share. */
+export function islandRect(shape: ScreenShape, screenHeight?: number, fit?: number): Rect {
   let height: number = ISLAND.islandHeight;
+  if (fit !== undefined && fit > height) height = Math.min(Math.ceil(fit), ISLAND.islandMaxHeight);
   if (screenHeight !== undefined && screenHeight > 0) {
     height = Math.min(height, Math.max(topInset(shape) + 160, Math.floor(screenHeight * ISLAND.islandMaxScreenFraction)));
   }

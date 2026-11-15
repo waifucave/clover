@@ -9,18 +9,19 @@ import {
   networkAllows, pluginTokenName,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
-  reachesPublicNetwork,
+  reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer,
 } from "../src/index";
 
 describe("capabilities", () => {
-  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install for the index browser and project.write for the fence", () => {
+  test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "plugins.install", "usage.read", "logs.read", "notify", "audio",
-      "call:<plugin-id>", "network:public", "network:<host>",
+      "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.report", "notify", "audio",
+      "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "can hear your microphone",
+      "controls the screen and input of your computers", "restyles approval cards", "changes files in your project folders", "runs commands on your computers", "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices",
+      "can ask your voice providers to speak or transcribe, which may use your accounts with them",
       "connects to any public website, through Clover's web safeguards",
     ]);
   });
@@ -99,8 +100,13 @@ describe("the plugin API's gating", () => {
   test("every capability but call: and network: gates at least one call", () => {
     const used = new Set(Object.values(API_CALLS).map((i) => (i as { capability?: string }).capability));
     // network:public gates the core's fetch, as network:<host> does, not an API call; project.write gates the
-    // plugin-process fence (its hooks' and MCP servers' writes to project folders).
-    for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && c.name !== "project.write") expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
+    // plugin-process fence (its hooks' and MCP servers' writes to project folders); plugins.watch gates events only
+    // (the controller's ruling: nothing callable).
+    // logs.read widens what `logs.*` reads (Clover's log and every plugin's, beyond the plugin's own), which the core
+    // checks per source: the calls themselves need no capability.
+    const notCalls = ["project.write", "plugins.watch", "logs.read", "memory.read", "routines.read"];
+    for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
+    expect(used.has("plugins.watch")).toBe(false);
   });
 
   test("without the capability the call doesn't exist; secrets only in a host's own process", () => {
@@ -148,41 +154,37 @@ describe("hooks", () => {
 describe("points and spots", () => {
   test("the core's points are §5.3's, and every daemon point is a manifest key", () => {
     expect(CORE_POINTS.map((p) => p.name)).toEqual([
-      "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices",
+      "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes",
       "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "bot.tab", "locales",
     ]);
     for (const p of CORE_POINTS) if (p.side === "daemon" || p.name === "themes" || p.name === "locales") expect(CORE_CONTRIBUTION_KEYS).toContain(p.name as never);
     expect(CORE_POINTS.filter((p) => p.uniqueBy).map((p) => `${p.name}.${p.uniqueBy}`)).toEqual([
-      "models.provider", "agentBackends.id", "commands.name", "triggers.type", "voices.id", "computerProviders.id",
+      "models.provider", "agentBackends.id", "commands.name", "triggers.type", "voices.id", "voiceModes.id", "computerProviders.id",
     ]);
   });
 
   test("the spot catalog holds §5.5's spots, with conversation.message's keys and its kept approval cell", () => {
     const names = SPOTS.map((s) => s.name);
-    for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section",
+    for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section", "bot.editor.section",
       "bot.header", "bot.stage", "bot.side", "conversation", "composer", "avatar", "composer.action", "conversation.message", "tool.result",
-      "conversation.message.extra", "bot.header.action", "status", "menu.message", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
+      "conversation.message.extra", "bot.header.action", "status", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
     expect(msg.keys).toEqual(MESSAGE_KINDS);
     expect(msg.keep).toEqual(["approval"]);
     expect(msg.needs).toEqual(["conversation.read"]);
     expect(new Set(names).size).toBe(names.length);
-    // A message's menu needs nothing to add an item; its `command` runs with the props, the text only for
-    // `conversation.read` (lane F's F-M3).
-    const menu = SPOTS.find((s) => s.name === "menu.message")!;
-    expect(menu.needs).toBeUndefined();
-    expect(menu.gates).toEqual({ "message.text": "conversation.read" });
-    expect(menu.fields.safeParse({ title: "Quote it", command: "reader.quote" }).success).toBe(true);
-    expect(menu.fields.safeParse({ title: "Quote it", command: "quote" }).success).toBe(false);
-    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1" }, role: "bot" }).success).toBe(true);
-    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1", text: "hi" }, role: "user" }).success).toBe(true);
     expect(SPOTS.find((s) => s.name === "panel.view")!.doc).toBe("A spot inside each panel view, keyed by the view's id.");
   });
 
-  test("spots inside a bot's tab are the tab's parts; the shell and surfaces are outside", () => {
-    const inTab = SPOTS.filter((s) => s.inBotTab).map((s) => s.name).sort();
-    expect(inTab).toEqual(["avatar", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "composer", "composer.action",
-      "conversation", "conversation.message", "conversation.message.extra", "file.preview", "menu.message", "tool.result"]);
+  test("what Bots offers a bot's plugin is a closed list: inside its tab, its top bar, the Browser and agent panels; never the sidebar, Settings or the Edit page", () => {
+    expect([...BOTS_OFFER.keys()].sort()).toEqual(["avatar", "bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
+      "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "panel", "tool.result"]);
+    expect(BOTS_OFFER.get("panel")).toEqual(["browser", "agent"]);
+    expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, true, false]);
+    for (const s of SAME_ON_EVERY_TAB) expect(botsOffer(s)).toBe(false);
+    // A bot's layout places the spots inside its tab: not the window's bar or panels.
+    expect(BOT_TAB_INSIDE.has("bar") || BOT_TAB_INSIDE.has("panel")).toBe(false);
+    expect(BOT_TAB_INSIDE.has("conversation")).toBe(true);
   });
 
   test("well-known names are the spots and data points, never a core point", () => {
@@ -220,6 +222,7 @@ describe("points and spots", () => {
   test("lane F's asks: settings declares its sections, an unfilled panel key shows a placeholder, a panel may be for some sessions only", () => {
     const spot = (name: string) => SPOTS.find((s) => s.name === name)!;
     expect(spot("settings.section").declaredBy).toBe("settings");
+    expect(spot("bot.editor.section")).toMatchObject({ shape: "list", declaredBy: "bot-editor", context: ["bot"] });
     expect(spot("panel").placeholder).toBe(true);
     expect(spot("panel").context).toContain("session");
     const panel = (when: unknown) => validateManifest({
@@ -229,6 +232,17 @@ describe("points and spots", () => {
     expect(panel({ session: "coding" }).issues).toEqual([]);
     expect(panel({ session: ["coding", "agent"] }).issues).toEqual([]);
     expect(panel({ session: "code" }).issues.map((i) => [i.refuses, i.path])).toEqual([["entry", "/contributes/ui/0/when/session"]]);
+  });
+
+  test("the schedule and webhook trigger types are the bundled tree's: a third-party triggers entry can't take either", () => {
+    const trigger = (type: string, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id: "hooks" }), name: "Hooks", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { triggers: [{ type, title: "T", handler: "t" }] } },
+      parent ? { parent, folderName: "hooks", bundled: true } : { folderName: "hooks" },
+    ).issues.filter((i) => i.severity === "error").map((i) => `${i.code}:${i.path}`);
+    expect(trigger("webhook")).toEqual(["trigger_reserved:/contributes/triggers/0/type"]);
+    expect(trigger("schedule")).toEqual(["trigger_reserved:/contributes/triggers/0/type"]);
+    expect(trigger("slack")).toEqual([]);
+    expect(trigger("webhook", { id: "clover", namespace: "clover" })).toEqual([]);
   });
 
   test("lane G's asks: reserved island tabs, always-on-top surfaces and pill targets' handlers are the clover tree's rules", () => {
@@ -458,7 +472,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(21);
+    expect(c.capabilities.length).toBe(28);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
@@ -485,5 +499,12 @@ describe("hosts from settings (#187's review)", () => {
     expect(parseNetworkHost("bedrock-runtime.${setting:r}.amazonaws.com")).not.toBeNull();
     expect(underSharedHosting("me.github.io")).toBe(true);
     expect(underSharedHosting("example.com")).toBe(false);
+  });
+});
+
+describe("browser.toolCaller", () => {
+  test("is the tool's host half's call only, so no component is offered it", () => {
+    expect(API_CALLS["browser.toolCaller"]).toEqual({ capability: "browser", where: "host" });
+    expect(API_CALLS["browser.tabs"]?.where).toBe("both");
   });
 });

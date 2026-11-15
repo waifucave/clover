@@ -12,6 +12,7 @@ import { ChevronDown, ChevronRight, File, Folder, Search } from "lucide-react";
 import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { visiblePaths } from "./filter";
 import { hasHidden, ShowHidden } from "./hidden";
+import { Spot, useSpotEntries } from "./sdk";
 import { S } from "./strings";
 import type { FileEntry, FilesPanelProps, FilesTitleProps } from "./types";
 
@@ -50,6 +51,21 @@ interface Shown {
   parent: string | undefined;
   /** Not an entry: the line that says a folder is still being listed. */
   listing?: true;
+}
+
+/** A picture's preview: the part that fills `file.preview` for its media type draws it; with none, a note says so. */
+function Preview({ path, mediaType }: { path: string; mediaType: string }): ReactElement {
+  const { entries } = useSpotEntries("file.preview", mediaType);
+  return (
+    <div className="cl-files__file">
+      <div className="cl-files__path">
+        <ShowHidden text={path} />
+      </div>
+      <div className="cl-files__preview" role="group" aria-label={S.preview(path)}>
+        {entries.length > 0 ? <Spot name="file.preview" spotKey={mediaType} props={{ path, mediaType }} /> : <p className="cl-files__empty-text">{S.noPreview(mediaType)}</p>}
+      </div>
+    </div>
+  );
 }
 
 export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, onSearch, matches }: FilesPanelProps) {
@@ -173,7 +189,9 @@ export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, o
   return (
     <div className="cl-files">
       <div className="cl-files__viewer">
-        {open ? (
+        {open?.mediaType !== undefined ? (
+          <Preview path={open.path} mediaType={open.mediaType} />
+        ) : open ? (
           <div className="cl-files__file">
             <div className="cl-files__path">
               <ShowHidden text={open.path} />

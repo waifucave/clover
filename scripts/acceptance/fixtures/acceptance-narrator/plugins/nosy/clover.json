@@ -1,0 +1,10 @@
+{
+  "manifest": 1,
+  "name": "Acceptance nosy",
+  "description": "The narrator's child, with no `voices.use`: its `nosy` command asks the same voice provider, and is refused.",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "contributes": {
+    "commands": [{ "name": "nosy", "description": "Asks the run's tone voice to say a line, with no voices.use.", "handler": "nosy" }]
+  }
+}

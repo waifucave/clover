@@ -3,11 +3,13 @@
 // to. Nothing runs. The reader is how the folder is reached: the real file system for the CLI and the registry, or an
 // in-memory folder in tests.
 import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/clover-protocol";
-import { live2dReferences } from "../catalogs/avatars";
-import { spotInfo } from "../catalogs/spots";
+import { avatarFileProblem, BUNDLED_AVATAR_FORMATS, extensionOf, live2dReferences, type AvatarFormatDecl } from "../catalogs/avatars";
+import { AvatarFormatEntry } from "../catalogs/points";
+import { BOT_TAB_INSIDE, spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
-import { LayoutSchema, layoutPaths, layoutSpots } from "../formats/layout";
+import { DEFAULT_TAB_LAYOUT, LayoutContributionSchema, LayoutFileSchema, contributionProblems, isLayoutPatch, layoutPaths, layoutSpots, resolveLayoutFile } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
+import { resolveShell, SHELL_NOT_OFFERED, SHELL_NOT_OFFERED_WORDS } from "../formats/shell";
 import { ThemeSchema, setsCardTokens } from "../formats/theme";
 import { parseJsonc } from "../jsonc";
 import { MANIFEST_FILE } from "../version";
@@ -38,7 +40,28 @@ export interface TreeReport {
    *  tokens. The OK says "restyles approval cards" (`describeOk`), and a later change to that styling waits for its own
    *  OK while the rest applies: the core keeps the card values last OK'd (`resolveTokens`' `heldCard`). */
   restylesCards: boolean;
+  /** A theme or `style` file carries a `shell` block: the plugin dresses the window (title bar, sidebar, accent) while
+   *  its bot is open. The OK says so (`describeOk`); a change to the file is a plugin change like any other. */
+  restylesWindow: boolean;
+  /** The `shell` blocks of the tree's theme files, canonical and ordered: the OK keeps them, and a change to one asks
+   *  the user again (`classifyChange`). Empty when no theme has a `shell` block. */
+  windowSkin: string;
   issues: ValidationIssue[];
+}
+
+interface Cards {
+  styled: boolean; window: boolean; skins: string[];
+  /** Each bot's avatar, checked once every format the tree declares is known (after its children are read). */
+  avatars: { base: string; file: string; avatar: { file: string; format: string } }[];
+  /** The `avatar.formats` entries the tree's own plugins declare. */
+  formats: AvatarFormatDecl[];
+}
+
+/** JSON with every object's keys in order, so two spellings of one block compare equal. */
+function stable(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => `${JSON.stringify(k)}:${stable(x)}`).join(",")}}`;
+  return JSON.stringify(v);
 }
 
 export type BareItemKind = "claude-plugin" | "skill-folder" | "mcp-config";
@@ -68,7 +91,12 @@ class TreeFindings {
 }
 
 /** Validates the plugin folder the reader shows. `folderName` is its name in the plugins directory. */
-export async function validateTree(reader: PluginFolderReader, opts: { folderName: string; bundled?: boolean; apiVersion?: string }): Promise<TreeReport> {
+export async function validateTree(reader: PluginFolderReader, opts: {
+  folderName: string; bundled?: boolean; apiVersion?: string;
+  /** The installed renderers' `avatar.formats` declarations, which a bot's avatar is checked by (its file, how its
+   *  model's files are found); the ones Clover ships when left out. The tree's own declarations count too. */
+  avatarFormats?: readonly AvatarFormatDecl[];
+}): Promise<TreeReport> {
   const findings = new TreeFindings();
   const text = await reader.readText(MANIFEST_FILE);
   if (text === undefined) {
@@ -77,13 +105,13 @@ export async function validateTree(reader: PluginFolderReader, opts: { folderNam
       severity: "error", refuses: "plugin", code: "manifest_missing", file: MANIFEST_FILE, path: "",
       message: bare ? `no ${MANIFEST_FILE}; this is a ${bare.replace("-", " ")}, which Clover wraps into a plugin` : `no ${MANIFEST_FILE}`,
     }]);
-    return { ok: false, top, children: [], ...(bare ? { bareItem: bare } : {}), restylesCards: false, issues: findings.list };
+    return { ok: false, top, children: [], ...(bare ? { bareItem: bare } : {}), restylesCards: false, restylesWindow: false, windowSkin: "", issues: findings.list };
   }
 
   const top = validateManifest(text, { folderName: opts.folderName, bundled: opts.bundled, apiVersion: opts.apiVersion });
   const topId = top.id ?? opts.folderName;
   const namespace = top.namespace ?? topId;
-  const cards = { styled: top.restylesCards };
+  const cards: Cards = { styled: top.restylesCards, window: false, skins: [], avatars: [], formats: [] };
   if (top.manifest) await checkFiles(reader, "", top.manifest, topId, top.bot, findings, cards);
 
   const children: { folder: string; ok: boolean; report: ManifestReport }[] = [];
@@ -112,6 +140,10 @@ export async function validateTree(reader: PluginFolderReader, opts: { folderNam
     children.push({ folder, ok: report.ok, report });
   }
 
+  // Each bot's avatar, by its format's declaration: the installed ones (or Clover's own) and the tree's.
+  const formats = [...cards.formats, ...(opts.avatarFormats ?? BUNDLED_AVATAR_FORMATS)];
+  for (const a of cards.avatars) await checkAvatar(reader, a.base, a.file, a.avatar, formats, findings);
+
   // Across the tree: tool names are unique within a top-level plugin (§5.9), and command names within its namespace.
   const tools = new Map<string, string>();
   for (const [where, r] of [["", top] as const, ...children.map((c) => [`plugins/${c.folder}/`, c.report] as const)]) {
@@ -131,12 +163,12 @@ export async function validateTree(reader: PluginFolderReader, opts: { folderNam
   const refusesFile = (file: string) => findings.list.some((i) => i.severity === "error" && i.refuses === "plugin" && i.file === file);
   for (const child of children) if (refusesFile(`plugins/${child.folder}/${MANIFEST_FILE}`)) child.ok = false;
   const topRefused = !top.ok || findings.list.some((i) => i.severity === "error" && i.refuses === "plugin" && !i.file.startsWith("plugins/"));
-  return { ok: !topRefused, top, children, restylesCards: cards.styled, issues: findings.list };
+  return { ok: !topRefused, top, children, restylesCards: cards.styled, restylesWindow: cards.window, windowSkin: cards.skins.sort().join("\n"), issues: findings.list };
 }
 
 /** The files a manifest names exist, stay inside the folder, and are well formed when they are themes, layouts or
  *  string tables. */
-async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest, topId: string, isBot: boolean, f: TreeFindings, cards: { styled: boolean }): Promise<void> {
+async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest, topId: string, isBot: boolean, f: TreeFindings, cards: Cards): Promise<void> {
   const file = `${base}${MANIFEST_FILE}`;
   const at = (path: string) => `${base}${path.startsWith("./") ? path.slice(2) : path}`;
   const must = async (path: string | undefined, where: Seg[], refuses: "plugin" | "contribution" | "entry", glob = false): Promise<boolean> => {
@@ -159,22 +191,32 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   const c = m.contributes ?? {};
   if (c.bot) {
     for (const k of ["instructions", "greeting", "memory"] as const) await must(c.bot[k], ["contributes", "bot", k], "contribution");
-    if (c.bot.avatar && (await must(c.bot.avatar.file, ["contributes", "bot", "avatar", "file"], "contribution")) && c.bot.avatar.format === "live2d") {
-      await checkLive2d(reader, base, c.bot.avatar.file, f);
+    if (c.bot.avatar && (await must(c.bot.avatar.file, ["contributes", "bot", "avatar", "file"], "contribution"))) {
+      cards.avatars.push({ base, file, avatar: c.bot.avatar });
     }
     if (c.bot.layout && (await must(c.bot.layout, ["contributes", "bot", "layout"], "contribution"))) {
       await checkLayout(reader, base, c.bot.layout, file, isBot, f);
     }
   }
+  for (const raw of ((c as Record<string, unknown>)["avatar.formats"] as unknown[] | undefined) ?? []) {
+    const parsed = AvatarFormatEntry.safeParse(raw);
+    if (parsed.success) cards.formats.push(parsed.data);
+  }
   for (const [i, theme] of (c.themes ?? []).entries()) {
-    if (await must(theme.file, ["contributes", "themes", i, "file"], "entry") && (await checkTheme(reader, base, theme.file, topId, f))) cards.styled = true;
+    if (await must(theme.file, ["contributes", "themes", i, "file"], "entry") && (await checkTheme(reader, base, theme.file, topId, f, cards))) cards.styled = true;
   }
   for (const [i, ui] of (c.ui ?? []).entries()) {
-    if (ui.style && (await must(ui.style, ["contributes", "ui", i, "style"], "entry")) && (await checkTheme(reader, base, ui.style, topId, f))) cards.styled = true;
+    if (ui.style && (await must(ui.style, ["contributes", "ui", i, "style"], "entry")) && (await checkTheme(reader, base, ui.style, topId, f, cards))) cards.styled = true;
     if (ui.web?.entry) await must(ui.web.entry, ["contributes", "ui", i, "web", "entry"], "entry");
+    if (ui.layout && (await must(ui.layout, ["contributes", "ui", i, "layout"], "entry"))) {
+      const own = new Set((c.ui ?? []).flatMap((u) => Object.keys((u as { declares?: Record<string, unknown> }).declares ?? {})));
+      const css = await checkContribution(reader, base, ui.layout, own, f);
+      if (css !== undefined) await must(css, ["contributes", "ui", i, "layout"], "entry");
+    }
   }
   for (const [i, loc] of (c.locales ?? []).entries()) {
-    if (await must(loc.file, ["contributes", "locales", i, "file"], "entry")) await checkLocale(reader, base, loc.file, loc.lang, topId, isBot, f);
+    // A table marked `"app": true` is a part beside the bot (§5.5): it may translate other plugins' keys, as any plugin's.
+    if (await must(loc.file, ["contributes", "locales", i, "file"], "entry")) await checkLocale(reader, base, loc.file, loc.lang, topId, isBot && (loc as { app?: boolean }).app !== true, f);
   }
   for (const [i, model] of (c.models ?? []).entries()) if (typeof model.catalog === "string") await must(model.catalog, ["contributes", "models", i, "catalog"], "entry");
   for (const [i, agent] of (c.agents ?? []).entries()) {
@@ -199,7 +241,7 @@ async function readFormat(reader: PluginFolderReader, base: string, path: string
 const TOKEN_TYPE = new Map(TOKENS.map((t) => [t.name, t.type] as const));
 
 /** Checks a theme or `style` file; true when it sets `card.*` tokens, which is card styling (§5.5). */
-async function checkTheme(reader: PluginFolderReader, base: string, path: string, topId: string, f: TreeFindings): Promise<boolean> {
+async function checkTheme(reader: PluginFolderReader, base: string, path: string, topId: string, f: TreeFindings, cards: Cards): Promise<boolean> {
   const full = `${base}${path}`;
   const value = await readFormat(reader, base, path, full, f);
   if (value === undefined) return false;
@@ -226,13 +268,47 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     const problem = manifestPathProblem(p);
     if (problem) f.error(full, "entry", "path_escape", [], `"${p}" has ${problem}`);
   }
+  if (t.shell !== undefined) {
+    cards.window = true;
+    cards.skins.push(`${full}=${stable(t.shell)}`);
+    // The app's own check (apps/desktop's `shellSkin`): each group kept only whole and legible over the theme's own
+    // surface, Clover's marks included. A group it would drop is said here, before the user sees a window half skinned.
+    for (const appearance of ["light", "dark"] as const) {
+      const tokens = appearance === "dark" && (t.appearance ?? "both") === "both" ? { ...t.tokens, ...(t.dark?.tokens ?? {}) } : t.tokens;
+      const surface = (tokens as Record<string, unknown>)["color.surface"];
+      const ground = typeof surface === "string" && /^#[0-9a-f]{6}$/i.test(surface) ? surface : appearance === "dark" ? "#1E1E1E" : "#FFFFFF";
+      for (const d of resolveShell(t.shell, appearance, ground, t.appearance ?? "both").dropped) {
+        f.warn(full, "shell_dropped", ["shell"], `in ${appearance} appearance the window doesn't use its ${d.group} group: ${d.why}`);
+      }
+    }
+    // The sidebar's old names: Bots doesn't offer the sidebar (§5.5). Said once per name, light or dark.
+    const named = new Set([...Object.keys(t.shell.tokens), ...Object.keys(t.shell.dark?.tokens ?? {})]);
+    for (const name of SHELL_NOT_OFFERED) if (named.has(name)) f.warn(full, "shell_not_offered", ["shell", name], SHELL_NOT_OFFERED_WORDS(name));
+  }
   return setsCardTokens(t);
 }
 
-/** A Live2D avatar's `model3.json` names files beside it (`live2dReferences`); each must exist and stay inside the
- *  folder. A `.zip` is checked when the core unpacks it. */
-async function checkLive2d(reader: PluginFolderReader, base: string, path: string, f: TreeFindings): Promise<void> {
-  if (!path.toLowerCase().endsWith(".model3.json")) return;
+/** A bot's avatar by its format's declaration: its file (the bot schema already holds Clover's own formats to theirs),
+ *  and, for a format whose files are found by a check the core implements (`files.find`), that check. A format no
+ *  declaration names isn't checked: its renderer, once installed, knows its files. */
+async function checkAvatar(reader: PluginFolderReader, base: string, file: string, avatar: { file: string; format: string }, formats: readonly AvatarFormatDecl[], f: TreeFindings): Promise<void> {
+  const decl = formats.find((d) => d.format === avatar.format);
+  if (decl === undefined) return;
+  if (!BUNDLED_AVATAR_FORMATS.some((b) => b.format === avatar.format)) {
+    const problem = avatarFileProblem(avatar.format, avatar.file, [decl]);
+    if (problem) {
+      f.error(file, "contribution", "file_format", ["contributes", "bot", "avatar", "file"], problem);
+      return;
+    }
+  }
+  // An archive is checked when the core unpacks it.
+  if (extensionOf(avatar.file, decl.entry.extensions) === ".zip") return;
+  if (decl.files.find === "cubism-model3") await checkCubismModel3(reader, base, avatar.file, f);
+}
+
+/** `cubism-model3`: a Cubism `model3.json` names files beside it (`live2dReferences`); each must exist and stay inside
+ *  the folder. */
+async function checkCubismModel3(reader: PluginFolderReader, base: string, path: string, f: TreeFindings): Promise<void> {
   const full = `${base}${path.startsWith("./") ? path.slice(2) : path}`;
   const value = await readFormat(reader, base, path, full, f);
   if (value === undefined) return;
@@ -253,22 +329,62 @@ async function checkLayout(reader: PluginFolderReader, base: string, path: strin
   const full = `${base}${path}`;
   const value = await readFormat(reader, base, path, full, f);
   if (value === undefined) return;
-  const parsed = LayoutSchema.safeParse(value);
+  const parsed = LayoutFileSchema.safeParse(value);
   if (!parsed.success) {
     for (const i of flattenZodIssues(parsed.error)) f.error(full, "contribution", "file_format", i.path, i.message);
     return;
   }
-  for (const p of layoutPaths(parsed.data)) {
+  // A patch is checked as what it makes: the stock tab with its changes. A change whose node isn't there is skipped
+  // where the tab is drawn (the stock tab changes over time), never an error here.
+  if (isLayoutPatch(parsed.data) && parsed.data.extends !== "default") {
+    f.error(full, "contribution", "file_format", ["extends"], `a plugin's layout extends "default" (the stock tab); "${parsed.data.extends}" is the user's own layout's base`);
+    return;
+  }
+  const layout = resolveLayoutFile(parsed.data, { default: DEFAULT_TAB_LAYOUT }).layout;
+  if (layout === null) return;
+  for (const p of layoutPaths(layout)) {
     const problem = manifestPathProblem(p);
     if (problem) f.error(full, "contribution", "path_escape", [], `"${p}" has ${problem}`);
   }
   if (isBot) {
-    for (const spot of layoutSpots(parsed.data.root)) {
+    for (const spot of layoutSpots(layout.root)) {
+      // The spots inside its tab, of what Bots offers (§5.5): the top bar and the panels are the window's, placed by the
+      // `chrome.*` parts.
       const info = spotInfo(spot);
-      if (info && !info.inBotTab) f.error(full, "contribution", "layout_foreign_spot", [], `a bot's layout places spots of its tab, and "${spot}" is outside it`);
+      if (info && !BOT_TAB_INSIDE.has(spot)) f.error(full, "contribution", "layout_foreign_spot", [], `a bot's layout places spots of its tab, and "${spot}" is outside it`);
     }
   }
   void file;
+}
+
+/** A layout patch for bots' tabs (a `ui` entry's `layout`): its own format, none of what only a bot's own layout says
+ *  (`contributionProblems`), and the spots its added nodes place are the tab's own or ones the plugin's entries
+ *  declare. Its CSS file, for the caller to find. */
+async function checkContribution(reader: PluginFolderReader, base: string, path: string, own: ReadonlySet<string>, f: TreeFindings): Promise<string | undefined> {
+  const full = `${base}${path.startsWith("./") ? path.slice(2) : path}`;
+  const value = await readFormat(reader, base, path, full, f);
+  if (value === undefined) return undefined;
+  const parsed = LayoutContributionSchema.safeParse(value);
+  if (!parsed.success) {
+    for (const i of flattenZodIssues(parsed.error)) f.error(full, "entry", "file_format", i.path, i.message);
+    return undefined;
+  }
+  for (const why of contributionProblems(parsed.data)) f.error(full, "entry", "layout_patch_reach", [], why);
+  for (const c of parsed.data.changes) {
+    if (!("add" in c)) continue;
+    for (const spot of layoutSpots(c.add)) {
+      if (spotInfo(spot)?.declaredBy === "bot-tab" || own.has(spot)) continue;
+      f.error(full, "entry", "layout_foreign_spot", [], `a patch to a bot's tab places the tab's own spots or ones its plugin declares, and "${spot}" is neither`);
+    }
+  }
+  if (parsed.data.css !== undefined) {
+    const problem = manifestPathProblem(parsed.data.css);
+    if (problem) {
+      f.error(full, "entry", "path_escape", ["css"], `"${parsed.data.css}" has ${problem}`);
+      return undefined;
+    }
+  }
+  return parsed.data.css;
 }
 
 async function checkLocale(reader: PluginFolderReader, base: string, path: string, lang: string, topId: string, isBot: boolean, f: TreeFindings): Promise<void> {
@@ -282,9 +398,9 @@ async function checkLocale(reader: PluginFolderReader, base: string, path: strin
   }
   if (parsed.data.lang !== lang) f.error(full, "entry", "locale_lang", ["lang"], `the file is "${parsed.data.lang}" but the manifest says "${lang}"`);
   if (isBot) {
-    // A bot's plugin translates only its own keys (§5.5); a pack for the rest can be a child in its folder.
+    // A bot's own table translates only its plugin's keys (§5.5); one marked `"app": true` beside the bot may do the rest.
     for (const key of Object.keys(parsed.data.strings)) {
-      if (localeKeyOwner(key) !== topId) f.error(full, "entry", "locale_foreign_key", ["strings", key], `a bot's plugin translates only its own keys (${topId}.…)`);
+      if (localeKeyOwner(key) !== topId) f.error(full, "entry", "locale_foreign_key", ["strings", key], `a bot's own table translates only its plugin's keys (${topId}.…); a table for the rest says "app": true`);
     }
   }
 }

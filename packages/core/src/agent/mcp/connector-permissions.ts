@@ -214,7 +214,7 @@ export function connectorVerdict(i: ConnectorVerdictInput): ConnectorVerdict {
 export function connectorDenialMessage(server: string, tool: string, i: Pick<ConnectorVerdictInput, "setting" | "policy">): string {
   const action = `${tool} (the ${server} connector)`;
   if (i.setting === "deny") {
-    return `${action} was not run — the user set this action to "Always deny" in Clover's connector permissions. Do not retry it; tell the user if you need it.`;
+    return `${action} was not run — the user blocked this tool in Settings (Tools). Do not retry it; tell the user if you need it.`;
   }
   if (i.policy === "plan") {
     return `${action} was not run — plan mode makes no changes, and this action is not marked read-only by its server. When your plan is ready, call exit_plan_mode to present it for approval.`;

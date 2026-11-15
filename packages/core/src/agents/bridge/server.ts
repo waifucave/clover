@@ -18,7 +18,7 @@
 import { randomUUID } from "node:crypto";
 import { CLOVER_PROTOCOL_VERSION } from "@waifucave/clover-protocol";
 import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
-import type { BridgeToolDef } from "./tools";
+import { listedBridgeTool, type BridgeToolDef } from "./tools";
 
 export const BRIDGE_ENV = { token: "CLOVER_BRIDGE_TOKEN", session: "CLOVER_BRIDGE_SESSION", socket: "CLOVER_BRIDGE_SOCKET" } as const;
 
@@ -114,7 +114,7 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
           return {};
         case "tools/list": {
           const t = await toolList();
-          return { tools: t.tools.map((x) => ({ name: x.name, description: x.description, inputSchema: x.inputSchema })) };
+          return { tools: t.tools.map(listedBridgeTool) };
         }
         case "tools/call": {
           const name = String(p["name"] ?? "");

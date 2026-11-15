@@ -20,14 +20,30 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statS
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { BunPlugin } from "bun";
-import { testBuildDefine } from "../../../scripts/test-build";
+import { CLIENT_BARE_IMPORTS } from "../../../packages/plugin-sdk/src/manifest/schema";
+import { acceptanceBuildDefine, RELEASE_BUILD_BANNER, releaseBuildDefine, testBuildDefine } from "../../../scripts/test-build";
 
-const unknown = process.argv.slice(2).filter((a) => a !== "--test-build");
+const unknown = process.argv.slice(2).filter((a) => a !== "--test-build" && a !== "--acceptance" && a !== "--release");
 if (unknown.length > 0) {
-  console.error(`build: unknown argument ${unknown[0]} (usage: build [--test-build])`);
+  console.error(`build: unknown argument ${unknown[0]} (usage: build [--test-build | --acceptance | --release])`);
   process.exit(2);
 }
 const testBuild = process.argv.includes("--test-build");
+// `--acceptance` (scripts/acceptance/run.ts's source target only): the source acceptance's own build, whose label
+// guards what only that run uses (the kept test answer key, the offscreen press). A release never passes it.
+const acceptanceBuild = process.argv.includes("--acceptance");
+if (testBuild && acceptanceBuild) {
+  console.error("build: --test-build and --acceptance are two different builds");
+  process.exit(2);
+}
+// `--release` (scripts/release/build.ts, every build but the test twin): the main process is compiled with the release
+// define (scripts/test-build.ts RELEASE_BUILD_DEFINE_NAME) and starts with its label, which the release build's gate
+// checks in app.asar. A dev build, the test twin and the acceptance build never pass it.
+const releaseBuild = process.argv.includes("--release");
+if (releaseBuild && (testBuild || acceptanceBuild)) {
+  console.error("build: --release is a build of its own (not with --test-build or --acceptance)");
+  process.exit(2);
+}
 const root = join(import.meta.dir, "..");
 const repo = join(root, "..", "..");
 const out = join(root, "out");
@@ -48,10 +64,11 @@ async function build(config: Parameters<typeof Bun.build>[0], what: string): Pro
 }
 
 const browser = { target: "browser" as const, format: "esm" as const, minify: true, sourcemap: "none" as const, define: { "process.env.NODE_ENV": '"production"' } };
-const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"];
+// The names each layer's import map serves (one shared list with the map and the loader check).
+const LAYER_EXTERNALS: string[] = [...CLIENT_BARE_IMPORTS];
 
 // ---- The main process and the preload ----
-await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: testBuildDefine(testBuild) }, "the main process");
+await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: { ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild), ...releaseBuildDefine(releaseBuild) }, ...(releaseBuild ? { banner: RELEASE_BUILD_BANNER } : {}) }, "the main process");
 await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: join(out, "main"), target: "node", format: "cjs", external: ["electron"], naming: "[name].cjs" }, "the preload");
 
 // ---- The Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----
@@ -111,7 +128,7 @@ rmSync(vendorTmp, { recursive: true, force: true });
 
 // ---- The UI API, the boot and the base styles ----
 const sdkUi = join(repo, "packages", "plugin-sdk", "src", "ui", "index.tsx");
-await build({ ...browser, entrypoints: [sdkUi], outdir: layerOut, naming: "sdk-ui.[ext]", external: ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client"] }, "the UI API");
+await build({ ...browser, entrypoints: [sdkUi], outdir: layerOut, naming: "sdk-ui.[ext]", external: LAYER_EXTERNALS.filter((n) => n !== "@waifucave/clover-plugin-sdk/ui") }, "the UI API");
 await build({ ...browser, entrypoints: [join(root, "src", "layer", "boot.tsx")], outdir: layerOut, external: LAYER_EXTERNALS }, "the layer boot");
 cpSync(join(root, "src", "layer", "layer.css"), join(layerOut, "layer.css"));
 
@@ -162,7 +179,8 @@ const childAlias: BunPlugin = {
     });
   },
 };
-await build({ ...browser, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS, plugins: [childAlias] }, "the clover tree");
+// The tree carries the build marks too (compile-time only, `false` in a real build): the voice player shows its counters in a test or acceptance build.
+await build({ ...browser, define: { ...browser.define, ...testBuildDefine(testBuild), ...acceptanceBuildDefine(acceptanceBuild) }, entrypoints: [join(root, "src", "layer", "clover", "index.ts")], outdir: layerOut, naming: "clover.[ext]", external: LAYER_EXTERNALS, plugins: [childAlias] }, "the clover tree");
 // Its styles: each child's `client.css`, in the bindings' order (lane E-M2's cleaner wraps them in @scope).
 const { modules } = (await import(join(root, "src", "layer", "clover", "ids.ts"))) as { modules: readonly string[] };
 const css: string[] = [];
@@ -183,6 +201,16 @@ if (process.platform === "darwin") {
   mkdirSync(dirname(dest), { recursive: true });
   const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-Wl,-install_name,@rpath/screen.node", "-framework", "AppKit", "-o", dest, source], { encoding: "utf8" });
   if (r.status !== 0) console.warn(`build: the screen add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without it`);
+}
+
+// ---- The trackpad-touch add-on (macOS; native/input): the four-finger tap's touches, nothing else. Built the same way, and
+// the app does without it (no gesture) where it can't be built. Nothing is read from the trackpad until the app asks.
+if (process.platform === "darwin") {
+  const source = join(repo, "native", "input", "macos", "touches.mm");
+  const dest = join(out, "main", "native", "touches.node");
+  mkdirSync(dirname(dest), { recursive: true });
+  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-Wl,-install_name,@rpath/touches.node", "-framework", "Foundation", "-o", dest, source], { encoding: "utf8" });
+  if (r.status !== 0) console.warn(`build: the touch add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without the four-finger tap`);
 }
 
 console.log(`built ${relative(root, join(out, "main"))} and ${relative(root, join(out, "renderer"))}: ${children.length} clover children found, ${modules.length} bound`);

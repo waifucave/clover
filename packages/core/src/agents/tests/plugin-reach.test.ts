@@ -1,0 +1,658 @@
+// How plugins reach agents (spec §9.3, checklist row 1.93) over the REAL registry and PluginMcp (a stand-in for the
+// plugin host's servers), the bots' real approval check and the agent manager with the scripted ACP agent: the bridge
+// lists a plugin's tools in the session's scope and its call is judged as the same call in the session that owns it
+// (the user's coding session by its own level and rules, a bot's agent by its bot's, its card naming the agent's
+// session); a plugin out of scope, left out by `onlyBackends` or switched off gives nothing. Skills and agent
+// definitions are placed in Claude Code's per-session plugin folder and leave it when their plugin goes off; Glossary
+// on the bridge serves the same scope. Temp homes, the fake broker, an in-memory secret store; nothing opens a window.
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { Listeners } from "../../contracts/common";
+import type { McpChannel } from "../../contracts/plugin-host";
+import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
+import { FakeClock } from "../../contracts/fakes/clock";
+import { MemorySecretStore } from "../../contracts/fakes/secret-store";
+import { botApprovalCheck } from "../../approvals/bot-check";
+import type { BotSessionContext } from "../../bots/service";
+import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { buildCoreBrand } from "../../runtime-sdk/brand";
+import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
+import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
+import { botChildFor } from "../bot-child";
+import { CLOVER_CODE_ID, CloverCodeBackend, type CloverCodeDeps } from "../clover-code/backend";
+import { thisPlatform } from "../../registry/core";
+import { openPluginRegistry } from "../../registry/open";
+import type { TurnHooks } from "../../runtime-sdk/turn-loop/hooks";
+import { glossaryIndex } from "../../runtime-sdk/turn-loop/glossary";
+import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
+import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
+import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
+import { agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
+import type { BotMcpServer } from "../../runtime-sdk/turn-loop/servers";
+import type { AgentSessionFacts, BridgeToolSource } from "../bridge/tools";
+import type { PluginPartsSource } from "../placement";
+import { waitFor, World, type WorldOptions } from "./world";
+
+setDefaultTimeout(60_000);
+const ENGINES = { clover: `^${PLUGIN_API_VERSION}` };
+const TOOL = "toolbox-tools__toolbox";
+/** A platform that isn't this computer's, for a plugin not for this computer. */
+const ELSEWHERE = thisPlatform() === "windows-x64" ? "linux-x64" : "windows-x64";
+const temps: string[] = [];
+afterAll(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
+let world: World | undefined;
+const closers: (() => void)[] = [];
+afterEach(async () => {
+  await world?.close();
+  world = undefined;
+  for (const c of closers.splice(0)) c();
+});
+
+/** A stand-in for the plugin host's MCP servers: each lists its plugin's one tool (named after the plugin) and echoes
+ *  a call. */
+const host = {
+  async openMcp(plugin: string, server: string): Promise<McpChannel> {
+    const out = new Listeners<Record<string, unknown>>();
+    let closed = false;
+    const reply = (m: Record<string, unknown>) => queueMicrotask(() => { if (!closed) out.emit(m); });
+    const tool = plugin.replace(/[^a-z]/g, "");
+    return {
+      send(m: Record<string, unknown>) {
+        if (m.method === "initialize") reply({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: server, version: "1" } } });
+        else if (m.method === "tools/list") reply({ jsonrpc: "2.0", id: m.id, result: { tools: [{ name: tool, description: `The ${plugin} tool.`, inputSchema: { type: "object" } }] } });
+        else if (m.method === "tools/call") reply({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: `${tool} ran with ${JSON.stringify((m.params as { arguments?: unknown }).arguments ?? {})}` }] } });
+      },
+      onMessage: (fn: (m: Record<string, unknown>) => void) => out.add(fn),
+      close() { closed = true; },
+      get closed() { return closed; },
+    } as unknown as McpChannel;
+  },
+};
+
+const plugin = (id: string, extra: Record<string, unknown> = {}) => ({
+  manifest: 1, id, name: id, version: "1.0.0", engines: ENGINES, host: { entry: "host/index.js" },
+  contributes: { mcpServers: { tools: { type: "host" } } }, ...extra,
+});
+
+/** The real registry with `toolbox` (agents), `botsonly` (bots, with a skill), `cconly` (Claude Code only), `cloveronly`
+ *  (Clover's own runtime only) and `kit` (agents: a skill and an agent definition), each OK'd; PluginMcp over it; the
+ *  judge over the bots' approval check on `broker`. */
+/** Two plugins whose ids are long (`agents` scope): their tools' bridge names pass `BRIDGE_TOOL_NAME_MAX`, and both
+ *  tools' names start with the same 27 letters. */
+const LONG_IDS = ["longnamedplugin-alphastudio-tool-a", "longnamedplugin-alphastudio-tool-b"];
+type ToolSetting = NonNullable<NonNullable<Parameters<typeof botApprovalCheck>[1]>["toolSetting"]>;
+async function plugins(broker: FakeApprovalBroker, o: { long?: boolean; toolSetting?: ToolSetting } = {}) {
+  const home = mkdtempSync(join(tmpdir(), "clover-b-reach-"));
+  temps.push(home);
+  const files: Record<string, unknown> = {
+    "toolbox/clover.json": plugin("toolbox", { scope: "agents" }), "toolbox/host/index.js": "export {};\n",
+    "botsonly/clover.json": plugin("botsonly", { scope: "bots", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } }), "botsonly/host/index.js": "export {};\n",
+    "botsonly/skills/limerick/SKILL.md": "---\nname: limerick\ndescription: Write a limerick.\n---\nFive lines.\n",
+    "cconly/clover.json": plugin("cconly", { onlyBackends: ["claude-code"] }), "cconly/host/index.js": "export {};\n",
+    "cloveronly/clover.json": plugin("cloveronly", { onlyBackends: ["clover"] }), "cloveronly/host/index.js": "export {};\n",
+    "elsewhere/clover.json": plugin("elsewhere", { platforms: [ELSEWHERE] }), "elsewhere/host/index.js": "export {};\n",
+    "kit/clover.json": { manifest: 1, id: "kit", name: "Kit", version: "1.0.0", engines: ENGINES, scope: "agents", contributes: { skills: ["skills/*/SKILL.md"], agents: ["agents/review.md"] } },
+    "kit/skills/haiku/SKILL.md": "---\nname: haiku\ndescription: Write a haiku about the code.\n---\nCount five, seven, five.\n",
+    "kit/agents/review.md": "---\nname: reviewer\ndescription: Reviews a diff.\n---\nRead the diff and list the bugs.\n",
+    // Two bots' own plugins (`own-bot`: a bot's id is its plugin's), each with a server and a persona skill.
+    ...Object.fromEntries(["luna", "nova"].flatMap((b) => [
+      [`${b}/clover.json`, plugin(b, { scope: "own-bot", contributes: { mcpServers: { tools: { type: "host" } }, skills: ["skills/*/SKILL.md"] } })],
+      [`${b}/host/index.js`, "export {};\n"],
+      [`${b}/skills/persona/SKILL.md`, `---\nname: persona\ndescription: How ${b} talks.\n---\nTalk like ${b}.\n`],
+    ])),
+    ...(o.long ? Object.fromEntries(LONG_IDS.flatMap((id) => [[`${id}/clover.json`, plugin(id, { scope: "agents", contributes: { mcpServers: { tools: { type: "host", tools: { [id.replace(/[^a-z]/g, "")]: "preload" } } } } })], [`${id}/host/index.js`, "export {};\n"]])) : {}),
+  };
+  for (const [path, value] of Object.entries(files)) {
+    mkdirSync(dirname(join(home, "plugins", path)), { recursive: true });
+    writeFileSync(join(home, "plugins", path), typeof value === "string" ? value : JSON.stringify(value));
+  }
+  const okBroker = new FakeApprovalBroker({ clock: new FakeClock() });
+  const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker: okBroker, secrets: new MemorySecretStore(), settleMs: 50 });
+  for (const id of ["toolbox", "botsonly", "cconly", "cloveronly", "elsewhere", "kit", "luna", "nova", ...(o.long ? LONG_IDS : [])]) {
+    for (let i = 0; i < 250 && opened.registry.get(id) === undefined; i++) await Bun.sleep(20);
+    const { card } = await opened.registry.installed(id, "app");
+    if (card !== undefined) {
+      const shown = okBroker.cards().find((c) => c.id === card)!;
+      await okBroker.answer(card, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: okBroker.frameChannel(card)!, input: "click", at: Date.now() } }, { role: "app" });
+    }
+    for (let i = 0; i < 250 && opened.registry.get(id)?.state === "found"; i++) await Bun.sleep(20);
+  }
+  const mcp = new PluginMcp({ registry: opened.registry, host: host as never, self: () => "Studio", computers: () => ["Studio"] });
+  await mcp.refresh();
+  closers.push(() => { mcp.close(); opened.close(); });
+  const check = botApprovalCheck(broker, o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting });
+  const deps: AgentPluginReachDeps = {
+    servers: (kind, backend, bot) => mcp.servers(kind, backend, bot), runner: localMcpRunner(mcp, () => "Studio"),
+    judge: agentToolJudge(check), registry: opened.registry, watch: (fn) => opened.registry.watch(() => fn()),
+  };
+  return { home, registry: opened.registry, mcp, deps, check };
+}
+
+/** A world whose manager's bridge serves the plugins' tools and parts (the daemon's `lateAgentPlugins` shape: the
+ *  sources read deps made after the world, over its own broker). */
+/** The bridge's name, fixed so a clover-code session's prompt can name its tools. */
+const CODE_BRIDGE = "clover_reachbridge";
+const CODE_MODEL = "winter-test/calls";
+/** Clover's coding agent (`clover-code`) on the embedded runtime, beside the scripted one, as clover-code.test.ts makes it. */
+const codeBackend = (spawn: SpawnClaudeCodeProcess, query?: CloverCodeDeps["query"]): WorldOptions => ({
+  bridgeServerName: CODE_BRIDGE,
+  extraBackends: (wire, self) => [new CloverCodeBackend({
+    clock: { now: () => Date.now() } as never, wire, defaultModel: () => CODE_MODEL, sandboxReady: () => true,
+    botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }),
+    baseOptions: (x): Options => {
+      const env: Record<string, string> = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", CLOVER_HOME: self.cloverHome };
+      const provider = testProviderNameFor(x.model);
+      if (provider !== undefined) env["WINTER_TEST_PROVIDER"] = provider;
+      return { brand: buildCoreBrand(undefined, self.cloverHome), model: x.model, cwd: x.cwd, env, spawnClaudeCodeProcess: spawn, settingSources: [] };
+    },
+    pause: { mayAct: () => true },
+    ...(query === undefined ? {} : { query }),
+  })],
+});
+/** A runtime that, at the prompt, asks about the calls `script` makes through the agent's own `canUseTool` (the backend's
+ *  wrapper over the ACP agent's), then ends the turn: what a provider giving two tool uses one id would make it ask. */
+const askingQuery = (script: (can: CanUseTool) => Promise<void>) => ((args: { prompt: AsyncIterable<string>; options: Options & { canUseTool: CanUseTool } }) => {
+  async function* run() {
+    yield { type: "system", subtype: "init", model: CODE_MODEL, permissionMode: "default" };
+    for await (const _ of args.prompt) {
+      await script(args.options.canUseTool);
+      yield { type: "result", subtype: "success", is_error: false, usage: { input_tokens: 1, output_tokens: 1 } };
+    }
+  }
+  return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+}) as unknown as CloverCodeDeps["query"];
+
+async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSetting?: ToolSetting } = {}) {
+  let tools: BridgeToolSource | undefined;
+  let parts: PluginPartsSource | undefined;
+  const w = (world = new World({
+    ...o,
+    pluginTools: { tools: (id, s) => tools!.tools(id, s), instructions: (id, s) => tools!.instructions!(id, s), call: (id, c, ctx) => tools!.call(id, c, ctx) },
+    ...(o.parts ? {
+      pluginParts: { parts: (id, s) => parts!.parts(id, s) },
+      place: (p, ctx) => placeInClaudeCode(p, { dir: ctx.dir, shim: { command: "/bin/echo", args: [] } }),
+    } : {}),
+  }));
+  const p = await plugins(w.approvals, { long: o.long === true, ...(o.toolSetting === undefined ? {} : { toolSetting: o.toolSetting }) });
+  tools = agentPluginTools(p.deps);
+  parts = agentPluginParts(p.deps);
+  return { w, p };
+}
+
+const asUser = (w: World, prompt = "Use the tool.") =>
+  w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: `m${Math.random()}`, sentAt: w.clock.now() }, backend: "fake", prompt, root: "home/Studio/project1" });
+const approve = async (w: World, cardId: string, optionId: string) => {
+  const card = w.approvals.cards().find((c) => c.id === cardId)!;
+  expect(await w.approvals.answer(cardId, { optionId, hash: card.hash, proof: { via: "sealed-frame", frame: w.approvals.frameChannel(cardId)!, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+};
+const facts = (o: Partial<AgentSessionFacts> = {}): AgentSessionFacts => ({ id: "s_code", kind: "coding", backend: "fake", computer: "Studio", root: tmpdir(), ...o });
+
+describe("a plugin's tools on an agent's bridge", () => {
+  test("allowed: the user's coding session lists the tools in its scope, calls one with no card at automatic, and the answer comes back", async () => {
+    const { w } = await setup({ level: "automatic", script: [[{ mcp: { server: "$bridge", tool: TOOL, input: { n: 1 } } }, { say: "Done." }]] });
+    const r = await asUser(w);
+    const res = await waitFor(() => w.report("mcp-result")[0], "the tool's answer");
+    expect(res).toMatchObject({ tool: TOOL, text: 'toolbox ran with {"n":1}', isError: false });
+    expect(w.approvals.cards()).toEqual([]);
+    // What `bridge.tools` answers the session: Glossary and toolbox's tool; not the bots-only plugin's, not the
+    // Claude-Code-only one's, not the Clover-only one's (the scripted agent's backend is `fake`).
+    const listed = await w.manager.bridgeHandlers().tools(r.sessionId);
+    expect(listed.tools.map((t) => t.name)).toEqual(["Glossary", TOOL]);
+    expect(listed.tools[1]!.description).toBe("The toolbox tool. (from the plugin toolbox)");
+  });
+
+  test("by backend and kind: Claude Code gets the Claude-Code-only plugin, Clover's own runtime (clover-code, clover) the Clover-only one, a bot's agent the agents' and the bots' plugins; one not for this computer, none", async () => {
+    const { p } = await setup();
+    expect(p.registry.get("elsewhere")?.state).toBe("off");
+    const tools = agentPluginTools(p.deps);
+    const names = async (f: Partial<AgentSessionFacts>) => (await tools.tools("s", facts(f))).map((t) => t.name).sort();
+    expect(await names({})).toEqual([TOOL]);
+    expect(await names({ backend: "claude-code" })).toEqual(["cconly-tools__cconly", TOOL]);
+    expect(await names({ backend: "clover-code" })).toEqual(["cloveronly-tools__cloveronly", TOOL]);
+    expect(await names({ backend: "clover" })).toEqual(["cloveronly-tools__cloveronly", TOOL]);
+    expect(await names({ kind: "agent", bot: "alpha" })).toEqual(["botsonly-tools__botsonly", TOOL]);
+  });
+
+  test("needs a card: at ask the call raises one naming the agent's session; the user's coding session's card offers always, and its yes runs the call", async () => {
+    const { w } = await setup({ level: "ask", script: [[{ mcp: { server: "$bridge", tool: TOOL, input: { n: 2 } } }, { say: "Done." }]] });
+    const r = await asUser(w);
+    const card = await waitFor(() => w.approvals.cards().find((c) => c.kind === "tool"), "a card");
+    expect(card.session).toBe(r.sessionId);
+    expect(card.bot).toBeUndefined();
+    expect(card.fields["what"]).toEqual({ type: "code", code: `mcp__${TOOL}` });
+    expect(card.options.some((o) => o.remember === "always")).toBe(true);
+    await approve(w, card.id, "approve");
+    expect(await waitFor(() => w.report("mcp-result")[0], "the tool's answer")).toMatchObject({ text: 'toolbox ran with {"n":2}', isError: false });
+  });
+
+  test("refused by scope and by onlyBackends: a tool never listed to the session answers 'no tool named', with no card", async () => {
+    const { w } = await setup({ level: "automatic", script: [[{ mcp: { server: "$bridge", tool: "botsonly-tools__botsonly" } }, { mcp: { server: "$bridge", tool: "cconly-tools__cconly" } }, { mcp: { server: "$bridge", tool: "nothing__here" } }, { say: "Done." }]] });
+    await asUser(w);
+    const results = await waitFor(() => (w.report("mcp-result").length === 3 ? w.report("mcp-result") : undefined), "three answers");
+    expect(results.map((x) => [x["text"], x["isError"]])).toEqual([
+      ["No tool named botsonly-tools__botsonly is available to this agent.", true],
+      ["No tool named cconly-tools__cconly is available to this agent.", true],
+      ["No tool named nothing__here is available to this agent.", true],
+    ]);
+    expect(w.approvals.cards()).toEqual([]);
+  });
+
+  test("read-only: the call is refused with no card", async () => {
+    const { w } = await setup({ level: "read-only", script: [[{ mcp: { server: "$bridge", tool: TOOL, ask: false } }, { say: "Done." }]] });
+    await asUser(w);
+    const res = await waitFor(() => w.report("mcp-result")[0], "the answer");
+    expect(res).toMatchObject({ isError: true });
+    expect(String(res["text"])).toContain("level");
+    expect(w.approvals.cards().filter((c) => c.kind === "tool")).toEqual([]);
+  });
+
+  test("a bot's agent: judged by its bot's level and saved rules; its own card offers no always", async () => {
+    const { w, p } = await setup({ level: "ask", script: [[{ mcp: { server: "$bridge", tool: TOOL, input: {} } }, { say: "Done." }]] });
+    const first = await w.delegate();
+    const card = await waitFor(() => w.approvals.cards().find((c) => c.kind === "tool" && c.session === first.sessionId), "the agent's card");
+    expect(card.bot).toBe("alpha");
+    expect(card.options.map((o) => o.remember)).toEqual([undefined, undefined]);
+    await approve(w, card.id, "deny");
+    expect(await waitFor(() => w.report("mcp-result")[0], "the refusal")).toMatchObject({ isError: true });
+    // The bot's own call to the same tool, answered "always": a rule under the bot's id.
+    const botCtx = { botId: "alpha", sessionId: "s_alpha", kind: "bot", computer: "Studio", paths: { scratch: tmpdir(), root: tmpdir() }, caller: { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" } } as unknown as BotSessionContext;
+    const own = p.check(botCtx, () => "user")(`mcp__${TOOL}`, {}, { signal: new AbortController().signal, toolUseID: "own-1" } as never);
+    const ownCard = await waitFor(() => w.approvals.cards().find((c) => c.kind === "tool" && c.session === "s_alpha"), "the bot's own card");
+    await approve(w, ownCard.id, ownCard.options.find((o) => o.remember === "always")!.id);
+    expect((await own)?.behavior).toBe("allow");
+    // The bot's next agent calls the tool with no card: its bot's saved rule answers it.
+    const cardsBefore = w.approvals.cards().length;
+    const second = await w.delegate("Again.");
+    await waitFor(() => w.report("mcp-result").find((x) => x["isError"] === false), "the second agent's answer");
+    expect(w.approvals.cards().filter((c) => c.session === second.sessionId && c.kind === "tool")).toEqual([]);
+    expect(w.approvals.cards().length).toBe(cardsBefore);
+  });
+
+  test("the plugins' tool hooks see the call under the tool's own name, on every backend; a deny refuses it", async () => {
+    const { p } = await setup();
+    const seen: string[] = [];
+    const hooks = {
+      toolBefore: async (s: { backend?: string }, t: { name: string }, input: unknown) => { seen.push(`${s.backend}:${t.name}`); return (input as { stop?: boolean }).stop ? { deny: "not today", input } : { input }; },
+      toolAfter: async (_s: unknown, _t: unknown, _i: unknown, result: unknown) => result,
+    } as unknown as TurnHooks;
+    const tools = agentPluginTools({ ...p.deps, hooks: () => hooks });
+    for (const backend of ["fake", "clover", "clover-code"]) {
+      const r = await tools.call("s_code", { callId: `c-${backend}`, tool: TOOL, input: {} }, { computer: "Studio", origin: "user", session: facts({ backend }) });
+      expect(r.isError).toBe(false);
+    }
+    expect(seen).toEqual([`fake:mcp__${TOOL}`, `clover:mcp__${TOOL}`, `clover-code:mcp__${TOOL}`]);
+    const denied = await tools.call("s_code", { callId: "c-deny", tool: TOOL, input: { stop: true } }, { computer: "Studio", origin: "user", session: facts() });
+    expect(denied).toEqual({ content: [{ type: "text", text: `${TOOL} was refused by a plugin's hook: not today` }], isError: true });
+  });
+
+  test("a long name: a short form that fits, the same each time; a name that fits is untouched; two cut to the same start stay apart; one that takes another's name gets more digits; only other characters leave a tool out", async () => {
+    const srv = (server: string, ...tools: string[]): BotMcpServer => ({ server, plugin: server, tools: tools.map((name) => ({ name, inputSchema: { type: "object" } })) }) as unknown as BotMcpServer;
+    const left: string[] = [];
+    const short = bridgeShortName("acme-studio-blender-bridge-tools", "Render");
+    // The tool's name kept whole, the server's cut, six hex digits of the full name's hash.
+    expect(short).toMatch(/^acme-studio-blender__Render_[0-9a-f]{6}$/);
+    expect(short.length).toBe(BRIDGE_TOOL_NAME_MAX);
+    // A tool whose own name leaves no room: its name cut, then the digits.
+    const a = bridgeShortName("x-tools", "longnamedpluginalphastudioone"), b = bridgeShortName("y-tools", "longnamedpluginalphastudioone");
+    expect(a.slice(0, 27)).toBe(b.slice(0, 27));
+    expect(a).not.toBe(b);
+    // A fitting tool whose full name is exactly the long one's short form: the long one takes eight digits.
+    const cut = short.indexOf("__");
+    const names = [...bridgeToolsOf([
+      srv("toolbox-tools", "toolbox"),
+      srv("acme-studio-blender-bridge-tools", "Render"),
+      srv(short.slice(0, cut), short.slice(cut + 2)),
+      srv("acme-studio-blender-bridge-tools", "has.dot"),
+    ], (n, why) => left.push(`${n}: ${why}`)).entries()].map(([name, t]) => [name, `${t.server.server}__${t.tool.name}`]);
+    expect(names).toEqual([
+      ["toolbox-tools__toolbox", "toolbox-tools__toolbox"],
+      [short, short],
+      [bridgeShortName("acme-studio-blender-bridge-tools", "Render", 8), "acme-studio-blender-bridge-tools__Render"],
+    ]);
+    expect(left).toEqual(["acme-studio-blender-bridge-tools__has.dot: a character MCP clients refuse"]);
+    for (const [name] of names) expect(name!.length).toBeLessThanOrEqual(BRIDGE_TOOL_NAME_MAX);
+    // The same servers give the same names.
+    expect([...bridgeToolsOf([srv("acme-studio-blender-bridge-tools", "Render")]).keys()]).toEqual([short]);
+  });
+
+  test("a long plugin id: its tool listed under a short name whose description starts with the real names, called through it, its card and hooks under the real name", async () => {
+    const real = (id: string) => `${id}-tools__${id.replace(/[^a-z]/g, "")}`;
+    const one = bridgeShortName(`${LONG_IDS[0]}-tools`, LONG_IDS[0]!.replace(/[^a-z]/g, ""));
+    const two = bridgeShortName(`${LONG_IDS[1]}-tools`, LONG_IDS[1]!.replace(/[^a-z]/g, ""));
+    // Both tools' names start with the same letters, so the cut alone would give them one name.
+    expect(one.slice(0, 27)).toBe(two.slice(0, 27));
+    expect(one).not.toBe(two);
+    const { w, p } = await setup({ long: true, level: "ask", script: [[{ mcp: { server: "$bridge", tool: one, input: { n: 3 } } }, { say: "Done." }]] });
+    const lines: string[] = [];
+    const tools = agentPluginTools({ ...p.deps, log: (l) => lines.push(l) });
+    const listed = await tools.tools("s_code", facts());
+    expect(listed.map((t) => t.name).sort()).toEqual([one, two, TOOL].sort());
+    expect(lines).toEqual([]);
+    expect(listed.find((t) => t.name === one)!.description).toBe(`[${LONG_IDS[0]}] longnamedpluginalphastudiotoola: The ${LONG_IDS[0]} tool. (the tool ${real(LONG_IDS[0]!)}, its name shortened to fit)`);
+    // The plugins' hooks see the call under the real name.
+    const seen: string[] = [];
+    const hooks = { toolBefore: async (_s: unknown, t: { name: string }, input: unknown) => { seen.push(t.name); return { input }; }, toolAfter: async (_s: unknown, _t: unknown, _i: unknown, r: unknown) => r } as unknown as TurnHooks;
+    const hooked = agentPluginTools({ ...p.deps, judge: async (_s, _c, call) => ({ allowed: true, input: call.input }), hooks: () => hooks });
+    expect(await hooked.call("s_code", { callId: "c-two", tool: two, input: {} }, { computer: "Studio", origin: "user", session: facts() })).toEqual({ content: [{ type: "text", text: "longnamedpluginalphastudiotoolb ran with {}" }], isError: false });
+    expect(seen).toEqual([`mcp__${real(LONG_IDS[1]!)}`]);
+    // The agent calls the short name: the card names the real one, and its yes runs it.
+    await asUser(w);
+    const card = await waitFor(() => w.approvals.cards().find((c) => c.kind === "tool"), "a card");
+    expect(card.fields["what"]).toEqual({ type: "code", code: `mcp__${real(LONG_IDS[0]!)}` });
+    await approve(w, card.id, "approve");
+    expect(await waitFor(() => w.report("mcp-result")[0], "the tool's answer")).toMatchObject({ tool: one, text: 'longnamedpluginalphastudiotoola ran with {"n":3}', isError: false });
+  });
+
+  test("a plugin switched off since the session started: its tool answers 'no tool named'", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const call = () => tools.call("s_code", { callId: "c1", tool: TOOL, input: {} }, { computer: "Studio", origin: "user", session: facts() });
+    await p.registry.setEnabled("toolbox", false);
+    await p.mcp.refresh();
+    expect(await call()).toEqual({ content: [{ type: "text", text: `No tool named ${TOOL} is available to this agent.` }], isError: true });
+  });
+});
+
+describeWithEmbeddedRuntime("a plugin's tool from a coding session on Clover's coding agent (clover-code): one card, the judge's", (spawn) => {
+  const tool = LONG_IDS[0]!.replace(/[^a-z]/g, "");
+  const real = `mcp__${LONG_IDS[0]}-tools__${tool}`;
+  const short = bridgeShortName(`${LONG_IDS[0]}-tools`, tool);
+  /** The user's own coding session on clover-code, told to make one call. */
+  const code = (w: World, call: string) => w.manager.start({
+    caller: { kind: "user", device: "d".repeat(16), clientMessageId: `m${Math.random()}`, sentAt: w.clock.now() },
+    backend: CLOVER_CODE_ID, root: "home/Studio/project1", model: CODE_MODEL, prompt: `CALL ${call}`,
+  });
+  const wire = (w: World, transcript: string) => { try { return readFileSync(join(w.cloverHome, transcript), "utf8"); } catch { return ""; } };
+  const mine = (w: World, session: string) => w.approvals.cards().filter((c) => c.session === session);
+  /** Every card raised for a session, answered or not, by kind. */
+  const raised = (w: World) => {
+    const all: { session?: string; kind: string }[] = [];
+    closers.push(w.approvals.watch((e) => { if (e.type === "requested") all.push({ ...(e.card.session === undefined ? {} : { session: e.card.session }), kind: e.card.kind }); }));
+    return (session: string) => all.filter((c) => c.session === session).map((c) => c.kind);
+  };
+
+  test("at ask: no agent-permission card; the judge's tool card under the real name, and its yes runs the call", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask" });
+    const kinds = raised(w);
+    const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":4}`);
+    const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
+    expect(card.fields["what"]).toEqual({ type: "code", code: real });
+    expect(card.fields["reason"]).toBeUndefined();
+    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "clover-code" }, { label: "Started by", value: "You" }, { label: "Folder" }] });
+    await approve(w, card.id, "approve");
+    await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
+    expect(kinds(r.sessionId)).toEqual(["tool"]);
+  });
+
+  test("Settings' Tools decide it with no card at all: Always block refuses it, Always allow runs it", async () => {
+    const said = new Map<string, "allow" | "deny">([[real, "deny"]]);
+    const toolSetting: ToolSetting = (_ctx, t) => (said.get(t) === "deny" ? { setting: "deny", message: "Blocked in Settings' Tools." } : said.get(t) === "allow" ? { setting: "allow" } : undefined);
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask", toolSetting });
+    const kinds = raised(w);
+    const blocked = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":5}`);
+    await waitFor(() => wire(w, blocked.transcript).includes("Blocked in Settings' Tools."), "the refusal");
+    expect(wire(w, blocked.transcript)).not.toContain(`${tool} ran with`);
+    expect(kinds(blocked.sessionId)).toEqual([]);
+    said.set(real, "allow");
+    const allowed = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":6}`);
+    await waitFor(() => wire(w, allowed.transcript).includes(`${tool} ran with`), "the tool's answer");
+    expect(kinds(allowed.sessionId)).toEqual([]);
+  });
+
+  test("a bot's agent: one card, the judge's, saying it's her agent asking and not her, with no always", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask" });
+    const kinds = raised(w);
+    const r = await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
+      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Use it", model: CODE_MODEL, prompt: `CALL mcp__${CODE_BRIDGE}__${short} {"n":7}`,
+    });
+    const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "tool"), "the judge's card");
+    expect(card.bot).toBe("alpha");
+    expect(card.fields["what"]).toEqual({ type: "code", code: real });
+    expect(card.fields["reason"]).toEqual({ type: "text", text: "alpha's agent (clover-code) is asking, not alpha itself." });
+    expect(card.fields["source"]).toMatchObject({ type: "rows", rows: [{ label: "Agent", value: "clover-code" }, { label: "Started by", value: "alpha" }, { label: "Folder" }] });
+    expect(card.options.map((o) => o.remember)).toEqual([undefined, undefined]);
+    await approve(w, card.id, "approve");
+    await waitFor(() => wire(w, r.transcript).includes(`${tool} ran with`), "the tool's answer");
+    expect(kinds(r.sessionId)).toEqual(["tool"]);
+  });
+
+  test("read-only: the call is refused with no card of any kind", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "read-only" });
+    const kinds = raised(w);
+    const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":8}`);
+    await waitFor(() => wire(w, r.transcript).includes("stopReason"), "the turn's end");
+    expect(wire(w, r.transcript)).not.toContain(`${tool} ran with`);
+    expect(kinds(r.sessionId)).toEqual([]);
+  });
+
+  /** Answers (deny) every card raised for the session until `done`, saying each card's kind and the call it shows. */
+  const denyUntil = async (w: World, session: () => string | undefined, done: () => boolean) => {
+    const shown: string[] = [];
+    await waitFor(async () => {
+      const id = session();
+      for (const c of id === undefined ? [] : mine(w, id)) {
+        shown.push(`${c.kind}: ${JSON.stringify(c.fields["command"] ?? c.fields["what"])}`);
+        await approve(w, c.id, (c.options.find((o) => o.kind === "deny") ?? c.options[c.options.length - 1]!).id);
+      }
+      return done();
+    }, "the calls' answers");
+    return shown;
+  };
+  const can = (call: CanUseTool, name: string, input: Record<string, unknown>, id: string) => call(name, input, { signal: new AbortController().signal, toolUseID: id } as Parameters<CanUseTool>[2]).then((r) => `${name.startsWith("mcp__") ? "plugin" : name}: ${r?.behavior}`);
+
+  test("two tool uses with one id: the plugin call's record is consumed on its first lookup and bound to its own tool, so the other (a Bash naming the tool) still asks on agent-permission", async () => {
+    const answers: string[] = [];
+    let finished = false;
+    const plugin = `mcp__${CODE_BRIDGE}__${short}`;
+    const bash = { command: plugin };
+    const query = askingQuery(async (call) => {
+      // The plugin call asked first, then a Bash under the same id while its ask is out: the Bash finds no record.
+      answers.push(...await Promise.all([can(call, plugin, {}, "toolu_same_a"), can(call, "Bash", bash, "toolu_same_a")]));
+      // The Bash asked first, the plugin call's record made while the Bash's request is on its way: the Bash's lookup
+      // finds a record for another tool (bound: not taken) and consumes it, so the plugin call asks on a card too.
+      answers.push(...await Promise.all([can(call, "Bash", bash, "toolu_same_b"), can(call, plugin, {}, "toolu_same_b")]));
+      finished = true;
+    });
+    const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "ask" });
+    let id: string | undefined;
+    const started = code(w, "anything").then((r) => { id = r.sessionId; });
+    const shown = await denyUntil(w, () => id, () => finished);
+    await started;
+    const bashCard = `agent-permission: ${JSON.stringify({ type: "code", code: plugin })}`;
+    // The first pair: the plugin call through to the bridge's judge with no card; the Bash on its card, denied.
+    expect(answers.slice(0, 2)).toEqual(["plugin: allow", "Bash: deny"]);
+    // The second pair: both on agent-permission cards, both denied; nothing passed by the bridge rule.
+    expect(answers.slice(2)).toEqual(["Bash: deny", "plugin: deny"]);
+    // Three agent-permission cards: the two Bashes (their command names the tool) and the second plugin call (with no
+    // input, its card shows its title, its own name).
+    expect(shown).toEqual([bashCard, bashCard, bashCard]);
+  });
+
+  test("the bridge's own tools (Glossary; SendMessage for a bot's agent) still ask on agent-permission", async () => {
+    let finished = 0;
+    const answers: string[] = [];
+    const query = askingQuery(async (call) => {
+      answers.push(await (finished === 0 ? can(call, `mcp__${CODE_BRIDGE}__Glossary`, { query: "haiku" }, "toolu_glossary") : can(call, `mcp__${CODE_BRIDGE}__SendMessage`, { message: "halfway" }, "toolu_send")));
+      finished++;
+    });
+    const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "ask" });
+    let id: string | undefined;
+    void code(w, "anything").then((r) => { id = r.sessionId; });
+    const user = await denyUntil(w, () => id, () => finished === 1);
+    let agentId: string | undefined;
+    void w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Report", model: CODE_MODEL, prompt: "anything" }).then((r) => { agentId = r.sessionId; });
+    const agent = await denyUntil(w, () => agentId, () => finished === 2);
+    expect(answers).toEqual(["plugin: deny", "plugin: deny"]);
+    expect([user.length, agent.length]).toEqual([1, 1]);
+    expect([user[0]!.startsWith("agent-permission: "), agent[0]!.startsWith("agent-permission: ")]).toEqual([true, true]);
+  });
+
+  test("a tool that isn't a plugin's on the bridge still asks on the agent-permission card", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "ask" });
+    const kinds = raised(w);
+    const r = await code(w, `Write {"file_path":${JSON.stringify(join(w.project, "note.txt"))},"content":"ok"}`);
+    const card = await waitFor(() => mine(w, r.sessionId).find((c) => c.kind === "agent-permission"), "the agent-permission card");
+    await approve(w, card.id, card.options[0]!.id);
+    await waitFor(() => existsSync(join(w.project, "note.txt")), "the write");
+    expect(kinds(r.sessionId)).toEqual(["agent-permission"]);
+  });
+});
+
+describe("a plugin's skills and agent definitions for an agent", () => {
+  test("placed in Claude Code's per-session plugin folder (never the user's own), and gone from it when the plugin is turned off", async () => {
+    const { w, p } = await setup({ parts: true, script: [[{ say: "Done." }]] });
+    const parts = await agentPluginParts(p.deps).parts("s", facts());
+    expect(parts.skills.map((s) => s.name)).toEqual(["kit-haiku"]);
+    expect(parts.agents.map((a) => a.name)).toEqual(["kit-reviewer"]);
+    expect(parts.hooks).toEqual([]);
+    // The bots-only plugin's skill isn't the agent's.
+    expect(parts.skills.some((s) => s.pluginId === "botsonly")).toBe(false);
+    const r = await asUser(w, "Hello.");
+    await waitFor(() => w.report("prompt")[0], "the prompt");
+    const folder = join(w.manager.setupDir(r.sessionId), CLAUDE_PLUGIN_FOLDER);
+    expect(readFileSync(join(folder, "skills", "kit-haiku", "SKILL.md"), "utf8")).toContain("five, seven, five");
+    expect(readFileSync(join(folder, "agents", "kit-reviewer.md"), "utf8")).toContain("list the bugs");
+    // It reached the agent at `session/new` as a local plugin in that folder.
+    expect(JSON.stringify(w.report("session")[0]!["meta"])).toContain(folder);
+    // Turned off: placed again, its skill and agent leave the folder.
+    await p.registry.setEnabled("kit", false);
+    await w.manager.placePartsAgain();
+    expect(existsSync(join(folder, "skills", "kit-haiku"))).toBe(false);
+    expect(existsSync(join(folder, "agents", "kit-reviewer.md"))).toBe(false);
+  });
+
+  test("Glossary on the bridge finds and loads the session's skills; another scope's stays out", async () => {
+    const { p } = await setup();
+    const glossary = agentGlossary(p.deps);
+    const r = await glossary("s", { query: ["haiku", "limerick"], load: ["kit:haiku", "botsonly:limerick"] }, facts());
+    expect(r.results).toEqual(expect.arrayContaining([expect.objectContaining({ name: "kit:haiku", kind: "skill" })]));
+    expect(r.results.some((x) => (x as { name: string }).name === "botsonly:limerick")).toBe(false);
+    expect(r.loaded).toEqual([expect.objectContaining({ name: "kit:haiku", kind: "skill", text: expect.stringContaining("five, seven, five") }), { name: "botsonly:limerick", found: false }]);
+    // Its tools are the bridge's names.
+    const t = await glossary("s", { query: "toolbox" }, facts());
+    expect(t.results).toEqual(expect.arrayContaining([expect.objectContaining({ name: TOOL, kind: "tool" })]));
+  });
+});
+
+describe("one scope rule (servesScope) at every call site", () => {
+  /** The bots' Glossary index for a bot's own session, as the driver builds it (`partsServe` on the registry). */
+  const botIndex = (registry: Parameters<typeof partsServe>[0] & Parameters<typeof glossaryIndex>[0]["registry"], bot: string, kind: "bot" | "side-thread" = "bot") =>
+    glossaryIndex({ tools: () => [], registry: registry!, serves: (id) => partsServe(registry!, id, { kind, bot }), bot }).map((i) => i.name);
+
+  test("a bots-scoped plugin: its tools and its skills both reach a bot's delegated agent; never the user's coding session", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const parts = agentPluginParts(p.deps);
+    const agent = facts({ id: "s_agent", kind: "agent", bot: "nova" });
+    expect((await tools.tools("s", agent)).map((t) => t.name)).toContain("botsonly-tools__botsonly");
+    expect((await parts.parts("s", agent)).skills.map((x) => x.name)).toContain("botsonly-limerick");
+    const g = await agentGlossary(p.deps)("s", { load: "botsonly:limerick" }, agent);
+    expect(g.loaded).toEqual([expect.objectContaining({ name: "botsonly:limerick", kind: "skill" })]);
+    // The routed call the daemon's approvals read: the same server for the agent.
+    expect(p.mcp.routedTool("agent", "mcp__botsonly-tools__botsonly", undefined, "nova")?.plugin).toBe("botsonly");
+    // The user's own coding session: none of it.
+    expect((await tools.tools("s", facts())).map((t) => t.name)).not.toContain("botsonly-tools__botsonly");
+    expect((await parts.parts("s", facts())).skills.map((x) => x.name)).not.toContain("botsonly-limerick");
+    expect(p.mcp.routedTool("coding", "mcp__botsonly-tools__botsonly")).toBeUndefined();
+  });
+
+  test("an agents-scoped plugin reaches both kinds of agent (a bot's, the user's) and no bot's own session", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const parts = agentPluginParts(p.deps);
+    for (const f of [facts(), facts({ id: "s_agent", kind: "agent", bot: "nova" })]) {
+      expect((await tools.tools("s", f)).map((t) => t.name)).toContain(TOOL);
+      expect((await parts.parts("s", f)).skills.map((x) => x.name)).toContain("kit-haiku");
+    }
+    // A bot's conversation and side thread: neither the agents' server nor the agents' skill and agent definition;
+    // the bots' plugin's are there.
+    for (const kind of ["bot", "side-thread"] as const) {
+      const servers = p.mcp.servers(kind, undefined, "nova").map((sv) => sv.plugin);
+      expect(servers).not.toContain("toolbox");
+      expect(servers).toContain("botsonly");
+      expect(p.mcp.routedTool(kind, `mcp__${TOOL}`, undefined, "nova")).toBeUndefined();
+      const index = botIndex(p.registry, "nova", kind);
+      expect(index).not.toContain("kit:haiku");
+      expect(index).not.toContain("kit:reviewer");
+      expect(index).toContain("botsonly:limerick");
+    }
+  });
+});
+
+describe("two bots on one computer: each one's own-bot parts are its own", () => {
+  test("a bot's delegated agent and its own sessions get only their bot's own-bot server and skill, never the other bot's; a coding session neither", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    const parts = agentPluginParts(p.deps);
+    const glossary = agentGlossary(p.deps);
+    for (const [bot, other] of [["luna", "nova"], ["nova", "luna"]] as const) {
+      const agent = facts({ id: `s_${bot}_agent`, kind: "agent", bot });
+      const names = (await tools.tools("s", agent)).map((t) => t.name);
+      expect(names).toContain(`${bot}-tools__${bot}`);
+      expect(names).not.toContain(`${other}-tools__${other}`);
+      const skills = (await parts.parts("s", agent)).skills.map((x) => x.name);
+      expect(skills).toContain(`${bot}-persona`);
+      expect(skills).not.toContain(`${other}-persona`);
+      expect((await glossary("s", { load: [`${bot}:persona`, `${other}:persona`] }, agent)).loaded).toEqual([
+        expect.objectContaining({ name: `${bot}:persona`, kind: "skill" }), { name: `${other}:persona`, found: false },
+      ]);
+      // A call to the other bot's tool is no tool of this agent's, and is routed for no one but its own bot.
+      expect(p.mcp.routedTool("agent", `mcp__${other}-tools__${other}`, undefined, bot)).toBeUndefined();
+      expect(p.mcp.routedTool("agent", `mcp__${bot}-tools__${bot}`, undefined, bot)?.plugin).toBe(bot);
+      // The bot's own conversation: the same split.
+      const servers = p.mcp.servers("bot", undefined, bot).map((sv) => sv.plugin);
+      expect(servers).toContain(bot);
+      expect(servers).not.toContain(other);
+      const index = glossaryIndex({ tools: () => [], registry: p.registry, serves: (id) => partsServe(p.registry, id, { kind: "bot", bot }), bot }).map((i) => i.name);
+      expect(index).toContain(`${bot}:persona`);
+      expect(index).not.toContain(`${other}:persona`);
+    }
+    // The user's coding session: neither bot's.
+    const coding = (await tools.tools("s", facts())).map((t) => t.name);
+    expect(coding.some((n) => n.startsWith("luna-") || n.startsWith("nova-"))).toBe(false);
+    expect((await parts.parts("s", facts())).skills.some((x) => x.pluginId === "luna" || x.pluginId === "nova")).toBe(false);
+  });
+});
+
+describe("Alpha's persona stays hers", () => {
+  test("her skills and agent definitions (her own and her extras') reach her sessions and her delegated agents; never another bot, another bot's agent or a coding session", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-b-alpha-"));
+    temps.push(home);
+    // Alpha as Clover ships her: from a bundled folder (a copy of the repository's), which asks for no OK.
+    const bundled = join(home, "bundled");
+    cpSync(join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "alpha"), join(bundled, "alpha"), { recursive: true, filter: (src) => !src.includes("node_modules") });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", bundledDirs: [bundled], broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets: new MemorySecretStore(), settleMs: 50 });
+    closers.push(() => opened.close());
+    for (let i = 0; i < 250 && !["running", "enabled"].includes(String(opened.registry.get("alpha")?.state)); i++) await Bun.sleep(20);
+    await opened.registry.setEnabled("alpha/extras", true);
+    const active = (point: string) => opened.registry.entries(point).filter((c) => c.state === "active").map((c) => c.pluginId);
+    expect(active("skills")).toEqual(expect.arrayContaining(["alpha", "alpha/extras"]));
+    expect(active("agents")).toContain("alpha");
+    // Her own sessions: her Glossary has them all.
+    for (const kind of ["bot", "side-thread"] as const) {
+      const index = glossaryIndex({ tools: () => [], registry: opened.registry, serves: (id) => partsServe(opened.registry, id, { kind, bot: "alpha" }), bot: "alpha" }).map((i) => i.name);
+      expect(index).toEqual(expect.arrayContaining(["alpha:explain-like-a-friend", "alpha:plan-my-day", "alpha/extras:morning-check-in", "alpha:study-buddy"]));
+    }
+    // Another bot's: none of them (a point she declares, `alpha.scenes`, is a contract any plugin may fill, not hers).
+    const other = glossaryIndex({ tools: () => [], registry: opened.registry, serves: (id) => partsServe(opened.registry, id, { kind: "bot", bot: "nova" }), bot: "nova" }).map((i) => i.name);
+    expect(other.filter((n) => n.startsWith("alpha:") || n.startsWith("alpha/"))).toEqual([]);
+    const deps = { registry: opened.registry, servers: () => [] };
+    // Her own delegated agent (on Clover's runtime): placed and in its Glossary.
+    const hers = facts({ kind: "agent", bot: "alpha", backend: "clover-code" });
+    const own = await agentPluginParts(deps).parts("s", hers);
+    expect(own.skills.map((x) => x.name)).toEqual(expect.arrayContaining(["alpha-explain-like-a-friend", "alpha-plan-my-day"]));
+    expect(own.agents.map((x) => x.name)).toContain("alpha-study-buddy");
+    expect((await agentGlossary(deps)("s", { load: "alpha:study-buddy" }, hers)).loaded).toEqual([expect.objectContaining({ name: "alpha:study-buddy", kind: "agent" })]);
+    for (const f of [facts(), facts({ backend: "claude-code" }), facts({ kind: "agent", bot: "nova", backend: "clover-code" })]) {
+      const parts = await agentPluginParts(deps).parts("s", f);
+      expect([parts.skills, parts.agents]).toEqual([[], []]);
+      const g = await agentGlossary(deps)("s", { query: ["study", "morning"], load: "alpha:study-buddy" }, f);
+      expect(g.results.filter((x) => String((x as { name: string }).name).startsWith("alpha"))).toEqual([]);
+      expect(g.loaded).toEqual([{ name: "alpha:study-buddy", found: false }]);
+    }
+  });
+});

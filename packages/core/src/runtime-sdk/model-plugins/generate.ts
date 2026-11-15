@@ -73,7 +73,7 @@ export function modelPluginFiles(catalog: WinterCatalog, providerId: string): Ge
       name,
       description: `${name}'s models, through its own adapter. Generated from the SDK's catalog; its host module is hand-written.`,
       engines: { clover: "^1.0.0" },
-      host: { entry: "host/index.ts", runtime: code.runtime },
+      host: { entry: "host/index.ts", runtime: "bun", ...(code.process !== undefined ? { process: code.process } : {}) },
       capabilities: code.capabilities,
       contributes: { models: [{ provider: providerId, name, catalog: "catalog.json", auth: code.auth, adapter: entry.adapter }] },
     };

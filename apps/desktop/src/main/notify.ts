@@ -10,6 +10,8 @@ export interface NotifyRequest {
   body?: string;
   session?: string;
   urgent?: boolean;
+  /** No sound (the user's notifications setting). */
+  silent?: boolean;
 }
 
 /** What the app knows of where the user is looking: is a window of its own in front, and which session it shows. */

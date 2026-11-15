@@ -120,7 +120,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "hunyuan-role-latest",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "weak"
     },
     {
       "key": "tencent-tokenhub/hy-role",
@@ -208,7 +209,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "hy-role",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "tencent-tokenhub/hy3",
@@ -345,7 +347,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hy3",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     },
     {
       "key": "tencent-tokenhub/hy4-preview",
@@ -452,7 +455,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hy4-preview",
-      "modelFamily": "hunyuan"
+      "modelFamily": "hunyuan",
+      "strength": "medium"
     }
   ]
 }

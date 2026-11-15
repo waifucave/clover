@@ -131,6 +131,9 @@ export interface DevicesMethodsDeps {
    *  change card, and this computer's name. Read at each call: the broker comes up after the links, and until it does
    *  (or without it) a replacement is told to try again. */
   answerKeyRotation?: () => { broker: Pick<ApprovalBroker, "request" | "get" | "watch">; computer: string } | undefined;
+  /** `false`: `device.answerKey.set` is served elsewhere, from before the links start (the daemon's `answerKeyMethods`
+   *  over the registry as soon as it opens): a device's own answer key is local state and never waits on a link. */
+  answerKey?: false;
 }
 
 /** How long a replacement's card waits for the user: then it is cancelled, and the app asks again with a new hand-over.
@@ -156,11 +159,6 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
     kind: "change", origin: "user", computers: [], effect: "other", change,
     fields: { title: { type: "text", text: what }, detail: { type: "list", items: [device] } },
   });
-
-  // Replacing the answer key: at most one card at a time (a new hand-over withdraws the one before), and each hand-over
-  // used once while it could still be taken (its signature, for the skew window).
-  let rotating: AbortController | undefined;
-  const usedHandOvers = new Map<string, number>();
 
   return {
     [M.deviceList.name]: handler(M.deviceList, () => {
@@ -291,6 +289,32 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
 
     [M.linkList.name]: handler(M.linkList, () => ({ links: deps.transport.links() })),
 
+    ...(deps.answerKey === false ? {} : answerKeyMethods({ registry: () => registry, clock: deps.clock, ...(deps.answerKeyRotation ? { answerKeyRotation: deps.answerKeyRotation } : {}) })),
+  };
+}
+
+/** What `device.answerKey.set` needs: the device registry as soon as it is open (until then the call is told to try
+ *  again), the clock, and the broker for a replacement's card. */
+export interface AnswerKeyMethodsDeps {
+  registry: () => FileDeviceRegistry | undefined;
+  clock: Clock;
+  answerKeyRotation?: DevicesMethodsDeps["answerKeyRotation"];
+}
+
+/** `device.answerKey.set` alone (devicesMethods serves it with the rest, or the daemon serves it from before the links
+ *  start, over the registry as soon as it opens). */
+export function answerKeyMethods(deps: AnswerKeyMethodsDeps): Record<string, MethodHandler> {
+  const M = DEVICES_METHODS;
+  // Replacing the answer key: at most one card at a time (a new hand-over withdraws the one before), and each hand-over
+  // used once while it could still be taken (its signature, for the skew window).
+  let rotating: AbortController | undefined;
+  const usedHandOvers = new Map<string, number>();
+  const live = (): FileDeviceRegistry => {
+    const r = deps.registry();
+    if (r === undefined) throw new MethodError(ERR.RETRY, "this computer's device registry isn't open yet: try again in a moment");
+    return r;
+  };
+  return {
     // This desktop's app-held answer key (item 91), registered on every connection: the registry takes it only with the
     // app's own signature (`setOwnAnswerKey`), so the first key and the same key again apply at once. Another key in
     // place of a held one is a sensitive change: it takes the current key's hand-over (`rotation`, checked before any
@@ -305,6 +329,7 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
       if (ctx.caller.kind === "user" && ctx.caller.client !== "app") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only this desktop's app holds its answer key");
       const signature = fromBase64(p.signature);
       if (signature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the signature isn't base64");
+      const registry = live();
       const held = registry.self().answerKey?.publicKey;
       if (held !== undefined && held !== p.publicKey) {
         if (!p.rotation) throw new MethodError(ERR.INVALID_REQUEST, "this desktop already has an answer key: replacing it takes the current key's hand-over");
@@ -343,7 +368,7 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
     return new Promise<ChangeResult>((resolve, reject) => {
       let shown = false;
       rotateOwnAnswerKey({
-        broker: r.broker, devices: registry, computer: r.computer, now: () => deps.clock.now(), signal: ctl.signal,
+        broker: r.broker, devices: live(), computer: r.computer, now: () => deps.clock.now(), signal: ctl.signal,
         onCard: (card) => {
           shown = true;
           const before = rotating;

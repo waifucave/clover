@@ -1,0 +1,13 @@
+{
+  "manifest": 1,
+  "name": { "en": "Alpha's extras", "ja": "アルファのおまけ" },
+  "description": { "en": "Optional parts of Alpha, off until you turn them on: two more scenes for her stage, and a morning check-in she can set up when you ask.", "ja": "オンにするまで使われないアルファの追加部分。ステージのシーン二つと、頼めば設定できる朝のチェックイン。" },
+  "enabledByDefault": false,
+  "contributes": {
+    "skills": ["skills/*/SKILL.md"],
+    "alpha.scenes": [
+      { "id": "seaside", "title": "Seaside at dusk" },
+      { "id": "library", "title": "Old library" }
+    ]
+  }
+}

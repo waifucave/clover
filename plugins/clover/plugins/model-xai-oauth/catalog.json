@@ -103,7 +103,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "grok-4.5",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai-oauth/grok-4.6",
@@ -174,7 +175,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "grok-4.6",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai-oauth/grok-4.7",
@@ -245,7 +247,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "grok-4.7",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     }
   ]
 }

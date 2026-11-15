@@ -8,11 +8,17 @@
 import type { ReactNode } from "react";
 
 /** Clover's own sections. Usage is the usage plugin's, which fills `settings.section` (the controller's R3). */
-export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "levels" | "bots";
+export type SettingsSection = "account" | "devices" | "appearance" | "notifications" | "plugins" | "tools" | "levels" | "bots";
+
+export type ToolPermission = "allow" | "ask" | "deny";
+/** The Tools tab's data (`tool.permissions`), the bots named for their cards' rules. */
+export interface ToolsView {
+  plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; isNew?: boolean; cardRules: { bot: string; botName: string; computers: string[] }[] }[] }[];
+}
 
 /** A plugin's state (lane B's `PLUGIN_STATES`, spec §5.1): found and waiting for the user's OK, refused, invalid, off,
- *  waiting for a point another plugin declares, running, stopped after crashes, or blocked (revoked). */
-export type PluginState = "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped" | "blocked";
+ *  waiting for a point another plugin declares, running, or stopped after crashes. */
+export type PluginState = "found" | "refused" | "invalid" | "off" | "waiting" | "running" | "stopped";
 
 export interface SettingsPlugin {
   id: string;
@@ -24,8 +30,11 @@ export interface SettingsPlugin {
   enabled: boolean;
   /** Why it is in that state: "waiting for `island.tab`", what stopped it. */
   reason?: string;
+  /** Clover's own plugin this build can't run yet: its reason is the one line, with no switch, Open or Logs. */
+  notYet?: true;
   /** What it may do, each an OK the user gave it, in plain words. */
-  oks: string[];
+  /** What its OK lets it do, in plain words: shown when known (the Plugins page shows it for one plugin opened). */
+  oks?: string[];
 }
 
 export interface SettingsDevice {
@@ -72,6 +81,8 @@ export interface ExtraSection {
 }
 
 export interface SettingsModalProps {
+  /** A change that didn't take, said at the top of the page (the control has gone back to what is real). */
+  failure?: string;
   /** One of Clover's own sections, or an added one's id. */
   section: SettingsSection | string;
   onSection: (section: SettingsSection | string) => void;
@@ -86,6 +97,8 @@ export interface SettingsModalProps {
   onOpenPluginManager?: () => void;
   /** A plugin's logs (spec §5.8). */
   onOpenPluginLogs?: (id: string) => void;
+  /** Opens one plugin on the Plugins page (what it may do, its tools, settings and log). */
+  onOpenPlugin?: (id: string) => void;
   /** Ask to change a computer's level: always a sealed card (spec §5.5). */
   onRequestLevel?: (computer: string, level: string) => void;
   /** Ask to remove a device: a sealed card too. */
@@ -107,6 +120,10 @@ export interface SettingsModalProps {
   logs?: { name: string; lines: string[]; onBack: () => void };
   /** Open a bot in the bot editor. */
   onEditBot?: (id: string) => void;
+  /** Tools: what each plugin tool is set to, undefined while it loads; set one tool (or, with no tool, all the plugin lists now), or take back a card's saved rule for one bot. */
+  tools?: ToolsView;
+  onSetTool?: (server: string, tool: string | undefined, permission: ToolPermission) => void;
+  onTakeBackRule?: (server: string, tool: string, bot: string) => void;
 }
 
 /** A pairing under way: the code to enter on the other device, then the four words both show. */

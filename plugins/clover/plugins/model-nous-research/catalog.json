@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hermes-4-405b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "nous-research/Hermes-4-70B",
@@ -125,7 +126,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "hermes-4-70b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

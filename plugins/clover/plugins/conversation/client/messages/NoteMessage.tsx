@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { MessageContext } from "../context";
 import { formatTime } from "../format";
 import { IconError, IconInfo, IconPlug, IconWarning } from "../icons";
@@ -32,6 +33,9 @@ function sourceText(from: Exclude<NoteSource, { kind: "core" }>): string {
  *  the core's own (a compaction) or for the bot or the user (review item 4). */
 export function NoteMessage({ item, ctx }: { item: NoteItem; ctx: MessageContext }) {
   const tone = item.tone ?? "info";
+  // Try again on the latest failed turn: one click sends the message again; the host's reason shows when it can't.
+  const tryAgain = item.retry === true ? ctx.actions.onTryAgain : undefined;
+  const [again, setAgain] = useState<{ state: "idle" | "sending" } | { state: "refused"; why: string }>({ state: "idle" });
   const from = item.from && item.from.kind !== "core" ? item.from : undefined;
   if (item.variant === "divider") {
     return (
@@ -68,6 +72,28 @@ export function NoteMessage({ item, ctx }: { item: NoteItem; ctx: MessageContext
         )}
         {item.text}
       </span>
+      {tryAgain && (
+        <>
+          <button
+            type="button"
+            className="cl-conv-note__retry"
+            disabled={again.state === "sending"}
+            onClick={() => {
+              setAgain({ state: "sending" });
+              tryAgain().then(
+                () => setAgain({ state: "idle" }),
+                (err: unknown) => {
+                  const why = err instanceof Error && err.message.trim() !== "" ? err.message.slice(0, 200) : undefined;
+                  setAgain({ state: "refused", why: why ?? S.tryAgainRefused });
+                },
+              );
+            }}
+          >
+            {again.state === "sending" ? S.tryAgainSending : S.tryAgain}
+          </button>
+          {again.state === "refused" && <span className="cl-conv-note__retry-why" role="alert">{again.why}</span>}
+        </>
+      )}
     </div>
   );
 }

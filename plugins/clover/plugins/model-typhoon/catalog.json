@@ -86,7 +86,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "typhoon-v2.5-30b-a3b-instruct",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

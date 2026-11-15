@@ -22,6 +22,9 @@ export interface SurfaceEnvironment {
   /** Linux only: the session's display server. */
   session?: "wayland" | "x11";
   display: SurfaceDisplay;
+  /** The app's main window is the frontmost window (the pill has stepped aside): cards waiting in the strip come up. The
+   *  app adds it; the SDK's declaration of the environment doesn't name it. */
+  mainFront?: boolean;
 }
 
 /**

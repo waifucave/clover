@@ -16,6 +16,8 @@ import { APPROVALS_METHODS, CLOVER_ERR, ERR, type Card, type CardAnswerProof, ty
 import { isTheUsersOwn } from "../auth/clover-caller";
 import type { AnswerOrigin, AnswerResult, ApprovalBroker } from "../contracts/approval-broker";
 import { CloverRpcError, type CloverConn, type CloverHandler } from "../ipc/clover";
+import { cardMetaOf } from "../contracts/approval-broker";
+import { cardAudience } from "./core-events";
 
 /** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
 declare const __CLOVER_TEST_BUILD__: string | false | undefined;
@@ -70,6 +72,13 @@ export function cardMethods(broker: () => CardBroker | undefined): Record<string
         ...(r.device === undefined ? {} : { device: r.device }),
         ...(r.resolvedAt === undefined ? {} : { resolvedAt: r.resolvedAt }),
       };
+    },
+    // A layer's own list of what waits, scoped like the events it hears: its plugin's bot's cards (the bundled `clover`
+    // tree: all), ids and places, never a card's text. A caller that is no plugin hears none.
+    [APPROVALS_METHODS.cardPending.name]: async (conn) => {
+      const mine = conn.caller.kind === "plugin" ? conn.caller.pluginId : undefined;
+      if (mine === undefined) return { cards: [] };
+      return { cards: up().cards().filter((c) => cardAudience(c.bot)(mine)).map(cardMetaOf) };
     },
     [APPROVALS_METHODS.cardFrame.name]: async (_conn, params) => {
       const { id } = params as { id: string };

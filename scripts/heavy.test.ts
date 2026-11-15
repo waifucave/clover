@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,7 +73,7 @@ describe.if(posix)("scripts/heavy", () => {
       await new Promise((r) => child.once("exit", r));
     }
     const after = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "2" }), encoding: "utf8" });
-    expect(after.stdout).toBe("slot 1: free\nslot 2: free\n");
+    expect(after.stdout).toBe("slot 1: free\nslot 2: free\nexclusive: free\n");
   });
 
   test("with every slot taken, the next job waits its turn", async () => {
@@ -115,9 +115,142 @@ describe.if(posix)("scripts/heavy", () => {
     expect(elsewhere.stdout).not.toContain(CACHE);
   });
 
+  // The machine-wide exclusive lock (`--exclusive`): one acceptance or try run at a time.
+  const until = async (f: () => boolean, what: string) => {
+    for (let i = 0; i < 200 && !f(); i++) await Bun.sleep(50);
+    if (!f()) throw new Error(`${what}: not within 10 s`);
+  };
+  const exited = (c: ReturnType<typeof spawn>) => new Promise((r) => (c.exitCode !== null ? r(undefined) : c.once("exit", r)));
+
+  test("two exclusive holders queue: the second waits, naming who holds the lock, and runs when it is free", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    const first = spawn(HEAVY, ["--exclusive", "sh", "-c", `echo first-start >> '${log}'; sleep 2; echo first-end >> '${log}'`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("first-start"), "the first holder starting");
+    const status = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "1" }), encoding: "utf8" });
+    expect(status.stdout).toContain(`exclusive: pid ${first.pid} run: sh -c echo first-start`);
+    const second = spawnSync(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo "second $CLOVER_HEAVY_EXCLUSIVE" >> '${log}'`], { env: env(dir), encoding: "utf8" });
+    await exited(first);
+    expect(second.status).toBe(0);
+    expect(second.stderr).toContain(`heavy: waiting for the exclusive lock, held by pid ${first.pid} run: sh -c`);
+    const lines = readFileSync(log, "utf8").split("\n");
+    expect(lines.slice(0, 2)).toEqual(["first-start", "first-end"]);
+    // The command ran with the holder's pid in CLOVER_HEAVY_EXCLUSIVE (its own heavy's, not the first one's).
+    expect(lines[2]).toMatch(/^second \d+$/);
+    expect(lines[2]).not.toBe(`second ${first.pid}`);
+    expect(existsSync(join(dir, "exclusive"))).toBe(false);
+  });
+
+  test("waiters take the lock first-come: in the order they came, whoever polls first; --status lists the queue", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    const holder = spawn(HEAVY, ["--exclusive", "sh", "-c", `echo holder >> '${log}'; sleep 3`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("holder"), "the holder starting");
+    const waiters = [];
+    for (const name of ["one", "two", "three"]) {
+      waiters.push(spawn(HEAVY, ["--exclusive", "sh", "-c", `echo ${name} >> '${log}'; sleep 0.3`], { env: env(dir), stdio: "ignore" }));
+      await until(() => readdirSync(join(dir, "exclusive-queue")).length === waiters.length, `${name}'s ticket`);
+    }
+    const status = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "1" }), encoding: "utf8" });
+    expect(status.stdout).toMatch(new RegExp(`queue 1: pid ${waiters[0]!.pid}: sh -c echo one[^\\n]*\\nqueue 2: pid ${waiters[1]!.pid}: [^\\n]*\\nqueue 3: pid ${waiters[2]!.pid}:`));
+    for (const w of [holder, ...waiters]) await exited(w);
+    expect(readFileSync(log, "utf8")).toBe("holder\none\ntwo\nthree\n");
+    expect(readdirSync(join(dir, "exclusive-queue"))).toEqual([]);
+  }, 30_000);
+
+  test("no deadlock: a packaged holder doesn't wait on a slot whose job is itself queued for the lock (M's 38 minutes)", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    // Someone holds the lock; a packaged run queues behind it; then an acceptance run started through plain heavy (in a
+    // slot) queues for the lock too. When the holder ends, the packaged run takes the lock and waits for the slots to
+    // empty: the acceptance run's slot is marked waiting, so it goes on, and the acceptance run follows it.
+    const holder = spawn(HEAVY, ["--exclusive", "sh", "-c", `echo holder >> '${log}'; sleep 2`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("holder"), "the holder starting");
+    const packaged = spawn(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo packaged >> '${log}'`], { env: env(dir), stdio: "ignore" });
+    await until(() => existsSync(join(dir, "exclusive-queue")) && readdirSync(join(dir, "exclusive-queue")).length === 1, "the packaged run's ticket");
+    const inSlot = spawn(HEAVY, ["sh", "-c", `'${HEAVY}' --exclusive sh -c "echo acceptance >> '${log}'"`], { env: env(dir), stdio: "ignore" });
+    await until(() => readdirSync(join(dir, "exclusive-queue")).length === 2, "the slot's acceptance run's ticket");
+    const status = spawnSync(HEAVY, ["--status"], { env: env(dir, { HEAVY_SLOTS: "2" }), encoding: "utf8" });
+    expect(status.stdout).toMatch(/slot \d: pid \d+: sh -c [^\n]*\(waiting for the exclusive lock\)/);
+    expect(status.stdout).toMatch(new RegExp(`queue 1: pid \\d+: sh -c echo packaged[^\\n]*\\nqueue 2: pid \\d+: sh -c echo acceptance`));
+    for (const p of [holder, packaged, inSlot]) await exited(p);
+    expect(readFileSync(log, "utf8")).toBe("holder\npackaged\nacceptance\n");
+  }, 30_000);
+
+  test("a waiter that is gone leaves the queue: the next one takes its turn", async () => {
+    const dir = slotDir();
+    mkdirSync(join(dir, "exclusive-queue"), { recursive: true });
+    const gone = spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(dir, "exclusive-queue", `00000000000000001-${gone}`), "a waiter that died\n");
+    const run = spawnSync(HEAVY, ["--exclusive", "true"], { env: env(dir), encoding: "utf8", timeout: 20_000 });
+    expect(run.status).toBe(0);
+    expect(readdirSync(join(dir, "exclusive-queue"))).toEqual([]);
+  });
+
+  test("a holder that is gone is taken over by pid check", () => {
+    const dir = slotDir();
+    mkdirSync(join(dir, "exclusive"));
+    const gone = spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(dir, "exclusive", "pid"), `${gone}\n`);
+    writeFileSync(join(dir, "exclusive", "kind"), "packaged\n");
+    writeFileSync(join(dir, "exclusive", "what"), "an old acceptance run\n");
+    const run = spawnSync(HEAVY, ["--exclusive", "true"], { env: env(dir), encoding: "utf8" });
+    expect(run.status).toBe(0);
+    expect(run.stderr).not.toContain("waiting");
+    // Nor does an ordinary job wait on it.
+    mkdirSync(join(dir, "exclusive"));
+    writeFileSync(join(dir, "exclusive", "pid"), `${gone}\n`);
+    writeFileSync(join(dir, "exclusive", "kind"), "packaged\n");
+    const ordinary = spawnSync(HEAVY, ["true"], { env: env(dir), encoding: "utf8" });
+    expect(ordinary.status).toBe(0);
+    expect(ordinary.stderr).not.toContain("waiting");
+  });
+
+  test("ordinary jobs wait while a packaged run holds the lock, not while another run does; what runs under the hold never waits", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    // A non-packaged holder: an ordinary job goes on at once.
+    const run = spawn(HEAVY, ["--exclusive", "sh", "-c", `echo run-start >> '${log}'; sleep 2`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("run-start"), "the run holding the lock");
+    const beside = spawnSync(HEAVY, ["true"], { env: env(dir), encoding: "utf8" });
+    expect(beside.status).toBe(0);
+    expect(beside.stderr).not.toContain("waiting");
+    await exited(run);
+
+    // A packaged holder: what it starts through heavy (a build, a nested exclusive run) goes on at once; another job
+    // waits until it ends.
+    const inner = `'${HEAVY}' sh -c "echo inner-ordinary >> '${log}'"; '${HEAVY}' --exclusive --packaged sh -c "echo inner-exclusive >> '${log}'"`;
+    const packaged = spawn(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo packaged-start >> '${log}'; ${inner}; sleep 2; echo packaged-end >> '${log}'`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("inner-exclusive"), "the packaged run's own heavy jobs");
+    const other = spawnSync(HEAVY, ["sh", "-c", `echo other >> '${log}'`], { env: env(dir), encoding: "utf8" });
+    await exited(packaged);
+    expect(other.status).toBe(0);
+    expect(other.stderr).toContain(`heavy: waiting: a packaged run holds the machine, pid ${packaged.pid} packaged: sh -c`);
+    expect(readFileSync(log, "utf8")).toBe("run-start\npackaged-start\ninner-ordinary\ninner-exclusive\npackaged-end\nother\n");
+  });
+
+  test("a packaged run starts once the heavy jobs already running have ended", async () => {
+    const dir = slotDir();
+    const log = join(dir, "order.log");
+    writeFileSync(log, "");
+    const job = spawn(HEAVY, ["sh", "-c", `echo job-start >> '${log}'; sleep 2; echo job-end >> '${log}'`], { env: env(dir), stdio: "ignore" });
+    await until(() => readFileSync(log, "utf8").includes("job-start"), "the job in its slot");
+    const packaged = spawnSync(HEAVY, ["--exclusive", "--packaged", "sh", "-c", `echo packaged >> '${log}'`], { env: env(dir), encoding: "utf8" });
+    await exited(job);
+    expect(packaged.status).toBe(0);
+    expect(packaged.stderr).toContain("heavy: the packaged run waits for 1 heavy job(s) already running to end");
+    expect(readFileSync(log, "utf8")).toBe("job-start\njob-end\npackaged\n");
+  });
+
   test("usage and bad settings exit 2", () => {
     const dir = slotDir();
     expect(spawnSync(HEAVY, [], { env: env(dir), encoding: "utf8" }).status).toBe(2);
+    expect(spawnSync(HEAVY, ["--exclusive"], { env: env(dir), encoding: "utf8" }).status).toBe(2);
+    expect(spawnSync(HEAVY, ["--exclusive", "--packaged"], { env: env(dir), encoding: "utf8" }).status).toBe(2);
     expect(spawnSync(HEAVY, ["true"], { env: env(dir, { HEAVY_SLOTS: "0" }), encoding: "utf8" }).status).toBe(2);
     expect(spawnSync(HEAVY, ["true"], { env: env(dir, { HEAVY_POLL_SECONDS: "x" }), encoding: "utf8" }).status).toBe(2);
   });

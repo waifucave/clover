@@ -81,7 +81,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-r1-0528",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "llm7/gpt-4.1-nano-2025-04-14",
@@ -127,7 +128,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gpt-4.1-nano-2025-04-14",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "llm7/gpt-4o-mini-2024-07-18",
@@ -173,7 +175,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gpt-4o-mini-2024-07-18",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "llm7/qwen2.5-coder-32b-instruct",
@@ -219,7 +222,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen2.5-coder-32b-instruct",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     }
   ]
 }

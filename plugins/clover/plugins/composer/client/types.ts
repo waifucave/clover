@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { SlashCommand } from "./slash";
 
 // The composer's props contract: plain data and callbacks the host routes back (spec §5.5). The
 // draft is the host's (controlled), so it survives a remount and waits while the bot is asleep.
@@ -25,6 +26,10 @@ export interface ComposerModel {
   detail?: string;
   /** The provider holds a key or a sign-in now (`models.list`'s `signedIn`). */
   signedIn?: boolean;
+  /** The effort levels this model takes (`models.list`'s `efforts`); none: it has no effort setting. */
+  efforts?: string[];
+  /** The level the provider uses when none is chosen. */
+  defaultEffort?: string;
 }
 
 /** The bot's model and effort, changeable at any time; the next turn uses them (spec §6.3). */
@@ -32,7 +37,10 @@ export interface ComposerModelChoice {
   model: string;
   effort?: string;
   models: ComposerModel[];
+  /** The current model's effort levels; the menu's Effort section shows when there are any. */
   efforts?: string[];
+  /** The level in use while none is chosen: ticked in the menu, not shown on the pill. */
+  defaultEffort?: string;
   onChange: (choice: { model: string; effort?: string }) => void;
 }
 
@@ -70,6 +78,20 @@ export interface ComposerLevel {
   onRequest?: (level: string) => void;
 }
 
+/** The slash menu (the composer host's commands, the bundled composer's only). The menu opens while the line starts
+ *  with `/` and a command name; a pick runs the command for its plugin alone and never sends the line to the bot. */
+export interface ComposerSlash {
+  /** Undefined while the list is being read. */
+  commands: SlashCommand[] | undefined;
+  /** The menu opened: read the list again. */
+  onOpen: () => void;
+  /** Run `command` with the rest of the line, inside the key press or click that picked it. */
+  onRun: (command: SlashCommand, rest: string, display: string) => void;
+  /** The last command's result or refusal, a row above the box until dismissed. */
+  result?: { name: string; text: string; refused: boolean };
+  onDismissResult: () => void;
+}
+
 export interface ComposerProps {
   botName: string;
   value: string;
@@ -77,6 +99,8 @@ export interface ComposerProps {
   /** Called inside the key press or click that sent, so the app can count the send as the user's
    *  (spec §5.5: one hardware key press or click covers one send). */
   onSend: (message: ComposerMessage) => void;
+  /** A short line by the composer: why the last send did not go (the draft is still in the box). */
+  notice?: string;
   attachments?: ComposerAttachment[];
   onAttach?: () => void;
   onRemoveAttachment?: (id: string) => void;
@@ -101,6 +125,11 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** The `composer.action` spot: draw one button another way, or not at all (null). */
   renderAction?: (id: ComposerActionId, standard: ReactNode) => ReactNode;
+  /** The slash menu of plugin commands; without it a `/` is just text. */
+  slash?: ComposerSlash;
   /** Open a menu at first (the gallery's still frame of it). */
   initialMenu?: "model" | "level";
+  /** The row under the text sits inside the box, send at its end (the theme's `composer.controls.inside`); otherwise
+   *  that row is under the box and send beside the text. */
+  controlsInside?: boolean;
 }

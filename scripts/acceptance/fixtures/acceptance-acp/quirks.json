@@ -1,0 +1,81 @@
+{
+  "notes": "The acceptance run's fake ACP agent (packages/core/src/agents/testing/fake-acp-agent.ts, the one the backend conformance suite runs), standing in for a vendor's CLI. The run writes its program's and config's absolute paths in before it installs the plugin.",
+  "source": "the acceptance run's fake ACP agent",
+  "quirks": {
+    "capabilities": {
+      "snakeCaseDuplicates": false,
+      "httpMcpUnadvertised": false
+    },
+    "turns": {
+      "refusal": "ends-turn",
+      "cancelLeavesToolCallsOpen": false,
+      "reportsUsage": false,
+      "quotaErrorsAsText": false
+    },
+    "progress": {
+      "countsChildProcesses": false
+    },
+    "placement": "local",
+    "marks": [],
+    "launch": {
+      "identity": {
+        "versionArgs": [
+          "__FAKE__",
+          "__CONFIG__",
+          "--version"
+        ],
+        "versionPattern": "^fake-agent (\\d+\\.\\d+\\.\\d+)$"
+      },
+      "envAllow": [
+        "PATH",
+        "HOME",
+        "TMPDIR"
+      ],
+      "envSet": {},
+      "versions": ">=1.0.0"
+    },
+    "mcp": {
+      "transports": [
+        "stdio"
+      ],
+      "storesPlainText": false,
+      "passesEnvironment": false,
+      "instructionsReachPrompt": "unknown",
+      "systemPromptChannel": null,
+      "tellsConversationId": false
+    },
+    "sessions": {
+      "load": {
+        "supported": false,
+        "replays": false
+      },
+      "resume": {
+        "supported": false,
+        "replays": false
+      },
+      "replayKeepsToolCallIds": true,
+      "listFiltersHonestly": false,
+      "close": false
+    },
+    "permissions": {
+      "optionKinds": [
+        "allow_once",
+        "reject_once"
+      ],
+      "neverAsks": [],
+      "mcpNames": null
+    },
+    "config": {
+      "modelOption": null,
+      "effortOption": null,
+      "effortInModel": false,
+      "choicePersists": false
+    },
+    "auth": {
+      "methods": [],
+      "requiredError": {
+        "code": -32000
+      }
+    }
+  }
+}

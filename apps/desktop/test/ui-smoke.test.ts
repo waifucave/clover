@@ -7,7 +7,7 @@
 // LSBackgroundOnly on macOS); every run is headless: no window shown, no Dock or tray icon, no focus (plan §8).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -112,6 +112,12 @@ function expectShell(r: ReturnType<typeof smoke>, opts: { safeMode?: boolean } =
   return shell!;
 }
 
+/** What a layer's console said about a part that stopped (the SDK's boundary logs `the part <name> stopped` with the error): a failing
+ *  page test shows it, so "This part stopped." is never the whole message. */
+function stoppedWhy(r: { all: string }): string {
+  return r.all.split("\n").filter((l) => /layers: the part .* stopped/.test(l)).slice(0, 6).join("\n");
+}
+
 function expectBothStopped(r: ReturnType<typeof smoke>): void {
   expect(r.status, r.output).toBe(0);
   const calls = readCalls(r.home).map((c) => (c.event === "request" ? `request ${String(c.method)}` : c.event));
@@ -125,7 +131,9 @@ beforeAll(() => {
   if (!enabled) return;
   if (!ci) refuseForegroundElectron();
   work = mkdtempSync(join(tmpdir(), "clover-ui-"));
-  if (!existsSync(join(root, "out", "main", "index.js"))) {
+  // Always built, never reused: an `out/` left from another commit (a bisect, a branch switch) has another SDK in its layer bundle
+  // and fails in ways that look like the page's (a part that "stopped"). CLOVER_UI_SKIP_BUILD=1 reuses it on purpose.
+  if (process.env.CLOVER_UI_SKIP_BUILD !== "1" || !existsSync(join(root, "out", "main", "index.js"))) {
     const built = spawnSync("bun", ["run", "scripts/build.ts"], { cwd: root, encoding: "utf8" });
     expect(built.status, built.stderr).toBe(0);
   }
@@ -137,6 +145,18 @@ beforeAll(() => {
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
   writeFileSync(registries.fixture, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer")), folderView(join(FIXTURES, "fixture-surface"), 1001)] }));
+  registries.media = join(work, "media.json");
+  writeFileSync(registries.media, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006)] }));
+  // The same page twice: as it is, and as a plugin that asks for cross-origin isolation in its manifest (`client.isolated`).
+  const isolatedCopy = join(work, "fixture-isolated");
+  cpSync(join(FIXTURES, "fixture-media"), isolatedCopy, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(isolatedCopy, "clover.json"), "utf8")) as { id: string; client: Record<string, unknown>; contributes: { ui: Record<string, unknown>[] } };
+  manifest.id = "fixture-isolated";
+  manifest.client.isolated = true;
+  manifest.contributes.ui[0]!.id = "isolated";
+  writeFileSync(join(isolatedCopy, "clover.json"), JSON.stringify(manifest));
+  registries.isolation = join(work, "isolation.json");
+  writeFileSync(registries.isolation, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-media"), 1006), folderView(isolatedCopy, 1007)] }));
   registries.welcome = join(work, "welcome.json");
   writeFileSync(registries.welcome, JSON.stringify({ plugins: base, models: [{ id: "fixture-model", name: "Fixture Model", terms: "Use it kindly.", auth: [{ method: "api-key" }] }] }));
   registries.manage = join(work, "manage.json");
@@ -147,7 +167,9 @@ beforeAll(() => {
   writeFileSync(registries.spin, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-spin"), 1004)] }));
   registries.dns = join(work, "dns.json");
   writeFileSync(registries.dns, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-dns"), 1002), folderView(join(FIXTURES, "fixture-dns-control"), 1003)] }));
-});
+  // The build and the compile take longer than a hook's default 5 s on a slow runner; the hook's end then kills the build
+  // ("killed 1 dangling process") and no test of this file runs.
+}, 180_000);
 
 afterAll(() => {
   // CLOVER_UI_KEEP_HOMES=1 keeps each run's home (its log, net log and calls) for a look after a failure.
@@ -157,6 +179,78 @@ afterAll(() => {
 });
 
 describe.if(enabled)("the app in Electron (UI test: CI, or locally with a background-only Electron)", () => {
+  test("a third-party page with the files capability picks a file, plays it from the media URL, runs WebAssembly from its folder and saves through the save picker", () => {
+    const h = mkdtempSync(join(tmpdir(), "ce1-pick-"));
+    homes.push(h);
+    const video = join(h, "generated-testsrc.webm");
+    copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
+    const pickFile = join(h, "answers.pick");
+    // The first click opens a file; the second saves one: each answer is in the file the smoke's picker reads, by kind.
+    const saved = join(h, "export.bin");
+    writeFileSync(pickFile, `open=${video}\nsave=${saved}\n`);
+    // A CI Linux runner has no GPU: Chromium gives a page WebGL there only through its software renderer (as the galleries' browser is
+    // launched), so this run asks for it; macOS and Windows have a GL context of their own.
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_INPUT: "click", CLOVER_SMOKE_PICK_FILES: pickFile, CLOVER_SMOKE_WAIT_TEXT: "video: 64x48|save: export.bin", CLOVER_SMOKE_SETTLE_MS: "1500" });
+    const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
+    const frame = surfaces.find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
+    expect(frame, r.output).toBeDefined();
+    // The page held a token, the name and the size, never the path; the media URL answers a range, refuses one past the end,
+    // and the video element played it from there.
+    expect(frame!.text, stoppedWhy(r)).toContain("open: generated-testsrc.webm 4204 read token");
+    expect(frame!.text).toContain("range: 206 bytes 0-9/4204 10");
+    expect(frame!.text).toContain("past: 416");
+    expect(frame!.text).toContain("video: 64x48 1.0s");
+    // The save picker answered with a token for the one file, to write (nothing is written here: the host half's `files.write` is the core's).
+    expect(frame!.text).toContain("save: export.bin write token");
+    // What else a layer can do: WebAssembly from the plugin's own folder, a blob worker, WebCodecs (VP8), WebGL 2; no SharedArrayBuffer
+    // (the layer isn't cross-origin isolated).
+    expect(frame!.text).toContain("wasm: add(2,3)=5");
+    expect(frame!.text).toContain("worker: x2=42");
+    expect(frame!.text).toContain("sab: undefined/isolated=false");
+    expect(frame!.text).toContain("webcodecs: vp8");
+    expect(frame!.text).toContain("webgl: webgl2");
+    // The core was told of the grant (the fake daemon has no `plugin.grant.add`, so main logged that and went on).
+    const asked = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.grant.add");
+    expect(asked.length).toBeGreaterThanOrEqual(1);
+    expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
+    expect(r.all).toContain("the core keeps no grants yet");
+    expect(existsSync(saved)).toBe(false);
+    expectQuiet(r);
+  }, 120_000);
+
+  test("a file dropped on a plugin page that holds files becomes a token, not a path", () => {
+    const h = mkdtempSync(join(tmpdir(), "ce1-drop-"));
+    homes.push(h);
+    const video = join(h, "dropped.webm");
+    copyFileSync(join(import.meta.dir, "fixtures", "media", "generated-testsrc.webm"), video);
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    const r = smoke(electron(), [root, ...software], "media", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_DROP: video, CLOVER_SMOKE_WAIT_TEXT: "drop:", CLOVER_SMOKE_SETTLE_MS: "1000" });
+    const frame = (r.facts!.surfaces as { id: string; frames: Frame[] }[]).find((x) => x.id === "media")?.frames.find((x) => x.origin === "clover-plugin://fixture-media");
+    expect(frame!.text, stoppedWhy(r) || r.output).toContain("drop: dropped.webm read token");
+    expect(frame!.text).not.toContain(h);
+    const asked = readCalls(r.home).filter((c) => c.event === "request" && c.method === "plugin.grant.add");
+    expect(asked[0]!.params).toMatchObject({ pluginId: "fixture-media", kind: "file", access: "read" });
+  }, 120_000);
+
+  test("only a plugin that asks for it gets a cross-origin isolated layer (SharedArrayBuffer); the media URL, sealed cards and the shell are as before", () => {
+    const software = process.platform === "linux" ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] : [];
+    // Both pages' own lines are waited for (each page writes all its lines at once): "webgl:" alone was true as soon as ONE of
+    // the two had drawn, and on a slow runner the other had not by the end of the settle (macOS, the merge queue's run 43724595940).
+    const r = smoke(electron(), [root, ...software], "isolation", { CLOVER_SMOKE_LAYERS: "0", CLOVER_SMOKE_WAIT_TEXT: "sab: undefined/isolated=false|sab: function/isolated=true", CLOVER_SMOKE_SETTLE_MS: "2500" });
+    const surfaces = r.facts!.surfaces as { id: string; frames: Frame[] }[];
+    const text = (id: string, origin: string) => surfaces.find((x) => x.id === id)?.frames.find((x) => x.origin === origin)?.text ?? "";
+    expect(text("media", "clover-plugin://fixture-media"), stoppedWhy(r) || r.output).toContain("sab: undefined/isolated=false");
+    expect(text("isolated", "clover-plugin://fixture-isolated"), stoppedWhy(r) || r.output).toContain("sab: function/isolated=true");
+    // The rest of what a layer does is the same in both.
+    for (const t of [text("media", "clover-plugin://fixture-media"), text("isolated", "clover-plugin://fixture-isolated")]) {
+      expect(t).toContain("wasm: add(2,3)=5");
+      expect(t).toContain("worker: x2=42");
+    }
+    expectShell(r);
+    expectQuiet(r);
+  }, 120_000);
+
   test("the default shell from F's plugins renders in the clover layer; the app starts the daemon and Quit stops both", () => {
     // The mounts it asserts are the ones it waits for: a placed part's mounts land a beat after its document draws.
     const r = smoke(electron(), [root], "default", { CLOVER_SMOKE_WAIT_MOUNTS: "root:3,frame:3" });

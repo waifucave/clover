@@ -60,6 +60,14 @@ describe("the view", () => {
     expect(screen.getByRole("log", { name: "Conversation with Alpha" })).toBeTruthy();
   });
 
+  test("a transcript not read yet draws no empty state: nothing until the host says it has read it", () => {
+    const { rerenderWith } = renderView({ items: [], loaded: false });
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    expect(screen.getByRole("log", { name: "Conversation with Alpha" })).toBeTruthy();
+    rerenderWith({ items: [], loaded: true });
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+  });
+
   test("every message kind draws, in order, with day dividers", () => {
     const items: ConversationItem[] = [
       user(at(-1, 9, 0), "hi"),
@@ -277,6 +285,115 @@ describe("user and bot messages", () => {
     expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
   });
 
+  test("speak: only where the host offers it, on a finished reply from the log; it asks with that reply", async () => {
+    const reply = bot(at(0, 1, 0), "the answer", { seq: 41 });
+    // No host speak: no button (the stock look).
+    const { rerenderWith } = renderView({ items: [reply] });
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    const asked: number[] = [];
+    const onSpeak = mock(async (item: { seq?: number }) => {
+      asked.push(item.seq ?? -1);
+      return { speaking: true };
+    });
+    // A reply still streaming, and one with no seq, offer none.
+    rerenderWith({ items: [bot(at(0, 1, 0), "the ans", { streaming: true })], turn: { running: true }, onSpeak });
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 0), "the answer")], onSpeak });
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    rerenderWith({ items: [reply], onSpeak, speaking: false });
+    const speak = screen.getByRole("button", { name: "Read this reply aloud" });
+    await act(async () => void fireEvent.click(speak));
+    expect(asked).toEqual([41]);
+    // Speaking now: the button says so until the bot's voice goes quiet.
+    rerenderWith({ items: [reply], onSpeak, speaking: true });
+    expect(screen.getByRole("button", { name: "Speaking" }).dataset.state).toBe("speaking");
+    rerenderWith({ items: [reply], onSpeak, speaking: false });
+    expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
+  });
+
+  test("speak that won't happen: the core's sentence shows under the reply, as it is", async () => {
+    const onSpeak = mock(async () => ({ speaking: false, note: "Alpha has no voice set up yet." }));
+    const { container } = renderView({ items: [bot(at(0, 1, 0), "the answer", { seq: 7 })], onSpeak });
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Read this reply aloud" })));
+    const note = container.querySelector(".cl-conv-bot__note")!;
+    expect([note.textContent, note.getAttribute("role")]).toEqual(["Alpha has no voice set up yet.", "status"]);
+    expect(screen.getByRole("button", { name: "Read this reply aloud" }).dataset.state).toBeUndefined();
+  });
+
+  test("plugins' message actions: drawn in the row, on the side they ask for, one press runs with the message's seq", async () => {
+    const pin = { ref: "alpha#pin", title: "Pin to her stage", icon: "/_t/alpha/assets/pin.png", on: "assistant" as const };
+    const quote = { ref: "notes#quote", title: "Quote in a note", on: "both" as const };
+    const ran: [string, number | undefined][] = [];
+    const onMessageAction = mock(async (a: { ref: string }, item: { seq?: number }) => {
+      ran.push([a.ref, item.seq]);
+      return a.ref === "alpha#pin" ? { note: "Her stage is full: unpin one first." } : { ok: true };
+    });
+    const reply = bot(at(0, 1, 1), "the answer", { seq: 12 });
+    const { container } = renderView({ items: [user(at(0, 1, 0), "go", { seq: 11 }), reply], messageActions: [pin, quote], onMessageAction });
+    const row = container.querySelector(".cl-conv-bot__actions")!;
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Copy message", "Pin to her stage", "Quote in a note"]);
+    expect(row.querySelector("img")?.getAttribute("src")).toBe("/_t/alpha/assets/pin.png");
+    // The user's message carries only what is on its side.
+    const mine = container.querySelector(".cl-conv-user__actions")!;
+    expect([...mine.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["Quote in a note"]);
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Pin to her stage" })));
+    expect(ran).toEqual([["alpha#pin", 12]]);
+    expect(container.querySelector(".cl-conv-bot__note")?.textContent).toBe("Her stage is full: unpin one first.");
+    await act(async () => void fireEvent.click(within(mine as HTMLElement).getByRole("button", { name: "Quote in a note" })));
+    expect(ran.at(-1)).toEqual(["notes#quote", 11]);
+    expect(container.querySelector(".cl-conv-user__note")).toBeNull();
+  });
+
+  test("plugins' message actions: none on a reply still streaming, on one not in the log, or with no host to run them", () => {
+    const pin = { ref: "alpha#pin", title: "Pin", on: "assistant" as const };
+    const { rerenderWith } = renderView({ items: [bot(at(0, 1, 1), "the ans", { streaming: true, seq: 3 })], turn: { running: true }, messageActions: [pin], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer")], messageActions: [pin], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer", { seq: 3 })], messageActions: [pin] });
+    expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+    // A picture from anywhere but the app's own plugin images isn't drawn (the glyph stands in).
+    rerenderWith({ items: [bot(at(0, 1, 1), "the answer", { seq: 3 })], messageActions: [{ ...pin, icon: "https://example.com/x.png" }], onMessageAction: async () => ({ ok: true }) });
+    expect(screen.getByRole("button", { name: "Pin" }).querySelector("img")).toBeNull();
+  });
+
+  test("a reply's add-ons: under it by default; in its actions row, after copy, when the theme asks", () => {
+    const extra = () => <button type="button">Pin</button>;
+    const items = [user(at(0, 1, 0), "go"), bot(at(0, 1, 1), "the answer")];
+    const { container, rerenderWith } = renderView({ items, renderMessageExtra: extra });
+    const under = container.querySelectorAll(".cl-conv__unit > .cl-conv__extra");
+    expect(under.length).toBe(2);
+    expect(container.querySelector(".cl-conv-bot__actions .cl-conv__extra")).toBeNull();
+    rerenderWith({ items, renderMessageExtra: extra, extraInline: true });
+    const row = container.querySelector(".cl-conv-bot__actions")!;
+    expect([...row.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Copy", "Pin"]);
+    // The user's message keeps its add-ons under it; the reply's are only in its row.
+    expect(container.querySelectorAll(".cl-conv__unit > .cl-conv__extra").length).toBe(1);
+    // A reply still streaming has no row yet: its add-ons stay under it.
+    rerenderWith({ items: [bot(at(0, 1, 1), "the ans", { streaming: true })], turn: { running: true }, renderMessageExtra: extra, extraInline: true });
+    expect(container.querySelectorAll(".cl-conv__unit > .cl-conv__extra").length).toBe(1);
+  });
+
+  test("a run's card parts (hidden in the stock look): the kind's icon, one call's hint and its lines", () => {
+    const { container } = renderView({ items: [tool(at(0, 1, 0), { name: "Read", detail: "notes/kyoto.md", output: "a\nb\nc\n" })] });
+    const summary = container.querySelector(".cl-conv-tools__summary")!;
+    expect(summary.querySelector(".cl-conv-tools__icon")?.getAttribute("data-icon")).toBe("file");
+    expect(summary.querySelector(".cl-conv-tools__icon")?.getAttribute("aria-hidden")).toBe("true");
+    expect(summary.querySelector(".cl-conv-tools__detail")?.textContent).toBe("notes/kyoto.md");
+    expect(summary.querySelector(".cl-conv-tools__meta")?.textContent).toBe("3 lines");
+    cleanup();
+    // Several calls: the icon only (the sentence names them).
+    const many = renderView({ items: [tool(at(0, 1, 0), { name: "Bash", detail: "ls" }), tool(at(0, 1, 0), { name: "Bash", detail: "pwd" })] });
+    const s2 = many.container.querySelector(".cl-conv-tools__summary")!;
+    expect(s2.querySelector(".cl-conv-tools__icon")?.getAttribute("data-icon")).toBe("terminal");
+    expect(s2.querySelector(".cl-conv-tools__detail")).toBeNull();
+    expect(s2.querySelector(".cl-conv-tools__meta")).toBeNull();
+    cleanup();
+    // One that failed says so in the card, beside its mark.
+    const failed = renderView({ items: [tool(at(0, 1, 0), { name: "Read", detail: "x.md", status: "failed", output: "no such file" })] });
+    expect(failed.container.querySelector(".cl-conv-tools__meta")?.textContent).toBe("Failed");
+  });
+
   test("an interrupted answer says so", () => {
     renderView({ items: [bot(at(0, 1, 0), "half an ans", { interrupted: true })] });
     expect(screen.getByText("Interrupted")).toBeTruthy();
@@ -325,7 +442,8 @@ describe("tool runs", () => {
     expect(screen.getByText("git status --short")).toBeTruthy();
     expect(screen.getByText(/84 pass/)).toBeTruthy();
     // 56 lines of build log draw as MAX_OUTPUT_LINES plus a count of the rest.
-    expect(screen.getByText(`${56 - MAX_OUTPUT_LINES} more lines`)).toBeTruthy();
+    // A shell run keeps the tail: the earlier lines are counted.
+    expect(screen.getByText(/earlier lines/)).toBeTruthy();
   });
 
   test("output previews bound lines and characters", () => {
@@ -383,12 +501,14 @@ describe("approvals", () => {
     const { container } = renderView({ items: APPROVAL_PENDING });
     const card = container.querySelector(`[data-sealed-card="${APPROVAL_PENDING_CARD}"]`) as HTMLElement;
     expect(card).toBeTruthy();
-    // Every one of lane B's fields has a holder; the mock core draws the ones this card has.
+    // A tool card reads as the island's: the app's composed line and preview and what "Always allow" stores, beside
+    // the card's own facts. Never the call's raw input (`detail`): no card shows raw JSON.
     expect([...card.querySelectorAll("[data-slot]")].map((f) => (f as HTMLElement).dataset.slot).sort()).toEqual(
-      ["source", "what", "host", "command", "paths", "computer", "risk", "reason", "detail", "expires"].sort(),
+      ["summary", "preview", "computer", "risk", "reason", "always", "expires"].sort(),
     );
+    expect(card.querySelector('[data-slot="detail"], [data-sealed-field="detail"]')).toBeNull();
     expect([...card.querySelectorAll("[data-sealed-field]")].map((f) => (f as HTMLElement).dataset.sealedField)).toEqual([
-      "title", "command", "computer", "risk", "reason", "expires",
+      "title", "summary", "preview", "computer", "risk", "reason", "always", "expires",
     ]);
     const buttons = [...card.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
     expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_always", "allow_once"]);
@@ -418,6 +538,8 @@ describe("approvals", () => {
     const link = container.querySelector(`[data-sealed-card="${ELICITATION_CARD}"]`) as HTMLElement;
     expect(within(link).getByText("linear.app").closest("[data-slot]")?.getAttribute("data-slot")).toBe("host");
     expect([...link.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.option)).toEqual(["decline", "open_link"]);
+    // No kind of card places the call's raw input.
+    expect(container.querySelector('[data-slot="detail"]')).toBeNull();
   });
 
   test("resolved cards say how they ended and where, and why a card was withdrawn", () => {
@@ -554,6 +676,26 @@ describe("events and notes", () => {
     for (const bubble of container.querySelectorAll(".cl-conv-user")) expect(bubble.textContent).not.toContain("pinned");
   });
 
+  test("Try again: a button on the latest failed turn's note, one click calls the host once, a refusal shows its reason, and none without the host's callback", async () => {
+    const failed = { kind: "note", id: "n-fail", at: at(0, 1, 0), text: "The turn ended with an error.", tone: "error", retry: true } as const;
+    const calls: number[] = [];
+    const { container } = renderView({ items: [failed], onTryAgain: () => { calls.push(1); return Promise.resolve({ sent: true }); } });
+    const button = screen.getByRole("button", { name: "Try again" });
+    expect(container.querySelector(".cl-conv-note")?.contains(button)).toBe(true);
+    await act(async () => { fireEvent.click(button); });
+    expect(calls).toEqual([1]);
+    cleanup();
+    renderView({ items: [failed], onTryAgain: () => Promise.reject(new Error("a turn is running")) });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+    expect(screen.getByRole("alert").textContent).toBe("a turn is running");
+    cleanup();
+    renderView({ items: [failed] });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    cleanup();
+    renderView({ items: [{ ...failed, retry: undefined } as never], onTryAgain: () => Promise.resolve() });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
   test("notes are plain text and name a plugin's or a hook's source", () => {
     const { container } = renderView({ items: NOTES });
     expect(screen.getByRole("separator", { name: "Alpha summarized the conversation up to here" })).toBeTruthy();
@@ -619,6 +761,124 @@ describe("the conversation.message spot", () => {
 });
 
 
+describe("a long transcript's cost per streamed word", () => {
+  test("a streamed word draws the streaming row again, not the rows that didn't change", () => {
+    const drawn = new Map<string, number>();
+    const count = (id: string) => drawn.set(id, (drawn.get(id) ?? 0) + 1);
+    const User = ({ item }: { item: { id: string; text: string } }) => { count(item.id); return <p>{item.text}</p>; };
+    const Bot = ({ item }: { item: { id: string; text: string } }) => { count(item.id); return <p>{item.text}</p>; };
+    const history: ConversationItem[] = [];
+    for (let i = 0; i < 40; i++) {
+      history.push(user(at(0, 1, i * 2), `question ${i}`));
+      history.push(bot(at(0, 1, i * 2 + 1), `answer ${i}`));
+    }
+    const streaming = (text: string) => ({ ...bot(at(0, 2, 0), text), id: "streaming", streaming: true }) as ConversationItem;
+    // The host projects the transcript again for each word: every item a new object with the same data.
+    const fresh = (items: ConversationItem[]) => items.map((i) => structuredClone(i));
+    const renderers = { user: User as never, bot: Bot as never };
+    const { rerenderWith } = renderView({ items: [...history, streaming("Hel")], renderers, onCopy: () => undefined });
+    drawn.clear();
+    rerenderWith({ items: [...fresh(history), streaming("Hello")], renderers, onCopy: () => undefined });
+    rerenderWith({ items: [...fresh(history), streaming("Hello th")], renderers, onCopy: () => undefined });
+    expect(drawn.get("streaming")).toBe(2);
+    expect([...drawn.keys()].filter((k) => k !== "streaming")).toEqual([]);
+  });
+});
+
+describe("following the bottom around a waiting card", () => {
+  function scrolled(container: HTMLElement) {
+    const viewport = container.querySelector(".cl-conv__viewport") as HTMLElement;
+    const m = { top: 0 };
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, get: () => 400 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 1600); } });
+    return { viewport, m };
+  }
+  const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
+  const answered = APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i));
+  const original = HTMLElement.prototype.scrollIntoView;
+
+  test("a card taller than the view leaves the view above the bottom; answered, a reader who didn't move follows again", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      rerenderWith({ items: [...before] });
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      // The card shows its buttons: the view stops above the bottom (the browser's scroll, reported as one).
+      rerenderWith({ items: APPROVAL_PENDING });
+      m.top = 1300;
+      fireEvent.scroll(viewport);
+      // Answered (a press in its sealed frame, never in the view): the view goes back to the bottom and follows.
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(1600);
+      rerenderWith({ items: [...answered, bot(at(0, 16, 5), "And done.")] });
+      expect(m.top).toBe(1600);
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("content growing under a view pinned to the bottom (a row drawn at its real size, the window narrowing) keeps it following; the reader scrolling up doesn't", () => {
+    const items = [user(at(0, 1, 0), "one"), bot(at(0, 1, 1), "two")];
+    const { container, rerenderWith } = renderView({ items });
+    const { viewport, m } = scrolled(container);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three")] });
+    expect(m.top).toBe(1600);
+    // The content grew below the view after it pinned itself (scrollHeight 2000 → 2600): the scroll the browser reports
+    // leaves it 600 px above the bottom, at the place it pinned, so it still follows the next output.
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, get: () => 2600 });
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, get: () => m.top, set: (v: number) => { m.top = Math.min(v, 2200); } });
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four")] });
+    expect(m.top).toBe(2200);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    // The reader scrolls up from there: they keep their place.
+    m.top = 1500;
+    fireEvent.scroll(viewport);
+    rerenderWith({ items: [...items, bot(at(0, 1, 2), "three"), bot(at(0, 1, 3), "four"), bot(at(0, 1, 4), "five")] });
+    expect(m.top).toBe(1500);
+  });
+
+  test("a reader who scrolled while the card waited keeps their place after it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      m.top = 1600;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      fireEvent.wheel(viewport);
+      m.top = 900;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(900);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a reader who wasn't following when the card came isn't moved when it is answered", () => {
+    HTMLElement.prototype.scrollIntoView = function () {};
+    try {
+      const { container, rerenderWith } = renderView({ items: before });
+      const { viewport, m } = scrolled(container);
+      // Following at first: new output puts it at the bottom; then the reader scrolls up.
+      rerenderWith({ items: [...before, bot(at(0, 16, 1), "One more.")] });
+      expect(m.top).toBe(1600);
+      m.top = 300;
+      fireEvent.scroll(viewport);
+      rerenderWith({ items: APPROVAL_PENDING });
+      rerenderWith({ items: answered });
+      expect(m.top).toBe(300);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+});
+
 describe("the window's title bar over the view (spec §5.5: a covered card counts as hidden)", () => {
   test("a pending card is marked to pin below the bar; an answered one is not", () => {
     const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
@@ -640,14 +900,80 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       const { container, rerenderWith } = renderView({ items: before });
       expect(calls).toHaveLength(0);
       rerenderWith({ items: APPROVAL_PENDING });
-      expect(calls).toHaveLength(1);
+      // The card, then its buttons (a card taller than the view shows its buttons, which a press needs).
+      expect(calls).toHaveLength(2);
       expect(calls[0]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending]')!);
       expect(calls[0]!.arg).toEqual({ block: "nearest" });
+      expect(calls[1]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending] .cl-conv-approval__buttons')!);
+      expect(calls[1]!.arg).toEqual({ block: "nearest" });
       // The same card again is no news: no second jump.
       rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
-      expect(calls).toHaveLength(1);
+      expect(calls).toHaveLength(2);
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included, at most once a frame", () => {
+    const calls: Element[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    const originalRO = globalThis.ResizeObserver;
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancel = globalThis.cancelAnimationFrame;
+    let frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((fn: FrameRequestCallback) => frames.push(fn)) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => { frames = []; }) as typeof cancelAnimationFrame;
+    const nextFrame = () => { const due = frames; frames = []; for (const fn of due) fn(0); };
+    const observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
+    class FakeRO {
+      targets: Element[] = [];
+      constructor(public cb: ResizeObserverCallback) { observers.push(this); }
+      observe(t: Element) { this.targets.push(t); }
+      unobserve() {}
+      disconnect() { this.targets = []; }
+    }
+    globalThis.ResizeObserver = FakeRO as unknown as typeof ResizeObserver;
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+      calls.push(this);
+    };
+    const grow = (unit: Element, height: number) => {
+      for (const o of observers) if (o.targets.includes(unit)) o.cb([{ target: unit, contentRect: { height } } as unknown as ResizeObserverEntry], o as unknown as ResizeObserver);
+    };
+    try {
+      const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
+      const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
+      const first = calls.length;
+      const toUnit = () => calls.slice(first).filter((el) => el === unit).length;
+      const toButtons = () => calls.slice(first).filter((el) => el.classList.contains("cl-conv-approval__buttons")).length;
+      // Its frames sizing themselves one after another in one frame: brought into view once, at the frame (each time is a
+      // layout of the whole view), never once per growth.
+      grow(unit, 120);
+      grow(unit, 200);
+      grow(unit, 320);
+      expect(toUnit()).toBe(0);
+      nextFrame();
+      expect(toUnit()).toBe(1);
+      expect(toButtons()).toBe(1);
+      grow(unit, 400);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      expect(toButtons()).toBe(2);
+      // Shrinking or the same size is no reason to move the reader.
+      grow(unit, 400);
+      grow(unit, 300);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+      // Answered, it is no longer watched, and a frame still due does nothing.
+      grow(unit, 500);
+      rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
+      grow(unit, 600);
+      nextFrame();
+      expect(toUnit()).toBe(2);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      globalThis.ResizeObserver = originalRO;
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancel;
     }
   });
 });

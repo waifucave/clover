@@ -6,7 +6,6 @@ import { afterAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
-import { networkAllows } from "@waifucave/clover-plugin-sdk";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../../clock/system-clock";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
@@ -17,7 +16,8 @@ import { CorePluginHost, type HostedRecord } from "../core-host";
 import { HOST_PROCESS_ENTRY, spawnHostProcess } from "../launch";
 import type { RpcPeer } from "../link";
 import { pinnedFetch } from "../pinned-fetch";
-import { FAKE_PAGE_TEXT, FAKE_SEARCH_HIT, fakeExa, searchOnlySeam } from "../../../../../scripts/acceptance/fake-exa";
+import { FAKE_ARTICLE_TEXT, FAKE_PAGE_TEXT, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, fakeExa, searchOnlySeam } from "../../../../../scripts/acceptance/fake-exa";
+import { pluginNetworkAllowed } from "../daemon-host";
 
 const processes: { kill(): void }[] = [];
 afterAll(() => { for (const p of processes) p.kill(); });
@@ -40,7 +40,7 @@ test("WebSearch and WebFetch over a real plugin-host link reach the fake search 
     secret: async () => undefined,
     fetch: pinnedFetch(searchOnlySeam(exa, (h) => void refused.push(h))),
   });
-  const router = guardApiRouter(createApiRouter({ registry, handlers: [handlers, { "settings.get": async () => "" }], allowNetwork: (caps, host, port) => networkAllows(caps, host, port) }), (id) => {
+  const router = guardApiRouter(createApiRouter({ registry, handlers: [handlers, { "settings.get": async () => "" }], allowNetwork: pluginNetworkAllowed }), (id) => {
     const r = registry.get(id);
     return r === undefined ? undefined : { id: r.id, source: r.source };
   });
@@ -87,9 +87,14 @@ test("WebSearch and WebFetch over a real plugin-host link reach the fake search 
   expect(page.isError ?? false).toBe(false);
   expect(page.content.map((c) => c.text).join("\n")).toContain(FAKE_PAGE_TEXT);
 
-  // A page on a host the plugin's OK doesn't grant: refused by B's gate, nothing reached.
-  const away = (await ask(5, "tools/call", { name: "WebFetch", arguments: { url: "https://example.org/x", prompt: "x" } })).result as { content: { text: string }[]; isError?: boolean };
-  expect(away.isError).toBe(true);
+  // network:public: a public website outside the plugin's list, keyless, through the web safeguards.
+  const article = (await ask(5, "tools/call", { name: "WebFetch", arguments: { url: `https://${FAKE_PUBLIC_SITE}/article`, prompt: "x" } })).result as { content: { text: string }[]; isError?: boolean };
+  expect(article.isError ?? false).toBe(false);
+  expect(article.content.map((c) => c.text).join("\n")).toContain(FAKE_ARTICLE_TEXT);
+  // A name that resolves to a private address: refused, saying so, nothing reached.
+  const inside = (await ask(6, "tools/call", { name: "WebFetch", arguments: { url: `https://${FAKE_PRIVATE_SITE}/x`, prompt: "x" } })).result as { content: { text: string }[]; isError?: boolean };
+  expect(inside.isError).toBe(true);
+  expect(inside.content[0]!.text).toContain("private address");
   expect(refused).toEqual([]);
   ch.close();
 }, 60_000);

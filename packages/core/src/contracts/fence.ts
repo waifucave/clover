@@ -149,10 +149,25 @@ export interface SandboxPolicy {
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
    *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
   ownMemory?: string;
+  /** The workshop (`FenceContext.workshop`): `<home>/plugins/<id>` for each plugin the runner's bot built, for its main
+   *  conversation and side threads alone: read and write strictly inside, as `ownScratch` (the folders themselves never
+   *  written over; a `.git` inside never written: every sandbox's run-later holds cover it). */
+  ownPlugins?: string[];
+  /** The drop (the owner's ask on 14c): `<home>/plugins` itself, for a bot's main conversation and side threads, whose
+   *  shell may make a NEW folder there (the registry indexes it and asks the user's OK). Every entry already there that
+   *  isn't in `ownPlugins` stays denied by name (`sandboxSettingsOf`), and the folder itself is never moved or removed. */
+  pluginDrop?: string;
   /** The links on the way to the fenced items (`FencedPath.links`), each held under its own name, never resolved:
    *  it can't be removed, replaced or made (a sandbox resolves a path before judging it, so the item's own deny
    *  leaves them free). */
   holdLinks?: string[];
+  /** A bot's own conversation and side threads (the owner's ruling of November 9, over the one of November 6): open
+   *  access to the Clover home, escalation blocked. They READ everything in `home` but what `denyRead` names inside
+   *  it (the secrets, `run/`, the credential and API-key copies: `BOT_READ_DENIED`), and WRITE strictly inside any
+   *  bot's folder in `scratch` and any bot's `memory` in `bots` (the owner's amendment) as well as their own folders;
+   *  the folders themselves are never written over. Carved out of the home deny like the `own…` folders: a deny
+   *  strictly inside the home, a scratch folder or a memory folder still wins. Absent for every other runner. */
+  botAccess?: { home: string; scratch: string; bots: string };
   /** Programs that would hand work to an unfenced process: `open`, `launchctl` and `osascript` on macOS,
    *  `systemd-run --user` on Linux, the Task Scheduler on Windows (§3.1). */
   closedDoors: string[];
@@ -173,6 +188,12 @@ export interface FenceContext {
   sessionId?: string;
   /** The calling plugin's own id, whose own `plugin-data/<id>/` it reaches (a valid plugin id). */
   pluginId?: string;
+  /** The workshop (the coordinator's ruling for the owner's plugin-building test): the plugins this bot built, each
+   *  installed from its scratch with `PluginInstall` on the user's OK card, whose install record says
+   *  `provenance {by: "bot", bot}` for it. Its main conversation and side threads write strictly inside
+   *  `<home>/plugins/<id>/` for each (never the folder itself, never a `.git` in it). Filled by the fence from the
+   *  registry's records (`CloverFence` `workshopOf`) for a bot caller alone; ignored for any other caller. */
+  workshop?: readonly string[];
 }
 
 /** The `bot-memory` reach of a caller (`Fence.forCaller`), the owner's decision: a bot's main conversation and side
@@ -200,7 +221,27 @@ export function ownMemoryOf(ctx: FenceContext | undefined, cloverHome: string): 
   return `${cloverHome.replace(/[\\/]+$/, "")}/bots/${ctx.memoryOf.replace("/", "--")}/memory`;
 }
 
-type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory";
+type OwnFolder = "ownOutputs" | "ownScratch" | "ownBot" | "ownRoutines" | "ownPluginData" | "ownMemory" | "ownPlugins";
+
+/** The plugin ids of a context's workshop: a bot caller's, valid plugin ids only (a `..` would climb out of `plugins/`). */
+export function workshopOf(ctx: FenceContext | undefined): string[] {
+  if (!isBotCaller(ctx) || ctx?.workshop === undefined) return [];
+  return [...new Set(ctx.workshop.filter((id) => isAnyPluginId(id)))];
+}
+
+/** Whether `path` is strictly inside one of the caller's workshop plugins under `pluginsRoot` (`<home>/plugins`), with no
+ *  `.git` on the way below it (a planted hook there runs later, outside any sandbox). Names compare folded. The
+ *  plugin's folder itself is not inside: it is never removed, moved or written over. */
+export function insideWorkshop(path: string, pluginsRoot: string, ctx: FenceContext | undefined, os?: Os): boolean {
+  const ids = workshopOf(ctx);
+  if (ids.length === 0) return false;
+  const root = segmentsOf(pluginsRoot);
+  const segs = segmentsOf(path);
+  if (segs.length < root.length + 2 || !root.every((r, i) => foldName(r, os) === foldName(segs[i]!, os))) return false;
+  const [folder, ...below] = segs.slice(root.length);
+  if (!ids.some((id) => foldName(id.replace("/", "--"), os) === foldName(folder!, os))) return false;
+  return !below.some((n) => foldName(n, os) === foldName(".git", os));
+}
 
 /** The `own…` folders of a runner's policy for a context (the home default-deny's allows). */
 export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string): Pick<SandboxPolicy, OwnFolder> {
@@ -215,6 +256,8 @@ export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string):
     out.ownBot = `${home}/bots/${bot}`;
     out.ownRoutines = `${home}/routines/${bot}`;
     out.ownMemory = memory;
+    const workshop = workshopOf(ctx);
+    if (workshop.length > 0) out.ownPlugins = workshop.map((id) => `${home}/plugins/${id.replace("/", "--")}`);
   }
   return out;
 }
@@ -285,18 +328,35 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
     const a = names(path);
     const b = names(root);
     if (a.length < b.length || (strict && a.length === b.length)) return false;
-    return b.every((n, i) => n === "*" || n === a[i]);
+    return b.every((n, i) => n === "*" || n === a[i] || (n.startsWith("*") && a[i]!.endsWith(n.slice(1))));
   };
-  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData].filter((p): p is string => p !== undefined);
+  const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, ...(policy.ownPlugins ?? [])].filter((p): p is string => p !== undefined);
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
   // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
   if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
+  // A bot's workshop: no `.git` inside a plugin it built is written (a planted hook or config runs later, outside).
+  if (op !== "read" && (policy.ownPlugins ?? []).some((own) => under(realPath, own, true) && names(realPath).slice(names(own).length).includes(foldName(".git", os)))) return false;
   // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading. Each is
   // carved out of the denies that hold it; a deny strictly inside one still wins (deny over allow, always).
   const deniesHere = op === "read" ? policy.denyRead : policy.denyWrite;
   const innerDeny = (own: string) => deniesHere.some((d) => under(d, own, true) && under(realPath, d));
   if (rw.some((own) => under(realPath, own, true) && !innerDeny(own))) return true;
   if (op === "read" && ro.some((own) => under(realPath, own) && !innerDeny(own))) return true;
+  // A bot's open access (the owner's ruling of November 9): reads anywhere in the home, writes inside any bot's
+  // scratch folder; a deny strictly inside either still wins.
+  const open = policy.botAccess;
+  if (open !== undefined) {
+    if (op === "read" && under(realPath, open.home) && !innerDeny(open.home)) return true;
+    if (op !== "read") {
+      const segs = segmentsOf(realPath);
+      const s = segmentsOf(open.scratch);
+      const b = segmentsOf(open.bots);
+      // Inside `scratch/<x>/`, and inside `bots/<x>/memory/`: never the folder itself.
+      if (under(realPath, open.scratch) && segs.length >= s.length + 2 && !innerDeny(`/${segs.slice(0, s.length + 1).join("/")}`)) return true;
+      if (under(realPath, open.bots) && segs.length >= b.length + 3 && foldName(segs[b.length + 1]!, os) === foldName("memory", os)
+        && !innerDeny(`/${segs.slice(0, b.length + 2).join("/")}`)) return true;
+    }
+  }
   // 4. The denies, the Clover home included.
   if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
   if (policy.denyWrite.some((d) => under(realPath, d))) return false;
@@ -333,10 +393,51 @@ export function patternItemAt(path: string, cloverHome: string, os?: Os):
   return same(sub, "memory") ? { kind: "bot-memory", folder: x, root: `${base}/bots/${x}/memory`, inside: true } : undefined;
 }
 
-/** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
-export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
+/** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal;
+ *  to read it, any bot's own conversation or side thread (the owner's ruling of November 9). */
+export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os, read = false): boolean {
   if (ctx?.user) return true;
+  if (isBotCaller(ctx)) return true; // read and write, any bot's (the owner's ruling of November 9 and its amendment)
   return ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && foldName(ctx.memoryOf.replace("/", "--"), os) === foldName(folder, os);
+}
+
+/** A bot's own conversation or side thread: its context names a valid bot (`memoryOf`). */
+export function isBotCaller(ctx: FenceContext | undefined): boolean {
+  return ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf);
+}
+
+/** What a bot still can't read in the Clover home, beyond the read-denied kinds (`run/`, the secrets file and its
+ *  key, the browser profiles): the credential index, the runtimes' store (the Console profile), the SDK's own config
+ *  copy and the run folders' generated configs, which carry API keys and MCP servers' secrets, and the plugins' own
+ *  data (a plugin's tokens may sit there; its own code alone reaches it). Relative to the home. */
+export const BOT_READ_DENIED: readonly (readonly string[])[] = [
+  ["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["sdk", "cache", "runs"], ["plugin-data"],
+  // The headless browser's profiles (cookies and saved sign-ins: #355's review).
+  ["browser"],
+  // The secrets file and its keys by name on every OS (macOS's are in the Keychain, but a file store may be there too).
+  ["secrets.enc"], ["secrets.key"], ["secrets.key.cred"],
+  // The runtime's user settings, where an `env` block can carry API keys (the user edits it; legacy settings are
+  // carried into it).
+  ["sdk", "settings.json"],
+  // The runtimes' provider-state sidecars beside each transcript (`<session>.provider-state.jsonl`), as the SDK's own
+  // Bash deny has them: a segment `*` is any one name, `*.x` any name ending `.x`.
+  ["projects", "*", "*.provider-state.jsonl"], ["sdk", "projects", "*", "*.provider-state.jsonl"],
+  // Agent SDK 0.0.77's review: the runtime's own stores, any session's: the checkpoint store (copies of files from
+  // before a tool changed them), its image copies and its task lists, in both layouts (its home is `<home>/sdk` in
+  // Migration C's, `<home>` before it; `backups` is the old layout's link to the checkpoint store), and the permission
+  // classifier's per-session cache beside each transcript. A copy of a file a bot can't read must not be readable there.
+  ["sdk", "file-history"], ["sdk", "image-prep"], ["sdk", "tasks"], ["file-history"], ["image-prep"], ["tasks"], ["backups"],
+  ["projects", "*", "*.auto-state.json"], ["sdk", "projects", "*", "*.auto-state.json"],
+  // Lane B's load-time client builds (registry/client-builds.ts): out of every runner's reach, bots' open access too.
+  ["cache", "plugin-builds"],
+];
+
+/** A name against one segment of a `BOT_READ_DENIED` entry or a policy glob: `*` any name, `*<suffix>` any name ending so. */
+export function segmentMatches(name: string, pattern: string, os?: Os): boolean {
+  const n = foldName(name, os);
+  if (pattern === "*") return true;
+  if (pattern.startsWith("*")) return n.endsWith(foldName(pattern.slice(1), os));
+  return n === foldName(pattern, os);
 }
 
 /** Whether a caller reaches a `caller` item. */
@@ -357,13 +458,24 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
   const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
   if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
   const [area, x, sub, ...deeper] = segs.slice(home.length);
-  if (area === undefined || x === undefined) return false; // the home itself, or a top folder in it
+  // The home itself, or a top folder in it: a bot reads them (its open access); nobody else, and nobody writes them.
+  if (area === undefined || x === undefined) return !writes && ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && !BOT_READ_DENIED.some((rel) => rel.length === 1 && area !== undefined && segmentMatches(area, rel[0]!, os));
   const inside = sub !== undefined; // strictly inside `<area>/<x>`
   // 1. A session's own outputs.
   if (same(area, "outputs") && folderName(ctx?.sessionId) && same(x, ctx!.sessionId!)) return inside || !writes;
   // A plugin's own data folder, for its own code alone.
   if (same(area, "plugin-data")) return ownsPluginData(x, ctx, os) && (inside || !writes);
   const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
+  // A bot's open access (the owner's ruling of November 9): it reads everything in the home but `BOT_READ_DENIED`
+  // (the read-denied kinds are judged before this), and writes inside any bot's scratch folder.
+  if (bot !== undefined) {
+    if (!writes) return !BOT_READ_DENIED.some((rel) => rel.every((n, i) => [area, x, sub, ...deeper][i] !== undefined && segmentMatches([area, x, sub, ...deeper][i]!, n, os)));
+    if (same(area, "scratch") && inside) return true;
+    // Any bot's memory, written inside (the owner's amendment); never the memory folder itself.
+    if (same(area, "bots") && sub !== undefined && same(sub, "memory") && deeper.length > 0) return true;
+    // Its workshop: inside a plugin it built (never the folder itself, never a `.git` in it).
+    if (same(area, "plugins") && insideWorkshop(path, [...home, area].join("/"), ctx, os)) return true;
+  }
   if (bot === undefined || !same(x, bot)) return false;
   // 2. A bot's own scratch and its routines, for its main conversation and side threads.
   if (same(area, "scratch") || same(area, "routines")) return inside || !writes;
@@ -414,6 +526,9 @@ export interface Fence {
   checkAgentRoot(root: string): FenceVerdict;
   /** The fence as one caller meets it (#197's check 3, and the owner's decision on `bot-memory`). */
   forCaller(caller: Caller): CallerFence;
+  /** The caller's context as this fence judges it now: `fenceContextFor`, with what only the fence knows (a bot's
+   *  workshop, from the registry's records). A fence without it judges `fenceContextFor` alone. */
+  contextFor?(caller: Caller): FenceContext;
   /** The arrays for one command runner. The pattern items (`bot-memory`, `sessions-runtime`) are denied whoever the
    *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`).
    *  `denyWrite` holds `pluginLoadDenies` too. */
@@ -542,16 +657,20 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
       // `bots/` and `bots/<x>` hold memory: never deleted, moved or written over. Inside `bots/<x>/memory`, only its bot.
       if (!pattern.inside && writes) return { allowed: false, reason: "bot-memory", path: pattern.root };
       if (pattern.inside) {
-        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
+        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os, !writes)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
-    } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {
+    } else if (pattern?.kind === "sessions-runtime" && (writes || (!o.caller?.user && !isBotCaller(o.caller)))) {
+      // A bot's own sessions read it (the controller's ruling: it holds only each session's runtime transcript id,
+      // `{ backendSessionId }`, no credential, token or approval); nobody but the core writes it.
       return { allowed: false, reason: "sessions-runtime", path: pattern.root };
     }
     for (const item of set) {
       if (item.deny === "caller") continue; // judged by its pattern above
       // A plugin's own data folder is its own (the controller's ruling): inside it, `plugin-data` lets that plugin in.
       if (item.kind === "plugin-data" && insideOwnPluginData(path, o.caller, o.cloverHome, o.os)) continue;
+      // A bot's workshop (`FenceContext.workshop`): inside a plugin it built, `plugins` lets its own sessions write.
+      if (item.kind === "plugins" && insideWorkshop(path, item.path, o.caller, o.os)) continue;
       if (writes) {
         if (inside(path, item.path) || inside(item.path, path)) return { allowed: false, reason: item.kind, path: item.path };
       } else if (item.deny === "read-write" && inside(path, item.path)) {
@@ -699,4 +818,107 @@ export function agentConfigEntries(os: Os, home: string): RunLaterEntry[] {
     { path: u(".cursor"), file: false },
     { path: u(".config", "opencode"), file: false },
   ];
+}
+
+/** The credential files package managers and other tools keep in the user's home, denied to every fenced process
+ *  whatever else allows them (S4), and part of `SECRET_READ_PLACES`. Relative to the user's home. */
+export const CREDENTIAL_FILES: readonly string[] = [
+  ".npmrc", ".yarnrc", ".yarnrc.yml", ".cargo/credentials", ".cargo/credentials.toml", ".netrc", ".docker/config.json", ".aws",
+  ".config/gh", ".config/hub", ".git-credentials", ".config/git/credentials", ".pypirc", ".pip/pip.conf", ".config/pip/pip.conf",
+  ".gem/credentials", ".ssh", ".gnupg", ".kube", ".config/gcloud", ".azure", ".terraform.d/credentials.tfrc.json",
+  ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
+];
+
+/** What a secret place holds, for the refusal a bot gets (it names the class, never the file's content). */
+export type SecretClass =
+  | "SSH or GPG keys" | "cloud credentials" | "a package registry's token" | "a developer tool's sign-in"
+  | "the Keychain" | "a browser's cookies and saved logins" | "a password manager's store" | "a coding agent's sign-in"
+  | "an app's sign-in tokens" | "shell history" | "the user's mail and messages";
+
+/** One secret place: a folder (everything in it) or a file, relative to the user's home, `/` between names. */
+export interface SecretPlace { readonly path: string; readonly cls: SecretClass; readonly os?: readonly Os[] }
+
+const CREDENTIAL_CLASS: Readonly<Record<string, SecretClass>> = {
+  ".ssh": "SSH or GPG keys", ".gnupg": "SSH or GPG keys",
+  ".aws": "cloud credentials", ".config/gcloud": "cloud credentials", ".azure": "cloud credentials", ".kube": "cloud credentials",
+  ".docker/config.json": "cloud credentials", ".terraform.d/credentials.tfrc.json": "cloud credentials",
+  ".config/gh": "a developer tool's sign-in", ".config/hub": "a developer tool's sign-in", ".git-credentials": "a developer tool's sign-in",
+  ".config/git/credentials": "a developer tool's sign-in", ".netrc": "a developer tool's sign-in",
+};
+
+/** The places in the user's home a bot never reads: not with Read, Grep or Glob (refused with no card, and a search
+ *  from above skips them), not through an agent's request, and not from its sandboxed shell (the sandbox's `denyRead`,
+ *  stage 2). The coordinator's ruling of November 11: the shell may read nothing Read would not read without a card,
+ *  and Read reads none of these. ONE list: the file tools' check (`fence/secret-reads.ts`) and the sandbox use it.
+ *  Exact folders, never a wildcard over `Application Support`. A command that really needs one (git over SSH reads
+ *  `~/.ssh`) is for the user to run, or (stage 3) a command outside the sandbox on its own card.
+ *
+ *  Left readable on purpose: `~/.gitconfig` and `~/.config/git/config` (git stops with a fatal error when its global
+ *  config exists and can't be read, and "use git read commands" must work). A token written into a global gitconfig
+ *  (a URL with a password, `[http] extraHeader`) is a known residual, and so are a project's own `.env` files (the
+ *  coordinator's ruling: bots work in projects). The Clover home's sessions and other bots'
+ *  memories stay readable to bots (the owner's open-access ruling of November 9); its keys are `BOT_READ_DENIED`. */
+export const SECRET_READ_PLACES: readonly SecretPlace[] = [
+  ...CREDENTIAL_FILES.map((path): SecretPlace => ({ path, cls: CREDENTIAL_CLASS[path] ?? "a package registry's token" })),
+  { path: ".config/glab-cli", cls: "a developer tool's sign-in" },
+  // Cloud, database and deploy tools' keys and tokens.
+  ...[".oci", ".s3cfg", ".boto", ".config/rclone", ".fly", ".config/.wrangler", ".config/sops", ".vault-token"]
+    .map((path): SecretPlace => ({ path, cls: "cloud credentials" })),
+  { path: "Library/Application Support/com.vercel.cli", cls: "cloud credentials", os: ["macos"] },
+  { path: ".config/op", cls: "a password manager's store" },
+  ...[".pgpass", ".my.cnf"].map((path): SecretPlace => ({ path, cls: "a developer tool's sign-in" })),
+  ...[".gradle/gradle.properties", ".m2/settings.xml", ".composer/auth.json", ".config/composer/auth.json"]
+    .map((path): SecretPlace => ({ path, cls: "a package registry's token" })),
+  { path: ".config/github-copilot", cls: "a developer tool's sign-in" },
+  { path: ".password-store", cls: "a password manager's store" },
+  // The coding agents' sign-ins (their tokens; their settings are `agentConfigPaths`, write-held).
+  { path: ".codex/auth.json", cls: "a coding agent's sign-in" },
+  { path: ".claude/.credentials.json", cls: "a coding agent's sign-in" },
+  { path: ".local/share/opencode/auth.json", cls: "a coding agent's sign-in" },
+  { path: ".gemini/oauth_creds.json", cls: "a coding agent's sign-in" },
+  { path: ".gemini/google_accounts.json", cls: "a coding agent's sign-in" },
+  // Shell and REPL history (passwords and tokens typed on a command line).
+  ...[".zsh_history", ".bash_history", ".sh_history", ".zhistory", ".history", ".python_history", ".node_repl_history",
+    ".psql_history", ".mysql_history", ".sqlite_history", ".rediscli_history", ".local/share/fish/fish_history"]
+    .map((path): SecretPlace => ({ path, cls: "shell history" })),
+  { path: ".zsh_sessions", cls: "shell history", os: ["macos"] },
+  // macOS: the Keychain's files, the browsers' profiles, the password managers' and apps' token stores.
+  { path: "Library/Keychains", cls: "the Keychain", os: ["macos"] },
+  ...["Google/Chrome", "Google/Chrome Beta", "Google/Chrome Canary", "Chromium", "Microsoft Edge", "BraveSoftware", "Arc",
+    "Vivaldi", "com.operasoftware.Opera", "Firefox", "Orion"]
+    .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "a browser's cookies and saved logins", os: ["macos"] })),
+  { path: "Library/Safari", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  { path: "Library/Cookies", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  { path: "Library/Containers/com.apple.Safari", cls: "a browser's cookies and saved logins", os: ["macos"] },
+  { path: "Library/Messages", cls: "the user's mail and messages", os: ["macos"] },
+  { path: "Library/Mail", cls: "the user's mail and messages", os: ["macos"] },
+  ...["1Password", "Bitwarden", "KeePassXC", "Dashlane", "Enpass"]
+    .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "a password manager's store", os: ["macos"] })),
+  { path: "Library/Group Containers/2BUA8C4S2C.com.1password", cls: "a password manager's store", os: ["macos"] },
+  ...["Slack", "discord", "Claude", "Code/User/globalStorage", "Cursor/User/globalStorage", "Signal", "Telegram Desktop"]
+    .map((app): SecretPlace => ({ path: `Library/Application Support/${app}`, cls: "an app's sign-in tokens", os: ["macos"] })),
+  // Linux: the same by its folders.
+  { path: ".local/share/keyrings", cls: "the Keychain", os: ["linux"] },
+  ...[".config/google-chrome", ".config/google-chrome-beta", ".config/chromium", ".config/microsoft-edge", ".config/BraveSoftware",
+    ".config/vivaldi", ".mozilla"]
+    .map((path): SecretPlace => ({ path, cls: "a browser's cookies and saved logins", os: ["linux"] })),
+  ...[".config/1Password", ".config/Bitwarden"].map((path): SecretPlace => ({ path, cls: "a password manager's store", os: ["linux"] })),
+  ...[".config/Slack", ".config/discord", ".config/Code/User/globalStorage", ".config/Signal"]
+    .map((path): SecretPlace => ({ path, cls: "an app's sign-in tokens", os: ["linux"] })),
+];
+
+/** `SECRET_READ_PLACES` for `os`, as absolute paths under `home` (the OS's own separators). */
+export function secretReadPlaces(os: Os, home: string): { path: string; cls: SecretClass }[] {
+  return SECRET_READ_PLACES.filter((p) => p.os === undefined || p.os.includes(os))
+    .map((p) => ({ path: underHome(os, home, p.path.split("/")), cls: p.cls }));
+}
+
+/** What a fenced call is told, naming the caller's kind: a plugin is told the fence keeps plugins out, a bot (its
+ *  conversation or a side thread) bots, a coding session or agent agents, another computer's call such calls. */
+export function fencedOutText(as: Caller, path: string): string {
+  const who = as.kind === "plugin" ? "plugins"
+    : as.kind === "peer" ? "another computer's calls"
+    : as.kind === "session" ? (as.sessionKind === "bot" || as.sessionKind === "side-thread" ? "bots" : "agents")
+    : "this caller";
+  return `the fence keeps ${who} out of ${path}`;
 }

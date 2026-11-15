@@ -60,6 +60,8 @@ export function formatTurnInput(input: TurnInput, kind: "bot" | "side-thread"): 
         label: input.label,
         from: input.by.kind === "core" ? "clover" : input.by.kind === "hook" ? `${input.by.pluginId} (${input.by.hook})` : input.by.pluginId,
       }, input.text);
+    case "notice":
+      return wrap("note", { label: input.label, from: "clover" }, input.text);
     case "task":
       // A background task of the session's own runtime, handed to the host by `ctx.wake` (lane D's follow-up). Its
       // text is what the task printed: framed as data, never instructions.

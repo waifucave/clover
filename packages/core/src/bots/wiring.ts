@@ -7,7 +7,7 @@
 // agent that acts without asking starts read-only when its computer's level is unknown). Their hooks (K's
 // `AgentManager.sessionHooks()`) feed `ListAgents`' agent rows, `session.setModel` for agents and coding sessions,
 // and the reattaching of a restart's dormant sessions; `close` ends their processes when the daemon shuts down.
-import type { Level, SessionView } from "@waifucave/clover-protocol";
+import { BUNDLED_ROOT_PLUGIN, topPluginIdOf, type Level, type SessionView } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -32,6 +32,11 @@ import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
 import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks";
 import { voicesMethods } from "../voices/rpc";
 import { VoiceService, type VoiceServiceOptions } from "../voices/service";
+import { VoiceSlot } from "../voices/slot";
+import { speakReplies } from "../voices/replies";
+import { readUiSettings } from "../plugin-host/ui-settings";
+import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
+import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -66,6 +71,10 @@ export interface BotSideOptions {
   agents?: (deps: { host: DurableSessionHost; levelOf: (computer: string) => Level | undefined }) => AgentsHandle;
   /** Each computer's approval level (lane J's computer registry), for lane K's agents and the routines. */
   levelOf?: (computer: string) => Level | undefined;
+  /** Lane B's plugin workshop (§5.6): `PluginValidate`, `PluginInstall` and `PluginStatus` in a bot's own sessions. */
+  workshop?: PluginWorkshop;
+  /** `AppScreenshot` in a bot's own sessions: a look at a place in this computer's app (bots/app-screenshot.ts). */
+  appScreenshot?: AppScreenshotDeps;
   /** This computer's routines (§7): the engine runs when given. */
   routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">> & {
     /** The `webhook.ingress` entries and the plugin host that runs them (lane I's forwarder): webhooks.ts. */
@@ -83,7 +92,14 @@ export interface BotSideOptions {
   updateGate?: UpdateGateLike;
   /** Bots' voices on this device (§6.6): the `voices` entries, the plugin host that streams them, and `voice.play`
    *  to the app. Each bot's voice is its effective one (its user layer's, else its plugin's). */
-  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "play" | "listenIdleMs">;
+  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "play" | "listenIdleMs"> & {
+    /** The user's choice of voice mode (Clover Voice's `active` setting), read at each use (§6.6). */
+    chosen?(): Promise<string | undefined> | string | undefined;
+    /** Tells the user, in words, that their voice stopped and which speaks now. */
+    tell?(text: string): void;
+    /** Clears the user's choice of voice mode (its plugin was removed). */
+    forget?(): Promise<void> | void;
+  };
   userHome?: string;
   approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
   /** The provider check for bots' plugin-chosen models (provider-consent.ts); by default one over this side's grants,
@@ -93,6 +109,8 @@ export interface BotSideOptions {
   compaction?: (view: SessionView) => CompactionPolicy | undefined;
   defaultModel: BotServiceOptions["defaultModel"];
   hasKeyFor?: BotServiceOptions["hasKeyFor"];
+  modelOffer?: BotServiceOptions["modelOffer"];
+  bundledChoice?: BotServiceOptions["bundledChoice"];
   assetUrl?: BotServiceOptions["assetUrl"];
   warn?: (message: string) => void;
 }
@@ -110,6 +128,8 @@ export interface BotSide {
   ingress?: WebhookIngress;
   /** Bots' voices here, when voices were given. */
   voices?: VoiceService;
+  /** The voice slot (§6.6): the active voice mode, its sink and the providers' endpoints. */
+  voiceSlot?: VoiceSlot;
   /** The one `SessionGrants` of this computer (R10: what the user allowed one session, such as driving their own
    *  browser partition), over this side's host and the approval broker; present when `approvals` can `request`.
    *  The daemon hands this same instance to the browser (`personsBrowserGrants(side.grants)`), so a grant the user
@@ -172,13 +192,20 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(hooks !== undefined ? { reattach: (views: SessionView[]) => hooks.reattach(views) } : o.reattach === undefined ? {} : { reattach: o.reattach }),
     ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
     ...(o.hasKeyFor === undefined ? {} : { hasKeyFor: o.hasKeyFor }),
+    ...(o.modelOffer === undefined ? {} : { modelOffer: o.modelOffer }),
+    ...(o.bundledChoice === undefined ? {} : { bundledChoice: o.bundledChoice }),
     ...(o.assetUrl === undefined ? {} : { assetUrl: o.assetUrl }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   const computerLevel = (): Level => levelOf(o.computer) ?? "ask-risky";
   let ingress: WebhookIngress | undefined;
   const routines: RoutineEngine | undefined = o.routines === undefined ? undefined : new RoutineEngine({
-    home: o.home, computer: o.computer, clock: o.clock, bots, computerLevel,
+    home: o.home, computer: o.computer, clock: o.clock, computerLevel,
+    // A routine Clover paused gets one note of Clover's in its bot's conversation (it starts no turn).
+    bots: {
+      has: (id) => bots.has(id), runSideThread: (id, run) => bots.runSideThread(id, run), onEvent: (fn) => bots.onEvent(fn),
+      note: async (id, label, text) => { await bots.deliverTo(id, { from: "note", label, text, by: { kind: "core" } }); },
+    },
     ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
     ...(o.routines.userTimeZone === undefined ? {} : { userTimeZone: o.routines.userTimeZone }),
     ...(o.routines.secrets === undefined ? {} : { secrets: o.routines.secrets }),
@@ -187,6 +214,14 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.routines.triggers === undefined ? {} : { triggerOwners: triggerOwnersFrom(o.routines.triggers) }),
     ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
     ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string, name?: string): Promise<string> => ingress!.register(id, key, name) }),
+    // Read from the registry at each use: an active `webhook` trigger type (clover/trigger-webhook's) and, where the
+    // ingress runs, an active `webhook.ingress` entry. Neither is hardcoded: a plugin listed as not available has none.
+    webhooksAvailable: () => {
+      // Only the bundled tree's trigger counts (validation refuses a `webhook` trigger anywhere else; this holds for a
+      // record from before that rule too).
+      if (o.routines?.triggers !== undefined && !triggerOwnersFrom(o.routines.triggers)("webhook").some((id) => topPluginIdOf(id) === BUNDLED_ROOT_PLUGIN)) return false;
+      return ingress === undefined || ingress.available();
+    },
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
@@ -200,6 +235,23 @@ export function createBotSide(o: BotSideOptions): BotSide {
     mayUse: (bot, at) => bots.checkVoice(bot, at),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  // The voice slot (§6.6): the active voice mode (Clover Voice by default) says the replies, plays the plugins' sound
+  // and hears push-to-talk; the service is its transport.
+  const voiceSlot = voices === undefined || o.voices?.host.invoke === undefined ? undefined : new VoiceSlot({
+    registry: o.voices.registry, host: o.voices.host as Pick<PluginHost, "invoke">, service: voices,
+    ...(o.voices.chosen === undefined ? {} : { chosen: o.voices.chosen }),
+    ...(o.voices.tell === undefined ? {} : { tell: o.voices.tell }),
+    ...(o.voices.forget === undefined ? {} : { forget: o.voices.forget }),
+    ...(o.voices.listenIdleMs === undefined ? {} : { listenIdleMs: o.voices.listenIdleMs }),
+    ...(o.warn === undefined ? {} : { warn: o.warn, log: o.warn }),
+  });
+  // Each reply of a bot's main conversation, spoken with its voice while the user's `voice.speakReplies` is on (unset is
+  // on; read at each turn's end).
+  let offReplies: (() => void) | undefined;
+  // A removed plugin that was the user's chosen voice takes the choice with it (a stop or a crash keeps it).
+  const registryWatch = (o.voices?.registry as Partial<Pick<PluginRegistry, "watch">> | undefined)?.watch;
+  const offVoiceRemovals = voiceSlot === undefined || registryWatch === undefined ? undefined
+    : registryWatch.call(o.voices!.registry, (change) => { if (change.type === "removed") void voiceSlot.removed(change.id).catch(() => undefined); });
   // Held by an update's restart: started again as the gate reopens.
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
@@ -228,17 +280,22 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(routines === undefined ? {} : { routines }),
     ...(ingress === undefined ? {} : { ingress }),
     ...(voices === undefined ? {} : { voices }),
+    ...(voiceSlot === undefined ? {} : { voiceSlot }),
     ...(grants === undefined ? {} : { grants }),
     questions,
     tools: (sessionId) => {
       const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
       const bot = host.callerOf(sessionId).bot;
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
+      // The plugin workshop's tools: a bot's own sessions (its conversation and side threads), never an agent's.
+      if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(...workshopToolDefs(o.workshop, { bot, sessionId }));
+      // A look at this computer's app, for the same sessions (the bot builds and fixes what the user sees).
+      if (o.appScreenshot !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(appScreenshotToolDef(o.appScreenshot, { bot }));
       return defs;
     },
     methods: (deps) => {
       const sessions = sessionsMethods({
-        home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
+        home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice, registry: o.registry,
         ...(updates === undefined ? {} : { updateGate: updates }),
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
         questions,
@@ -249,15 +306,23 @@ export function createBotSide(o: BotSideOptions): BotSide {
       // `pill.target` entry's handler through the plugin host, when there is one.
       ...pillMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
-      ...(voices === undefined ? {} : voicesMethods({ voices })),
+      ...(voices === undefined ? {} : voicesMethods({ voices, host, ...(voiceSlot === undefined ? {} : { slot: voiceSlot }) })),
       };
     },
     start: async () => {
       await bots.start();
       await routines?.start();
       if (o.routines?.ingress?.poll !== false) ingress?.start();
+      if (voices !== undefined && offReplies === undefined) {
+        offReplies = speakReplies({
+          host, voices: voiceSlot !== undefined ? { speak: (r) => voiceSlot.reply(r) } : voices, enabled: () => readUiSettings(o.home).voice?.speakReplies !== false,
+          ...(o.warn === undefined ? {} : { warn: o.warn }),
+        });
+      }
     },
     close: async () => {
+      offReplies?.();
+      offVoiceRemovals?.();
       offBusy?.();
       offQuestions?.();
       offReopen?.();

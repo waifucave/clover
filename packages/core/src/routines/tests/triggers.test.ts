@@ -15,19 +15,34 @@ import { WebhookIngress } from "../webhooks";
 
 afterEach(removeTemps);
 
-async function installed(children: string[]) {
+/** The bundled tree with these children. The forwarder and the webhook trigger are parked in this build (their
+ *  `availability: not-yet` mark): by default they are read as a build that runs them would read them, so their own
+ *  wiring stays tested; `asShipped` keeps the mark. */
+async function installed(children: string[], o: { asShipped?: boolean } = {}) {
   const root = join(tempDir(), "clover");
   mkdirSync(root, { recursive: true });
   const parent = join(REPO, "plugins", "clover", "clover.json");
   writeFileSync(join(root, "clover.json"), existsSync(parent) ? readFileSync(parent, "utf8") : `${JSON.stringify({ manifest: 1, id: "clover", name: "Clover" })}\n`);
   for (const c of children) {
     cpSync(join(REPO, "plugins", "clover", "plugins", c), join(root, "plugins", c), { recursive: true, filter: (src) => !src.includes("node_modules") });
+    if (o.asShipped !== true) {
+      const file = join(root, "plugins", c, "clover.json");
+      const { availability: _parked, ...runs } = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      writeFileSync(file, `${JSON.stringify(runs, null, 2)}\n`);
+    }
   }
   const { report, inputs } = await pluginFromFolder(root, { bundled: true });
   return { report, inputs, registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: inputs }), root };
 }
 
 describe("the bundled triggers", () => {
+  test("as this build ships them: the webhook trigger and the forwarder are parked, so no webhook trigger type and no ingress", async () => {
+    const { registry } = await installed(["trigger-schedule", "trigger-webhook", "forwarder"], { asShipped: true });
+    expect(registry.entries("triggers").map((c) => c.entryId)).toEqual(["schedule"]);
+    expect(registry.entries("webhook.ingress")).toEqual([]);
+    expect(triggerOwnersFrom(registry)("webhook")).toEqual([]);
+  });
+
   test("both validate as children of clover and their triggers come up", async () => {
     const { report, registry } = await installed(["trigger-schedule", "trigger-webhook"]);
     for (const folder of ["trigger-schedule", "trigger-webhook"]) {

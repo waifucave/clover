@@ -154,7 +154,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "moonshot-cn-anthropic/kimi-k3.1-pro",
@@ -276,7 +277,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k3.1-pro",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "moonshot-cn-anthropic/kimi-k3.1-pro-highspeed",
@@ -398,7 +400,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k3.1-pro-highspeed",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     }
   ]
 }

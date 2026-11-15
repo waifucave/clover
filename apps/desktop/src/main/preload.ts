@@ -2,7 +2,7 @@
 // to the core's root (`clover-core://app/`) and to plugin layers (`clover-plugin://<layer>/`), and nothing to any
 // other document: an `about:blank` or srcdoc frame a plugin makes, a sealed card. The main process binds every call
 // to the frame it came from, so the bridge carries no authority of its own beyond the mount token in the URL.
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { LayerBridge, LayerMessage } from "@waifucave/clover-plugin-sdk/ui/bridge";
 
 const where = location.protocol;
@@ -25,8 +25,11 @@ if (isRoot || isLayer) {
     token,
     describe: () => ipcRenderer.invoke("clover:describe", { token }),
     resolve: (mount, spot, key, hints) => ipcRenderer.invoke("clover:resolve", { mount, spot, key, hints }),
-    entries: (mount, spot, key) => ipcRenderer.invoke("clover:entries", { mount, spot, key }),
+    entries: (mount, spot, key, bot, session) => ipcRenderer.invoke("clover:entries", { mount, spot, key, ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) }),
     setProps: (child, props) => ipcRenderer.send("clover:props", { child, props }),
+    speech: (child, message) => ipcRenderer.send("clover:speech", { child, message }),
+    avatar: (child, message) => ipcRenderer.send("clover:avatar", { child, message }),
+    avatarUp: (message) => ipcRenderer.send("clover:avatar-up", { message }),
     callback: (id, args) => ipcRenderer.send("clover:callback", { id, args }),
     reportSize: (height) => ipcRenderer.send("clover:size", { height }),
     release: (mounts) => ipcRenderer.send("clover:release", { mounts: [...mounts] }),
@@ -46,17 +49,36 @@ if (isRoot || isLayer) {
     // key press or click that came to another frame does not activate this one, so it can't unlock a gated call here.
     composer: (mount, op, args) => ipcRenderer.invoke("clover:composer", { mount, op, args, active: activated() }),
     userSend: (mount, to, message) => ipcRenderer.invoke("clover:user-send", { mount, to, message, active: activated() }),
+    shell: (mount, method, args) => ipcRenderer.invoke("clover:shell", { mount, method, args, active: activated() }),
+    shellReport: (mount, report) => ipcRenderer.send("clover:shell-report", { mount, report }),
     api: (mount, method, params) => ipcRenderer.invoke("clover:api", { mount, method, params, active: activated() }),
     terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
-    sealedFrame: (mount, cardId, element) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element }),
+    sealedFrame: (mount, cardId, element, look, tokens) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element, ...(look !== undefined ? { look } : {}), ...(tokens !== undefined ? { tokens } : {}) }),
+    cardPage: (mount, cardId) => ipcRenderer.invoke("clover:card-page", { mount, cardId, active: activated() }),
     onMessage: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
   };
   contextBridge.exposeInMainWorld("cloverLayer", bridge);
+  // A file dropped on a plugin's page: the path of a REAL dropped file is known only here (`webUtils`), never to the page, whose
+  // script can't make one: a made-up event isn't trusted, and a File it builds has no path. The paths go to the main process,
+  // which turns them into tokens for a plugin that holds `files` and tells this frame's page (`files-dropped`).
+  if (isLayer) {
+    window.addEventListener("drop", (event) => {
+      if (!event.isTrusted) return;
+      const paths: string[] = [];
+      for (const file of Array.from(event.dataTransfer?.files ?? []).slice(0, 64)) {
+        try {
+          const p = webUtils.getPathForFile(file);
+          if (p !== "") paths.push(p);
+        } catch { /* not a file of the OS's */ }
+      }
+      if (paths.length > 0) ipcRenderer.send("clover:drop-files", { paths });
+    }, true);
+  }
   if (isRoot) {
     contextBridge.exposeInMainWorld("cloverRoot", {
       frameMetrics: (m: { top: number; start: number; end: number }) => ipcRenderer.send("clover:frame-metrics", m),
@@ -65,12 +87,19 @@ if (isRoot || isLayer) {
       call: (name: string, params?: unknown) => ipcRenderer.invoke("clover:root-call", { name, params }),
     });
   }
-} else if (where === "clover-sealed:") {
+} else if (where === "clover-sealed:" && location.host === "card") {
+  // (A render window's placeholder, `clover-sealed://placeholder/…`, gets nothing: it answers no card.)
   // A sealed frame's page: the token is its own (a single-use channel the store minted), and its answer goes back
   // through the main process's own path — signed there with the answer key, never a plugin's connection's.
   const token = new URLSearchParams(location.search).get("token") ?? "";
   contextBridge.exposeInMainWorld("cloverSealed", {
     answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("clover:sealed-answer", { token, option, children }),
     visible: (visible: boolean) => void ipcRenderer.send("clover:sealed-visible", { token, visible }),
+    // A press the page saw, in one word of a fixed set (what it did with it); the app logs it with the card's id.
+    pressed: (what: string) => void ipcRenderer.send("clover:sealed-press", { token, what }),
+    size: (height: number) => void ipcRenderer.send("clover:sealed-size", { token, height }),
+    // The Review on the app's own card page (a plugin's OK or update card): advice the app fetches for its own page,
+    // never an answer.
+    review: (peek?: boolean) => ipcRenderer.invoke("clover:sealed-review", { token, ...(peek === true ? { peek: true } : {}) }),
   });
 }

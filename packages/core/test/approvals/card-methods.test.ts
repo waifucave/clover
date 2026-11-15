@@ -179,3 +179,23 @@ describe("the agent methods, mounted late", () => {
     expect((await errorOf(m["agent.backends"]!({}, user))).code).toBe(ERR.RETRY);
   });
 });
+
+describe("card.pending, the layer's own list of what waits", () => {
+  const layer = (pluginId: string) => conn("layer", { kind: "plugin", pluginId });
+  test("a plugin sees its own bot's cards as meta only, the bundled tree sees all, another plugin none", async () => {
+    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const m = cardMethods(() => broker);
+    const { card } = await raise(broker); // bot "luna"
+    const mine = await m["card.pending"]!(layer("luna"), {}) as { cards: { id: string; fields?: unknown }[] };
+    expect(mine.cards.map((c) => c.id)).toEqual([card.id]);
+    expect(mine.cards[0]!.fields).toBeUndefined();
+    expect((await m["card.pending"]!(layer("luna/extra"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
+    expect((await m["card.pending"]!(layer("clover/island"), {}) as { cards: unknown[] }).cards).toHaveLength(1);
+    expect(await m["card.pending"]!(layer("sol"), {})).toEqual({ cards: [] });
+    expect(await m["card.pending"]!(APP, {})).toEqual({ cards: [] });
+  });
+  test("is refused while the broker isn't up", async () => {
+    const m = cardMethods(() => undefined);
+    expect(await errorOf(m["card.pending"]!(layer("luna"), {}))).toMatchObject({ code: ERR.RETRY });
+  });
+});

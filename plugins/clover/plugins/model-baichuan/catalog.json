@@ -86,7 +86,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "baichuan3-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "baichuan/Baichuan3-Turbo-128k",
@@ -139,7 +140,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "baichuan3-turbo-128k",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "baichuan/Baichuan4",
@@ -185,7 +187,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "baichuan4",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "baichuan/Baichuan4-Air",
@@ -238,7 +241,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "baichuan4-air",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "baichuan/Baichuan4-Turbo",
@@ -291,7 +295,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "baichuan4-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

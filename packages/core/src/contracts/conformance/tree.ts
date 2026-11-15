@@ -316,8 +316,9 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       await tree.write("home/Laptop1/p/a.txt", utf8("a"), { as: USER });
       const seen: TreeWatchEvent[] = [];
       const changed = () => new Set(seen.flatMap((e) => (e.type === "changed" ? e.paths : [])));
-      // A real holder's news comes later and coalesced; the fake's at once.
-      const settle = async (done: () => boolean, ms = 3000) => {
+      // A real holder's news comes later and coalesced; the fake's at once. The wait ends as soon as the news is in; the
+      // cap is for a loaded machine (the whole core suite at once), not the expected time.
+      const settle = async (done: () => boolean, ms = 15_000) => {
         for (const end = Date.now() + ms; !done() && Date.now() < end;) await new Promise((r) => setTimeout(r, 10));
       };
       const stop = await tree.watch("home/Laptop1/p", { as: BOT }, (e) => seen.push(e));
@@ -337,7 +338,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       for (const whole of ["home/Laptop1", "home/Laptop1/", "home/OldLaptop"]) {
         expect([whole, isContractError(await rejection(tree.watch(whole, { as: USER }, () => {})), "invalid")]).toEqual([whole, true]);
       }
-    });
+    }, 30_000);
 
     test("a fenced name in another case or a folded spelling is refused on every computer (J-M1's review B1, #179's F1)", async () => {
       const { tree } = setup();

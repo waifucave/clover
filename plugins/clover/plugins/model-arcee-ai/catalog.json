@@ -106,7 +106,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "trinity-large-thinking",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

@@ -37,7 +37,7 @@ Lanes B and M pin these in Wave 1, and a fresh Opus reviewer checks them against
 
 | Contract | What it pins | By |
 | :- | :- | :- |
-| `packages/plugin-sdk` | The manifest's types and JSON Schemas (spec §5.9); the theme, layout, locale, index and revocation formats; the catalogs of spots, points, tokens, hooks and capabilities, as data; the plugin API and the UI API as TypeScript declarations (§5.4, §5.5) | B |
+| `packages/plugin-sdk` | The manifest's types and JSON Schemas (spec §5.9); the theme, layout, locale and index formats; the catalogs of spots, points, tokens, hooks and capabilities, as data; the plugin API and the UI API as TypeScript declarations (§5.4, §5.5) | B |
 | `packages/protocol` | One file per area (plugins, approvals, sessions and bots, devices and links, computers and the tree, agents, the app and the pair, the browser, usage), each with the methods and events other lanes call; the roles and their allow lists | B |
 | The core's interfaces (`packages/core/src/contracts/`) | `SecretStore`, `Fence`, `ApprovalBroker`, `PluginRegistry`, `PluginHost`, `SessionHost`, `LinkTransport`, `DeviceRegistry`, `Lease` and `Clock`, `ComputerRegistry`, `Tree`, `AgentBackend` and `BrowserApi`, each with an in-memory fake | B, with each owning lane's sign-off |
 | The repo layout | `apps/desktop`, `plugins/clover/*`, `plugins/alpha`, `services/*` and `native/*` (§7) | M |
@@ -128,7 +128,7 @@ Every lane runs on this Mac, in its own worktree, with CI for the other OSes (§
   * the `Glossary` index and tool
 * **M3, getting plugins in:**
   * wrappers for MCP configs, skills, agent files and Claude Code plugin folders
-  * indexes, signatures, revocation and npm installs
+  * indexes (plain lists added by URL; no signing or revocation since the owner's 2026-11-13 ruling), npm installs and the Review on plugin cards
   * updates
   * add-ons of a plugin's own
   * the 18+ gate

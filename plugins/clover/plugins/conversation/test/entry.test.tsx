@@ -1,9 +1,11 @@
 // The conversation on the runtime: the core's events projected into the view's items, and the entry that reads them.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
+import { card, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
 import type { EntryComponent } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
+import type { CardMeta } from "../../shell/runtime/types";
+import { mockSealed } from "../gallery/mock-runtime";
 import { ConversationEntry } from "../client/entry";
 import { project, toolHint, type CoreEvent } from "../client/project";
 import { UiRuntimeProvider } from "../client/sdk";
@@ -15,6 +17,22 @@ let seq = 0;
 const ev = (type: string, extra: Record<string, unknown> = {}): CoreEvent => ({ type, seq: ++seq, ts: 1_000 + seq, ...extra });
 
 describe("project", () => {
+  test("a call the core cut off (a stop, a restart) reads as interrupted, not failed, and nothing runs after the turn's end", () => {
+    const p = project([
+      ev("user_message", { text: "Use the tool", device: "dev_studio" }),
+      ev("turn_started"),
+      ev("tool_call", { callId: "c1", name: "Echo", argsJson: "{}" }),
+      ev("tool_result", { callId: "c1", output: "Interrupted: Clover stopped while this call ran.", isError: true, interrupted: true }),
+      ev("turn_completed", { stopReason: "aborted" }),
+    ]);
+    const call = p.items.find((i): i is ToolItem => i.kind === "tool");
+    expect(call?.call.status).toBe("interrupted");
+    expect(p.turn.running).toBe(false);
+    // A tool's own error still reads as failed.
+    const failed = project([ev("turn_started"), ev("tool_call", { callId: "c2", name: "Bash" }), ev("tool_result", { callId: "c2", output: "exit 1", isError: true })]);
+    expect(failed.items.find((i): i is ToolItem => i.kind === "tool")?.call.status).toBe("failed");
+  });
+
   test("a turn: the user's message, streamed text, a tool call with its diff, and the answer", () => {
     const p = project([
       ev("user_message", { text: "Fix the dates", device: "dev_studio" }),
@@ -62,6 +80,18 @@ describe("project", () => {
     expect(project([ev("turn_started"), ev("turn_completed", { stopReason: "error" })]).items).toMatchObject([{ kind: "note", tone: "error" }]);
   });
 
+  test("the failed turn's note offers Try again only while it is the last thing, and no turn is running", () => {
+    const failed = [ev("user_message", { text: "hi" }), ev("turn_started"), ev("turn_completed", { stopReason: "error" })];
+    expect(project(failed).items.at(-1)).toMatchObject({ kind: "note", tone: "error", retry: true });
+    // A later message or turn, or a success, and an earlier failure shows no button.
+    for (const later of [[ev("user_message", { text: "again" })], [ev("user_message", { text: "again" }), ev("turn_started")], [ev("turn_started"), ev("turn_completed", { stopReason: "end_turn" })]]) {
+      const notes = project([...failed, ...later]).items.filter((i) => i.kind === "note");
+      expect(notes).toMatchObject([{ tone: "error" }]);
+      expect((notes[0] as { retry?: true }).retry).toBeUndefined();
+    }
+    expect((project([ev("turn_started"), ev("turn_completed", { stopReason: "aborted" })]).items.at(-1) as { retry?: true } | undefined)?.retry).toBeUndefined();
+  });
+
   test("questions, reports from bots, agents and plugins, finished agents, routines and notes", () => {
     const p = project([
       ev("question_asked", { callId: "q1", questions: [{ question: "Which?", header: "Pick", options: [{ label: "A" }, { label: "B", description: "the second" }], multiSelect: false }] }),
@@ -95,14 +125,18 @@ describe("project", () => {
 describe("the conversation entry", () => {
   const HISTORY = [ev("user_message", { text: "Hello there" }), ev("assistant_message", { text: "Hi! What can I do?" })];
 
-  function mount(extra: { archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string } } = {}) {
+  function mount(extra: { liveHistory?: () => Promise<{ events: CoreEvent[]; hasMore: boolean }>; archived?: boolean; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; history?: (p: { cursor?: string }) => { events: CoreEvent[]; cursor?: string }; bots?: unknown[]; tokens?: Record<string, number>; speak?: (p: unknown) => unknown; action?: (p: unknown) => unknown; cards?: { list: CardMeta[]; listeners: Set<() => void> } } = {}) {
     let listener: ((e: CoreEvent) => void) | undefined;
-    const core = fakeCore({ "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })) });
+    const core = fakeCore({
+      "archive.history": extra.history ?? (() => ({ events: [ev("user_message", { text: "From the old app" }), ev("approval_requested", { toolName: "Bash" })] })),
+      ...(extra.speak ? { "voice.speak": extra.speak } : {}),
+      ...(extra.action ? { "conversation.messageAction": extra.action } : {}),
+    } as never);
     const api = fakeApi({
-      bots: { list: async () => [], get: async () => { throw new Error("none"); }, watch: () => () => undefined },
+      bots: { list: async () => (extra.bots ?? []) as never, get: async () => { throw new Error("none"); }, watch: () => () => undefined },
       conversation: {
         list: async () => [],
-        history: async () => ({ events: HISTORY, hasMore: false }),
+        history: extra.liveHistory ?? (async () => ({ events: HISTORY, hasMore: false })),
         follow: (_s, l) => {
           listener = l;
           return () => (listener = undefined);
@@ -112,9 +146,16 @@ describe("the conversation entry", () => {
     const runtime = runtimeWith({
       api: () => api,
       core: () => core,
-      spot: (name) => (name === "conversation.message" ? { shape: "keyed", keep: ["approval"] } : name === "conversation.message.extra" ? { shape: "list" } : undefined),
+      spot: (name) => (name === "conversation.message" ? { shape: "keyed", keep: ["approval"] } : name === "conversation.message.extra" || name === "conversation.message.action" ? { shape: "list" } : undefined),
       entries: extra.entries ?? [],
       component: () => extra.component,
+      ...(extra.tokens ? { tokens: () => extra.tokens! } : {}),
+      ...(extra.cards
+        ? {
+            approvals: { cards: () => extra.cards!.list, subscribe: (l: () => void) => { extra.cards!.listeners.add(l); return () => void extra.cards!.listeners.delete(l); } },
+            sealed: mockSealed({}),
+          }
+        : {}),
     });
     render(
       <UiRuntimeProvider runtime={runtime}>
@@ -124,13 +165,132 @@ describe("the conversation entry", () => {
     return { core, push: (e: CoreEvent) => listener?.(e) };
   }
 
+  test("speak: offered for a bot with a voice in its main conversation; it asks the app's door with the session and the reply's seq", async () => {
+    const reply = HISTORY[1]!.seq as number;
+    const voiced = { id: "alpha", name: "Alpha", model: "m", userLayer: [], state: "idle", mainSession: "s_alpha", voice: { provider: "p", voice: "v" } };
+    const { core } = mount({ bots: [voiced], speak: () => ({ speaking: false, note: "The voice plugin isn't installed." }) });
+    await act(() => settle());
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Read this reply aloud" })));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "voice.speak").map((c) => c.params)).toEqual([{ session: "s_alpha", seq: reply }]);
+    expect(screen.getByText("The voice plugin isn't installed.")).toBeTruthy();
+    cleanup();
+    // No voice, or not its main conversation: no button.
+    mount({ bots: [{ ...voiced, voice: undefined }], speak: () => ({ speaking: true }) });
+    await act(() => settle());
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+    cleanup();
+    mount({ bots: [{ ...voiced, mainSession: "s_other" }], speak: () => ({ speaking: true }) });
+    await act(() => settle());
+    expect(screen.queryByRole("button", { name: "Read this reply aloud" })).toBeNull();
+  });
+
+  test("message actions: the spot's data entries, drawn without a frame; a press names the entry, the session and the seq on the app's door", async () => {
+    const reply = HISTORY[1]!.seq as number;
+    const entries = [{ pluginId: "alpha", id: "pin", spot: "conversation.message.action", fields: { title: "Pin to her stage", icon: "assets/pin.png", call: "pinReply" }, source: "installed" as const, enabledAt: 1 }];
+    const { core } = mount({ entries, action: () => ({ note: "Pinned." }) });
+    await act(() => settle());
+    const pin = screen.getByRole("button", { name: "Pin to her stage" });
+    expect(pin.querySelector("img")?.getAttribute("src")).toBe("/_t/alpha/assets/pin.png");
+    await act(async () => void fireEvent.click(pin));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "conversation.messageAction").map((c) => c.params)).toEqual([{ entry: "alpha#pin", session: "s_alpha", seq: reply }]);
+    expect(screen.getByText("Pinned.")).toBeTruthy();
+  });
+
+  test("the theme's conversation.extra.inline sets a reply's add-ons in its actions row, unless a plugin draws the reply", async () => {
+    const Extra: EntryComponent = ({ entry }) => <button type="button" data-testid={entry.spot}>Pin</button>;
+    const extras = [{ pluginId: "alpha", id: "pin", spot: "conversation.message.extra", component: "Extra", source: "installed" as const, enabledAt: 1 }];
+    mount({ component: Extra, entries: extras, tokens: { "conversation.extra.inline": 1 } });
+    await act(() => settle());
+    expect(document.querySelector(".cl-conv-bot__actions [data-testid='conversation.message.extra']")).toBeTruthy();
+    cleanup();
+    mount({ component: Extra, entries: extras });
+    await act(() => settle());
+    expect(document.querySelector(".cl-conv-bot__actions [data-testid='conversation.message.extra']")).toBeNull();
+  });
+
+  test("its bot's pending card for this session is drawn in place, from the card door (never the followed stream), and goes when answered", async () => {
+    const cards = { list: [] as CardMeta[], listeners: new Set<() => void>() };
+    const tell = () => act(() => { for (const l of cards.listeners) l(); });
+    mount({ cards });
+    await act(() => settle());
+    expect(document.querySelector(".cl-conv-approval")).toBeNull();
+    // A tool card for this session, and one for another session and one with none: only this session's draws.
+    cards.list = [
+      card("card_here", { kind: "tool", session: "s_alpha", bot: "alpha", issuedAt: 5_000 }),
+      card("card_other", { kind: "tool", session: "s_other", bot: "alpha" }),
+      card("card_ok", { kind: "plugin-ok" }),
+    ];
+    tell();
+    const placed = [...document.querySelectorAll("[data-sealed-card]")].map((e) => (e as HTMLElement).dataset.sealedCard);
+    expect(placed).toEqual(["card_here"]);
+    const unit = document.querySelector<HTMLElement>('.cl-conv__unit[data-unit="approval"]')!;
+    expect(unit.hasAttribute("data-pending")).toBe(true);
+    expect(unit.querySelector(".cl-conv-approval [data-sealed-button='approve']")).toBeTruthy();
+    expect(unit.querySelector(".cl-conv-approval [data-sealed-button='deny']")).toBeTruthy();
+    // Answered (anywhere): it leaves the list, and its cell goes.
+    cards.list = [];
+    tell();
+    expect(document.querySelector(".cl-conv-approval")).toBeNull();
+  });
+
+  test("the empty state only once the transcript is read and has nothing: never while it is merely not read yet", async () => {
+    // A tab drawn again (her tab, back from another page): the history hasn't answered yet, so nothing says "the start".
+    let answer: (page: { events: CoreEvent[]; hasMore: boolean }) => void = () => undefined;
+    mount({ liveHistory: () => new Promise((r) => (answer = r)) });
+    await act(() => settle());
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    await act(async () => answer({ events: HISTORY, hasMore: false }));
+    await act(() => settle());
+    expect(screen.getByText("Hello there")).toBeTruthy();
+    expect(screen.queryByText("This is the start of your conversation with Alpha.")).toBeNull();
+    cleanup();
+    // A session read and empty: now it says so.
+    mount({ liveHistory: async () => ({ events: [], hasMore: false }) });
+    await act(() => settle());
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+    cleanup();
+    // A read that fails says it too (nothing to wait for).
+    mount({ liveHistory: async () => { throw new Error("gone"); } });
+    await act(() => settle());
+    expect(screen.getByText("This is the start of your conversation with Alpha.")).toBeTruthy();
+  });
+
   test("reads the history, then follows what comes next", async () => {
     const { push } = mount();
     await act(() => settle());
     expect(screen.getByText("Hello there")).toBeTruthy();
     expect(screen.getByText("Hi! What can I do?")).toBeTruthy();
-    act(() => push(ev("user_message", { text: "One more thing" })));
+    await act(async () => {
+      push(ev("user_message", { text: "One more thing" }));
+      await Bun.sleep(40); // the frame the followed events wait for
+    });
     expect(screen.getByText("One more thing")).toBeTruthy();
+  });
+
+  test("a streamed reply's words come in once a frame: one draw of the transcript per frame, however many words came", async () => {
+    let draws = 0;
+    const Counting: EntryComponent = ({ props }) => {
+      draws++;
+      return <p data-testid="bot">{(props.item as { text: string }).text}</p>;
+    };
+    const { push } = mount({ component: Counting, entries: [{ pluginId: "count", id: "bot", spot: "conversation.message", key: "bot", component: "Counting", source: "installed", enabledAt: 1 }] });
+    await act(() => settle());
+    await act(async () => {
+      push(ev("turn_started"));
+      await Bun.sleep(40);
+    });
+    const before = draws;
+    // Words as they come, each in its own task: nothing is drawn until the frame, then the reply once with all of them.
+    for (let i = 0; i < 50; i++) act(() => push(ev("assistant_delta", { delta: `w${i} ` })));
+    expect(draws).toBe(before);
+    expect(screen.queryAllByTestId("bot").some((el) => el.textContent?.includes("w0"))).toBe(false);
+    await act(async () => {
+      await Bun.sleep(40);
+    });
+    expect(screen.getAllByTestId("bot").some((el) => el.textContent?.includes("w49"))).toBe(true);
+    expect(draws - before).toBeLessThanOrEqual(2);
   });
 
   test("a plugin that fills a message kind draws it; the extras spot adds under each message", async () => {

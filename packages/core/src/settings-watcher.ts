@@ -17,8 +17,17 @@ export interface SettingsWatcherDeps<T = Settings> {
   onChangeObserved?: () => void;
   debounceMs?: number; // default 150
   watch?: (path: string, cb: () => void) => { close(): void }; // injectable fs.watch seam for tests
+  /** How often the file's stat is compared, for a change whose event is late or never comes. Default
+   *  `SETTINGS_POLL_MS` with the real fs.watch; none with an injected `watch` unless given; 0 turns it off. */
+  pollMs?: number;
   log?: (msg: string) => void;
 }
+
+/** The stat look's interval. macOS delivers an fs.watch event on settings.json seconds after the write when much else
+ *  is watched (the plugin registry's folders: measured 3.7 s, 9 s and past 16 s with the bundled model plugins, past
+ *  30 s on 14f's acceptance), so a change to the reviewer role or any setting waited that long; one stat a second
+ *  bounds it. */
+export const SETTINGS_POLL_MS = 1_000;
 
 /** When `start` re-reads the file after arming its watch: the next tick, then after FSEvents' arming latency. */
 const CATCH_UP_AFTER_MS = [0, 1_000] as const;
@@ -41,6 +50,10 @@ export class SettingsWatcher<T = Settings> {
   private readonly onChangeObserved?: () => void;
   private readonly watchFn: (path: string, cb: () => void) => { close(): void };
   private readonly log: (msg: string) => void;
+  private readonly pollMs: number;
+  private poller: ReturnType<typeof setInterval> | null = null;
+  /** The file's stat as last looked at (mtime, size, inode). */
+  private statKey: string | undefined;
 
   private prevSnapshot: T | null = null;
   private watcher: { close(): void } | null = null;
@@ -68,6 +81,25 @@ export class SettingsWatcher<T = Settings> {
         return { close: () => w.close() };
       });
     this.log = deps.log ?? (() => {});
+    this.pollMs = deps.pollMs ?? (deps.watch === undefined ? SETTINGS_POLL_MS : 0);
+  }
+
+  private statOf(): string | undefined {
+    try {
+      const st = fs.statSync(this.path);
+      return `${st.mtimeMs}:${st.size}:${st.ino}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The stat look: a file whose stat changed since the last look goes through the same path as an fs event. */
+  private poll(): void {
+    if (this.stopped) return;
+    const now = this.statOf();
+    if (now === this.statKey) return;
+    this.statKey = now;
+    this.onFsEvent();
   }
 
   start(prev: T | null): void {
@@ -78,6 +110,11 @@ export class SettingsWatcher<T = Settings> {
     this.stopped = false;
     this.eventSeen = false;
     this.watcher = this.watchFn(this.path, () => this.onFsEvent());
+    if (this.pollMs > 0) {
+      this.statKey = this.statOf();
+      this.poller = setInterval(() => this.poll(), this.pollMs);
+      this.poller.unref?.();
+    }
     // fs.watch arms its stream asynchronously (macOS FSEvents especially), so an edit made just after `start` can
     // raise no event, and the daemon would run on stale settings until the next edit. Catch up by re-reading the
     // file on the next tick, and once more after the stream has surely armed: a file that differs from what
@@ -109,6 +146,8 @@ export class SettingsWatcher<T = Settings> {
   private teardown(): void {
     this.watcher?.close();
     this.watcher = null;
+    if (this.poller !== null) clearInterval(this.poller);
+    this.poller = null;
     for (const t of this.catchUps) clearTimeout(t);
     this.catchUps = [];
     if (this.timer) {
@@ -119,6 +158,8 @@ export class SettingsWatcher<T = Settings> {
 
   private onFsEvent(): void {
     if (this.stopped) return;
+    // The stat this change left: the next look doesn't take the same change again.
+    if (this.pollMs > 0) this.statKey = this.statOf();
     this.eventSeen = true;
     this.onChangeObserved?.();
     if (this.timer) clearTimeout(this.timer);

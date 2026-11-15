@@ -1,0 +1,42 @@
+{
+  "manifest": 1,
+  "name": "Clover Voice",
+  "description": "Your bots' voices: it speaks their replies and hears what you say with push-to-talk, one sound at a time, through the voice provider each bot uses (Fish Audio, or another you add). Turned off, bots are text-only.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "settings": {
+    "active": {
+      "type": "string",
+      "title": "Active voice",
+      "description": "The voice that speaks for your bots and hears you on this computer: Clover Voice, or another voice plugin you installed. Empty is Clover Voice.",
+      "default": "",
+      "scope": "device"
+    }
+  },
+  "contributes": {
+    "voiceModes": [
+      {
+        "id": "clover-voice",
+        "name": "Clover Voice",
+        "handler": "voice"
+      }
+    ],
+    "ui": [
+      {
+        "spot": "settings.section",
+        "id": "settings",
+        "component": "VoiceSection",
+        "title": "Voice",
+        "order": 700
+      }
+    ]
+  }
+}

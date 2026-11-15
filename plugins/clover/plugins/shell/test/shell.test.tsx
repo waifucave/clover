@@ -1,5 +1,6 @@
 // The default shell on the runtime: routes, the panels each tab offers (the owner's item 90), the dialog layer and its
 // card rule, and the tabs it ships. The other parts stand in as stubs that show the props their spots got.
+import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { UiEntry } from "../runtime/resolve";
@@ -7,8 +8,10 @@ import { card, fakeApi, fakeApprovals, fakeCore, settle } from "../runtime/testk
 import type { BotView, EntryComponent, SessionView } from "../runtime/types";
 import { runtimeWith } from "../runtime/ui";
 import { SPOT_DECLS } from "../runtime/catalog";
-import { AgentTab, DefaultBotTab } from "../client/Tabs";
-import { Shell, type ShellStart } from "../client/Shell";
+import { DEFAULT_TAB_LAYOUT, layoutSpots } from "@waifucave/clover-plugin-sdk";
+import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
+import { newestCoding, Shell, type ShellStart } from "../client/Shell";
+import { KeptTab, notDrawn } from "../client/KeptTab";
 import { Spot, UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
@@ -43,6 +46,15 @@ const SidebarStub: EntryComponent = ({ props }) => (
     <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "settings", params: {} })}>
       go settings
     </button>
+    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "bot", params: { bot: "alpha" } })}>
+      go alpha
+    </button>
+    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "bot", params: { bot: "luna" } })}>
+      go luna
+    </button>
+    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "plugins", params: {} })}>
+      go plugins
+    </button>
   </nav>
 );
 
@@ -58,7 +70,10 @@ const COMPONENTS: Record<string, EntryComponent> = {
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
   Browser: stub("panel:browser"),
+  Dead: () => <iframe data-clover-entry="juniper#browser" />,
   Status: stub("status"),
+  Sheets: stub("panel:sheets"),
+  Notes: stub("panel:notes"),
 };
 
 const entry = (pluginId: string, spot: string, component: string, extra: Partial<UiEntry> = {}): UiEntry => ({ pluginId, id: extra.id ?? `${spot}${extra.key ? `:${extra.key}` : ""}`, spot, component, source: "bundled", enabledAt: 0, ...extra });
@@ -77,12 +92,12 @@ const ENTRIES: UiEntry[] = [
   entry("clover/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = []) {
+async function mount(start?: ShellStart, extra: UiEntry[] = [], kept?: Map<string, string>, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}) {
   const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
   const approvals = fakeApprovals();
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
-    conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)! },
+    conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)!, watch: (l) => { onWatch?.(l); return () => undefined; } },
   });
   const runtime = runtimeWith({
     spot: (name) => SPOT_DECLS[name],
@@ -92,18 +107,133 @@ async function mount(start?: ShellStart, extra: UiEntry[] = []) {
     core: () => core,
     approvals,
     sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
+    ...(kept ? { kept } : {}),
   });
-  render(
+  const tree = (extraProps: Record<string, unknown>) => (
     <UiRuntimeProvider runtime={runtime}>
-      <Spot name="app.root" props={start ? { start } : {}} />
-    </UiRuntimeProvider>,
+      <Spot name="app.root" props={start ? { start, ...extraProps } : extraProps} />
+    </UiRuntimeProvider>
   );
+  const rendered = render(tree(shellProps));
   await act(() => settle(6));
-  return { core, approvals };
+  /** The window's `act` prop arriving after it has drawn (what a bot's own frame's `shell.openPanel` becomes). */
+  const send = async (extraProps: Record<string, unknown>) => { rendered.rerender(tree(extraProps)); await act(() => settle(4)); };
+  return { core, approvals, send };
 }
 
 const toggles = () => [...document.querySelectorAll(".cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
 const stubText = (label: string) => document.querySelector(`[data-stub="${label}"]`)?.textContent ?? null;
+
+describe("the shell's session list", () => {
+  test("a coding session started outside the window is known without a tab change: its tab gets the coding panels", async () => {
+    let emit: ((v: SessionView) => void) | undefined;
+    await mount({ route: { route: "agent", params: { session: "code-new" } } }, [], undefined, (l) => (emit = l));
+    expect(toggles()).not.toContain("Terminal");
+    await act(async () => emit!(s("code-new", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", startedAt: 5 })));
+    await act(() => settle(6));
+    expect(toggles()).toContain("Terminal");
+  });
+
+  test("the Code side goes to the newest coding session", () => {
+    const list = [s("code-a", { kind: "coding", startedAt: 1 }), s("code-c", { kind: "coding", startedAt: 9 }), s("code-b", { kind: "coding", startedAt: 4 }), s("agent-x", { kind: "agent", startedAt: 20 })];
+    expect(newestCoding(list)?.id).toBe("code-c");
+    expect(newestCoding([s("agent-x", { kind: "agent" })])).toBeUndefined();
+    // A live one is preferred over a newer one that stopped; an archived one is never where the Code side goes.
+    expect(newestCoding([...list, s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })])?.id).toBe("code-c");
+    // With none live, the newest that stopped.
+    const ended = [s("code-d", { kind: "coding", startedAt: 20, status: "stopped" }), s("code-f", { kind: "coding", startedAt: 5, status: "stopped" }), s("code-e", { kind: "coding", startedAt: 30, archived: true })];
+    expect(newestCoding(ended)?.id).toBe("code-d");
+    expect(newestCoding([s("code-e", { kind: "coding", archived: true })])).toBeUndefined();
+  });
+});
+
+describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock panel's", () => {
+  const added = (pluginId: string, key: string, title: string, extra: Partial<UiEntry> = {}) => entry(pluginId, "panel", "Sheets", { key, id: `panel-${key}`, source: "installed", fields: { title }, ...extra });
+  const views = () => [...document.querySelectorAll(".cl-panel__view")].map((v) => v.getAttribute("data-view"));
+  const press = (name: string) => fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}$`) }));
+
+  test("its button follows the stock ones on the tabs of the kinds it names, and is not on the others", async () => {
+    const sheets = added("sheets", "sheets", "Sheets", { when: { session: ["coding"] } });
+    await mount({ route: { route: "agent", params: { session: "code-1" } } }, [sheets]);
+    expect(toggles()).toEqual(["Session", "Terminal", "Sheets"]);
+    cleanup();
+    // A bot's tab: not a coding session's panel.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [sheets]);
+    expect(document.querySelector('[data-own-panel="sheets#sheets"]')).toBeNull();
+    cleanup();
+    // No `when.session`: every tab, a bot's included.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [added("docs", "docs", "Documents")]);
+    expect(document.querySelector('[data-own-panel="docs#docs"]')).not.toBeNull();
+  });
+
+  test("it opens beside a stock panel and draws; a third view pushes the oldest out (at most two)", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets")]);
+    expect(views()).toEqual(["terminal"]);
+    press("Sheets");
+    await act(() => settle(4));
+    expect(views()).toEqual(["terminal", "sheets#sheets"]);
+    expect(stubText("panel:sheets")).toContain('"app":"sheets"');
+    expect(screen.getByRole("button", { name: "Sheets" }).getAttribute("aria-pressed")).toBe("true");
+    press("Session");
+    press("Terminal");
+    await act(() => settle(4));
+    expect(views()).toEqual(["sheets#sheets"]);
+  });
+
+  test("an inside-a-bot panel is on that bot's tab only", async () => {
+    const mine = added("luna", "notes", "Notes", { component: "Notes", botPlugin: "luna" });
+    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [mine]);
+    expect(toggles()).toContain("Notes");
+    cleanup();
+    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [mine]);
+    expect(toggles()).not.toContain("Notes");
+  });
+
+  test("two plugins' panels with one key are two panels: the ids are namespaced by plugin", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("one", "notes", "One notes"), added("two", "notes", "Two notes")]);
+    expect(toggles()).toEqual(["Session", "Terminal", "One notes", "Two notes"]);
+    press("Two notes");
+    await act(() => settle(4));
+    expect(views()).toEqual(["terminal", "two#notes"]);
+    press("One notes");
+    await act(() => settle(4));
+    expect(views()).toEqual(["two#notes", "one#notes"]);
+  });
+
+  test("past three, the rest are in one menu button, never an overflowing bar", async () => {
+    const five = ["a", "b", "c", "d", "e"].map((k) => added(`p-${k}`, k, `Panel ${k.toUpperCase()}`, { order: 500 + k.charCodeAt(0) }));
+    await mount({ route: { route: "agent", params: { session: "code-1" } } }, five);
+    expect(toggles()).toEqual(["Session", "Terminal", "Panel A", "Panel B", "Panel C", "Other panels"]);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Other panels" }));
+    const items = [...document.querySelectorAll('[role="menuitemcheckbox"]')].map((i) => i.textContent);
+    expect(items).toEqual(["Panel D", "Panel E"]);
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Panel E" }));
+    await act(() => settle(4));
+    expect(views()).toEqual(["p-e#e"]);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Other panels" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("a panel whose part draws nothing shows the host's placeholder", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets", { component: "Missing" })]);
+    press("Sheets");
+    await act(() => settle(4));
+    expect(document.querySelector('[data-empty-view="sheets#sheets"]')).not.toBeNull();
+  });
+
+  test("a bot's own frame may open its own panel (`shell.openPanel`): the act names it by its plugin", async () => {
+    const mine = added("luna", "notes", "Notes", { component: "Notes", botPlugin: "luna" });
+    const opened = await mount({ route: { route: "bot", params: { bot: "luna" } } }, [mine]);
+    await opened.send({ act: { n: 1, act: { kind: "panel", view: "luna#notes", to: "open" } } });
+    expect(views()).toEqual(["luna#notes"]);
+    cleanup();
+    // A panel that isn't on this tab (another plugin's, or not listed here) is not opened.
+    const other = await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [mine]);
+    await other.send({ act: { n: 1, act: { kind: "panel", view: "luna#notes", to: "open" } } });
+    expect(views()).toEqual([]);
+  });
+});
 
 describe("the shell", () => {
   test("opens on the first bot's tab: its conversation over its composer, the bot's toggles", async () => {
@@ -111,8 +241,32 @@ describe("the shell", () => {
     expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();
     expect(stubText("conversation")).toContain('"session":"s_alpha"');
     expect(stubText("composer")).toBe('composer {"bot":{"id":"alpha","name":"Alpha"},"session":"s_alpha"}');
-    expect(toggles()).toEqual(["Details", "Browser"]);
+    expect(toggles()).toEqual(["Details"]);
     expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeTruthy();
+    // A bot without an avatar has no stage, and the default tab has no header of its own.
+    expect(document.querySelector(".cl-bot-tab__stage")).toBeNull();
+    expect(document.querySelector(".cl-bot-header")).toBeNull();
+  });
+
+  test("where the user is outlives a reload of the window's document: the route, and Settings over the tab under it", async () => {
+    const kept = new Map<string, string>();
+    await mount(undefined, [], kept);
+    fireEvent.click(screen.getByRole("button", { name: "go code" }));
+    await act(() => settle(6));
+    fireEvent.click(screen.getByRole("button", { name: "go settings" }));
+    await act(() => settle(6));
+    expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
+    expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
+    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
+    const atReload = new Map(kept);
+    cleanup();
+    expect(kept.size).toBe(0);
+    await mount(undefined, [], atReload);
+    // The same place from the first render: Settings, with the agent's tab under it (not the first bot's tab).
+    expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
+    expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
+    expect(stubText("conversation")).toContain('"session":"code-1"');
+    expect(JSON.parse(atReload.get("clover.kept:clover/shell:shell.under")!)).toEqual({ route: "agent", params: { session: "code-1" } });
   });
 
   test("a bot's slim column opens its coding agent in the panel, as a live tab of its own (item 90)", async () => {
@@ -131,15 +285,61 @@ describe("the shell", () => {
     expect(panel.querySelector('[data-stub="panel:session"]')).toBeNull();
   });
 
-  test("a coding session's tab offers every panel; a panel no plugin fills shows the placeholder, which finds one", async () => {
+  test("a toggle is offered only for a panel something fills; an open panel whose filler is gone closes, not a placeholder", async () => {
+    // Session and terminal are filled; the changes, the browser and the files are not.
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session", "terminal", "browser"] });
-    expect(toggles()).toEqual(["Session", "Terminal", "Changes", "Browser", "Files"]);
+    expect(toggles()).toEqual(["Session", "Terminal"]);
     expect(stubText("panel:session")).toContain('"sessionKind":"coding"');
     expect(stubText("panel:terminal")).toContain('"app":"terminal","session":"code-1"');
-    const browser = document.querySelector('[data-empty-view="browser"]')!;
-    expect(browser.textContent).toContain("No plugin shows the browser here yet");
-    fireEvent.click(within(browser as HTMLElement).getByRole("button", { name: "Find a plugin" }));
-    expect(stubText("sidebar")).toContain('{"route":"plugins","params":{"spot":"panel","key":"browser"}}');
+    // The browser was open with no plugin behind it: closed, no placeholder.
+    expect(document.querySelector('[data-empty-view="browser"]')).toBeNull();
+    cleanup();
+    // With a plugin behind it the toggle is there, and the panel stays.
+    await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["session", "browser"] }, [entry("clover/browser-view", "panel", "Browser", { key: "browser" })]);
+    expect(toggles()).toEqual(["Session", "Terminal", "Browser"]);
+    expect(stubText("panel:browser")).toContain('"app":"browser"');
+  });
+
+  test("a bot's own Browser panel that does not draw gives way to the stock one's place, says so, and tries again on the person's word", async () => {
+    // The replacement is a frame that never reports a size; the stand-in resolver has no stock-placement hint, so what shows is the title, the retry button and the marks.
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
+      entry("clover/browser-view", "panel", "Browser", { key: "browser" }),
+      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
+    ]);
+    const region = () => document.querySelector('.cl-panel__view[data-view="browser"]')!;
+    expect(region().getAttribute("aria-label")).toBe("Browser");
+    expect(document.querySelector('[data-replaced-panel="browser"]')).not.toBeNull();
+    await act(() => new Promise((r) => setTimeout(r, 2300)));
+    expect(region().getAttribute("aria-label")).toBe("Alpha's browser panel didn't draw; showing Clover's.");
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Try Alpha's again" }));
+    await act(() => settle(3));
+    expect(region().getAttribute("aria-label")).toBe("Browser");
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(false);
+  });
+
+  test("a bot's replacement panel always has its way back in the host's header: Show Clover's panel, and Use the bot's again", async () => {
+    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
+      entry("clover/browser-view", "panel", "Browser", { key: "browser" }),
+      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
+    ]);
+    const marked = () => document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell");
+    // While the replacement shows (before anything has gone wrong), the button is there and sits in the host's own header, outside the frame.
+    const show = screen.getByRole("button", { name: "Show Clover's panel" });
+    expect(show.closest(".cl-panel__actions")).not.toBeNull();
+    expect(document.querySelector('[data-replaced-panel="browser"]')!.contains(show)).toBe(false);
+    expect(marked()).toBe(false);
+    fireEvent.click(show);
+    await act(() => settle(3));
+    expect(marked()).toBe(true);
+    // The person's choice keeps the panel's ordinary title (nothing failed), and lasts past the draw timer.
+    expect(document.querySelector('.cl-panel__view[data-view="browser"]')!.getAttribute("aria-label")).toBe("Browser");
+    await act(() => new Promise((r) => setTimeout(r, 2300)));
+    expect(marked()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Use Alpha's panel" }));
+    await act(() => settle(3));
+    expect(marked()).toBe(false);
+    expect(screen.getByRole("button", { name: "Show Clover's panel" })).toBeTruthy();
   });
 
   test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {
@@ -157,7 +357,7 @@ describe("the shell", () => {
     expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
     expect(core.calls.some((c) => c.method === "session.interrupt" || c.method === "session.stop")).toBe(false);
-    expect(toggles()).toEqual(["Session", "Browser"]);
+    expect(toggles()).toEqual(["Session"]);
   });
 
   test("Settings opens as a dialog over the tab; a card with no session (one Settings raised) closes it", async () => {
@@ -186,5 +386,153 @@ describe("the shell", () => {
     cleanup();
     await mount(undefined, [entry("clover-usage", "status", "Status")]);
     expect(document.querySelector(".cl-window__status [data-stub='status']")).toBeTruthy();
+  });
+});
+
+describe("a bot's own layout's header", () => {
+  const withAvatar: BotView = { ...bot("luna", "Luna"), model: "anthropic/claude-sonnet-5-5", portrait: "/_t/luna/p.svg", avatar: { src: "/_t/luna/a.vrm", format: "vrm" } };
+  async function mountPart(Part: EntryComponent, b: BotView) {
+    const api = fakeApi({ bots: { list: async () => [b], get: async () => b, watch: () => () => undefined } });
+    const AvatarStub: EntryComponent = ({ props }) => <div data-stub="avatar">{JSON.stringify(props)}</div>;
+    const runtime = runtimeWith({
+      api: () => api,
+      core: () => fakeCore({}),
+      approvals: fakeApprovals(),
+      spot: (name) => SPOT_DECLS[name],
+      entries: [{ pluginId: "clover/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "VrmAvatar" } as UiEntry],
+      component: (_p, name) => (name === "VrmAvatar" ? AvatarStub : undefined),
+    });
+    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+  }
+
+  test("the default tab draws the stock layout's parts in its order (`extends: \"default\"` means this tab)", async () => {
+    const api = fakeApi({ bots: { list: async () => [withAvatar], get: async () => withAvatar, watch: () => () => undefined } });
+    const Stub = (label: string): EntryComponent => () => <div data-part={label} />;
+    const runtime = runtimeWith({
+      api: () => api,
+      core: () => fakeCore({}),
+      approvals: fakeApprovals(),
+      spot: (name) => SPOT_DECLS[name],
+      entries: [
+        { pluginId: "clover/character", id: "stage", spot: "bot.stage", component: "Stage" } as UiEntry,
+        { pluginId: "clover/conversation", id: "conversation", spot: "conversation", component: "Conversation" } as UiEntry,
+        { pluginId: "clover/composer", id: "composer", spot: "composer", component: "Composer" } as UiEntry,
+      ],
+      component: (_p, name) => (name === "Stage" ? Stub("bot.stage") : name === "Conversation" ? Stub("conversation") : name === "Composer" ? Stub("composer") : undefined),
+    });
+    render(<UiRuntimeProvider runtime={runtime}>{React.createElement(DefaultBotTab as never, { props: { bot: { id: "luna", name: "Luna" } } } as never)}</UiRuntimeProvider>);
+    await act(() => settle(6));
+    expect([...document.querySelectorAll("[data-part]")].map((e) => e.getAttribute("data-part"))).toEqual(layoutSpots(DEFAULT_TAB_LAYOUT.root));
+  });
+
+  test("the header names the bot and its model", async () => {
+    await mountPart(BotHeader as EntryComponent, withAvatar);
+    expect(document.querySelector(".cl-bot-header")!.textContent).toContain("Luna");
+    expect(document.querySelector(".cl-bot-header")!.textContent).toContain("claude-sonnet-5-5");
+  });
+
+  test("an app's title bar says its name from the route's `title` (the shell does not list the sidebar's apps itself), the key when none", async () => {
+    await mount({ route: { route: "reel", params: { title: "Reel" } } });
+    expect(document.querySelector(".cl-window__title-text")?.textContent).toBe("Reel");
+    cleanup();
+    await mount({ route: { route: "reel", params: {} } });
+    expect(document.querySelector(".cl-window__title-text")?.textContent).toBe("reel");
+  });
+});
+
+// The owner's report on try 14d: coming back to Alpha's tab from an app's page drew the stock layout and an empty
+// conversation for a moment. The last bot tab shown stays mounted while another page shows, and a tab showing with
+// something not drawn yet is held invisible until it is (or the cap).
+describe("the bot tab kept across pages", () => {
+  const kept = () => [...document.querySelectorAll(".cl-shell-kept")] as HTMLElement[];
+  const go = async (name: string) => {
+    fireEvent.click(screen.getByRole("button", { name }));
+    await act(() => settle(6));
+  };
+
+  test("leaving a bot's tab keeps it mounted, hidden and inert; coming back shows the same element, not a new one", async () => {
+    await mount();
+    const [tab] = kept();
+    expect(tab?.hasAttribute("data-shown")).toBe(true);
+    const conversation = tab!.querySelector("[data-stub='conversation']");
+    expect(conversation?.textContent).toContain('"session":"s_alpha"');
+    // Another page (the plugins page here, an app's page alike): the bot tab is there, not shown, and takes no input.
+    await go("go plugins");
+    expect(kept()).toEqual([tab!]);
+    expect(tab!.style.display).toBe("none");
+    expect(tab!.hasAttribute("inert")).toBe(true);
+    expect(tab!.getAttribute("aria-hidden")).toBe("true");
+    // Back: the very same element and conversation, shown, with nothing to rebuild.
+    await go("go alpha");
+    expect(kept()).toEqual([tab!]);
+    expect(tab!.hasAttribute("data-shown")).toBe(true);
+    expect(tab!.style.display).toBe("contents");
+    expect(tab!.querySelector("[data-stub='conversation']")).toBe(conversation);
+    // Settings is a dialog over the tab: the tab stays shown under it.
+    await go("go settings");
+    expect(kept()[0]).toBe(tab!);
+    expect(tab!.hasAttribute("data-shown")).toBe(true);
+  });
+
+  test("one tab is kept: another bot's tab takes the place; an agent's tab is never kept", async () => {
+    await mount();
+    await go("go luna");
+    expect(kept().length).toBe(1);
+    expect(kept()[0]!.querySelector("[data-stub='conversation']")?.textContent).toContain('"session":"s_luna"');
+    await go("go code");
+    expect(kept().length).toBe(1);
+    expect(kept()[0]!.hasAttribute("data-shown")).toBe(false);
+    expect(kept()[0]!.querySelector("[data-stub='conversation']")?.textContent).toContain('"session":"s_luna"');
+  });
+
+  test("what of a tab isn't drawn yet, by the runtime's marks", () => {
+    const root = document.createElement("div");
+    expect(notDrawn(root)).toEqual(["no part yet"]);
+    root.innerHTML = `<div data-clover-entry="alpha#layout" data-clover-part="m1"><div data-clover-spot="bot.side" data-clover-pending=""></div><iframe data-clover-entry="alpha#room"></iframe><div data-clover-entry="alpha#header" data-clover-asleep=""></div><div class="cl-shell-empty"></div></div>`;
+    expect(notDrawn(root)).toEqual(["spot bot.side resolving", "alpha#room loading", "alpha#header asleep", "loading note"]);
+    root.innerHTML = `<div data-clover-entry="alpha#layout" data-clover-part="m1"><div data-clover-spot="bot.side"></div><iframe data-clover-entry="alpha#room" data-clover-drawn=""></iframe></div>`;
+    expect(notDrawn(root)).toEqual([]);
+  });
+
+  test("a tab that shows with a frame not drawn is held invisible until it draws, at most the cap", async () => {
+    const frame = (drawn: boolean) => <iframe data-clover-entry="alpha#room" {...(drawn ? { "data-clover-drawn": "" } : {})} />;
+    const { rerender } = render(<KeptTab shown={true}>{frame(false)}</KeptTab>);
+    const box = document.querySelector(".cl-shell-kept") as HTMLElement;
+    expect(box.hasAttribute("data-held")).toBe(true);
+    expect(box.style.visibility).toBe("hidden");
+    rerender(<KeptTab shown={true}>{frame(true)}</KeptTab>);
+    await act(() => new Promise((r) => setTimeout(r, 60)));
+    expect(box.hasAttribute("data-held")).toBe(false);
+    expect(box.style.visibility).toBe("");
+    cleanup();
+    // Never drawn: shown anyway at the cap.
+    render(<KeptTab shown={true} holdMaxMs={80}>{frame(false)}</KeptTab>);
+    const capped = document.querySelector(".cl-shell-kept") as HTMLElement;
+    expect(capped.hasAttribute("data-held")).toBe(true);
+    await act(() => new Promise((r) => setTimeout(r, 200)));
+    expect(capped.hasAttribute("data-held")).toBe(false);
+    cleanup();
+    // Drawn already (the kept tab coming back): never held.
+    render(<KeptTab shown={true}><div data-clover-entry="clover/shell#x" /></KeptTab>);
+    expect((document.querySelector(".cl-shell-kept") as HTMLElement).hasAttribute("data-held")).toBe(false);
+  });
+
+  test("the cap lifts the hold with no animation frame at all (a hidden window, a display asleep)", async () => {
+    const raf = globalThis.requestAnimationFrame, caf = globalThis.cancelAnimationFrame;
+    // Frames asked for and never given.
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
+    try {
+      render(<KeptTab shown={true} holdMaxMs={80}><iframe data-clover-entry="alpha#room" /></KeptTab>);
+      const box = document.querySelector(".cl-shell-kept") as HTMLElement;
+      expect(box.hasAttribute("data-held")).toBe(true);
+      await act(() => new Promise((r) => setTimeout(r, 200)));
+      expect(box.hasAttribute("data-held")).toBe(false);
+      expect(box.style.visibility).toBe("");
+    } finally {
+      globalThis.requestAnimationFrame = raf;
+      globalThis.cancelAnimationFrame = caf;
+    }
   });
 });

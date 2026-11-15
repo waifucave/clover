@@ -31,6 +31,27 @@ describe("the diff entry", () => {
     header.remove();
   });
 
+  test("a refusal shows why; an empty list shows the core's notice and No changes", async () => {
+    const refusing = fakeCore({ "session.diff": () => { throw new Error("no session code-1"); } });
+    render(
+      <UiRuntimeProvider runtime={runtimeWith({ core: () => refusing })}>
+        <DiffEntry props={{ session: "code-1" }} />
+      </UiRuntimeProvider>,
+    );
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toBe("The changes couldn't be read: no session code-1");
+    cleanup();
+    const empty = fakeCore({ "session.diff": () => ({ base: "", target: "working tree", targets: [], files: [], notice: "This folder isn't a git repository, so there are no changes to compare." }) });
+    render(
+      <UiRuntimeProvider runtime={runtimeWith({ core: () => empty })}>
+        <DiffEntry props={{ session: "code-1" }} />
+      </UiRuntimeProvider>,
+    );
+    await act(() => settle());
+    expect(screen.getByText("This folder isn't a git repository, so there are no changes to compare.")).toBeTruthy();
+    expect(screen.getByText("No changes")).toBeTruthy();
+  });
+
   test("outside the clover tree there is no core, and nothing draws", async () => {
     const { container } = render(
       <UiRuntimeProvider runtime={runtimeWith({})}>

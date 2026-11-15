@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Acceptance web part</title></head>
+<body>
+<p id="t">ACCEPTANCE-WEB-PART</p>
+<p id="reach"></p>
+<script>
+  // It runs, and reaches nothing of the app's: none of the app's bridges, no Node, and no frame above it.
+  document.getElementById("t").textContent += " (scripted)";
+  const none = (names) => names.every((n) => typeof window[n] === "undefined");
+  const bridges = none(["cloverLayer", "cloverRoot", "cloverSealed", "cloverApp", "clover"]) ? "none" : "present";
+  const node = typeof require === "undefined" && typeof process === "undefined" ? "none" : "present";
+  const framed = window.top === window ? "top" : "framed";
+  document.getElementById("reach").textContent = `bridge: ${bridges}; node: ${node}; page: ${framed}`;
+</script>
+</body>
+</html>

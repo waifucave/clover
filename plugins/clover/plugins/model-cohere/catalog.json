@@ -124,7 +124,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-a-03-2025",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "medium"
     },
     {
       "key": "cohere/command-a-plus-05-2026",
@@ -217,7 +218,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-a-plus-05-2026",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "medium"
     },
     {
       "key": "cohere/command-a-reasoning-08-2025",
@@ -309,7 +311,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-a-reasoning-08-2025",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "medium"
     },
     {
       "key": "cohere/command-a-vision-07-2025",
@@ -388,7 +391,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-a-vision-07-2025",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "weak"
     },
     {
       "key": "cohere/command-r-08-2024",
@@ -476,7 +480,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-r-08-2024",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "weak"
     },
     {
       "key": "cohere/command-r-plus-08-2024",
@@ -564,7 +569,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-r-plus-08-2024",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "weak"
     },
     {
       "key": "cohere/command-r7b-12-2024",
@@ -652,7 +658,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "command-r7b-12-2024",
-      "modelFamily": "command"
+      "modelFamily": "command",
+      "strength": "weak"
     }
   ]
 }

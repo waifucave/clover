@@ -5,7 +5,6 @@
 
 /** Tokens from lane B's catalog. */
 export const CATALOG_TOKENS = [
-  "color.accent",
   "color.accent.contrast",
   "color.accent.fill",
   "color.attention.text",
@@ -14,7 +13,6 @@ export const CATALOG_TOKENS = [
   "color.hairline",
   "color.hairline.raised",
   "color.hover",
-  "color.raised",
   "color.selected",
   "color.text",
   "color.text.muted",
@@ -24,11 +22,9 @@ export const CATALOG_TOKENS = [
   "font.line.tight",
   "font.sans",
   "font.size.body",
-  "font.size.caption",
   "font.size.control",
   "font.size.title",
   "font.weight.medium",
-  "radius.large",
   "radius.medium",
   "radius.round",
   "radius.small",

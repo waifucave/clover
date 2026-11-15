@@ -93,7 +93,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "vertex/DeepSeek-V4-Pro",
@@ -153,7 +154,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "vertex/GLM-5.1-FP8",
@@ -213,7 +215,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.1-fp8",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "vertex/Qwen3.6-35B-A3B",
@@ -273,7 +276,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-35b-a3b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "vertex/gemini-2.5-flash",
@@ -380,7 +384,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-2.5-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "vertex/gemini-2.5-flash-lite",
@@ -487,7 +492,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-2.5-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "vertex/gemini-2.5-pro",
@@ -585,7 +591,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-2.5-pro",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "vertex/gemini-3-flash-preview",
@@ -714,7 +721,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3-flash-preview",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "vertex/gemini-3.1-flash-lite",
@@ -843,7 +851,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.1-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "vertex/gemini-3.1-pro-preview",
@@ -971,7 +980,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.1-pro-preview",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "vertex/gemini-3.5-flash",
@@ -1091,7 +1101,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.5-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "vertex/gemini-3.5-flash-lite",
@@ -1211,7 +1222,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.5-flash-lite",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     },
     {
       "key": "vertex/gemini-3.6-flash",
@@ -1331,7 +1343,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.6-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "vertex/gemini-3.7-flash",
@@ -1450,7 +1463,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.7-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "vertex/gemini-3.8-flash",
@@ -1569,7 +1583,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.8-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "vertex/gemini-3.8-flash-cyber",
@@ -1690,7 +1705,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-3.8-flash-cyber",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "vertex/gemini-4-argon",
@@ -1817,7 +1833,8 @@
       "unsupportedParameters": [],
       "status": "experimental",
       "canonicalModelId": "gemini-4-argon",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "strong"
     },
     {
       "key": "vertex/gemma-4-31b-it",
@@ -1871,7 +1888,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma-4-31b-it",
-      "modelFamily": "gemma"
+      "modelFamily": "gemma",
+      "strength": "weak"
     }
   ]
 }

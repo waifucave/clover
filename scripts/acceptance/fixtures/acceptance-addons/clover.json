@@ -1,0 +1,37 @@
+{
+  "manifest": 1,
+  "id": "acceptance-addons",
+  "name": "Acceptance add-ons",
+  "description": "The acceptance run's plugin with add-ons of its own: stamps, small JSON files in its data folder's addons/, each a word it stamps on a text. It runs one only once its hash is trusted, after the user's yes to its own question card. Its status-bar button asks the user through its own question card from its component.",
+  "version": "0.0.1",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "addons": {
+    "description": "Stamps: small JSON files in its data folder's addons/ folder, each a word it stamps on a text"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "contributes": {
+    "mcpServers": {
+      "stamps": {
+        "type": "host",
+        "tools": {
+          "StampRun": "preload"
+        }
+      }
+    },
+    "ui": [
+      {
+        "spot": "status",
+        "id": "ask",
+        "component": "AddonsAsk"
+      }
+    ]
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  }
+}

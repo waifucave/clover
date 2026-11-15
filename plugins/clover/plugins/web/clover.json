@@ -10,7 +10,8 @@
     "runtime": "bun"
   },
   "capabilities": [
-    "network:mcp.exa.ai"
+    "network:mcp.exa.ai",
+    "network:public"
   ],
   "settings": {
     "blockedDomains": {

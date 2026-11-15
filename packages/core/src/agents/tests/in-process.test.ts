@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { IN_PROCESS_BACKEND_ID } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
 import { createAgents, inProcessBackend } from "../index";
+import { grantsCover } from "../bot-child";
+import { darwinTest } from "../../../test/helpers/darwin-only";
 import { waitFor, World, type WorldOptions } from "./world";
 
 setDefaultTimeout(60_000);
@@ -29,7 +31,7 @@ function make(spawn: Parameters<Parameters<typeof describeWithEmbeddedRuntime>[1
   let w!: World;
   w = new World({
     ...o,
-    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
+    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, userHome: self.userHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
   });
   world = w;
   return w;
@@ -78,6 +80,36 @@ test("the delegating bot's pause reaches every tool call, and with no switch the
 });
 
 describeWithEmbeddedRuntime("the in-process subagents, as the core registers them", (spawn) => {
+  // The review's blocker on cb5bac9a6, on the real runtime: a link inside the granted folder to an ungranted ordinary
+  // folder. The root is that folder's real path, which no grant covers, so the command asks on a card; answered no,
+  // nothing is written there.
+  darwinTest("a link inside the granted folder to an ungranted folder: the child's command cards, and the folder is never written", async () => {
+    const w = make(spawn, { level: "ask-risky", childCommandsHeld: (c) => grantsCover([granted], c.rootPath, "macos") });
+    const granted = w.project;
+    const documents = join(w.userHome, "Documents");
+    mkdirSync(documents, { recursive: true });
+    symlinkSync(documents, join(w.project, "x"));
+    const asked: { cardAlways?: boolean; effect: string }[] = [];
+    const real = w.approvals.request.bind(w.approvals);
+    (w.approvals as { request: typeof real }).request = async (r, o) => {
+      if (r.kind === "agent-permission") asked.push({ effect: r.effect, ...((r as { cardAlways?: boolean }).cardAlways ? { cardAlways: true } : {}) });
+      // Every card is answered no; the rest as the broker decides.
+      if ((r as { cardAlways?: boolean }).cardAlways === true) return { allowed: false, by: "card" };
+      return real(r, o);
+    };
+    const pwned = join(documents, "pwned.txt");
+    const r = await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
+      backend: IN_PROCESS_BACKEND_ID, root: "home/Studio/project1/x", title: "Probe", model: MODEL,
+      prompt: `CALL Bash ${JSON.stringify({ command: `printf pwned > ${JSON.stringify(pwned)}; printf pwned > pwned-cwd.txt`, description: "write" })}`,
+    });
+    await waitFor(() => notification(w), "the task notification");
+    expect(r.sessionId).toBeTruthy();
+    expect(asked).toEqual([{ effect: "execute", cardAlways: true }]);
+    expect(existsSync(pwned)).toBe(false);
+    expect(existsSync(join(documents, "pwned-cwd.txt"))).toBe(false);
+  });
+
   test("the Clover home is out of reach: a direct Read, a Read through a link from the root, Bash cat and searches", async () => {
     const w = make(spawn);
     const MARK = "the-bot-remembers-a-secret";

@@ -56,6 +56,10 @@ export interface FakeAcpConfig {
   editsFollowMode?: boolean;
   /** Asks a permission while it replays a `session/load`'s history, and reports the answer. */
   askDuringReplay?: boolean;
+  /** Variables every MCP server it starts gets, whatever its quirks pass on. A run on a test-marked core gives the
+   *  test's keychain file's variable here: that core refuses to start (as the bridge too) without it, and an agent's
+   *  own environment never carries a CLOVER_ variable (buildAgentEnv). */
+  mcpEnv?: Record<string, string>;
 }
 
 const [configPath, mode] = process.argv.slice(2);
@@ -135,6 +139,7 @@ function startMcpServers(servers: unknown): void {
     // Like Antigravity when its quirks say so, it passes its whole environment on; otherwise a small one.
     if (q.mcp.passesEnvironment) Object.assign(env, process.env);
     else for (const k of ["PATH", "HOME", "TMPDIR"]) if (process.env[k]) env[k] = process.env[k]!;
+    Object.assign(env, cfg.mcpEnv ?? {});
     for (const kv of e.env ?? []) env[kv.name] = kv.value;
     for (const kv of e.env ?? []) {
       if (kv.name !== "CLOVER_BRIDGE_TOKEN") continue;

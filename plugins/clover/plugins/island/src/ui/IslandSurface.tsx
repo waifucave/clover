@@ -15,8 +15,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { Rect } from "../model/geometry";
 import { islandPlacement, overlayWindow, toFrameRect, type SurfaceEnvironment, type SurfaceWindowSpec } from "../model/placement";
-import type { IslandCard, QuestionCard } from "../model/cards";
+import { isSealed, type IslandCard, type QuestionCard } from "../model/cards";
 import { Island, type IslandTabEntry, type IslandTimers } from "./Island";
+import type { LineSource } from "./Lines";
 
 /** What the island needs from its window (lane E's surface host). */
 export interface SurfaceHostApi {
@@ -35,6 +36,9 @@ export interface IslandSurfaceProps {
   tabs?: readonly IslandTabEntry[];
   /** The bots' names and ids: another plugin named as one gets no tab. */
   botNames?: readonly string[];
+  /** The plugins' lines (`island.line`). */
+  lines?: LineSource;
+  botName?: (id: string) => string | undefined;
   onAnswerQuestion?: (card: QuestionCard, answers: Record<string, string>) => Promise<boolean> | boolean | void;
   host?: SurfaceHostApi;
   reducedMotion?: boolean;
@@ -101,18 +105,35 @@ export function IslandSurface(props: IslandSurfaceProps): ReactElement {
     [stable, overlay, frame, setWindow, setRegions],
   );
 
+  // One place at a time (the owner's ruling, 2026-11-13): while Clover's main window is the one in front, the island shows no
+  // permission card and does not open for one (its strip and tabs are as ever); the window draws the card, in its conversation
+  // or in the app's own card. When the window goes back, the cards come up here again, as new arrivals (the app's side of the
+  // move is main's: it refuses this surface's frames and presses while the window is in front).
+  const front = environment?.mainFront === true;
+  const [bringBack, setBringBack] = useState(0);
+  const wasFront = useRef(front);
+  useEffect(() => {
+    if (!front && wasFront.current) setBringBack((n) => n + 1);
+    wasFront.current = front;
+  }, [front]);
+  const cards = useMemo(() => (front ? props.cards.filter((c) => !isSealed(c)) : props.cards), [front, props.cards]);
+
   const island = (
     <Island
       shape={placement.shape}
-      cards={props.cards}
+      cards={cards}
       working={props.working}
       tabs={props.tabs}
       botNames={props.botNames}
+      lines={props.lines}
+      mainFront={front}
+      botName={props.botName}
       onAnswerQuestion={props.onAnswerQuestion}
       alwaysOpen={placement.mode === "window"}
       onRegions={onRegions}
       reducedMotion={props.reducedMotion}
       timers={props.timers}
+      bringBackSignal={bringBack}
     />
   );
   if (!overlay) {

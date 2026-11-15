@@ -2,6 +2,7 @@
 // build reads it without loading React.
 export const modules = [
   "clover/shell",
+  "clover/character",
   "clover/sidebar",
   "clover/conversation",
   "clover/composer",
@@ -18,6 +19,9 @@ export const modules = [
   "clover/live2d",
   "clover/pill",
   "clover/vrm",
+  "clover/usage",
+  "clover/voice",
+  "clover/devices",
 ] as const;
 
 export type CloverChildId = (typeof modules)[number];

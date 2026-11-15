@@ -40,12 +40,12 @@ import { constants as FS, promises as fsp, realpathSync, type Dirent, type Stats
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import {
   DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment,
-  type Caller, type FileStat, type Level, type Os, type SignedCardAnswer,
+  type Caller, type FileStat, type Level, type Os, type SignedCardAnswer, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, windowsAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { fenceContextFor, fencedOutText, judge as fenceJudge, nonAsciiAlias, windowsAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
 import { isInside } from "../contracts/common";
 import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
 import { atOps, type AtOps } from "./at";
@@ -64,6 +64,11 @@ export interface HolderCall {
   /** In-process only, never from the link: the change is part of a call already judged (an MCP call's files), so it
    *  isn't judged again. The fence still applies. */
   approved?: boolean;
+  /** In-process only, never sent: what started the caller's turn, for the card askUser raises on this computer when
+   *  another computer's holder needs the user's answer. */
+  origin?: TurnOrigin;
+  /** In-process only, never sent: the call's signal; aborted, the card askUser raised for it is withdrawn. */
+  signal?: AbortSignal;
 }
 
 /** The most one read returns, and the most one write carries: bigger files move in parts (`offset`, `length`). */
@@ -107,7 +112,7 @@ export interface LocalHolderOptions {
   runsBot?: (bot: string) => boolean;
   os?: Os;
   /** This computer's fence. Calls for the user and the core never ask it. */
-  fence?: Pick<Fence, "check" | "fencedSet">;
+  fence?: Pick<Fence, "check" | "fencedSet" | "contextFor">;
   /** The Clover home, where a fenced caller may make no name that isn't ASCII (B-M1's contract review): a name the
    *  disk folds where no fold here does can't reach a fenced item. */
   cloverHome?: string;
@@ -935,7 +940,7 @@ export class LocalHolder implements Holder {
     }
     const verdict = this.#check(op, as);
     if (!verdict.allowed) {
-      throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer: this.#o.name(), reason: verdict.reason });
+      throw new ContractError("fenced", fencedOutText(as, verdict.path), { computer: this.#o.name(), reason: verdict.reason });
     }
   }
 
@@ -1019,12 +1024,16 @@ export class LocalHolder implements Holder {
   #check(op: FenceOp, as: Caller): FenceVerdict {
     const fence = this.#o.fence;
     if (!fence) return { allowed: true };
-    // The caller's reach for the pattern items (`bot-memory`, `sessions-runtime`), as `Fence.forCaller` binds it.
-    const plain = fence.check(op, fenceContextFor(as));
+    // The caller's reach for the pattern items (`bot-memory`, `sessions-runtime`), as `Fence.forCaller` binds it, and
+    // what only this computer's fence knows of it (a bot's workshop: the plugins it built, from this computer's records).
+    const ctx = fence.contextFor?.(as) ?? fenceContextFor(as);
+    const plain = fence.check(op, ctx);
     if (!plain.allowed) return plain;
     const fold = (p: string) => foldPath(p, this.os);
     const set = fence.fencedSet().map((item) => ({ ...item, path: fold(item.path) }));
-    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) }, { os: this.os });
+    // The caller here too, for the workshop alone: without the Clover home the pattern items and the home's own allows
+    // aren't judged in this pass (the plain one above did).
+    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) }, { os: this.os, caller: ctx });
     if (folded.allowed) return folded;
     // Name the item as the fence does, not folded.
     const item = fence.fencedSet().find((i) => fold(i.path) === folded.path);

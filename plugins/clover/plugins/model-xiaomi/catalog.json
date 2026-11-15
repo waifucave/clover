@@ -159,7 +159,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mimo-v2.5",
-      "modelFamily": "mimo"
+      "modelFamily": "mimo",
+      "strength": "medium"
     },
     {
       "key": "xiaomi/mimo-v2.5-pro",
@@ -285,7 +286,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mimo-v2.5-pro",
-      "modelFamily": "mimo"
+      "modelFamily": "mimo",
+      "strength": "medium"
     },
     {
       "key": "xiaomi/mimo-v2.6-flash",
@@ -414,7 +416,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mimo-v2.6-flash",
-      "modelFamily": "mimo"
+      "modelFamily": "mimo",
+      "strength": "weak"
     },
     {
       "key": "xiaomi/mimo-v2.6-pro",
@@ -543,7 +546,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mimo-v2.6-pro",
-      "modelFamily": "mimo"
+      "modelFamily": "mimo",
+      "strength": "medium"
     },
     {
       "key": "xiaomi/mimo-v2.6-pro-ultraspeed",
@@ -672,7 +676,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mimo-v2.6-pro-ultraspeed",
-      "modelFamily": "mimo"
+      "modelFamily": "mimo",
+      "strength": "medium"
     }
   ]
 }

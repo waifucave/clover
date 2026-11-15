@@ -29,6 +29,9 @@
             "windows": "bottom-center",
             "linux": "bottom-center"
           }
+        },
+        "declares": {
+          "pill.target": { "shape": "list" }
         }
       }
     ]

@@ -17,7 +17,38 @@
       {
         "spot": "main",
         "key": "archive",
-        "component": "ArchiveEntry"
+        "component": "ArchiveEntry",
+        "declares": {
+          "conversation": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "needs": [
+              "conversation.read"
+            ],
+            "doc": "The conversation view."
+          }
+        }
       },
       {
         "spot": "sidebar.app",

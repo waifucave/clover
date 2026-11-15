@@ -1,0 +1,12 @@
+{
+  "name": "@waifucave/clover-plugin-alpha-server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Alpha's server: her stage's keeper, her stage tools (mcp__alpha-stage__*), her hooks and commands. It holds her plugin's tests.",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

@@ -160,7 +160,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "codex-oauth/gpt-5.6-sol",
@@ -288,7 +289,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "codex-oauth/gpt-5.6-terra",
@@ -416,7 +418,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-terra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "codex-oauth/gpt-6-astra",
@@ -546,7 +549,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-6-astra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "codex-oauth/gpt-6-luna",
@@ -676,7 +680,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "codex-oauth/gpt-6-sol",
@@ -806,7 +811,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "codex-oauth/gpt-6.1-sol",
@@ -943,7 +949,8 @@
         "observedAt": "2026-10-07T09:00:00Z"
       },
       "canonicalModelId": "gpt-6.1-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "codex-oauth/gpt-6.1-terra",
@@ -1080,7 +1087,8 @@
         "observedAt": "2026-10-29T12:00:00Z"
       },
       "canonicalModelId": "gpt-6.1-terra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     }
   ]
 }

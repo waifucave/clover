@@ -78,6 +78,9 @@ export const TOKENS: readonly TokenSpec[] = [
   t("composer.text", "color", "What the user types."),
   t("composer.placeholder", "color", "The composer's placeholder."),
   t("composer.radius", "dimension", "The composer's corner."),
+  t("composer.controls.inside", "number", "1 sets the row under the text inside the composer's box: the approval level and the model at its start, send at its end. 0 keeps that row under the box, send beside the text."),
+  // Where a finished reply's own add-ons sit.
+  t("conversation.extra.inline", "number", "1 sets a finished reply's add-ons (`conversation.message.extra`) in the row of its actions, after copy; 0 keeps them under the reply."),
   // Sealed approval cards: the only tokens their frames take.
   t("card.background", "color", "An approval card's face."),
   t("card.text", "color", "What the card asks."),
@@ -178,6 +181,8 @@ export const TOKENS: readonly TokenSpec[] = [
   t("stage.background", "paint", "The stage behind the avatar."),
   t("stage.floor", "color", "The soft pool of shadow under the avatar."),
   t("stage.glow", "color", "The light behind the avatar."),
+  t("stage.foreground", "paint", "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."),
+  t("stage.foreground.height", "dimension", "How far up the stage that paint reaches."),
   t("stage.text", "color", "Credits and notes on the stage."),
   t("avatar.light.key", "color", "The avatar's key light."),
   t("avatar.light.fill", "color", "The avatar's fill light."),

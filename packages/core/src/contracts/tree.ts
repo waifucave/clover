@@ -42,7 +42,7 @@
 // * Tree paths are taken literally: `%2e%2e` is a file name, not `..`. No layer that puts tree paths in a URL (a
 //   `clover-tree:` link, an editor tab) may decode them back into segments.
 import {
-  TREE_TRANSFER, callBindingInput, type CallBinding, type Caller, type FileStat, type Level, type SignedCardAnswer, type TreePath,
+  TREE_TRANSFER, callBindingInput, type CallBinding, type Caller, type FileStat, type Level, type SignedCardAnswer, type TreePath, type TurnOrigin,
   type TreeTransferParams,
 } from "@waifucave/clover-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
@@ -71,6 +71,10 @@ export interface TreeCallOptions {
   level?: Level;
   /** A peer's call only: the user's signed answer bound to this call, where the stricter level asks. */
   answer?: SignedCardAnswer;
+  /** In-process only, never sent: what started the caller's turn, and the call's signal, for the card askUser raises
+   *  on this computer when another computer's holder needs the user's answer. An aborted signal withdraws that card. */
+  origin?: TurnOrigin;
+  signal?: AbortSignal;
 }
 
 /** A change a peer's card binds: the wire method and its params without `session`, `level` and `answer`. */

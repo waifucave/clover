@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.76";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.80";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,20 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.76";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.76 (2026-11-09): the host floor's `**` globs deny at every depth. Before it, the floor wrote a `**`
+/** Bumped to 0.0.80 (2026-11-13): edits by the model's strength. The catalog carries a hand-set class per model (strong,
+ *  medium, weak; a row with none is weak). A strong or medium model's Edit, Write or NotebookEdit no longer needs a Read
+ *  of the file first; a weak model's edit needs the lines it changes read since the file last changed, and is told which.
+ *  Earlier: bumped to 0.0.79 (2026-11-12): a path the process can't read denies only that one call. A deny-list place macOS keeps
+ *  the process out of (~/Library/Mail without Full Disk Access) still denies itself and its subtree by its spelling and
+ *  no longer refuses every other path; a path the permission pre-check can't read (EACCES/EPERM) denies that call, the
+ *  turn goes on.
+ *  Earlier: bumped to 0.0.78 (2026-11-11): a write whose target is swapped mid-check (EINVAL/ENOTDIR from the path's real-path
+ *  read) is replanned, then refused as "moved", never a turn failure; an errno error in a file tool comes back as that
+ *  tool's error.
+ *  Earlier: bumped to 0.0.77 (2026-11-11): the file tools write the file they checked (resolved once, opened no-follow, verified
+ *  before the first byte; task outputs, the checkpoint copy, rewind's restore and delete the same), and
+ *  `filesystem.enforceWriteRootsInFileTools`, which every bot-side session sets (`botSandbox`).
+ *  Earlier: bumped to 0.0.76 (2026-11-09): the host floor's `**` globs deny at every depth. Before it, the floor wrote a `**`
  *  folder step as a `(?:...)` group, which Seatbelt never matches, so every `**` floor deny held only at its folder's
  *  own level. A host regex with a `(?...)` group is refused now, and Grep checks a file's path before its size.
  *  Earlier: bumped to 0.0.75 (2026-11-09): a compiled fallback for the host-catalog adapters the host doesn't serve.

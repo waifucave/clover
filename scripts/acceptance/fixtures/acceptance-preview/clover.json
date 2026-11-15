@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "id": "acceptance-preview",
+  "name": "Acceptance preview",
+  "description": "A third-party plugin that fills the `file.preview` spot for images: wherever a file's preview shows, its component draws the file's name and media type. Generated data only; it holds no capability and reads no file.",
+  "version": "0.0.1",
+  "capabilities": [],
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "client": {
+    "entry": "client/index.tsx"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "file.preview",
+        "key": "image/*",
+        "component": "ImagePreview"
+      }
+    ]
+  }
+}

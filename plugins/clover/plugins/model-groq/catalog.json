@@ -104,7 +104,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "llama-3.3-70b-versatile",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
@@ -168,7 +169,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "llama-4-scout-17b-16e-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     },
     {
       "key": "groq/openai/gpt-oss-120b",
@@ -254,7 +256,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "groq/openai/gpt-oss-20b",
@@ -340,7 +343,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-oss-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     },
     {
       "key": "groq/openai/gpt-oss-safeguard-20b",
@@ -426,7 +430,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-oss-safeguard-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     },
     {
       "key": "groq/qwen/qwen3-32b",
@@ -487,7 +492,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "qwen3-32b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "groq/qwen/qwen3.6-27b",
@@ -555,7 +561,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "groq/qwen/qwen3.8-27b",
@@ -643,7 +650,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     }
   ]
 }

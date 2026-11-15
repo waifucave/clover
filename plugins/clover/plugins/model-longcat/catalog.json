@@ -115,7 +115,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "longcat-2.0",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     }
   ]
 }

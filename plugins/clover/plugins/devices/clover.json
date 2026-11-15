@@ -1,0 +1,13 @@
+{
+  "manifest": 1,
+  "name": "Devices",
+  "description": "Your computers, phones and browsers, one quiet row each, as a tab of the island.",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["devices.read"],
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "ui": [
+      { "spot": "island.tab", "id": "devices", "component": "DevicesTabEntry", "title": "Devices", "order": 900, "attention": "never" }
+    ]
+  }
+}

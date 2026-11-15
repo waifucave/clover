@@ -138,7 +138,8 @@
         "confidence": "declared",
         "observedAt": "2026-09-27T00:00:00Z"
       },
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding-openai/k3-256k",
@@ -238,7 +239,8 @@
       },
       "unsupportedParameters": [],
       "status": "candidate",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding-openai/k3.1-pro",
@@ -346,7 +348,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "k3.1-pro",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding-openai/k3.1-pro-highspeed",
@@ -454,7 +457,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "k3.1-pro-highspeed",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding-openai/kimi-for-coding",
@@ -555,7 +559,8 @@
       },
       "unsupportedParameters": [],
       "status": "candidate",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "kimi-coding-openai/kimi-for-coding-highspeed",
@@ -651,7 +656,8 @@
       },
       "unsupportedParameters": [],
       "status": "candidate",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     }
   ]
 }

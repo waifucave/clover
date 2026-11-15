@@ -58,7 +58,12 @@ export interface HookInput {
   input?: unknown;
   result?: unknown;
   text?: string;
+  /** `turn.end` only: how the turn ended. `interrupted` covers a turn the user stopped or that was cancelled. */
+  outcome?: TurnOutcome;
 }
+
+/** How a turn ended, as `turn.end` tells its hooks (observe only). */
+export type TurnOutcome = "completed" | "failed" | "interrupted";
 
 /** What a hook handler returns, by event. Anything its event doesn't allow is ignored (§5.3). */
 export type HookOutput =

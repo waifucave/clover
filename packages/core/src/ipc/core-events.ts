@@ -9,7 +9,9 @@
 //     terminal's output, a tab's changes, a followed tab's DevTools event, a call's output, a watched folder's
 //     changes: `OWNER_SCOPED_EVENTS`) belongs to whoever owns the terminal, tab, call or watch, and is refused
 //     without one;
-//   * a plugin's connection never learns which device answered a card (`card_resolved` without `device`).
+//   * a plugin's connection never learns which device answered a card (`card_resolved` without `device`);
+//   * an event about one plugin (`PLUGIN_OWN_EVENTS`: its host half's `ui.send`, its store's changes) goes only to that
+//     plugin's own connections.
 // A connection whose send throws (it just closed) doesn't stop the others. Remote and web clients, which lane H's
 // link brings in as Clover connections, are routed the same way.
 import { CLOVER_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES } from "@waifucave/clover-protocol";
@@ -17,11 +19,23 @@ import type { CloverConn } from "./clover";
 
 /** Events that belong to one owner (a session's or a plugin's terminal, tab, call or watch), sent only with `to`. */
 export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
-  "terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed",
+  "terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed", "plugin_api_event",
 ]);
 
+/** Events about one plugin that only that plugin's own connections get (`pluginOf`, from the connection's token, never
+ *  the event's word alone): a host half's message to its components and its store's changes. */
+export const PLUGIN_OWN_EVENTS: ReadonlySet<string> = new Set(["plugin_ui_message", "plugin_store_changed", "plugin_settings_changed", "plugin_point_changed", "plugin_api_event"]);
+/** Own events that go only to a plugin that is on and running (`pluginRunning`). */
+const RUNNING_ONLY_EVENTS: ReadonlySet<string> = new Set(["plugin_settings_changed"]);
+
 /** Fields a plugin's connection doesn't get, by event type. */
-const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = { card_resolved: ["device"] };
+const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = {
+  card_resolved: ["device"],
+  // A plugin's events reach a layer as ids and states only (`plugins.watch`): never where a plugin's folder is, nor
+  // any reason text.
+  plugin_found: ["folder"],
+  plugin_changed: ["reason", "waitingFor"],
+};
 
 /** A `core` event as a lane hands it over: its `type`, and `ts` (the shared clock's) unless the sender stamps it. */
 export interface CoreEventInput {
@@ -34,6 +48,9 @@ export interface CoreEventRouting {
   connections(): Iterable<CloverConn>;
   /** A plugin's granted capabilities (lane B's registry); undefined: none. The bundled tree's host asks for `clover`. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
+  /** Whether a plugin is on and in a running state (`grantsInForce`'s rule); a plugin's own settings changes go only
+   *  to one that is. Absent: none is. */
+  pluginRunning?(pluginId: string): boolean;
   /** The shared clock, for an event without `ts`. */
   now?(): number;
   log?(line: string): void;
@@ -42,6 +59,9 @@ export interface CoreEventRouting {
 export interface CoreEventOptions {
   /** Only these connections, among those the rules above allow. */
   to?(conn: CloverConn): boolean;
+  /** Of the plugins' connections (a layer, a host half), only those whose plugin this lets through; the app's and the
+   *  other roles are untouched. An approval card's events use it: a plugin hears its own bot's cards. */
+  forPlugin?(pluginId: string): boolean;
 }
 
 /** The plugin a plugin connection speaks for: a layer's own, an own host's, `clover` for the bundled tree's host; a
@@ -83,7 +103,15 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
       const plugin = pluginOf(conn);
       if (plugin === undefined || !(r.pluginCapabilities?.(plugin) ?? []).includes(spec.capability)) continue;
     }
+    if (PLUGIN_OWN_EVENTS.has(spec.type) && (!PLUGIN_ROLES.includes(conn.role) || pluginOf(conn) !== (parsed.data as { pluginId?: unknown }).pluginId)) continue;
+    // A plugin's settings changes reach its own connection only while it is on and running (a turned-off plugin's
+    // frame that still holds a connection hears nothing of them).
+    if (RUNNING_ONLY_EVENTS.has(spec.type) && r.pluginRunning?.(pluginOf(conn)!) !== true) continue;
     if (opts.to !== undefined && !opts.to(conn)) continue;
+    if (opts.forPlugin !== undefined && PLUGIN_ROLES.includes(conn.role)) {
+      const who = pluginOf(conn);
+      if (who === undefined || !opts.forPlugin(who)) continue;
+    }
     try {
       conn.notify(CORE_EVENT_NOTIFICATION, PLUGIN_ROLES.includes(conn.role) ? forPlugins : parsed.data);
       sent++;

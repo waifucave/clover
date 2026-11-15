@@ -193,6 +193,9 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     switch (method) {
       case "events.subscribe":
         return reply({ ok: true });
+      case "device.answerKey.set":
+        // The app registers its answer key on every connection, and a press waits for it: the fake takes it.
+        return reply({ applied: true });
       case "computer.acting":
         // Whether a computer-use session drives this computer right now (a test's own control).
         return reply({ ...(opts.acting === true ? { running: true, session: "s_cu" } : { running: false }) });

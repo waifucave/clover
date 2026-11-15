@@ -14,6 +14,7 @@
 //   session's setup folder. Every other agent, and one outside its tested versions, starts only after the user's OK
 //   (sandbox/oks.ts, asked by the manager).
 import { spawn } from "node:child_process";
+import { noteSpawned } from "../auth/clover-caller";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import type { Level, Os } from "@waifucave/clover-protocol";
@@ -182,6 +183,15 @@ export class AcpAgentBackend implements AgentBackend {
     return admissionFor(this.#opts.admissions ?? ADMISSIONS, this.id, this.#opts.os ?? currentOs(), version);
   }
 
+  /** The plugins' parts placed again for a running session (a plugin turned on, off, removed or updated): the
+   *  session's own placed folder is written afresh, so what was turned off or removed is gone from it. Only a backend
+   *  that reads its own folders places anything. */
+  placeAgain(_sessionId: string, parts: PluginParts, dir: string): void {
+    if (!this.#opts.place) return;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    this.#opts.place(parts, { dir });
+  }
+
   async start(spec: AcpStartSpec): Promise<AcpAgentSession> {
     const d = await this.detect();
     if (!d.installed || !d.path) throw new ContractError("not_installed", d.reason ?? `${this.id} isn't installed on this computer`);
@@ -283,7 +293,8 @@ export function resolveProgram(program: string, pathVar: string | undefined): st
   }
 }
 
-function runCapture(cmd: string, args: string[], env: Record<string, string>, timeoutMs: number): Promise<string> {
+/** Runs `cmd` and gives its stdout (64 KiB at most): an agent's version probe. Exported for the spawn-note test. */
+export function runCapture(cmd: string, args: string[], env: Record<string, string>, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let plan: ReturnType<typeof spawnPlan>;
     try {
@@ -293,6 +304,7 @@ function runCapture(cmd: string, args: string[], env: Record<string, string>, ti
       return;
     }
     const child = spawn(plan.file, plan.args, { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: plan.verbatim });
+    noteSpawned(child.pid, child); // C-M1: an agent's version probe is never the user
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (c: string) => {

@@ -24,6 +24,7 @@
 //
 // One sign-in per entry runs at a time (`busy`). Signing out deletes the entry's secret (for Codex, every name its
 // older doors used).
+import type { CardOpener } from "../devices/rpc";
 import { PLUGINS_METHODS, type PluginAuthView } from "@waifucave/clover-protocol";
 import { startXaiLogin, type CredentialStore } from "@waifucave/clover-provider-runtime";
 import { clearCredentialMaterial, readCredentialMaterial, writeCredentialMaterial } from "../auth/credential-material";
@@ -32,12 +33,16 @@ import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore as ContractSecretStore } from "../contracts/secret-store";
-import { runLoginFlow, type OAuthTokens } from "../providers/pkce";
+import { runLoginFlow, type ExchangeOptions, type OAuthTokens } from "../providers/pkce";
+import { pluginTokenFetch } from "./model-plugins/plugin-api";
+import { TOKEN_TIMEOUT_MS } from "./model-plugins/oauth-renewal";
 import { credentialStoreOverSecretStore } from "../providers/credential-store";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { credentialValueRefusal, removeCredential } from "./credentials";
 import { bundledModelProviderOf, modelPluginSlotFor } from "./model-plugins/keychain-tokens";
 import { installedModelPlugins } from "./model-plugins";
+import { onCardYes, type CardYesOutput } from "../plugin-host/card-yes";
+import type { OAuthRenewal } from "./model-plugins/oauth-renewal";
 
 /** One `auth` entry as a manifest has it (the plugin SDK's `AuthSchema`), and the provider of the `models` entry it
  *  belongs to. */
@@ -52,6 +57,21 @@ interface NumberedEntry {
   entry: AuthEntry;
   /** The `models` entry's provider, for an entry of one. */
   provider?: string;
+}
+
+/** The providers a key covers: its `models` entry's own, or, for one of the manifest's own sign-ins, every provider the
+ *  plugin's `models` entries name. */
+function coveredBy(record: Pick<PluginRecord, "manifest">, n: NumberedEntry): string[] {
+  if (n.provider !== undefined) return [n.provider];
+  const models = (record.manifest as { contributes?: { models?: { provider?: unknown }[] } } | undefined)?.contributes?.models ?? [];
+  return [...new Set(models.map((m) => m.provider).filter((p): p is string => typeof p === "string" && p !== ""))];
+}
+
+/** An error's class for a reason the user sees (`TypeError`, `Error`): never its message, which could carry a
+ *  provider's text or a token. */
+function errorClass(err: unknown): string {
+  const name = err instanceof Error ? err.name : "";
+  return /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(name) ? name : "Error";
 }
 
 /** A plugin's sign-ins, numbered: each `models` entry's `auth`, then the manifest's own (32 at most). */
@@ -80,14 +100,18 @@ export interface PluginAuthDeps {
   secrets: DaemonSecretStore;
   /** The contract store: other plugins' own secrets. */
   pluginSecrets: Pick<ContractSecretStore, "get" | "set" | "delete">;
-  /** After a sign-in or out: the event, to the app and the CLI. */
-  changed?(id: string, auth: PluginAuthView): void;
+  /** After a sign-in or out: the event, to the app and the CLI, and what the daemon refreshes (awaited, so the sign-in's
+   *  call returns once the bots see it). */
+  changed?(id: string, auth: PluginAuthView): Promise<void> | void;
   /** After a provider slot's key changed (a bundled plugin's): what the daemon refreshes. */
   credentialChanged?(provider: string): Promise<void> | void;
   /** The model plugins' providers and the plugin serving each (the installed model plugins by default). */
   modelProviders?(): Iterable<{ provider: string; pluginId: string }>;
   /** Test seams: the OAuth flow (production: `runLoginFlow` on Codex's loopback port), xAI's device grant, the clock. */
   oauth?(entry: Extract<AuthEntry, { method: "oauth-pkce" }>): OAuthRun;
+  /** Keeps and drops what renews a third party's oauth-pkce sign-in (`model-plugins/oauth-renewal.ts`), and says why
+   *  one ended when a renewal was refused. */
+  oauthRenewal?: Pick<OAuthRenewal, "remember" | "forget" | "refusedReason">;
   xaiDevice?(store: CredentialStore, onUrl: (url: string) => void): Promise<unknown>;
   now?(): number;
   log?(line: string): void;
@@ -96,13 +120,14 @@ export interface PluginAuthDeps {
 /** The loopback port the OAuth redirect comes back to: Codex's registered one (codex-rs parity). */
 export const OAUTH_CALLBACK_PORT = 1455;
 
-function defaultOAuth(entry: Extract<AuthEntry, { method: "oauth-pkce" }>): OAuthRun {
+function defaultOAuth(entry: Extract<AuthEntry, { method: "oauth-pkce" }>, exchange?: ExchangeOptions): OAuthRun {
   let resolveUrl!: (url: string) => void;
   let rejectUrl!: (err: Error) => void;
   const authorizeUrl = new Promise<string>((res, rej) => { resolveUrl = res; rejectUrl = rej; });
   const tokens = runLoginFlow({
     clientId: entry.clientId, authorizeUrl: entry.authorizeUrl, tokenUrl: entry.tokenUrl, callbackPort: OAUTH_CALLBACK_PORT,
     scope: (entry.scopes ?? []).join(" "),
+    ...(exchange !== undefined ? { exchange } : {}),
     // The core opens nothing itself: the app opens the URL it is handed.
     openBrowser: async (url) => { resolveUrl(url); },
   });
@@ -139,6 +164,8 @@ export interface PluginAuth {
   signedInProviders(): Promise<Set<string>>;
   signIn(id: string, index: number, key?: string): Promise<{ state: PluginAuthView["state"]; authorizeUrl?: string }>;
   signOut(id: string, index: number): Promise<void>;
+  /** Tells the app and the CLI each of a plugin's sign-ins as it stands now (a renewal signed it out). */
+  announceAll(id: string): Promise<void>;
 }
 
 export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
@@ -149,13 +176,14 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     if (r === undefined) throw new ContractError("not_found", `no plugin ${id}`);
     return r;
   };
-  const numbered = (id: string, index: number): { r: PluginRecord; n: NumberedEntry; provider: string | undefined } => {
+  const numbered = (id: string, index: number): { r: PluginRecord; n: NumberedEntry; provider: string | undefined; covers: string[] } => {
     const r = record(id);
     const n = authEntriesOf(r).find((e) => e.index === index);
     if (n === undefined) throw new ContractError("not_found", `${id} has no sign-in ${index}`);
     // Only a bundled model plugin's own `models` entries map to a provider's slot.
     const bundled = bundledModelProviderOf(r);
-    return { r, n, provider: bundled !== undefined && n.provider === bundled ? bundled : undefined };
+    const provider = bundled !== undefined && n.provider === bundled ? bundled : undefined;
+    return { r, n, provider, covers: provider !== undefined ? [provider] : coveredBy(r, n) };
   };
   const secretName = (entry: AuthEntry): string | undefined =>
     entry.method === "api-key" || entry.method === "oauth-pkce" ? entry.secret : entry.method === "custom" ? entry.handler : undefined;
@@ -174,6 +202,9 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     } else if (name !== undefined) {
       const v = await deps.pluginSecrets.get({ owner: { kind: "plugin", pluginId: id }, name }).catch(() => null);
       if (v !== null) return { ...base, state: "signed-in" };
+      // Signed out by a refused renewal: say so, and what to do.
+      const ended = n.entry.method === "oauth-pkce" ? await deps.oauthRenewal?.refusedReason(id, name) : undefined;
+      if (ended !== undefined && run === undefined) return { ...base, state: "signed-out", reason: ended.slice(0, 2000) };
     }
     if (run !== undefined) return { ...base, state: "failed", reason: run.failed.slice(0, 2000) };
     return { ...base, state: "signed-out" };
@@ -182,24 +213,26 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     if (deps.changed === undefined) return;
     try {
       const { n, provider } = numbered(id, index);
-      deps.changed(id, await view(id, n, provider));
+      await deps.changed(id, await view(id, n, provider));
     } catch { /* the plugin went away meanwhile */ }
   };
-  const afterSlotChange = async (provider: string | undefined): Promise<void> => {
-    if (provider === undefined) return;
-    try { await deps.credentialChanged?.(provider); } catch (err) { deps.log?.(`[plugin-auth] refreshing after ${provider}'s sign-in failed (${err instanceof Error ? err.name : typeof err})`); }
+  /** After a key changed: the live sessions on each provider it covers are replaced, a slot's or a plugin's own. */
+  const afterKeyChange = async (providers: readonly string[]): Promise<void> => {
+    for (const provider of providers) {
+      try { await deps.credentialChanged?.(provider); } catch (err) { deps.log?.(`[plugin-auth] refreshing after ${provider}'s sign-in failed (${errorClass(err)})`); }
+    }
   };
   /** Runs a background sign-in to its end: the entry shows `refreshing` meanwhile, `failed` with the reason after. */
-  const background = (id: string, index: number, provider: string | undefined, done: Promise<void>): void => {
+  const background = (id: string, index: number, covers: readonly string[], done: Promise<void>): void => {
     const key = `${id}#${index}`;
     running.set(key, "refreshing");
     void announce(id, index);
     void done.then(
-      async () => { running.delete(key); await afterSlotChange(provider); await announce(id, index); },
+      async () => { running.delete(key); await afterKeyChange(covers); await announce(id, index); },
       async (err: unknown) => {
-        // The class only: a flow's message could carry what the provider sent back.
-        running.set(key, { failed: `the sign-in didn't finish (${err instanceof Error ? err.message.split(/[:\n]/)[0]!.slice(0, 200) : typeof err})` });
-        deps.log?.(`[plugin-auth] ${id} sign-in ${index} failed (${err instanceof Error ? err.name : typeof err})`);
+        // The error's class only, never its message: that could carry what the provider sent back.
+        running.set(key, { failed: `the sign-in didn't finish (${errorClass(err)})` });
+        deps.log?.(`[plugin-auth] ${id} sign-in ${index} failed (${errorClass(err)})`);
         await announce(id, index);
       },
     );
@@ -213,7 +246,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     const run = deps.xaiDevice !== undefined
       ? deps.xaiDevice(store, resolveUrl)
       : startXaiLogin(store, { onAuthStatus: (s) => { const u = urlIn(s.output); if (u !== undefined) resolveUrl(u); } });
-    background(id, index, provider, run.then(() => undefined));
+    background(id, index, [provider], run.then(() => undefined));
     const first = await Promise.race([url, run.then(() => undefined, () => undefined)]);
     return { state: "refreshing", ...(typeof first === "string" ? { authorizeUrl: first } : {}) };
   };
@@ -230,7 +263,9 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       for (const { provider, pluginId } of servedProviders()) {
         const r = deps.registry.get(pluginId);
         if (r === undefined || bundledModelProviderOf(r) !== undefined) continue;
-        const own = authEntriesOf(r).filter((n) => n.provider === provider);
+        // A `models` entry's own sign-ins, and the manifest's own (which cover every provider the plugin serves). A
+        // provider with none of either takes no key (a local model).
+        const own = authEntriesOf(r).filter((n) => n.provider === provider || n.provider === undefined);
         if (own.length === 0) { out.add(provider); continue; }
         const views = await Promise.all(own.map((n) => view(pluginId, n, undefined)));
         if (views.some((v) => v.state === "signed-in")) out.add(provider);
@@ -245,7 +280,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     },
 
     async signIn(id, index, key) {
-      const { n, provider } = numbered(id, index);
+      const { n, provider, covers } = numbered(id, index);
       const entry = n.entry;
       const runKey = `${id}#${index}`;
       if (running.get(runKey) === "refreshing") throw new ContractError("busy", "this sign-in is already running");
@@ -257,13 +292,15 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
         if (provider !== undefined) await writeCredentialMaterial(deps.secrets, modelPluginSlotFor(provider).account, { kind: "api-key", key: value });
         else await deps.pluginSecrets.set({ owner: { kind: "plugin", pluginId: id }, name: entry.secret }, value);
         running.delete(runKey);
-        await afterSlotChange(provider);
+        await afterKeyChange(covers);
         await announce(id, index);
         return { state: "signed-in" };
       }
       if (key !== undefined) throw new ContractError("invalid", `a ${entry.method} sign-in takes no key`);
       if (entry.method === "oauth-pkce") {
-        const flow = (deps.oauth ?? defaultOAuth)(entry);
+        // A third party's code exchange goes as its renewals do: its pinned fetch, the timeout, no redirect.
+        const flow = deps.oauth !== undefined ? deps.oauth(entry)
+          : defaultOAuth(entry, provider !== undefined ? undefined : { fetch: pluginTokenFetch(deps.registry.get(id)), timeoutMs: TOKEN_TIMEOUT_MS, noRedirect: true });
         const stored = flow.tokens.then(async (t) => {
           if (provider !== undefined) {
             await writeCredentialMaterial(deps.secrets, modelPluginSlotFor(provider).account, {
@@ -275,11 +312,13 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
             });
           } else {
             await deps.pluginSecrets.set({ owner: { kind: "plugin", pluginId: id }, name: entry.secret }, t.accessToken);
+            // What renews it, kept apart from the plugin's own item (the refresh token never reaches the plugin).
+            await deps.oauthRenewal?.remember(id, entry.secret, t);
           }
         });
-        background(id, index, provider, stored);
+        background(id, index, covers, stored);
         const authorizeUrl = await flow.authorizeUrl.catch((err: unknown) => {
-          throw new ContractError("refused", `the sign-in couldn't start (${err instanceof Error ? err.message.slice(0, 200) : typeof err})`);
+          throw new ContractError("refused", `the sign-in couldn't start (${errorClass(err)})`);
         });
         return { state: "refreshing", authorizeUrl };
       }
@@ -295,8 +334,12 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       return runCoreFlow(id, index, entry.flow, provider);
     },
 
+    async announceAll(id) {
+      for (const n of authEntriesOf(record(id))) await announce(id, n.index);
+    },
+
     async signOut(id, index) {
-      const { n, provider } = numbered(id, index);
+      const { n, provider, covers } = numbered(id, index);
       running.delete(`${id}#${index}`);
       if (provider !== undefined) {
         if (provider === "codex-oauth") {
@@ -305,18 +348,20 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
         } else {
           await clearCredentialMaterial(deps.secrets, modelPluginSlotFor(provider).account);
         }
-        await afterSlotChange(provider);
       } else {
         const name = secretName(n.entry);
         if (name !== undefined) await deps.pluginSecrets.delete({ owner: { kind: "plugin", pluginId: id }, name });
+        if (name !== undefined && n.entry.method === "oauth-pkce") await deps.oauthRenewal?.forget(id, name);
       }
+      // The live sessions on what the key covered are replaced: none goes on with a key the user took back.
+      await afterKeyChange(covers);
       await announce(id, index);
     },
   };
 }
 
 /** The handlers lane C's server mounts. Signing in and out is the user's alone. */
-export function pluginAuthMethods(auth: PluginAuth): Record<string, MethodHandler> {
+export function pluginAuthMethods(auth: PluginAuth, o: { openCard?: CardOpener; nameOf?: (id: string) => string | undefined } & CardYesOutput = {}): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   return {
     [M.pluginAuthList.name]: handler(M.pluginAuthList, async (p) => ({ auth: await auth.list(p.id) })),
@@ -326,8 +371,26 @@ export function pluginAuthMethods(auth: PluginAuth): Record<string, MethodHandle
     }),
     [M.pluginAuthSignOut.name]: handler(M.pluginAuthSignOut, async (p, ctx) => {
       requireUser(ctx, "sign out");
-      await auth.signOut(p.id, p.index);
-      return { ok: true as const };
+      if (p.card !== true) {
+        await auth.signOut(p.id, p.index);
+        return { ok: true as const };
+      }
+      // From the Plugins page (main sets `card`): a click there never deletes a sign-in by itself.
+      if (o.openCard === undefined) throw new ContractError("refused", "signing out from this page needs a sealed card, and this computer's approval broker isn't running");
+      const name = o.nameOf?.(p.id) ?? p.id;
+      const opened = await o.openCard({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-sign-out",
+        fields: { title: { type: "text", text: `Sign ${name} out?` }, detail: { type: "list", items: ["Its saved sign-in on this computer is deleted."] } },
+      });
+      onCardYes(o, opened.card, "plugin-sign-out", opened.allowed, async () => {
+        await auth.signOut(p.id, p.index);
+        return undefined;
+      });
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", `${name} wasn't signed out`);
+        return { ok: true as const };
+      }
+      return { applied: false as const, card: opened.card };
     }),
   };
 }

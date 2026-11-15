@@ -18,6 +18,9 @@
 // harness, modules a test defines.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
+// What a host half's `api` has (the catalog's rule), shared with the contracts' fake host.
+import { apiHas, apiMemberValue, isDataFolder } from "./api-members";
+export { apiHas, apiMember, HARMLESS_KEYS, isDataFolder } from "./api-members";
 import { ContractError } from "../contracts/common";
 import { MCP_INVOCATION_META, resolveHandler } from "../contracts/plugin-host";
 import type { HandlerContext, HostModule, McpServerTransport, PluginApi } from "../contracts/sdk-types";
@@ -37,6 +40,8 @@ export interface StartParams {
   process: HostProcess;
   /** A bundled plugin's verified files (`HostedRecord.verified`). */
   verified?: VerifiedFiles;
+  /** What `api.plugin` says about the plugin (`HostedRecord.self`): plain data, never a call. */
+  self?: { namespace: string; version: string; device?: string };
 }
 
 /** A bundled plugin tree's files, each by its real path, with the SHA-256 its staging verified. */
@@ -51,6 +56,8 @@ export interface InvokeParams {
   pluginId: string;
   handler: string;
   method?: string;
+  /** A component's `host.call`: the module's `ui` table only. */
+  ui?: boolean;
   args: unknown;
   caller: Caller;
   session?: string;
@@ -62,6 +69,10 @@ export interface InvokeParams {
 
 interface Running {
   module: HostModule;
+  /** `api.plugin`, as plain data (J's review: a callable proxy there broke `initialize` in clover/browser). */
+  self: Readonly<{ id: string; namespace: string; version: string; computer: string; device?: string }>;
+  /** `api.storage.dataFolder`: its data folder's path, as data (`<home>/plugin-data/<id>`, made before it starts). */
+  dataFolder: string;
   calls: Map<string, { abort: AbortController; input?: InputQueue; live: boolean }>;
   subs: Map<string, (value: unknown) => void>;
   mcp: Map<string, McpServerTransport & { closed: boolean }>;
@@ -161,7 +172,11 @@ export class HostRuntime {
   async #start(x: StartParams): Promise<{ ok: true }> {
     if (this.#running.has(x.pluginId)) return { ok: true };
     const module = await this.#o.load(x);
-    const r: Running = { module, calls: new Map(), subs: new Map(), mcp: new Map() };
+    const self = Object.freeze({
+      id: x.pluginId, namespace: x.self?.namespace ?? x.pluginId.split("/")[0]!, version: x.self?.version ?? "0.0.0", computer: this.#o.computer,
+      ...(x.self?.device !== undefined ? { device: x.self.device } : {}),
+    });
+    const r: Running = { module, self, dataFolder: x.dataFolder, calls: new Map(), subs: new Map(), mcp: new Map() };
     this.#running.set(x.pluginId, r);
     try {
       await module.start?.(this.#apiFor(x.pluginId));
@@ -189,7 +204,7 @@ export class HostRuntime {
   async #invoke(x: InvokeParams): Promise<{ result: unknown }> {
     const r = this.#running.get(x.pluginId);
     if (r === undefined) throw new ContractError("plugin_stopped", `${x.pluginId} isn't running here`);
-    const target = resolveHandler(r.module, x.handler, x.method);
+    const target = resolveHandler(r.module, x.handler, x.method, { ui: x.ui === true });
     if (target === undefined) {
       throw new ContractError("not_installed", `${x.pluginId} has no handler \`${x.method === undefined ? x.handler : `${x.handler}.${x.method}`}\``);
     }
@@ -294,19 +309,77 @@ export class HostRuntime {
     }
   }
 
+  /** `audio.play` from a host half: the audio crosses as pieces of one utterance (a whole clip as one piece), the last
+   *  `final`; the answer is `{ stop, done }` once the first piece is taken (a refusal fails the call). `stop` sends no
+   *  more and ends the utterance; `done` settles once its last piece went. */
+  async #audioPlay(pluginId: string, inside: string | undefined, args: unknown[]): Promise<{ stop(): void; done: Promise<void> }> {
+    const peer = this.#o.peer;
+    const audio = (args[0] ?? {}) as { format?: unknown; data?: unknown };
+    const opts = args[1];
+    const utterance = `pa_${crypto.randomUUID()}`;
+    let seq = 0;
+    let stopped = false;
+    const piece = (data: Uint8Array, final: boolean) => peer.request("pluginHost.api", {
+      pluginId, callId: `api_${++this.#apiSeq}`, call: "audio.play",
+      args: [{ format: audio.format, data }, opts ?? {}, { utterance, seq: seq++, final }],
+      ...(inside === undefined ? {} : { invocation: inside }),
+    }).then(() => undefined, (err: unknown) => { throw apiFailure(err, "audio.play"); });
+    const data = audio.data;
+    if (data instanceof Uint8Array) {
+      await piece(data, true);
+      return { stop: () => {}, done: Promise.resolve() };
+    }
+    if (data === null || typeof data !== "object" || typeof (data as AsyncIterable<unknown>)[Symbol.asyncIterator] !== "function") {
+      throw apiFailure(new ContractError("invalid", "audio.play's data is bytes (a Uint8Array) or an async iterable of them"), "audio.play");
+    }
+    const it = (data as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+    const first = await it.next();
+    if (first.done) {
+      await piece(new Uint8Array(0), true);
+      return { stop: () => {}, done: Promise.resolve() };
+    }
+    if (!(first.value instanceof Uint8Array)) throw apiFailure(new ContractError("invalid", "audio.play's stream gives Uint8Array pieces"), "audio.play");
+    await piece(first.value, false);
+    const done = (async () => {
+      for (;;) {
+        if (stopped) break;
+        const next = await it.next();
+        if (next.done || stopped) break;
+        if (!(next.value instanceof Uint8Array)) throw apiFailure(new ContractError("invalid", "audio.play's stream gives Uint8Array pieces"), "audio.play");
+        await piece(next.value, false);
+      }
+      await piece(new Uint8Array(0), true);
+    })();
+    done.catch(() => {});
+    return { stop: () => { stopped = true; void it.return?.(); }, done };
+  }
+
   /** The plugin API for one plugin: every call, at any depth, goes to the daemon by its dotted path, stamped with this
    *  plugin and the open call it is made inside (see the file's header). */
   #apiFor(pluginId: string, invocation?: string, live?: () => boolean): PluginApi {
     const peer = this.#o.peer;
     const make = (path: string[]): unknown =>
       new Proxy(() => {}, {
-        get: (_t, prop) => (typeof prop === "string" && prop !== "then" ? make([...path, prop]) : undefined),
+        get: (_t, prop) => {
+          // `api.plugin` is data (`PluginSelf`): plain strings a plugin can put in a message, never a call.
+          if (path.length === 0 && prop === "plugin") return this.#running.get(pluginId)?.self;
+          // `api.storage.dataFolder` is data too: its own folder's path, a string (the SDK's `StorageApi`).
+          if (isDataFolder(path, prop)) return this.#running.get(pluginId)?.dataFolder;
+          // A member the catalog doesn't have fails here, by name, not later as a function where a value was meant
+          // (`api.env?.X` was a callable proxy, and the mistake surfaced somewhere else).
+          return apiMemberValue(path, prop, make);
+        },
+        // Feature-testing (`"files" in api`): true for a call (or an area with one) a host half can use, false for anything
+        // else, a call not served yet included; never a throw.
+        has: (_t, prop) => isDataFolder(path, prop) || apiHas(path, prop),
         apply: (_t, _this, args: unknown[]) => {
           const call = path.join(".");
           if (live && !live()) return Promise.reject(apiFailure(new ContractError("closed", `${call}: this call's \`ctx.api\` ended with the call; a plugin acting later acts as itself`), call));
           const inside = invocation ?? this.#scope.getStore();
           // `net.fetch` crosses as its own messages: a RequestInit and a Response can't go as call arguments.
           if (call === "net.fetch") return this.#fetches.fetch(pluginId, inside, args).catch((err: unknown) => { throw apiFailure(err, call); });
+          // `audio.play` answers `{ stop, done }`, and its audio may be a stream: it crosses a piece at a time.
+          if (call === "audio.play") return this.#audioPlay(pluginId, inside, args);
           const listeners = args.filter((a) => typeof a === "function");
           const wire = args.map((a) => (typeof a === "function" ? { [LISTENER_ARG]: true } : a));
           const params = { pluginId, callId: `api_${++this.#apiSeq}`, call, args: wire, ...(inside === undefined ? {} : { invocation: inside }) };

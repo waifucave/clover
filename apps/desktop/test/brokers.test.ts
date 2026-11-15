@@ -209,6 +209,21 @@ describe("sends counted as the user's (§5.5)", () => {
     expect(g.take(1)).toBe(false);
   });
 
+  test("a button held on Send past the window still sends: the release the main process saw is an input too", () => {
+    let now = 0;
+    const g = new SendGate(() => now);
+    g.input(1); // the press
+    now += SEND_INPUT_WINDOW_MS * 3; // held a while
+    g.input(1); // the release (index.ts: before-mouse-event mouseUp), the click's own moment
+    now += 5;
+    expect(g.take(1)).toBe(true);
+    expect(g.take(1)).toBe(false);
+    // With no release seen, the press alone has run out.
+    g.input(1);
+    now += SEND_INPUT_WINDOW_MS * 3;
+    expect(g.take(1)).toBe(false);
+  });
+
   test("where the words may go, and the pictures with them", () => {
     expect(sendTarget({ bot: "alpha" })).toEqual({ bot: "alpha" });
     expect(sendTarget({ session: "s_alpha:main" })).toEqual({ session: "s_alpha:main" });

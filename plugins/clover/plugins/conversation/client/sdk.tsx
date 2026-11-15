@@ -11,3 +11,9 @@ import { uiFor } from "../../shell/runtime/ui";
 export { SEALED_FIELDS, type SealedField, type SealedRenderers, type UiRuntime } from "../../shell/runtime/ui";
 
 export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries, UiRuntimeProvider } = uiFor(React);
+
+/** Whether a bot's voice is speaking now: the app's own hook in the `clover` layer (its `sdk.ts` takes this file's
+ *  place); a gallery and the tests have no player, so a quiet bot here. */
+export function useBotSpeech(_bot: string): { speaking: boolean } {
+  return { speaking: false };
+}

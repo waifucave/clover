@@ -108,6 +108,8 @@ export class UsageLedger {
   readonly database: string;
   readonly #db: Database;
   readonly #day: Intl.DateTimeFormat;
+  /** Who hears that rows were added (`watch`), with the earliest `at` among them. */
+  readonly #watchers = new Set<(since: number) => void>();
 
   constructor(opts: { path: string; computer: string; timeZone?: string }) {
     this.computer = opts.computer;
@@ -177,7 +179,19 @@ export class UsageLedger {
         this.#db.query("INSERT INTO cursors (session, seq, ts) VALUES ($s, $q, $t) ON CONFLICT(session) DO UPDATE SET seq = excluded.seq, ts = excluded.ts").run({ $s: cursor.session, $q: cursor.seq, $t: cursor.ts });
       }
     })();
+    if (added.length > 0) {
+      const since = Math.min(...added.map((r) => r.at));
+      for (const fn of [...this.#watchers]) {
+        try { fn(since); } catch { /* a watcher's failure is its own */ }
+      }
+    }
     return added;
+  }
+
+  /** Hears each time rows are added: the earliest time among them (a reader reads again from there). */
+  watch(fn: (since: number) => void): () => void {
+    this.#watchers.add(fn);
+    return () => { this.#watchers.delete(fn); };
   }
 
   /** How far the counter has read a session's log: the turn's end it counted last (its seq and time), if any. */

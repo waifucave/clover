@@ -132,7 +132,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "grok-4.20-0309-non-reasoning",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "medium"
     },
     {
       "key": "xai/grok-4.20-0309-reasoning",
@@ -239,7 +240,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "grok-4.20-0309-reasoning",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai/grok-4.20-multi-agent-0309",
@@ -344,7 +346,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "grok-4.20-multi-agent-0309",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai/grok-4.3",
@@ -444,7 +447,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "grok-4.3",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai/grok-4.5",
@@ -547,7 +551,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "grok-4.5",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai/grok-4.6",
@@ -648,7 +653,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "grok-4.6",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai/grok-4.7",
@@ -770,7 +776,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "grok-4.7",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "xai/grok-build-0.1",
@@ -865,7 +872,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "grok-build-0.1",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "medium"
     }
   ]
 }

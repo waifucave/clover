@@ -18,7 +18,7 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 /** A test-marked build: whether the harness has answered a card as the app's origin yet (logged once per run). */
 let harnessAnswered = false;
 import {
-  type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
+  type Card, type CardMeta, type CardOption, type CardOutcome, type Level, type Text,
   DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
@@ -29,7 +29,9 @@ import {
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { Fence } from "../contracts/fence";
-import { looksCredentialBearing, ruleDisplay, ruleKeyHash } from "./strings";
+import type { PathClass } from "./ordinary-paths";
+import { looksCredentialBearing, plainOf, ruleDisplay, ruleKeyHash } from "./strings";
+import { ruleShapeOf } from "./bot-check";
 
 /** A saved rule as it sits on disk: its key's hash (what a request matches on) and a scrubbed display string. */
 export interface StoredRule {
@@ -38,6 +40,9 @@ export interface StoredRule {
   computers: string[];
   cardId: string;
   savedAt: number;
+  /** The bot whose card saved it (the owner's ruling: one bot's "always" is that bot's only); absent for the user's
+   *  own session's, and for a rule saved before this, which then matches no bot's request. */
+  bot?: string;
 }
 
 /** Where saved rules live between runs. */
@@ -56,10 +61,30 @@ export interface CloverApprovalRequest extends ApprovalRequest {
   /** A card every time (after read-only's deny): no level, saved rule or reviewer answers it, and it offers no
    *  "always". A bot's command while its sandbox isn't drawn from the fence yet (INT, #353's S3). */
   cardAlways?: boolean;
+  /** Never contained, whatever its paths (the link race's interim: a write inside the shell's folders while one of its
+   *  background commands runs): the reviewer, then a card. A `.git` or PATH folder stays a card. */
+  notContained?: boolean;
+  /** With `pathsUnresolved`: an agent's move or delete whose input names files its listing doesn't read
+   *  (`namesUnlistedPaths`), so its card says that instead. */
+  pathsUnlisted?: boolean;
+  /** A headline that names the bot: Clover's own words after its name ("wants to run a command outside the sandbox").
+   *  The broker writes the card's `what` from them, the bot's name first as the user sees it (`botDisplayName`, from
+   *  the bot side: the user layer's name over the plugin's), never from the request; the request's own `what` is not
+   *  shown. */
+  headlineByBot?: string;
+}
+
+/** A bot's name as the user sees it: in the app's language when the name has one, else its English, the usual
+ *  fallback (the core has no app language today, so `en`); the bot's id when the bot side doesn't know it. */
+export function botDisplayName(name: Text | undefined, id: string, lang = "en"): string {
+  const picked = name === undefined ? undefined : typeof name === "string" ? name : name[lang] ?? name.en;
+  return picked === undefined || picked.trim() === "" ? id : picked;
 }
 
 /** The card's reason for a request whose paths are unresolved, from Clover's own table. */
 export const UNRESOLVED_PATHS_REASON = "These paths weren't checked on the computer that runs this session, so this asks every time.";
+/** The card's reason for an agent's request that names files its listing doesn't show. */
+export const UNLISTED_PATHS_REASON = "The agent's request names files Clover couldn't list, so this asks every time. Check its input.";
 
 /** A saved rule in memory: the raw key only for a rule saved in this run, which `rules()` lists; one read back from
  *  disk lists its display string. */
@@ -79,8 +104,14 @@ export interface CloverApprovalBrokerOptions {
   rules?: RuleStore;
   /** This computer's name: a request with paths that names another computer has paths this one didn't resolve. */
   localComputer?: string;
+  /** The class of a bot's edit's paths on this computer (`ordinary-paths.ts`, the controller's ruling R1): `ordinary`
+   *  runs without asking at ask for risky actions; `review` goes to the reviewer, then a card; `card` (a `.git`, a
+   *  folder on the user's PATH) is a card at ask for risky actions and at accept edits, with no reviewer. Without it,
+   *  every edit is judged as before. */
+  pathClass?: (paths: readonly string[]) => PathClass;
   log?: (line: string) => void;
 }
+
 
 interface Pending {
   card: Card;
@@ -108,7 +139,10 @@ export class CloverApprovalBroker implements ApprovalBroker {
   readonly #verify: ProofVerifier;
   readonly #store: RuleStore | undefined;
   readonly #log: (line: string) => void;
+  /** The bot side's names (`setBotNames`), for a headline that names the bot. */
+  #botNames: ((id: string) => Text | undefined) | undefined;
   readonly #localComputer: string | undefined;
+  readonly #pathClass: CloverApprovalBrokerOptions["pathClass"];
   readonly #pending = new Map<string, Pending>();
   readonly #resolved = new Map<string, CardRecord>();
   readonly #rules: HeldRule[];
@@ -123,6 +157,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     this.#store = opts.rules;
     this.#log = opts.log ?? (() => {});
     this.#localComputer = opts.localComputer;
+    this.#pathClass = opts.pathClass;
     let loaded: StoredRule[] = [];
     // A fixed line: the parse error could quote the file.
     try { loaded = this.#store?.load() ?? []; } catch { this.#log("[approvals] the saved rules file is unreadable; starting with no saved rules"); }
@@ -200,7 +235,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const allowed = option.kind === "approve";
     // A rule names the computers it holds on: a request that names none is never remembered (nor matched, rule 4).
     const remembered = allowed && option.remember === "always" && this.#rememberable(p.req);
-    if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId);
+    if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId, p.req.bot);
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     // Rule 9: an approve carries the card's binding back.
     const binds = allowed && p.card.binds !== undefined ? { binds: structuredClone(p.card.binds) } : {};
@@ -224,14 +259,48 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 
   rules(): SavedRule[] {
-    return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
+    return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
+  }
+
+  /** The saved rules whose key hashes to `keyHash` (a tool's `tool:<name>` key, as `ruleKeyHash` makes it): who saved each
+   *  and where, for the Tools tab, which survives a restart (a rule read back keeps its hash, not its key). */
+  savedFor(keyHash: string): { bot?: string; computers: string[] }[] {
+    return this.#rules.filter((r) => r.keyHash === keyHash).map((r) => ({ computers: [...r.computers], ...(r.bot === undefined ? {} : { bot: r.bot }) }));
+  }
+
+  /** Takes back the saved rules of one key for one bot (the user's, from the Tools tab); the file is written at once.
+   *  Returns how many went. */
+  forgetSaved(keyHash: string, bot: string): number {
+    const before = this.#rules.length;
+    for (let i = this.#rules.length - 1; i >= 0; i--) if (this.#rules[i]!.keyHash === keyHash && this.#rules[i]!.bot === bot) this.#rules.splice(i, 1);
+    const removed = before - this.#rules.length;
+    if (removed > 0) {
+      const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
+      try { this.#store?.save(stored); } catch { this.#log("[approvals] saving the rules failed; the change holds until the daemon restarts"); }
+    }
+    return removed;
   }
 
   watch(fn: (e: ApprovalEvent) => void): Unsubscribe { return this.#listeners.add(fn); }
 
-  #saveRule(ruleKey: string, computers: readonly string[], cardId: string): void {
-    this.#rules.push({ keyHash: ruleKeyHash(ruleKey), display: ruleDisplay(ruleKey), ruleKey, computers: [...computers], cardId, savedAt: this.#clock.now() });
-    const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
+  /** Where the broker reads a bot's name (the bot side, which starts after it): a card's headline names the bot as
+   *  the user sees it (`headlineByBot`). Gives back the undo. */
+  setBotNames(fn: (id: string) => Text | undefined): () => void {
+    this.#botNames = fn;
+    return () => { if (this.#botNames === fn) this.#botNames = undefined; };
+  }
+
+  /** The card's headline for a request with `headlineByBot`: the bot's name as the user sees it, then Clover's words. */
+  #headlineOf(req: CloverApprovalRequest): string {
+    const id = req.bot ?? "";
+    let name: Text | undefined;
+    try { name = id === "" ? undefined : this.#botNames?.(id); } catch { name = undefined; }
+    return plainOf(`${botDisplayName(name, id)} ${req.headlineByBot}`);
+  }
+
+  #saveRule(ruleKey: string, computers: readonly string[], cardId: string, bot: string | undefined): void {
+    this.#rules.push({ keyHash: ruleKeyHash(ruleKey), display: ruleDisplay(ruleKey), ruleKey, computers: [...computers], cardId, savedAt: this.#clock.now(), ...(bot === undefined ? {} : { bot }) });
+    const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt, ...(r.bot === undefined ? {} : { bot: r.bot }) }));
     // A fixed line: the error could name the file or quote what was written.
     try { this.#store?.save(stored); } catch { this.#log("[approvals] saving a rule failed; it holds until the daemon restarts"); }
   }
@@ -252,12 +321,16 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if (req.paths?.length && this.#fence) { // rule 3
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }
+    const paths = this.#editClass(req);
+    // A `.git` or a folder on the user's PATH (R1): a card below automatic, every time (no saved rule answers it, and it
+    // offers no "always"), whatever the reviewer would say.
+    if (paths === "card" && (level === "ask-risky" || level === "accept-edits")) return undefined;
     if (this.#rememberable(req)) { // rule 4: a rule names every computer the request does
       const hash = ruleKeyHash(req.ruleKey!);
-      const rule = this.#rules.find((r) => r.keyHash === hash && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
+      const rule = this.#rules.find((r) => r.keyHash === hash && r.bot === req.bot && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
       if (rule) return { allowed: true, by: "rule" };
     }
-    const verdict = levelDecision(level, req.effect, req.ownTarget); // rule 5
+    const verdict = levelDecision(level, req.effect, req.ownTarget, this.#contained(req, paths)); // rule 5
     if (verdict === "allow") return { allowed: true, by: "level", level };
     if (verdict === "deny") return { allowed: false, by: "level", level };
     if (verdict === "review" && (await this.#reviewer(req)) === "safe") return { allowed: true, by: "level", level };
@@ -286,7 +359,16 @@ export class CloverApprovalBroker implements ApprovalBroker {
       expiresAt: expires ? issuedAt + UNATTENDED_CARD_TIMEOUT_MS : null,
       ...(req.change === undefined ? {} : { change: req.change }),
       ...(req.binds === undefined ? {} : { binds: callBindingOf(req.binds, (t) => createHash("sha256").update(t).digest("hex")) }),
-      fields: this.#unresolved(req) ? { ...structuredClone(req.fields), reason: { type: "text", text: UNRESOLVED_PATHS_REASON } } : structuredClone(req.fields),
+      fields: {
+        ...(this.#unresolved(req)
+          ? { ...withoutRule(req.fields), reason: { type: "text" as const, text: (req as CloverApprovalRequest).pathsUnlisted === true ? UNLISTED_PATHS_REASON : UNRESOLVED_PATHS_REASON } }
+          : withoutRule(req.fields)),
+        // A headline that names the bot: written here, from the bot side's name, never from the requester.
+        ...((req as CloverApprovalRequest).headlineByBot === undefined ? {} : { what: { type: "code" as const, code: this.#headlineOf(req as CloverApprovalRequest) } }),
+        // The reach of an "always" on this card, from the same key, bot and computers `#saveRule` would store and the match in
+        // `#decide` compares (the app words it; it never guesses it). Written here, never taken from the requester.
+        ...(options.some((o) => o.remember === "always") && req.ruleKey !== undefined ? { rule: ruleFieldOf(req) } : {}),
+      },
       options: structuredClone(options),
       ...(req.children === undefined ? {} : { children: structuredClone(req.children) }),
     };
@@ -320,11 +402,33 @@ export class CloverApprovalBroker implements ApprovalBroker {
     return req.computers.some((c) => c !== this.#localComputer);
   }
 
+  /** A bot's own edit's paths' class (`pathClass`), for a built-in edit tool's request on this computer (its paths are
+   *  the tool's one path, resolved here); undefined for anything else. A move never has one: no bot tool moves, and an
+   *  agent's move lists what its agent reports (ACP `locations`, a diff's path, a few input keys), which needn't name
+   *  the file it moves away, so no listing vouches for the source. An agent's edit is judged by its own sandbox, as
+   *  before (its listing can leave a file out just the same). */
+  #editClass(req: ApprovalRequest): PathClass | undefined {
+    if (req.effect !== "edit" || req.kind !== "tool" || this.#pathClass === undefined) return undefined;
+    const here = this.#localComputer !== undefined && req.computers.length > 0 && req.computers.every((c) => c === this.#localComputer);
+    if (!here || req.paths === undefined || req.paths.length === 0) return undefined;
+    return this.#pathClass(req.paths);
+  }
+
+  /** Whether a request stays inside what the fence and the sandbox confine (`ApprovalRequest.contained`): for an edit,
+   *  a bot's own edit of ordinary files only (`#editClass`), whatever the requester said; a move, never; for a fetch or
+   *  another tool, the requester's word (Clover's own requesters only). */
+  #contained(req: ApprovalRequest, paths: PathClass | undefined): boolean {
+    if ((req as CloverApprovalRequest).notContained === true) return false;
+    if (req.effect === "edit") return paths === "ordinary";
+    if (req.effect === "move") return false;
+    return req.contained === true && (req.effect === "fetch" || req.effect === "other" || req.effect === "execute");
+  }
+
   /** Whether a request may be remembered or matched: a key that doesn't look like it carries a credential, at least
    *  one computer, paths that were resolved, and no bound call (rule 9). */
   #rememberable(req: ApprovalRequest): boolean {
     return req.binds === undefined && req.boundCard === undefined && req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req)
-      && (req as CloverApprovalRequest).cardAlways !== true;
+      && (req as CloverApprovalRequest).cardAlways !== true && this.#editClass(req) !== "card";
   }
 
   #expiredNow(p: Pending): boolean {
@@ -372,3 +476,21 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 }
 
+
+/** The rule an "always" on this request would store, as the card's `rule` rows: the kind of thing and the thing (from the
+ *  key), the bot it holds for (empty: a request naming no bot) and every computer it holds on. */
+function ruleFieldOf(req: ApprovalRequest): { type: "rows"; rows: { label: string; value: string }[] } {
+  const shape = ruleShapeOf(req.ruleKey!);
+  return { type: "rows", rows: [
+    { label: "kind", value: shape.kind },
+    { label: "target", value: ruleDisplay(shape.target) },
+    { label: "bot", value: req.bot ?? "" },
+    { label: "computers", value: req.computers.join("\n") },
+  ] };
+}
+
+/** The requester's fields without a `rule`: that field is the core's alone (the reach of an "always"), whether or not this card offers one. */
+function withoutRule<T extends Record<string, unknown>>(fields: T): Omit<T, "rule"> {
+  const { rule: _dropped, ...rest } = structuredClone(fields) as Record<string, unknown>;
+  return rest as Omit<T, "rule">;
+}

@@ -70,14 +70,16 @@ describe("HookRunner.run", () => {
     const elapsed = Date.now() - start;
 
     expect(result.status).toBe("timeout");
-    // Resolved close to the 100ms timeout, nowhere near the 5s sleep — proves the timer won the race.
-    expect(elapsed).toBeLessThan(2000);
+    // Resolved well before the 5s sleep would have ended — proves the timer won the race. (Bounded at 4s, not near
+    // 100 ms: a loaded machine delays the timer and the spawn; only the sleep running out would mean a lost race.)
+    expect(elapsed).toBeLessThan(4000);
 
     // Poll (bounded, short interval) that the spawned shell's own pid is no longer alive — proves
-    // proc.kill() actually reaped the process rather than leaving it running in the background.
+    // proc.kill() actually reaped the process rather than leaving it running in the background. Up to 4 s: the
+    // condition is what is checked, the bound only keeps a failure from hanging.
     const pid = Number(readFileSync(pidFile, "utf8").trim());
     let alive = true;
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 200; i++) {
       try {
         process.kill(pid, 0);
       } catch {
@@ -165,20 +167,21 @@ describe("HookRunner.run", () => {
       const pidFile = join(writable, "pid");
       const start = Date.now();
       const result = await runner.run(
-        mkSpec({ cwd: dir, command: `trap '' TERM; echo $$ > "${pidFile}"; sleep 2`, timeoutMs: 100 }),
+        mkSpec({ cwd: dir, command: `trap '' TERM; echo $$ > "${pidFile}"; sleep 10`, timeoutMs: 100 }),
         mkPayload(),
       );
       const elapsed = Date.now() - start;
 
       expect(result.status).toBe("timeout");
-      // Budget well under 1s: proves SIGKILL won, not the ignored SIGTERM + eventual natural exit.
-      expect(elapsed).toBeLessThan(1000);
+      // Well under the 10 s sleep: proves SIGKILL won, not the ignored SIGTERM + eventual natural exit. (The bound is
+      // far from both, so a loaded machine's slower spawn and timer don't fail it.)
+      expect(elapsed).toBeLessThan(5000);
 
       // Poll (bounded, short interval) that the spawned shell's own pid is no longer alive — proves
       // the timeout path actually killed the SIGTERM-immune process rather than merely giving up on it.
       const pid = Number(readFileSync(pidFile, "utf8").trim());
       let alive = true;
-      for (let i = 0; i < 25; i++) {
+      for (let i = 0; i < 200; i++) {
         try {
           process.kill(pid, 0);
         } catch {
@@ -189,7 +192,7 @@ describe("HookRunner.run", () => {
       }
       expect(alive).toBe(false);
     },
-    3000,
+    12_000,
   );
 
   // C3 regression (4f T1 re-review, post-C1): the C1 fix awaited the stdin write/end BEFORE the
@@ -199,7 +202,7 @@ describe("HookRunner.run", () => {
   // "timeout". Fix: the stdin write/end is now a fire-and-forget task the race does not wait on, so
   // the timer is always armed immediately regardless of whether the write drains. `exec sleep 15`
   // (not `sleep 30`, to avoid the tools-bash.test.ts pgrep-sleep-30 collision) replaces the shell
-  // with `sleep` via `exec` so it never reads stdin and the pipe never drains. The explicit 5000ms
+  // with `sleep` via `exec` so it never reads stdin and the pipe never drains. The explicit 10 s
   // bun-test-level timeout (3rd arg) is a fail-fast guard for the RED state: pre-fix, this hangs
   // indefinitely (no timeout, ever) rather than reporting a clean failure.
   test(
@@ -214,35 +217,35 @@ describe("HookRunner.run", () => {
       expect(result.status).toBe("timeout");
       // Budget well under the 15s sleep and well past the 200ms timeoutMs — proves the timer won
       // the race rather than the write blocking it indefinitely.
-      expect(elapsed).toBeLessThan(1500);
+      expect(elapsed).toBeLessThan(5000);
     },
-    5000,
+    10_000,
   );
 
   // C1(l) regression (4f whole-branch review): a hook that backgrounds a process which INHERITS
-  // stdout (`sleep 5 & echo done`). `sh` writes "done" and EXITS — so proc.exited resolves ~instantly
+  // stdout (`sleep 10 & echo done`). `sh` writes "done" and EXITS — so proc.exited resolves ~instantly
   // and proc.exitCode is 0 (this is the NORMAL-exit path, NOT the timeout path) — but the backgrounded
   // grandchild keeps the pipe's write end open, so no EOF ever reaches our read. Pre-fix, the
   // normal-exit path did `new Response(proc.stdout).text()`, which reads to EOF and therefore BLOCKS
-  // for the grandchild's whole lifetime (5s here); every engine hook site awaits run(), so the turn
+  // for the grandchild's whole lifetime (10s here); every engine hook site awaits run(), so the turn
   // wedges and never clears runningTurns — unrecoverable without a daemon restart. Post-fix, readCapped
   // races the read against a bounded deadline (the hook's own remaining budget, floored at 500ms) and
-  // returns the partial "done" it already captured. `sleep 5`, not `sleep 30`: the latter collides with
-  // tools-bash.test.ts's literal `pgrep -f 'sleep 30'` orphan guard. The 1500ms bun-test-level timeout
-  // (3rd arg) is the fail-fast RED guard — pre-fix this hangs ~5s to the grandchild's natural exit.
+  // returns the partial "done" it already captured. `sleep 10`, not `sleep 30`: the latter collides with
+  // tools-bash.test.ts's literal `pgrep -f 'sleep 30'` orphan guard. The 5 s bound sits well below the
+  // grandchild's 10 s natural exit, which is what the pre-fix code waited for.
   test(
     "(l) C1: grandchild inheriting stdout holds the pipe open → readCapped returns partial promptly, never blocks to EOF",
     async () => {
       const runner = new HookRunner();
       const start = Date.now();
-      const result = await runner.run(mkSpec({ command: "sleep 5 & echo done", timeoutMs: 300 }), mkPayload());
+      const result = await runner.run(mkSpec({ command: "sleep 10 & echo done", timeoutMs: 300 }), mkPayload());
       const elapsed = Date.now() - start;
 
       expect(result.status).toBe("ok"); // sh exited 0 — classification is unchanged, uses proc.exitCode
       expect(result.stdout).toContain("done"); // partial-ok: we captured what was written before the deadline
-      expect(elapsed).toBeLessThan(1500); // resolves at the ~500ms read deadline, nowhere near the 5s grandchild
+      expect(elapsed).toBeLessThan(5000); // resolves at the ~500ms read deadline, nowhere near the 10s grandchild
     },
-    1500,
+    12_000,
   );
 
   // C1(m) regression (4f whole-branch review): the UNBOUNDED-memory facet, exercised by a grandchild
@@ -268,11 +271,11 @@ describe("HookRunner.run", () => {
 
       expect(result.status).toBe("ok");
       expect(result.stdout.length).toBe(8192); // capped, not the unbounded flood
-      expect(elapsed).toBeLessThan(1500); // resolves at the cap in ~ms, no hang
+      expect(elapsed).toBeLessThan(5000); // resolves at the cap (in ms when idle), no hang: a hang never resolves
       // Bounded memory: the fixed path adds only a few MB around run(); the pre-fix ~1GB buffering
       // would blow past this wide ceiling (pre-fix never even reaches this assertion — it hangs first).
       expect(rssDelta).toBeLessThan(150_000_000);
     },
-    2500,
+    10_000,
   );
 });

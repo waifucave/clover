@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "claude-3.7-sonnet-20250514",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     }
   ]
 }

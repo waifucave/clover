@@ -1,0 +1,52 @@
+{
+  "theme": 1,
+  "name": "Alpha, her room: the conversation pane",
+  "appearance": "both",
+  "tokens": {
+    "color.surface": "#FFFCF4",
+    "color.raised": "#F5F0E4",
+    "color.control": "#EFE9DC",
+    "color.float": "#FFFDF8",
+    "color.hairline": "#1B22471A",
+    "color.hairline.raised": "#A8823A4D",
+    "color.hover": "#1B22470D",
+    "color.selected": "#1B22471A",
+    "color.text": "#1B2247",
+    "color.text.secondary": "#465078",
+    "color.text.muted": "#5E6689",
+    "color.text.placeholder": "#5E6689",
+    "color.accent": "#8C6A28",
+    "color.accent.fill": "#8C6A28",
+    "color.accent.text": "#664A15",
+    "color.accent.soft": "#A8823A40",
+    "color.accent.contrast": "#FFFAF0",
+    "color.success": "#23784F",
+    "color.danger": "#B3261E",
+    "color.focus": "#8C6A28"
+  },
+  "dark": {
+    "tokens": {
+      "color.surface": "#10152F",
+      "color.raised": "#1A2040",
+      "color.control": "#1B2142",
+      "color.float": "#161C3A",
+      "color.hairline": "#FFFFFF1A",
+      "color.hairline.raised": "#D9B46A38",
+      "color.hover": "#FFFFFF0F",
+      "color.selected": "#FFFFFF1A",
+      "color.text": "#EEF0FB",
+      "color.text.secondary": "#B9BFDC",
+      "color.text.muted": "#8A90B4",
+      "color.text.placeholder": "#8A90B4",
+      "color.accent": "#D9B46A",
+      "color.accent.fill": "#D9B46A",
+      "color.accent.text": "#F0D496",
+      "color.accent.soft": "#D9B46A47",
+      "color.accent.contrast": "#18204A",
+      "color.success": "#5FD29A",
+      "color.danger": "#FF8A80",
+      "color.focus": "#D9B46A"
+    }
+  },
+  "css": "tab/pane.css"
+}

@@ -16,7 +16,10 @@ export type GlyphName =
   | "chevronLeft"
   | "chevronRight"
   | "chevronDown"
-  | "checkCircle";
+  | "checkCircle"
+  | "clock"
+  | "info"
+  | "sync";
 
 const STROKE = { fill: "none", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
@@ -62,6 +65,27 @@ const PATHS: Record<GlyphName, ReactElement> = {
     <g {...STROKE} strokeWidth="0.9">
       <circle cx="8" cy="8" r="6.6" />
       <path d="M5.2 8.2 7.1 10.1 10.9 6" />
+    </g>
+  ),
+  clock: (
+    <g {...STROKE} strokeWidth="1.4">
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M8 4.6V8l2.3 1.5" />
+    </g>
+  ),
+  info: (
+    <g {...STROKE} strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M8 7.2v3.6" />
+      <circle cx="8" cy="5.1" r="0.5" fill="currentColor" />
+    </g>
+  ),
+  sync: (
+    <g {...STROKE} strokeWidth="1.5">
+      <path d="M13 7.2A5 5 0 0 0 4 5.4" />
+      <path d="M4 2.9v2.6h2.6" />
+      <path d="M3 8.8a5 5 0 0 0 9 1.8" />
+      <path d="M12 13.1v-2.6H9.4" />
     </g>
   ),
 };

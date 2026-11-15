@@ -1,0 +1,3 @@
+[test]
+# No preload: the tests read this plugin's files and drive its server with a fake plugin API: no home, no secret
+# store, no network.

@@ -163,8 +163,15 @@ export const ProviderRetryEvent = ThreadBase.extend({
   status: z.number().int().nullable(),
   message: utf16(200),
 });
+/** A plugin tool's own title, for display only: `TOOL_DISPLAY_TITLE_MAX` UTF-16 units of plain, one-line text
+ *  (the core drops control, bidirectional and zero-width characters). Never what decides anything: a card, a rule,
+ *  the reviewer's input and the OK card name the tool by its served `name`. */
+export const TOOL_DISPLAY_TITLE_MAX = 60;
 export const ToolCallEvent = ThreadBase.extend({
   type: z.literal("tool_call"), callId: z.string().min(1), name: z.string().min(1), argsJson: z.string(),
+  /** Set only by the daemon, for a plugin (MCP) tool whose listing gives a `title`; absent for every other tool.
+   *  A client shows it beside the real `name`, as text. `sync.push` strips it; the phone's view withholds it. */
+  displayTitle: utf16(TOOL_DISPLAY_TITLE_MAX, 1).optional(),
 });
 
 /** Shape shared by the diff store's on-disk id (`packages/core/src/diffs/store.ts`'s `DIFF_ID_RE`)
@@ -204,6 +211,22 @@ export const SiteIconUrl = utf16(SITE_ICON_URL_MAX_LENGTH).regex(/^https:\/\/[!-
 export const SiteIcon = z.object({ url: SiteIconUrl, iconUrl: SiteIconUrl });
 export type SiteIcon = z.infer<typeof SiteIcon>;
 
+/** `ToolResultEvent.display` bounds (UTF-16 units). */
+export const TOOL_DISPLAY_LABEL_MAX = 40;
+export const TOOL_DISPLAY_VALUE_MAX = 120;
+export const TOOL_DISPLAY_KIND_SHAPE = /^[a-z0-9-]{1,24}$/;
+export const TOOL_DISPLAY_SWATCH_SHAPE = /^#[0-9A-Fa-f]{6}$/;
+/** What a plugin tool's successful result shows, from its MCP `structuredContent`, bounded and plain: a kind token
+ *  (for a glyph), a label and a value (text only), and a colour (a background only). Exactly these fields; the rest
+ *  of the plugin's `structuredContent` never leaves the daemon. */
+export const ToolDisplay = z.object({
+  kind: z.string().regex(TOOL_DISPLAY_KIND_SHAPE),
+  label: utf16(TOOL_DISPLAY_LABEL_MAX, 1),
+  value: utf16(TOOL_DISPLAY_VALUE_MAX, 1),
+  swatch: z.string().regex(TOOL_DISPLAY_SWATCH_SHAPE).optional(),
+}).strict();
+export type ToolDisplay = z.infer<typeof ToolDisplay>;
+
 export const ToolResultEvent = ThreadBase.extend({
   type: z.literal("tool_result"), callId: z.string().min(1), output: z.string(), isError: z.boolean(),
   /** Set only by the daemon engine for edit/write/notebook_edit; chat-mode engines never produce it. */
@@ -213,6 +236,9 @@ export const ToolResultEvent = ThreadBase.extend({
    *  known — every older event, every other tool. The phone's chat engine never produces it, and
    *  `sync.push` refuses it. */
   siteIcons: z.array(SiteIcon).min(1).max(SITE_ICONS_MAX).optional(),
+  /** Set only by the daemon, for a plugin (MCP) tool's successful result whose `structuredContent` gives a valid
+   *  `ToolDisplay`; absent otherwise. `sync.push` strips it; the phone's view withholds it. */
+  display: ToolDisplay.optional(),
 });
 /** Opaque provider reasoning item (Responses API), captured at output_item.done and replayed
  *  verbatim into later requests (CC/Codex parity — see the history-parity spec). itemJson is

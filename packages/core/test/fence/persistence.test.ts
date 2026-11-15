@@ -120,6 +120,12 @@ describe("the shared list", () => {
   });
 });
 
+/** The sample homes' cases read the disk under the sample's home (the fenced set lists Python's site folders, the git
+ *  hooks folder and the bots there). A Linux sample's /home/me on a Mac goes through the automounter (auto_home) at every
+ *  lookup, about 80 ms a check: 2–4 s for the Linux case alone, past bun's 5 s under load. The fence's reads aren't all
+ *  behind a seam (`canonical` and `linksOf` cover the path's own spelling and links, not these), so these cases get 30 s. */
+const SAMPLE_TIMEOUT_MS = 30_000;
+
 describe("Clover's fence: every runner refused, on every OS", () => {
   for (const os of ["macos", "linux", "windows"] as const) {
     test(os, () => {
@@ -141,7 +147,7 @@ describe("Clover's fence: every runner refused, on every OS", () => {
       // The rest of the home stays writable.
       expect(fence.check({ op: "write", path: path.join(s.home, "Documents", "notes.md") })).toEqual({ allowed: true });
       expect(fence.check({ op: "write", path: path.join(s.home, ".zshrc.bak") })).toEqual({ allowed: true });
-    });
+    }, SAMPLE_TIMEOUT_MS);
   }
 });
 
@@ -162,7 +168,7 @@ describe("bots and agents: their writes there are refused without a card, at eve
       }
       expect(broker.cards()).toHaveLength(0);
       expect(await broker.request(req("tool", "edit", path.join(s.home, "Documents", "notes.md")))).toMatchObject({ allowed: true, by: "level" });
-    });
+    }, SAMPLE_TIMEOUT_MS);
   }
 
   test("a bot's Write tool is told why", async () => {

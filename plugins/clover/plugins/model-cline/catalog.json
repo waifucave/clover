@@ -95,7 +95,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "grok-4.5",
-      "modelFamily": "grok"
+      "modelFamily": "grok",
+      "strength": "strong"
     },
     {
       "key": "cline/z-ai/glm-5.2",
@@ -166,7 +167,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     }
   ]
 }

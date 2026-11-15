@@ -33,13 +33,15 @@ function packFolder(root: string): string {
 
 describe("Alpha", () => {
   test("Alpha's folder is a valid plugin with one bot, and nothing outside its own tab", async () => {
+    // Alpha is the reference plugin (her stage server and hooks are host code), so her class is `code`; her extras
+    // child is off by default.
     const { report } = await pluginFromFolder(ALPHA_FOLDER, { bundled: true });
     expect(report.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(report.top.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.top.bot).toBe(true);
-    expect(report.top.class).toBe("data");
-    expect(report.children).toEqual([]);
+    expect(report.top.class).toBe("code");
+    expect(report.children.map((c) => c.folder)).toEqual(["extras"]);
   });
 
   test("Alpha's manifest names lane G's look as soon as it is in the folder", () => {
@@ -70,7 +72,7 @@ describe("Alpha", () => {
     expect(views).toHaveLength(1);
     const alpha = BotView.parse(views[0]);
     expect(alpha).toEqual({
-      id: "alpha", name: "Alpha", portrait: "clover-asset://alpha/assets/portrait.svg", model: "anthropic/claude-sonnet-5-5", effort: "medium",
+      id: "alpha", name: "Alpha", portrait: "clover-asset://alpha/assets/portrait.svg", avatar: { src: "clover-asset://alpha/assets/alpha.vrm", format: "vrm" }, model: "anthropic/claude-sonnet-5-5", effort: "medium",
       theme: "alpha", userLayer: [], state: "idle", computer: "Studio", mainSession: "b_alpha",
     });
     expect(b.host.get("b_alpha")).toMatchObject({ kind: "bot", bot: "alpha", title: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium" });
@@ -284,7 +286,7 @@ describe("bots from plugins", () => {
 });
 
 describe("the user layer", () => {
-  async function luna(opts: { hasKeyFor?: (m: string) => boolean } = {}) {
+  async function luna(opts: { hasKeyFor?: (m: string) => boolean; modelOffer?: (m: string) => "offered" | "starting" | "absent" } = {}) {
     const root = tempDir();
     const dir = writePlugin(root, "luna", {
       "clover.json": botManifest("luna", "Luna", { model: { default: "anthropic/claude-sonnet-5-5", effort: "high" }, voice: { provider: "fish-audio", voice: "v1", model: "s2.1-pro-free" } }),
@@ -308,6 +310,44 @@ describe("the user layer", () => {
     expect(b.bots.get("luna")).toMatchObject({ name: "Luna", model: "anthropic/claude-sonnet-5-5", effort: "high", userLayer: [] });
     expect(ctx.current().instructions).toBe("You are Luna.");
     expect(existsSync(userLayerFile(b.home, "luna"))).toBe(false);
+    await b.shutdown();
+  });
+
+  test("a layer stored by an earlier build (the user's own Live2D model over a plugin that ships a VRM) is the avatar after the upgrade", async () => {
+    const root = tempDir();
+    const dir = writePlugin(root, "luna", {
+      "clover.json": botManifest("luna", "Luna", { avatar: { file: "assets/luna.vrm", format: "vrm", portrait: "assets/portrait.svg" } }),
+      "bot/instructions.md": "You are Luna.",
+      "assets/luna.vrm": "glTF",
+      "assets/portrait.svg": "<svg/>",
+    });
+    const home = tempDir();
+    const inputs = (await pluginFromFolder(dir)).inputs;
+    // The file as the picker's import wrote it on 0.x-12b: the whole layer under `fields`, the avatar as `user:<folder>/<entry>`.
+    mkdirSync(join(home, "user-layers"), { recursive: true });
+    writeFileSync(userLayerFile(home, "luna"), JSON.stringify({ userLayer: 1, bot: "luna", fields: { avatar: { file: "user:k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } } }));
+    const b = await boot({ home, plugins: inputs });
+    expect(b.bots.get("luna")).toMatchObject({ userLayer: ["avatar"], avatar: { src: "/_a/luna/k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } });
+    expect(b.bots.list().find((x) => x.id === "luna")?.avatar?.format).toBe("live2d");
+    // The user's model has no portrait of its own: the dock and lists keep the plugin's face, not a letter.
+    expect(b.bots.get("luna")?.portrait).toBeTruthy();
+    await b.shutdown();
+  });
+
+  test("a model no plugin that is on offers is refused in words the picker shows; one whose plugin is still starting is taken; clearing it is never checked", async () => {
+    const asked: string[] = [];
+    const offers: Record<string, "offered" | "starting" | "absent"> = { "openai/gpt-6.1-sol": "offered", "acme/fast": "starting", "gone/model": "absent" };
+    const { b } = await luna({ modelOffer: (m) => { asked.push(m); return offers[m] ?? "absent"; } });
+    const refused = await b.bots.setUserLayer("luna", { model: "gone/model" }, theUser).catch((e: unknown) => e);
+    expect(isContractError(refused, "invalid")).toBe(true);
+    expect((refused as Error).message).toBe("gone/model isn't offered by any plugin that is on: turn on its plugin in Settings › Plugins, or pick another model");
+    expect(b.bots.get("luna")?.userLayer).toEqual([]);
+    expect(await b.bots.setUserLayer("luna", { model: "acme/fast" }, theUser)).toEqual({ applied: true });
+    expect(b.bots.get("luna")?.model).toBe("acme/fast");
+    expect(await b.bots.setUserLayer("luna", { model: "openai/gpt-6.1-sol", name: "Moon" }, theUser)).toEqual({ applied: true });
+    expect(await b.bots.setUserLayer("luna", { model: null }, theUser)).toEqual({ applied: true });
+    expect(await b.bots.setUserLayer("luna", { name: "Moonier" }, theUser)).toEqual({ applied: true });
+    expect(asked).toEqual(["gone/model", "acme/fast", "openai/gpt-6.1-sol"]);
     await b.shutdown();
   });
 
@@ -373,7 +413,8 @@ describe("the user layer", () => {
     const stored = (h: string) => (existsSync(userLayerFile(h, "luna")) ? JSON.parse(readFileSync(userLayerFile(h, "luna"), "utf8")).fields : {});
     expect(stored(b.home)).toEqual({ theme: "night" });
     const dir = writePlugin(tempDir(), "luna", { "clover.json": botManifest("luna", "Not Luna"), "bot/instructions.md": "Someone else." });
-    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    // Another plugin under the same id: new to the registry, so it runs once the user OKs it.
+    b.registry.put({ ...(await pluginFromFolder(dir)).inputs[0]!, approved: true });
     await flush();
     expect(b.bots.get("luna")).toBeDefined();
     expect(b.bots.lanBots()).toEqual([]);

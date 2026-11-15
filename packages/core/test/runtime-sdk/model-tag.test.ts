@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { canonicalizeModelTag, facingNameOf, facingNameToTag, isModelTag, modelTagIsKnown, parseModelTag, splitTag, tagsForSlot, UNSTATED_TAG, CLOVER_TEST_PREFIX, type ModelTag } from "../../src/runtime-sdk/model-tag";
+import { canonicalizeModelTag, runtimeModelId, facingNameOf, facingNameToTag, isModelTag, modelTagIsKnown, parseModelTag, splitTag, tagsForSlot, UNSTATED_TAG, CLOVER_TEST_PREFIX, type ModelTag } from "../../src/runtime-sdk/model-tag";
 
 /** A plain test literal known to be tag-shaped, asserted as `ModelTag` for `toBe`/`toEqual` against
  *  a branded return value — a type assertion only, never a runtime validation. */
 const tag = (s: string): ModelTag => s as ModelTag;
+
+describe("runtimeModelId", () => {
+  test("the bare id, unless it has a slash of its own (the runtime would read it as another provider's): then the whole tag", () => {
+    expect(runtimeModelId("openai/gpt-4.1-mini")).toBe("gpt-4.1-mini");
+    expect(runtimeModelId("groq/qwen/qwen3.8-27b")).toBe("groq/qwen/qwen3.8-27b");
+    expect(runtimeModelId("openrouter/openai/gpt-4.1")).toBe("openrouter/openai/gpt-4.1");
+  });
+});
 
 describe("splitTag", () => {
   test("splits at the first slash; modelId may itself contain slashes", () => {

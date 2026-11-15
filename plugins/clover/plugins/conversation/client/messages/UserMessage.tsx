@@ -5,6 +5,7 @@ import { formatTime } from "../format";
 import { IconFile, IconImage } from "../icons";
 import { S } from "../strings";
 import type { Attachment, UserItem } from "../types";
+import { actionsFor, MessageActions, useMessageNote } from "./actions";
 
 const TOKEN = /\[(Image|File) #(\d+)\]/g;
 
@@ -36,6 +37,9 @@ export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext
   const images = attachments.filter((a) => a.kind === "image");
   const otherDevice = item.device !== undefined && item.device.id !== ctx.device?.id;
   const time = formatTime(item.at, ctx.format);
+  // Plugins' buttons for the user's own messages (`on: "user"` or `"both"`), when the message is in the log.
+  const plugged = item.seq !== undefined ? actionsFor(ctx, "user") : [];
+  const [note, setNote] = useMessageNote();
   return (
     <article className="cl-conv-user" data-kind="user" aria-label={S.you}>
       {images.length > 0 && (
@@ -70,6 +74,16 @@ export function UserMessage({ item, ctx }: { item: UserItem; ctx: MessageContext
         {otherDevice && <span>{S.fromDevice(item.device?.name ?? "")}</span>}
         {item.late && <span>{S.arrivedLate}</span>}
       </div>
+      {plugged.length > 0 && ctx.actions.onMessageAction && (
+        <div className="cl-conv-user__actions">
+          <MessageActions actions={plugged} seq={item.seq!} ctx={ctx} onNote={setNote} />
+        </div>
+      )}
+      {note !== undefined && (
+        <div className="cl-conv-user__note" role="status">
+          {note}
+        </div>
+      )}
     </article>
   );
 }

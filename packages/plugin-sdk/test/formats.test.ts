@@ -2,8 +2,8 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
-  IndexSchema, LayoutSchema, LocaleSchema, RevocationsSchema, ThemeSchema, compareVersions, isRevoked, isTreeHashExcluded,
-  layoutPaths, layoutSpots, localeFallbacks, parseRange, parseSignatureFile, parseVersion, placeholdersOf, satisfies,
+  IndexSchema, LayoutContributionSchema, LayoutSchema, LayoutFileSchema, LocaleSchema, contributionProblems, DEFAULT_TAB_LAYOUT, applyLayoutPatch, resolveLayoutFile, ThemeSchema, compareVersions, isTreeHashExcluded,
+  layoutPaths, layoutSpots, localeFallbacks, parseRange, parseVersion, placeholdersOf, satisfies,
   AUTO_INK, AUTO_INKS, FRAME_VARIABLES, LABEL_INK, SYSTEM_ACCENT, SYSTEM_ACCENT_TOKENS, TOKENS, contrastRatio, cssProperty, fillForWhiteLabel, flattenColor,
   isValueForToken, systemAccentFromOs, validateTree,
   cardTokensChanged, cssFunctionName, cssUnescape, cssUrlArgumentsAreDynamic, isCssUrlFunction, isDroppedCssFunction, resolveCssUrl, resolveTokens, setsCardTokens, sha256Hex,
@@ -125,6 +125,35 @@ describe("appearance and the fallback order", () => {
     expect(r.issues.map((i) => `${i.code}:${i.path}`)).toEqual(["token_value:/tokens/color.text"]);
   });
 
+  test("a window skin the app would drop a group of is a warning at validation, by appearance, with the app's reason", async () => {
+    const files = (barPaint: string) => new Map([
+      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", appearance: "light", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { bar: barPaint, "bar.text": "#221A33", "bar.rule": "#C9BDEB" } } })],
+    ]);
+    const check = async (barPaint: string) => {
+      const f = files(barPaint);
+      return (await validateTree({ readText: (p) => f.get(p), exists: (p) => f.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
+    };
+    // Clover's attention mark on a bar this tinted is under 3:1 (a light-only theme: the dark appearance isn't checked, as
+    // the app doesn't skin it).
+    const weak = await check("#E4D2F7");
+    expect(weak.map((i) => [i.severity, i.code, i.file, i.path])).toEqual([["warning", "shell_dropped", "t.json", "/shell"]]);
+    expect(weak[0]!.message).toMatch(/^in light appearance the window doesn't use its bar group: Clover's attention mark on the bar is \d\.\d\d:1; it needs 3:1$/);
+    expect(await check("#F6F2FF")).toEqual([]);
+  });
+
+  test("the sidebar's old shell names still load, are ignored, and each is a warning: Bots doesn't offer the sidebar", async () => {
+    const files = new Map([
+      ["clover.json", JSON.stringify({ manifest: 1, id: "luna", name: "Luna", contributes: { themes: [{ id: "luna", file: "t.json" }] } })],
+      ["t.json", JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.surface": "#FFFDF6" }, shell: { tokens: { bar: "#F6F2FF", "bar.text": "#221A33", "bar.rule": "#C9BDEB", "sidebar.mode": "none" }, dark: { tokens: { "sidebar.mode": "none", sidebar: "#16132B" } } } })],
+    ]);
+    const issues = (await validateTree({ readText: (p) => files.get(p), exists: (p) => files.has(p), listDirs: () => [] }, { folderName: "luna" })).issues;
+    const told = issues.filter((i) => i.code === "shell_not_offered");
+    expect(told.map((i) => [i.severity, i.file, i.path])).toEqual([["warning", "t.json", "/shell/sidebar"], ["warning", "t.json", "/shell/sidebar.mode"]]);
+    expect(told[1]!.message).toBe('Bots doesn\'t offer the sidebar: "sidebar.mode" is ignored, and the sidebar stays as it is on every tab.');
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
   test("a change to card styling waits for its OK: cards keep the values last OK'd, the rest applies (review S7)", () => {
     const okd = { tokens: { "color.accent": "#111111", "card.approve.background": "#00AA00" } };
     const now = { tokens: { "color.accent": "#222222", "card.approve.background": "#AA0000", "card.deny.background": "#00AA00" } };
@@ -215,6 +244,127 @@ describe("layout format 1", () => {
   });
 });
 
+describe("layout patches: start from a layout, state only the changes", () => {
+  const patch = (changes: unknown[], extra: Record<string, unknown> = {}) => {
+    const parsed = LayoutFileSchema.safeParse({ layout: 1, extends: "default", changes, ...extra });
+    if (!parsed.success) throw new Error(parsed.error.issues[0]?.message);
+    return parsed.data as never;
+  };
+  const shape = (n: unknown): unknown => {
+    const o = n as Record<string, unknown>;
+    for (const k of ["row", "column", "stack"]) if (Array.isArray(o[k])) return { [k]: (o[k] as unknown[]).map(shape) };
+    return o.spot !== undefined ? o.spot : o.class !== undefined ? `.${String(o.class)}` : Object.keys(o)[0];
+  };
+
+  test("the stock tab is named data: the stage, then the conversation over the composer, in three named boxes", () => {
+    expect(LayoutSchema.safeParse(DEFAULT_TAB_LAYOUT).success).toBe(true);
+    expect(layoutSpots(DEFAULT_TAB_LAYOUT.root)).toEqual(["bot.stage", "conversation", "composer"]);
+    expect(DEFAULT_TAB_LAYOUT).toEqual({ layout: 1, root: { column: [{ spot: "bot.stage", class: "stage" }, { column: [{ spot: "conversation", grow: 1 }, { spot: "composer" }], grow: 1, class: "talk" }], grow: 1, class: "tab" } });
+  });
+
+  test("the owner's example: the tab turned into a row, so the stage stands to the left of the transcript, wider", () => {
+    const { layout, skipped } = applyLayoutPatch(DEFAULT_TAB_LAYOUT, patch([{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%", min: 280 }]));
+    expect(skipped).toEqual([]);
+    expect(shape(layout.root)).toEqual({ row: ["bot.stage", { column: ["conversation", "composer"] }] });
+    expect(layout.root).toMatchObject({ class: "tab", grow: 1 });
+    expect((layout.root as { row: unknown[] }).row[0]).toEqual({ spot: "bot.stage", class: "stage", size: "42%", min: 280 });
+    expect(LayoutSchema.safeParse(layout).success).toBe(true);
+    // The base is untouched.
+    expect(shape(DEFAULT_TAB_LAYOUT.root)).toEqual({ column: ["bot.stage", { column: ["conversation", "composer"] }] });
+  });
+
+  test("move before, after and into (at start, end or an index); remove; add; wrap", () => {
+    const r = applyLayoutPatch(DEFAULT_TAB_LAYOUT, patch([
+      { move: "composer", before: "conversation" },
+      { add: { spacer: true, class: "gap" }, into: ".talk", at: 1 },
+      { move: "bot.stage", into: ".talk", at: "end" },
+      { wrap: "conversation", in: "row", class: "wide", gap: 8 },
+      { add: { spot: "bot.side", size: 240 }, after: "conversation" },
+      { remove: ".gap" },
+    ]));
+    expect(r.skipped).toEqual([]);
+    expect(shape(r.layout.root)).toEqual({ column: [{ column: ["composer", { row: ["conversation", "bot.side"] }, "bot.stage"] }] });
+    expect((r.layout.root as { column: { column: { gap?: number; class?: string }[] }[] }).column[0]!.column[1]).toMatchObject({ class: "wide", gap: 8 });
+    // A spot with a key is named with it; `{ spot }` without a key names only the keyless one.
+    const keyed = applyLayoutPatch({ layout: 1, root: { row: [{ spot: "panel.view", key: "files" }, { spot: "panel.view" }] } }, patch([{ remove: { spot: "panel.view", key: "files" } }]));
+    expect(keyed.layout.root).toEqual({ row: [{ spot: "panel.view" }] });
+  });
+
+  test("a change whose node isn't there, or that can't be made where it points, is skipped and said, never an error", () => {
+    const r = applyLayoutPatch(DEFAULT_TAB_LAYOUT, patch([
+      { set: "bot.header", size: 10 },
+      { remove: ".tab" },
+      { move: ".talk", into: "conversation" },
+      { move: ".tab", before: "composer" },
+      { add: { spacer: true }, after: "no.such" },
+      { set: "conversation", as: "row" },
+      { set: "composer", grow: 2 },
+    ]));
+    expect(r.skipped).toEqual([
+      "change 1 (set bot.header): no such node; skipped",
+      "change 2 (remove .tab): the root or a tab's own node stays; skipped",
+      "change 3 (move .talk): conversation is inside it; skipped",
+      "change 4 (move .tab): the root or a tab's own node stays where it is; skipped",
+      "change 5 (add): no no.such here; skipped",
+      "change 6 (set conversation): only a row, column or stack can become a row; skipped",
+    ]);
+    // What could be made was: the composer grows.
+    expect(layoutSpots(r.layout.root)).toEqual(["bot.stage", "conversation", "composer"]);
+    expect(JSON.stringify(r.layout.root)).toContain('{"spot":"composer","grow":2}');
+  });
+
+  test("the file: a whole layout or a patch; changes are data only; one place per move or add; background and css replace the base's", () => {
+    expect(LayoutFileSchema.safeParse(DEFAULT_TAB_LAYOUT).success).toBe(true);
+    expect(LayoutFileSchema.safeParse({ layout: 1, extends: "default", changes: [{ move: "composer", before: "conversation", after: "bot.stage" }] }).success).toBe(false);
+    expect(LayoutFileSchema.safeParse({ layout: 1, extends: "default", changes: [{ move: "composer", after: "bot.stage", at: 1 }] }).success).toBe(false);
+    expect(LayoutFileSchema.safeParse({ layout: 1, extends: "default", changes: [{ set: "composer", onClick: "x()" }] }).success).toBe(false);
+    expect(LayoutFileSchema.safeParse({ layout: 1, extends: "elsewhere", changes: [] }).success).toBe(false);
+    expect(LayoutFileSchema.safeParse({ layout: 1, extends: "default", root: { spot: "conversation" }, changes: [] }).success).toBe(false);
+    const withCss = resolveLayoutFile(patch([], { css: "tab/layout.css", background: "assets/bg.webp" }), { default: DEFAULT_TAB_LAYOUT });
+    expect(withCss.layout).toMatchObject({ css: "tab/layout.css", background: "assets/bg.webp" });
+    expect(layoutPaths(withCss.layout!).sort()).toEqual(["assets/bg.webp", "tab/layout.css"]);
+  });
+
+  test("resolving: a whole layout as it is; a patch on its base; the user's patch on the bot's own; a result that isn't a layout gives the base", () => {
+    expect(resolveLayoutFile(DEFAULT_TAB_LAYOUT, { default: DEFAULT_TAB_LAYOUT }).layout).toBe(DEFAULT_TAB_LAYOUT);
+    const own = { layout: 1 as const, root: { row: [{ spot: "conversation" }, { spot: "bot.stage", class: "figure" }] }, css: "tab/own.css" };
+    const user = LayoutFileSchema.parse({ layout: 1, extends: "bot", changes: [{ move: ".figure", before: "conversation" }] });
+    const r = resolveLayoutFile(user, { default: DEFAULT_TAB_LAYOUT, bot: own });
+    expect(shape(r.layout!.root)).toEqual({ row: ["bot.stage", "conversation"] });
+    expect(r.layout!.css).toBe("tab/own.css");
+    expect(resolveLayoutFile(user, { default: DEFAULT_TAB_LAYOUT })).toEqual({ layout: null, notes: ['it extends "bot", and there is no such layout here'] });
+    // Sixty-five boxes in one row: no valid layout, so the stock tab stays.
+    const many = patch(Array.from({ length: 64 }, () => ({ add: { spacer: true }, into: ".talk" })));
+    const big = resolveLayoutFile(many, { default: DEFAULT_TAB_LAYOUT });
+    expect(big.layout).toBe(DEFAULT_TAB_LAYOUT);
+    expect(big.notes.at(-1)).toContain("the patched layout isn't valid");
+  });
+});
+
+describe("a patch from another plugin to a bot's tab", () => {
+  test("changes and its own CSS only: no extends, no background; never a class on a node it didn't add, nor a prefer, an image or a markdown node", () => {
+    const move = { layout: 1, changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }], css: "tab/move.css" };
+    const ok = LayoutContributionSchema.parse(move);
+    expect(contributionProblems(ok)).toEqual([]);
+    expect(LayoutContributionSchema.safeParse({ ...move, extends: "bot" }).success).toBe(false);
+    expect(LayoutContributionSchema.safeParse({ ...move, background: "bg.webp" }).success).toBe(false);
+    const far = LayoutContributionSchema.parse({
+      layout: 1,
+      changes: [
+        { set: ".talk", class: "mine", grow: 2 },
+        { add: { column: [{ spot: "bot.side", prefer: ["acme"] }, { image: "a.png" }] }, into: ".talk" },
+        { add: { markdown: "notes.md" }, after: "composer" },
+      ],
+    });
+    expect(contributionProblems(far)).toEqual([
+      "change 1: `set` gives a class to a node it didn't add; wrap the node in a box with its own class instead",
+      "change 2: a node it adds has `prefer`, which only the bot's own layout says",
+      "change 2: a node it adds is an image; a tab's files are its bot's",
+      "change 3: a node it adds is a markdown file; a tab's files are its bot's",
+    ]);
+  });
+});
+
 describe("locale format 1", () => {
   test("keys start with a plugin id and a dot; plural forms need `other`", () => {
     expect(LocaleSchema.safeParse({ locale: 1, lang: "pt-BR", strings: { "luna.hi": "Oi {name}", "clover.items": { one: "{n} item", other: "{n} itens" } } }).success).toBe(true);
@@ -230,26 +380,12 @@ describe("locale format 1", () => {
   });
 });
 
-describe("index and revocations, format 1", () => {
-  test("an index lists ids and versions, each with its tree hash and download URL", () => {
-    const index = { index: 1, name: "Official", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.waifucave.com/luna-1.0.0.tar.gz" }] }] };
+describe("index format 1", () => {
+  test("an index lists ids and versions, each with its tree hash and download URL; it carries no signing fields", () => {
+    const index = { index: 1, name: "Somebody's plugins", plugins: [{ id: "luna", versions: [{ version: "1.0.0", hash: `sha256:${H("a")}`, url: "https://plugins.example.com/luna-1.0.0.tar.gz" }] }] };
     expect(IndexSchema.safeParse(index).success).toBe(true);
     expect(IndexSchema.safeParse({ ...index, plugins: [{ id: "luna", versions: [{ version: "1.0", hash: "x", url: "u" }] }] }).success).toBe(false);
-  });
-
-  test("a revocation names an id, with all its versions or listed hashes, and a reason", () => {
-    const list = RevocationsSchema.parse({ revocations: 1, entries: [{ id: "evil", reason: "malware" }, { id: "luna", versions: ["1.0.1"], reason: "leaks tokens" }, { id: "nova", hashes: [`sha256:${H("b")}`], reason: "bad build" }] });
-    expect(isRevoked(list, "evil", "9.9.9", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "malware" });
-    expect(isRevoked(list, "luna", "1.0.1", `sha256:${H("c")}`)).toEqual({ revoked: true, reason: "leaks tokens" });
-    expect(isRevoked(list, "luna", "1.0.2", `sha256:${H("c")}`)).toEqual({ revoked: false });
-    expect(isRevoked(list, "nova", "2.0.0", `sha256:${H("b")}`).revoked).toBe(true);
-  });
-
-  test("a .sig file is one line of base64: a 64-byte Ed25519 signature", () => {
-    const sig = btoa(String.fromCharCode(...new Uint8Array(64).fill(7)));
-    expect(parseSignatureFile(`${sig}\n`)?.length).toBe(64);
-    expect(parseSignatureFile("not base64")).toBeNull();
-    expect(parseSignatureFile(btoa("short"))).toBeNull();
+    expect(IndexSchema.safeParse({ ...index, seq: 1 }).success).toBe(false);
   });
 });
 

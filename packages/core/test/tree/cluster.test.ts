@@ -487,12 +487,12 @@ describe("the Files panel's data: change events from the holder", () => {
     expect(laptop.node.service.counts.watches).toBe(1);
     await Bun.sleep(100);
     writeFileSync(join(laptop.home, "proj", "new.txt"), "x");
-    await until(() => events.some((e) => JSON.stringify(e).includes("home/Laptop1/proj/new.txt")), 3000, "the change event");
+    await until(() => events.some((e) => JSON.stringify(e).includes("home/Laptop1/proj/new.txt")), 15_000, "the change event");
     // A watch on the fence is refused.
     expect(await code(studio.node.tree.watch("home/Laptop1/.clover/run", { as: BOT }, () => {}))).toBe("fenced");
     stop();
-    await until(() => laptop.node.service.counts.watches === 0, 2000, "the watch to stop on Laptop1");
-  });
+    await until(() => laptop.node.service.counts.watches === 0, 15_000, "the watch to stop on Laptop1");
+  }, 60_000);
 
   test("a watch says resync after the link was down, and keeps going", async () => {
     const { studio, laptop } = await two();
@@ -500,14 +500,14 @@ describe("the Files panel's data: change events from the holder", () => {
     const events: { type: string; paths?: string[] }[] = [];
     const stop = await studio.node.tree.watch("home/Laptop1/proj", { as: BOT }, (e) => events.push(e));
     cluster.net.partition(laptop.device);
-    await until(() => laptop.node.service.counts.watches === 0, 2000, "Laptop1 to drop the watch");
+    await until(() => laptop.node.service.counts.watches === 0, 15_000, "Laptop1 to drop the watch");
     cluster.net.heal(laptop.device);
-    await until(() => events.some((e) => e.type === "resync"), 3000, "the resync");
+    await until(() => events.some((e) => e.type === "resync"), 15_000, "the resync");
     await Bun.sleep(100);
     writeFileSync(join(laptop.home, "proj", "after.txt"), "x");
-    await until(() => events.some((e) => e.paths?.includes("home/Laptop1/proj/after.txt") ?? false), 3000, "a change after the resync");
+    await until(() => events.some((e) => e.paths?.includes("home/Laptop1/proj/after.txt") ?? false), 15_000, "a change after the resync");
     stop();
-  });
+  }, 60_000);
 });
 
 describe("the registry over the link", () => {

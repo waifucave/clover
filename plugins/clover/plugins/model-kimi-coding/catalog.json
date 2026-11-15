@@ -134,7 +134,8 @@
         "confidence": "declared",
         "observedAt": "2026-09-27T00:00:00Z"
       },
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding/k3-256k",
@@ -229,7 +230,8 @@
       },
       "unsupportedParameters": [],
       "status": "candidate",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding/k3.1-pro",
@@ -334,7 +336,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "k3.1-pro",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding/k3.1-pro-highspeed",
@@ -439,7 +442,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "k3.1-pro-highspeed",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "kimi-coding/kimi-for-coding",
@@ -535,7 +539,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-for-coding",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "kimi-coding/kimi-for-coding-highspeed",
@@ -617,7 +622,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-for-coding-highspeed",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     }
   ]
 }

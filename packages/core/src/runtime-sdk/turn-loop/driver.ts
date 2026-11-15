@@ -33,9 +33,10 @@
 //   main-loop request's whole prompt, cache included (lane D's ask).
 // * **Records** are the inherited session events, projected from the runtime's frames by the core's projector: tool
 //   calls and results, the reply, thinking and the streaming deltas (which the host never logs).
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { reservedMcpServerNames } from "../../capabilities/names";
+import { query as sdkQuery, requireBrand, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import type { Os, TurnOrigin } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "../../contracts/common";
@@ -43,11 +44,13 @@ import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contr
 import type { BotSessionContext } from "../../bots/service";
 import { writeJsonAtomic } from "../../sessions/atomic-file";
 import { createProjector, type Projector } from "../../projector";
+import { ToolDisplays } from "../tool-display";
 import { hostInputFoldedCount } from "../fold";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { testProviderNameFor } from "../provider-selection";
+import { modelProviderKey } from "../model-plugins";
 import { cloverSessions } from "../sessions";
-import { NO_HOOKS, type HookSession, type TurnHooks } from "./hooks";
+import { NO_HOOKS, turnOutcomeOf, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
 import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
@@ -55,8 +58,11 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
-import type { Fence } from "../../contracts/fence";
+import { partsServe } from "./only-backends";
+import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf } from "../../approvals/bot-check";
+import { BOT_KEY_PATHS, RUNTIME_STATE_STORES, RUNTIME_STATE_SUFFIXES, fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
+import { secretReadPlaces, type Fence } from "../../contracts/fence";
+import { runtimeDenyForms } from "../../fence/runtime-deny-forms";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -78,16 +84,85 @@ export const ON_DEMAND_BUILTINS: readonly { name: string; description: string }[
 interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown }
 
 /** What every bot's and agent's sandbox is, whatever the host gives: on, no unsandboxed command (a call's
- *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
- *  and in-process agents never run a command unsandboxed (the owner's ruling). */
+ *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Side threads, subagents and
+ *  in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
+
+/** A bot-side session's sandbox (a bot, its side threads and routines, an in-process agent, Clover's coding agent as a
+ *  bot's child): the host's, with `BOT_SANDBOX` set last, and the runtime's file tools held to the same write roots as
+ *  the shell (agent SDK 0.0.77's `filesystem.enforceWriteRootsInFileTools`: a Write, Edit or NotebookEdit outside them
+ *  runs only on a `canUseTool` allow of that exact, link-free path; a hard-linked file is refused). Hard-link writes
+ *  are never allowed here, whatever the host's settings say. Its deny lists go to the runtime spelled so that none can
+ *  make its file-tool check refuse every path (`runtimeDenyForms`: a secret place macOS keeps Clover out of, or a name
+ *  under a file), each still denying the same place; `userHome` names the user's secret places. */
+export function botSandbox(sandbox: SandboxSettingsConfig, o: { userHome?: string; os?: Os } = {}): SandboxSettingsConfig {
+  const { allowHardLinkWrites: _never, ...filesystem } = sandbox.filesystem ?? {};
+  const os: Os = o.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const forms = (paths: readonly string[] | undefined) => runtimeDenyForms(paths ?? [], { os, ...(o.userHome === undefined ? {} : { userHome: o.userHome }) });
+  return {
+    ...sandbox,
+    filesystem: {
+      ...filesystem,
+      ...(filesystem.denyRead === undefined ? {} : { denyRead: forms(filesystem.denyRead) }),
+      ...(filesystem.denyWrite === undefined ? {} : { denyWrite: forms(filesystem.denyWrite) }),
+      enforceWriteRootsInFileTools: true,
+    },
+    ...BOT_SANDBOX,
+  };
+}
+
+/** A bot's own conversation with the user present: the same sandbox, except one command may leave it when the person
+ *  approves it on its own card (lane C's outside-sandbox approval): the settings let the runtime honor a call's
+ *  `dangerouslyDisableSandbox: true`, and the driver's PreToolUse hook plus the approval check card every such call
+ *  before any allow rule or permission mode is consulted. Anything else keeps `BOT_SANDBOX`. */
+export const BOT_CONVERSATION_SANDBOX = { ...BOT_SANDBOX, allowUnsandboxedCommands: true } as const;
+
+/** What the driver's own PreToolUse hook answers a call carrying the run-outside-the-sandbox flag: `ask` for
+ *  exactly `true` on a shell tool (the runtime handles a hook's ask before its own allow rules and permission mode,
+ *  so the call always reaches the approval check and its card), `deny` for any other value present on one (never
+ *  passed through unflagged), `deny` for the flag on any other tool but a plugin's or MCP server's (`mcp__…`: the
+ *  field means nothing there), and nothing for a call that stays in the sandbox. */
+export function outsideSandboxHookDecision(tool: string, input: unknown): { decision: "ask" | "deny"; reason: string } | undefined {
+  if (misplacedSandboxFlag(tool, input)) {
+    return { decision: "deny", reason: `${tool} was refused: ${MISPLACED_SANDBOX_FLAG_REFUSAL}.` };
+  }
+  const flag = outsideSandboxFlagOf(tool, input);
+  if (flag === "off") return undefined;
+  if (flag === "escape") {
+    return { decision: "ask", reason: "This command asks to run outside the sandbox: the user approves each such command on its own card." };
+  }
+  return { decision: "deny", reason: "`dangerouslyDisableSandbox` must be either left out (to stay in the sandbox) or exactly true (to ask to leave it on a card); anything else is refused." };
+}
+
+/** The host's sandbox with the user's secret places (`SECRET_READ_PLACES`) in its `denyRead`, when the session's file
+ *  fence knows the user's home: the runtime then refuses them to Read, leaves them out of Grep's and Glob's scans
+ *  (index-q1vv1628.js: read.ts asserts the session sandbox's `denyRead`; grep.ts and glob.ts filter by it), and the
+ *  sandboxed shell can't read them (Seatbelt `(deny file-read* …)`). */
+export function withSecretReads(sandbox: SandboxSettingsConfig | undefined, fence: Pick<FileFence, "userHome" | "os"> | undefined): SandboxSettingsConfig {
+  const base = sandbox ?? {};
+  if (fence?.userHome === undefined) return base;
+  const os = fence.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const places = secretReadPlaces(os, fence.userHome).map((p) => p.path);
+  return { ...base, filesystem: { ...(base.filesystem ?? {}), denyRead: [...new Set([...(base.filesystem?.denyRead ?? []), ...places])] } };
+}
+
+/** The host's sandbox with the Clover home's key places (`BOT_KEY_PATHS`: credentials, the runtimes, the runtime's
+ *  checkpoint store and image copies, …) in its `denyRead` too, when the session's file fence knows the home: the
+ *  sandboxed shell can't read them either, as the file tools can't (`botReadDenied`). */
+export function withBotKeyReads(sandbox: SandboxSettingsConfig, fence: Pick<FileFence, "home"> | undefined): SandboxSettingsConfig {
+  if (fence?.home === undefined) return sandbox;
+  // The key places, and the runtime's per-session state files beside its transcripts (`RUNTIME_STATE_SUFFIXES`), by glob.
+  const keys = [...BOT_KEY_PATHS.map((rel) => join(fence.home, ...rel)),
+    ...RUNTIME_STATE_STORES.flatMap((rel) => RUNTIME_STATE_SUFFIXES.map((suffix) => join(fence.home, ...rel, "**", `*${suffix}`)))];
+  return { ...sandbox, filesystem: { ...(sandbox.filesystem ?? {}), denyRead: [...new Set([...(sandbox.filesystem?.denyRead ?? []), ...keys])] } };
+}
 
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
  *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
-export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os): (ctx: BotSessionContext) => FileFence {
+export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os, userHome?: string): (ctx: BotSessionContext) => FileFence {
   return (ctx) => {
     const own = fence.forCaller(ctx.caller);
-    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }) };
+    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }), ...(userHome === undefined ? {} : { userHome }) };
   };
 }
 
@@ -101,8 +176,25 @@ export interface BotDriverDeps {
   processHolder?: string;
   /** Test seam: the agent SDK's `query`. */
   query?: typeof sdkQuery;
+  /** The drop (the owner's ask on 14c): the plugins folder, and who made a new folder there. A bot's own session's shell
+   *  call is compared before and after: each top-level name that appeared in between is that bot's
+   *  (`PluginFolders.dropped`), so the registry's read names it as the builder. A name made after the call returned
+   *  (a background command) isn't attributed: it is an ordinary found plugin. */
+  pluginDrops?: { folder: string; dropped(name: string, bot: string): void };
   /** The approval check for a session's tool calls (lanes B and C's broker, through the approval bridge). */
   canUseTool(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): CanUseTool;
+  /** What the conversation saw, for the approvals (lane C's `SeenUrls`: a page whose address came from the user or a
+   *  search hit runs without asking, a few a user's turn): each new turn's start (never a fold) with the origin the
+   *  host gave it, each input as it arrived (folds too), and each tool's result as the tool returned it, before any
+   *  plugin's hook changed it. */
+  observe?: {
+    turn?(ctx: BotSessionContext, origin: TurnOrigin): void;
+    input?(ctx: BotSessionContext, input: TurnInput): void;
+    toolResult?(ctx: BotSessionContext, tool: string, response: unknown, input?: unknown): void;
+    /** How many background commands and monitors the session's runtime runs now, at each change (0 when it closes):
+     *  lane C's link-race interim (a file tool's write inside the shell's folders isn't contained while one runs). */
+    tasks?(ctx: BotSessionContext, live: number): void;
+  };
   /** The core tools the session gets: lane D's `SendMessage` and `ListAgents` (`BotSide.tools`), lane K's `Agent` and
    *  `TaskStop` (`agentToolDefs`), and `Glossary`. Read at each build. */
   coreTools?(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): readonly CoreToolDef[];
@@ -111,6 +203,10 @@ export interface BotDriverDeps {
   /** `settled`: waits (briefly) for the first listing of a server just installed or enabled, so the turn that starts
    *  right after sees its tools (`PluginMcp.settled`). */
   mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner; settled?(): Promise<void> };
+  /** What the model plugins give a session on `provider` now (`modelProviderKey`: its catalog rows and how its adapter
+   *  is served, or `absent`). The runtime takes them only when it opens, so a change for the bot's own provider reopens
+   *  it at the next turn; another provider's change never does. Default: `modelProviderKey`. */
+  modelCatalogKey?(provider: string): string;
   /** Lane J's holds (`ComputerNode.holds`): the session lets go of them at each turn's end. */
   holds?: { releaseSession(session: string): Promise<number> | number };
   /** Lane J's terminals (`ComputerNode.terminals`): the session's close at its end. */
@@ -126,8 +222,9 @@ export interface BotDriverDeps {
   /** Fills what a real model needs (the provider, the credential broker, the model plugins' adapters) into a
    *  session's options; the daemon's. A `winter-test/*` model needs nothing. */
   provider?(model: string, options: Options, ctx: BotSessionContext): void | Promise<void>;
-  /** The Bash sandbox; the runtime's default floor when left out. Whatever it says, a bot's commands run sandboxed
-   *  (`BOT_SANDBOX`). */
+  /** The Bash sandbox, read at each turn start (a change reopens the runtime); the runtime's default floor when left
+   *  out. Given, it must answer: undefined or a throw fails the turn, never "floor only". Whatever it says, a bot's
+   *  commands run sandboxed (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
   /** The fence for the session's own Read, Glob and Grep (`fileToolFenceRefusal`): the Clover home's default-deny, as
    *  its Bash meets it in `sandbox`. None without it. */
@@ -170,6 +267,8 @@ interface RunningTurn {
 
 interface Incarnation {
   query: Query;
+  /** What this incarnation's plugin tool results showed, waiting for their `tool_result` (`ToolDisplays`). */
+  displays: ToolDisplays;
   queue: HostPromptQueue;
   abort: AbortController;
   projector: Projector;
@@ -236,9 +335,18 @@ const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
 /** How long the runtime lets the model-turn hold run (seconds): the longest a timer can wait, about 24.8 days. A pause
  *  that outlasts it ends the held turn blocked, never started. */
 const PROMPT_HOLD_TIMEOUT_S = Math.floor(2_147_483_647 / 1000);
+/** The most times one host turn goes on after a core tool ended the runtime's turn (`CoreToolResult.endTurn`). */
+export const MAX_CONTINUATIONS = 4;
 
 /** A plugin id's top-level tree (`clover` for `clover/web`). */
 const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
+
+/** Server names the agent runtime keeps for itself: its standing server's (the brand's `mcpServerName`, `clover`, which
+ *  the runtime refuses for any configured server and then exits before init) and the daemon's capability servers'
+ *  (`clover__<key>`). A plugin server under one is left out of the session, never handed to the runtime. */
+export function runtimeReservedServerNames(): ReadonlySet<string> {
+  return new Set([requireBrand().mcpServerName, ...reservedMcpServerNames()]);
+}
 
 /** Names no tree but their own may take, installed or not: the bundled tree's. */
 export const RESERVED_SERVER_NAMES: readonly string[] = ["clover"];
@@ -314,18 +422,34 @@ export class BotSessionDriver implements SessionDriver {
   #generation = 0;
   #rebuild = true;
   /** The sandbox the open runtime was given (canonical JSON): the agent SDK takes `sandbox` only when a runtime opens,
-   *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#sandboxChanged`). */
+   *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#ensureOpen`). The bound
+   *  is one turn: what a turn runs, a message folded into it mid-turn included, runs under the sandbox read at the
+   *  turn's start; a change made during a turn reaches the next. */
   #builtSandbox: string | undefined;
   /** The MCP servers the open runtime was given, by name: the agent SDK takes `mcpServers` only when a runtime opens,
    *  so a server a plugin adds (an install, an enable) or takes away since reopens it at the next turn start
    *  (`#serversChanged`). A server whose tools change keeps the runtime and is told in the turn (`mcpChangesSince`). */
   #builtServers: string | undefined;
+  /** The model and effort the open runtime was given: the runtime takes both, and the provider fill computes the bot's
+   *  credential allowlist from the model (#350's ruling), only when it opens, so a switch reopens it (`#ensureOpen`). */
+  #builtModel: string | undefined;
+  /** The bot's provider and what the model plugins gave the open runtime for it (`modelCatalogKey`): a change for that
+   *  provider since (the model plugins coming up after this runtime opened, its plugin installed, updated, turned on
+   *  or off) reopens it at the next turn, so a provider the plugins bring is never missing from a runtime that opened
+   *  before it was there; another plugin's change leaves it alone. */
+  #builtCatalog: { provider: string; key: string } | undefined;
+  /** The provider key a reopen was held back for (background work running), said once. */
+  #catalogHeldSaid: string | undefined;
   #builtMcp: Map<string, string> = new Map();
+  /** Plugin servers already logged as left out for a runtime-reserved name. */
+  readonly #runtimeReservedSaid = new Set<string>();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
   /** Pushes an interrupt cleared, carried into the next turn ahead of its message. */
   #carry: string[] = [];
   #stopped = false;
+  /** A core tool asked for the runtime's turn to end and the host turn to go on (`CoreToolResult.endTurn`): its note. */
+  #continueWith: string | undefined;
   /** Model turns the pause holds at their start (`#promptHold`), and what let each go other than the resume. */
   readonly #promptHolds = new Set<{ release: AbortController; why?: "interrupt" | "closing" }>();
   /** The records a `message.out` hook holds back, in order. */
@@ -374,7 +498,16 @@ export class BotSessionDriver implements SessionDriver {
 
   #mcpServers(): readonly BotMcpServer[] {
     try {
-      return this.#d.mcp?.servers(this.#ctx) ?? [];
+      const reserved = runtimeReservedServerNames();
+      return (this.#d.mcp?.servers(this.#ctx) ?? []).filter((s) => {
+        if (!reserved.has(s.server)) return true;
+        const said = `${s.plugin}\u0000${s.server}`;
+        if (!this.#runtimeReservedSaid.has(said)) {
+          this.#runtimeReservedSaid.add(said);
+          this.#log(`bot driver ${this.#ctx.sessionId}: ${s.plugin}'s MCP server ${s.server} is left out: the agent runtime keeps that name for its own server`);
+        }
+        return false;
+      });
     } catch (err) {
       this.#log(`bot driver ${this.#ctx.sessionId}: listing MCP servers failed: ${err instanceof Error ? err.message : String(err)}`);
       return [];
@@ -512,6 +645,12 @@ export class BotSessionDriver implements SessionDriver {
   }
 
   /** Why the fence refuses one of the session's own file tool calls (`fileToolFenceRefusal`), or undefined. */
+  /** The user's home and OS for the sandbox's deny spellings (`botSandbox`), as the session's file fence knows them. */
+  #denyFormsHome(): { userHome?: string; os?: Os } {
+    const f = this.#fileFence;
+    return { ...(f?.userHome === undefined ? {} : { userHome: f.userHome }), ...(f?.os === undefined ? {} : { os: f.os }) };
+  }
+
   #fileFenceRefusal(input: ToolUseInput): string | undefined {
     if (this.#fileFence === undefined) return undefined;
     return fileToolFenceRefusal(input.tool_name ?? "", input.tool_input, this.#fileFence, this.#ctx.paths.scratch);
@@ -542,6 +681,7 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         const callId = input.tool_use_id ?? toolUseId ?? "";
+        this.#dropsBefore(name, callId);
         const stop = await this.#gate(signal);
         if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
         const r = await this.#hooks.toolBefore(this.#hookSession, { name, callId }, input.tool_input, signal);
@@ -554,6 +694,21 @@ export class BotSessionDriver implements SessionDriver {
         const changedInput = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
         const fenced = this.#fileFenceRefusal({ tool_name: name, tool_input: changedInput ? r.input : input.tool_input });
         if (fenced !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
+        // A command asking to leave the sandbox always reaches the approval check: the runtime handles a hook's ask
+        // before its own allow rules and permission mode, and the check cards every such call. Seen on the input as
+        // the plugins left it (a hook that strips the flag leaves a sandboxed call, which needs no card; one that
+        // adds it is caught here). Anything but exactly `true` is refused outright, never passed through unflagged.
+        const escape = outsideSandboxHookDecision(name, changedInput ? r.input : input.tool_input);
+        if (escape !== undefined) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: escape.decision,
+              permissionDecisionReason: escape.reason,
+              ...(changedInput ? { updatedInput: r.input as Record<string, unknown> } : {}),
+            },
+          };
+        }
         // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
         // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
         if (name.startsWith("mcp__") && callId !== "") {
@@ -580,17 +735,23 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         this.#dropCallId(name, input.tool_use_id ?? toolUseId);
+        this.#dropsAfter(input.tool_use_id ?? toolUseId ?? "");
         // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
-        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
+        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch, input.tool_input);
         const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
-        if (result === input.tool_response) return {};
-        return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
+        try { this.#d.observe?.toolResult?.(this.#ctx, name, input.tool_response, input.tool_input); } catch { /* an observer never fails the call */ }
+        // A core tool asked for the turn to end here (`#continueWith`): the runtime stops after this round, and `turn`
+        // goes on in a new runtime turn.
+        const stop = this.#continueWith !== undefined ? { continue: false, stopReason: "Clover continues this turn under a changed sandbox." } : {};
+        if (result === input.tool_response) return stop;
+        return { ...stop, hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],
     };
     const failed: HookCallbackMatcher = {
       hooks: [async (raw, toolUseId) => {
         const input = raw as ToolUseInput;
         this.#dropCallId(input.tool_name ?? "", input.tool_use_id ?? toolUseId);
+        this.#dropsAfter(input.tool_use_id ?? toolUseId ?? "");
         return {};
       }],
     };
@@ -606,6 +767,33 @@ export class BotSessionDriver implements SessionDriver {
     return { PreToolUse: [pre], PostToolUse: [post, after], PostToolUseFailure: [failed, after], UserPromptSubmit: [this.#promptHold()] };
   }
 
+  /** The plugins folder's names before each of this bot session's shell calls (the drop), by call. */
+  readonly #pluginNamesBefore = new Map<string, Set<string>>();
+
+  #pluginNames(): Set<string> | undefined {
+    const d = this.#d.pluginDrops;
+    if (d === undefined) return undefined;
+    try { return new Set(readdirSync(d.folder).filter((n) => !n.startsWith("."))); } catch { return undefined; }
+  }
+
+  /** A bot's own session (its conversation or a side thread) about to run a shell call: the plugins folder as it is. */
+  #dropsBefore(tool: string, callId: string): void {
+    const caller = this.#ctx.caller;
+    if (this.#d.pluginDrops === undefined || callId === "" || (tool !== "Bash" && tool !== "PowerShell")) return;
+    if (caller.kind !== "session" || (caller.sessionKind !== "bot" && caller.sessionKind !== "side-thread")) return;
+    const names = this.#pluginNames();
+    if (names !== undefined) this.#pluginNamesBefore.set(callId, names);
+  }
+
+  /** The call returned: each name that appeared in the plugins folder meanwhile is this bot's drop. */
+  #dropsAfter(callId: string): void {
+    const before = this.#pluginNamesBefore.get(callId);
+    if (before === undefined) return;
+    this.#pluginNamesBefore.delete(callId);
+    const now = this.#pluginNames();
+    for (const name of now ?? []) if (!before.has(name)) this.#d.pluginDrops!.dropped(name, this.#ctx.botId);
+  }
+
   readonly #callIdSource: CallIds = {
     take: (server, tool) => {
       const q = this.#callIds.get(`mcp__${server}__${tool}`);
@@ -613,7 +801,7 @@ export class BotSessionDriver implements SessionDriver {
     },
   };
 
-  async #open(): Promise<Incarnation> {
+  async #open(hostSandbox?: { settings: SandboxSettingsConfig | undefined }): Promise<Incarnation> {
     const ctx = this.#ctx;
     const bot = ctx.current();
     const state = this.#readState();
@@ -636,17 +824,30 @@ export class BotSessionDriver implements SessionDriver {
     const origin = () => this.#origin;
     const mcpServers: Record<string, McpServerConfig> = {};
     // The core tools, and `Glossary` over everything the session has (spec §6.8): it loads the on-demand tools.
-    const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME);
+    const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME).map((t) => this.#endTurnAware(t));
     const glossary = glossaryTool({
       tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
+      // A plugin's skills and agent definitions reach the session its `scope` serves (`servesScope`: an `agents` plugin's
+      // no bot's, an `own-bot` one's only its own bot's) and, for an agent's or a coding session, only from plugins whose
+      // `onlyBackends` name Clover's own backend, which runs it (only-backends.ts).
+      ...(this.#d.registry === undefined ? {} : { serves: (pluginId: string, entryScope?: unknown) => partsServe(this.#d.registry!, pluginId, { kind: ctx.kind, bot: bot.id }, entryScope) }),
+      // What each plugin offers (its servers' tools and instructions), and its builder's own stopped plugins.
+      servers: () => mergedServers(this.#mcpServers(), undefined, this.#reservedNames()),
+      bot: bot.id,
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
+    // What the conversation shows of a plugin tool beside its real name (`runtime-sdk/tool-display.ts`): its title, by
+    // the runtime's name, and what its successful result showed, by call id. Display only: the cards, the rules and
+    // the reviewer read the served name, never these.
+    const titles = new Map<string, string>();
+    const displays = new ToolDisplays();
     if (this.#d.mcp !== undefined) {
       for (const server of merged) {
         if (server.server === "clover_core" || mcpServers[server.server] !== undefined) continue;
+        for (const t of server.tools) if (t.title !== undefined) titles.set(`mcp__${server.server}__${t.name}`, t.title);
         mcpServers[server.server] = routedMcpServer({
-          server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource,
+          server, runner: this.#d.mcp.runner, session: ctx.sessionId, as: ctx.caller, callIds: this.#callIdSource, displays,
           ...(this.#d.epoch === undefined ? {} : { epoch: () => this.#d.epoch!() }),
         });
       }
@@ -657,8 +858,11 @@ export class BotSessionDriver implements SessionDriver {
     const queue = createHostPromptQueue();
     const abort = new AbortController();
     const testProvider = testProviderNameFor(bot.model);
-    const sandbox = this.#d.sandbox?.(ctx);
+    const sandbox = hostSandbox !== undefined ? hostSandbox.settings : this.#hostSandbox();
     this.#builtSandbox = canonicalSandbox(sandbox);
+    this.#builtModel = modelKey(bot);
+    this.#builtCatalog = { provider: providerOfModel(bot.model), key: this.#catalogKey(providerOfModel(bot.model)) };
+    this.#catalogHeldSaid = undefined;
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -679,10 +883,18 @@ export class BotSessionDriver implements SessionDriver {
       includePartialMessages: true,
       stderr: (chunk) => this.#log(`bot driver ${ctx.sessionId}: runtime: ${chunk.trimEnd()}`),
       additionalDirectories: [ctx.paths.root],
-      // A bot's commands always run sandboxed: the host's sandbox, or the runtime's default floor, and nothing a host or
-      // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
-      // start what the pause can't stop (F8). Set last, so no spread overrides them.
-      sandbox: { ...(sandbox ?? {}), ...BOT_SANDBOX },
+      // The host's sandbox, or the runtime's default floor, with the bot's own floor over it (`botSandbox`: `BOT_SANDBOX`
+      // last, the file tools held to the write roots): nothing a host asks for turns it off. A command of a bot's own
+      // conversation with the user present may leave it when the person approves it on its own card
+      // (`BOT_CONVERSATION_SANDBOX`, set after `botSandbox()`): the runtime then honors the call's flag, and every such
+      // call was already forced to the check by the PreToolUse hook above. Anything else (a side thread, a subagent,
+      // the coding agent) keeps `BOT_SANDBOX`: its commands never leave it, and a call asking to is refused by its
+      // approval check. Their commands never get launchd to start what the pause can't stop (F8). The user's secret
+      // places and the Clover home's key places are read-denied in it whatever the host gives (`withSecretReads`,
+      // `withBotKeyReads`): Read, Grep, Glob and the shell all meet them.
+      sandbox: this.#ctx.kind === "bot"
+        ? { ...botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence), this.#denyFormsHome()), ...BOT_CONVERSATION_SANDBOX }
+        : botSandbox(withBotKeyReads(withSecretReads(sandbox, this.#fileFence), this.#fileFence), this.#denyFormsHome()),
       // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
       // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
       notificationPreamble: TASK_NOTIFICATION_FRAME,
@@ -699,8 +911,10 @@ export class BotSessionDriver implements SessionDriver {
       checkpoint: { begin: () => "begun", complete: () => undefined },
       now: () => new Date().toISOString(),
       log: { warn: (message, fields) => this.#log(`bot driver ${ctx.sessionId}: ${message} ${fields === undefined ? "" : JSON.stringify(fields)}`.trim()) },
+      toolDisplayTitle: (name) => titles.get(name),
+      takeToolDisplay: (callId) => displays.take(callId),
     });
-    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
+    const inc: Incarnation = { query: q, queue, abort, projector, displays, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
     inc.pump = this.#pump(inc);
     this.#rebuild = false;
     return inc;
@@ -759,9 +973,11 @@ export class BotSessionDriver implements SessionDriver {
       const patch = msg.subtype === "task_updated" ? (msg.patch as { is_backgrounded?: unknown } | undefined) : undefined;
       if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
         inc.tasks.add(msg.task_id);
+        this.#tasksChanged(inc);
         this.#watchTasks(inc);
       } else if (msg.subtype === "task_notification") {
         inc.tasks.delete(msg.task_id);
+        this.#tasksChanged(inc);
         // Its notification reaches the model inside a running turn (after a tool round), or as a turn of the runtime's
         // own, which `#promptHold` hands to the host. Kept for that.
         const status = msg.status === "failed" || msg.status === "stopped" ? msg.status : "completed";
@@ -804,6 +1020,9 @@ export class BotSessionDriver implements SessionDriver {
       return;
     }
     if (main && msg.type === "result") {
+      // The runtime's turn is over: every result it reported has been projected, so a display still waiting belongs to
+      // a call that was cancelled, timed out or never reported; it goes now, never onto a later call.
+      inc.displays.clear();
       const usage = msg.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined;
       t.usage.inputTokens += (usage?.input_tokens ?? 0) + (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0);
       t.usage.outputTokens += usage?.output_tokens ?? 0;
@@ -841,36 +1060,114 @@ export class BotSessionDriver implements SessionDriver {
         return false;
       }
     })();
-    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged() && !this.#serversChanged()) return this.#inc;
+    // The host's sandbox now. One that can't be read (it throws, or the host has a sandbox and gives none) fails the
+    // turn, and the runtime open under the old one is closed first: nothing runs on a stale sandbox.
+    let settings: SandboxSettingsConfig | undefined;
+    try {
+      settings = this.#hostSandbox();
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: the sandbox could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      if (this.#inc !== undefined) {
+        await this.#closeIncarnation(this.#inc);
+        this.#inc = undefined;
+      }
+      throw err;
+    }
+    const open = this.#inc !== undefined && !this.#inc.closed;
+    const sandboxChanged = open && canonicalSandbox(settings) !== this.#builtSandbox;
+    // The bot's model now (a model switch, its manifest's or the user's): a new model reopens the runtime, resuming
+    // the transcript, with its own provider and credential allowlist. One that can't be read is taken as changed.
+    // An effort change alone goes to the open runtime live (`setEffort`, applied at its next quiescent boundary,
+    // which a turn start is): the model, its provider and its allowlist are unchanged, so nothing reopens. A runtime
+    // without it, or one that refuses the level, reopens with it.
+    let modelChanged = false;
+    if (open) {
+      try {
+        const bot = this.#ctx.current();
+        const now = modelKey(bot);
+        if (now !== this.#builtModel) {
+          modelChanged = !(this.#builtModel !== undefined && modelOf(this.#builtModel) === bot.model && await this.#setEffortLive(this.#inc!, bot.effort));
+          if (!modelChanged) this.#builtModel = now;
+        }
+      } catch { modelChanged = true; }
+    }
+    // The session's MCP servers now, as the sandbox: a set that can't be read fails the turn, and the runtime open under
+    // the old set is closed first, so no tool of a server that went keeps answering.
+    let serversChanged = false;
+    try {
+      serversChanged = open && this.#serversChanged();
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: its MCP servers could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      if (this.#inc !== undefined) {
+        await this.#closeIncarnation(this.#inc);
+        this.#inc = undefined;
+      }
+      throw err;
+    }
+    // Its own provider's key moved. Held back while the runtime runs background work (a shell, a monitor, an agent),
+    // which a reopen would end, unless the provider became unusable (`absent`): its next turn's error then says why.
+    let catalogChanged = false;
+    if (open && this.#builtCatalog !== undefined) {
+      const now = this.#catalogKey(this.#builtCatalog.provider);
+      if (now !== this.#builtCatalog.key) {
+        if (this.#inc!.tasks.size > 0 && now !== "absent") {
+          if (this.#catalogHeldSaid !== now) this.#log(`bot driver ${this.#ctx.sessionId}: its provider ${this.#builtCatalog.provider} changed; it reopens once its background work ends`);
+          this.#catalogHeldSaid = now;
+        } else {
+          catalogChanged = true;
+        }
+      }
+    }
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged && !catalogChanged) return this.#inc!;
+    if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
+    if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
+    if (catalogChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its provider ${this.#builtCatalog?.provider} changed in the model plugins`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
-    this.#inc = await this.#open();
+    this.#inc = await this.#open({ settings });
     return this.#inc;
   }
 
-  /** Whether the host's sandbox for this session differs from what the open runtime got (a folder the fence names was
-   *  made or went, a policy changed): the runtime then reopens before the turn, resuming its transcript. A host whose
-   *  sandbox can't be read now reopens too, so the open surfaces the error rather than a stale sandbox running on. */
+  /** What the model plugins give a session on `provider` now (`BotDriverDeps.modelCatalogKey`). */
+  #catalogKey(provider: string): string {
+    return this.#d.modelCatalogKey?.(provider) ?? modelProviderKey(provider);
+  }
+
+  /** Whether the session's MCP servers differ from the set the open runtime got (an install, an enable, a removal):
+   *  the agent SDK takes `mcpServers` only when a runtime opens, so it then reopens before the turn. A set that can't be
+   *  read throws (`#ensureOpen` fails the turn), never "unchanged". */
   #serversChanged(): boolean {
     if (this.#d.mcp === undefined || this.#builtServers === undefined) return false;
-    let now: string;
-    try {
-      now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
-    } catch {
-      return false;
-    }
+    const now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
     if (now === this.#builtServers) return false;
     this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
     return true;
   }
 
-  #sandboxChanged(): boolean {
-    if (this.#d.sandbox === undefined) return false;
+  /** The host's sandbox for this session now; undefined only when the host gives none at all (the runtime's floor and
+   *  `BOT_SANDBOX`). A host that has a sandbox and answers undefined fails closed: it throws, never "floor only". */
+  #hostSandbox(): SandboxSettingsConfig | undefined {
+    if (this.#d.sandbox === undefined) return undefined;
+    const settings = this.#d.sandbox(this.#ctx);
+    if (settings === undefined) throw new Error("the host gave no sandbox for this session");
+    return settings;
+  }
+
+  /** The bot's new effort, on the open runtime: true when it took it; false (logged) when it has no `setEffort` or
+   *  refused the level, and the runtime then reopens with it. */
+  async #setEffortLive(inc: Incarnation, effort: string | undefined): Promise<boolean> {
+    const set = (inc.query as { setEffort?: (e?: string | null) => Promise<void> }).setEffort;
+    if (typeof set !== "function") {
+      this.#log(`bot driver ${this.#ctx.sessionId}: reopening: effort changed, and this runtime can't change it live`);
+      return false;
+    }
     try {
-      return canonicalSandbox(this.#d.sandbox(this.#ctx)) !== this.#builtSandbox;
-    } catch (err) {
-      this.#log(`bot driver ${this.#ctx.sessionId}: the sandbox could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      await set.call(inc.query, effort ?? null);
+      this.#log(`bot driver ${this.#ctx.sessionId}: effort changed live (${effort ?? "default"})`);
       return true;
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: reopening: the runtime refused the effort live (${err instanceof Error ? err.name : "Error"})`);
+      return false;
     }
   }
 
@@ -888,6 +1185,15 @@ export class BotSessionDriver implements SessionDriver {
       await Promise.race([inc.pump, new Promise<void>((r) => setTimeout(r, 1_000))]);
     }
     if (this.#inc === inc) this.#inc = undefined;
+    // Its runtime is gone, and its background tasks with it.
+    inc.tasks.clear();
+    this.#tasksChanged(inc);
+  }
+
+  /** Tells the observer how many background tasks the session runs now. */
+  #tasksChanged(inc: Incarnation): void {
+    if (this.#inc !== undefined && this.#inc !== inc) return;
+    try { this.#d.observe?.tasks?.(this.#ctx, inc.tasks.size); } catch { /* an observer never fails the session */ }
   }
 
   /** While background tasks run, looks at the pause; once it says no, they are stopped (`#stopTasks`). */
@@ -918,9 +1224,13 @@ export class BotSessionDriver implements SessionDriver {
         if (typeof inc.query.stopTask !== "function") throw new Error("this runtime can't stop a task (agent SDK 0.0.69's stopTask)");
         await inc.query.stopTask(id, { by: "host" });
         inc.tasks.delete(id);
+        this.#tasksChanged(inc);
       } catch (err) {
         // A task the runtime no longer has (it ended meanwhile) is done with; any other failure is tried again.
-        if (isUnknownTask(err)) inc.tasks.delete(id);
+        if (isUnknownTask(err)) {
+          inc.tasks.delete(id);
+          this.#tasksChanged(inc);
+        }
         else this.#log(`bot driver ${this.#ctx.sessionId}: stopping background task ${id} failed (tried again while paused): ${err instanceof Error ? err.message : String(err)}`);
       } finally {
         inc.stopping.delete(id);
@@ -945,6 +1255,10 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       return { reason: "failed", failure: "error", text: `the runtime could not start: ${err instanceof Error ? err.message : String(err)}` };
     }
+    try {
+      this.#d.observe?.turn?.(this.#ctx, ctl.origin);
+      this.#d.observe?.input?.(this.#ctx, input);
+    } catch { /* an observer never fails the turn */ }
     const notes = await this.#hooks.turnStart(hs, ctl.signal).catch(() => []);
     const first = await this.#hooks.messageIn(hs, formatTurnInput(input, this.#ctx.kind), ctl.signal).catch(() => formatTurnInput(input, this.#ctx.kind));
     const nowServers = this.#promptServers(keptServers(this.#mcpServers(), this.#reservedNames()));
@@ -958,7 +1272,50 @@ export class BotSessionDriver implements SessionDriver {
     ];
     const text = lead.length === 0 ? first : `${lead.join("\n\n")}\n\n${first}`;
     if (ctl.signal.aborted) return { reason: "interrupted" };
-    const end = await new Promise<TurnEnd>((resolve) => {
+    this.#continueWith = undefined;
+    let end = await this.#runtimeTurn(inc, text, ctl);
+    // A core tool ended the runtime's turn to go on (`CoreToolResult.endTurn`): the runtime opens again if the host's
+    // sandbox changed (`#ensureOpen`), and a new runtime turn led by the tool's note runs inside this host turn. No new
+    // turn for the observers (a fetch budget never starts again here) nor for the plugins' turn hooks.
+    for (let n = 0; this.#continueWith !== undefined && n < MAX_CONTINUATIONS; n++) {
+      const note = this.#continueWith;
+      this.#continueWith = undefined;
+      if (end.reason !== "end_turn" || ctl.signal.aborted || this.#stopped) break;
+      try {
+        inc = await this.#ensureOpen();
+      } catch (err) {
+        end = { reason: "failed", failure: "error", text: `the runtime could not open again: ${err instanceof Error ? err.message : String(err)}` };
+        break;
+      }
+      const before = end.usage;
+      end = await this.#runtimeTurn(inc, formatTurnInput({ from: "note", label: "Clover", text: note, by: { kind: "core" } }, this.#ctx.kind), ctl);
+      if (before !== undefined) {
+        end = { ...end, usage: { inputTokens: before.inputTokens + (end.usage?.inputTokens ?? 0), outputTokens: before.outputTokens + (end.usage?.outputTokens ?? 0), ...(end.usage?.contextTokens === undefined ? {} : { contextTokens: end.usage.contextTokens }) } };
+      }
+    }
+    this.#continueWith = undefined;
+    // What a `message.out` hook held back is recorded before the turn ends.
+    await this.#recordChain.catch(() => {});
+    await this.#settleTurn(end);
+    return end.text === undefined ? end : { ...end, text: await this.#hooks.messageOut(hs, end.text).catch(() => end.text!) };
+  }
+
+  /** A core tool whose result asks the turn to go on (`endTurn`) noted for `turn`, while a host turn runs. */
+  #endTurnAware(t: CoreToolDef): CoreToolDef {
+    return {
+      ...t,
+      run: async (input) => {
+        const r = await t.run(input);
+        if (r.endTurn !== undefined && this.#turn !== undefined && !this.#turn.ended) this.#continueWith = r.endTurn.note;
+        return r;
+      },
+    };
+  }
+
+  /** One runtime turn of a host turn: `text` pushed, inputs folded into it, until its result. */
+  #runtimeTurn(inc: Incarnation, text: string, ctl: TurnControl): Promise<TurnEnd> {
+    const hs = this.#hookSession;
+    return new Promise<TurnEnd>((resolve) => {
       const t: RunningTurn = {
         ctl, owed: 1, unfolded: [], usage: { inputTokens: 0, outputTokens: 0 }, interrupted: false, ended: false, first: text,
         offFold: () => {}, offAbort: () => {},
@@ -982,6 +1339,7 @@ export class BotSessionDriver implements SessionDriver {
         return;
       }
       t.offFold = ctl.onFold((folded) => {
+        try { this.#d.observe?.input?.(this.#ctx, folded); } catch { /* an observer never fails the turn */ }
         const raw = formatTurnInput(folded, this.#ctx.kind);
         void this.#hooks.messageIn(hs, raw, ctl.signal).catch(() => raw).then((tx) => {
           // Taken after the turn ended (a slow hook): it leads the next turn instead.
@@ -995,10 +1353,6 @@ export class BotSessionDriver implements SessionDriver {
         });
       });
     });
-    // What a `message.out` hook held back is recorded before the turn ends.
-    await this.#recordChain.catch(() => {});
-    await this.#settleTurn(end);
-    return end.text === undefined ? end : { ...end, text: await this.#hooks.messageOut(hs, end.text).catch(() => end.text!) };
   }
 
   async #settleTurn(end: TurnEnd): Promise<void> {
@@ -1008,7 +1362,7 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       this.#log(`bot driver ${session}: releasing holds failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    await this.#hooks.turnEnd(this.#hookSession, end.text).catch(() => {});
+    await this.#hooks.turnEnd(this.#hookSession, end.text, turnOutcomeOf(end.reason)).catch(() => {});
     this.#callIds.clear();
   }
 
@@ -1102,13 +1456,36 @@ export function botDriverStateExists(home: string, sessionId: string): boolean {
   return existsSync(join(home, "sessions-runtime", `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`));
 }
 
-/** A sandbox as canonical JSON: keys sorted, and each list sorted (its entries are paths and hosts, whose order means
- *  nothing), so the same settings compare equal however they were built. */
-function canonicalSandbox(sandbox: unknown): string {
-  const norm = (v: unknown): unknown => {
-    if (Array.isArray(v)) return v.map(norm).map((x) => JSON.stringify(x)).sort().map((x) => JSON.parse(x) as unknown);
-    if (v !== null && typeof v === "object") return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])]));
+/** A list whose order means nothing: the paths, hosts, sockets and commands a sandbox allows or denies. Any other
+ *  list (`ripgrep.args`, say) keeps its order. */
+const UNORDERED_SANDBOX_LIST = /^(allow|deny|excluded)/i;
+
+/** A sandbox as canonical JSON: keys sorted, the unordered lists sorted, every other list in its order, and an
+ *  undefined list entry as null, so the same settings compare equal however they were built. */
+export function canonicalSandbox(sandbox: unknown): string {
+  const norm = (v: unknown, key?: string): unknown => {
+    if (Array.isArray(v)) {
+      const items = v.map((x) => (x === undefined ? null : norm(x)));
+      return key !== undefined && UNORDERED_SANDBOX_LIST.test(key) ? items.map((x) => JSON.stringify(x)).sort().map((x) => JSON.parse(x) as unknown) : items;
+    }
+    if (v !== null && typeof v === "object") return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k], k)]));
     return v;
   };
   return JSON.stringify(norm(sandbox ?? null));
+}
+
+/** A bot's model and effort as the runtime was opened with them. */
+function modelKey(bot: { model: string; effort?: string }): string {
+  return `${bot.model}\u0000${bot.effort ?? ""}`;
+}
+
+/** The model part of a `modelKey`. */
+/** The provider of a model tag (`<provider>/<model>`); the whole tag when it has none. */
+function providerOfModel(model: string): string {
+  const slash = model.indexOf("/");
+  return slash > 0 ? model.slice(0, slash) : model;
+}
+
+function modelOf(key: string): string {
+  return key.slice(0, key.indexOf("\u0000"));
 }

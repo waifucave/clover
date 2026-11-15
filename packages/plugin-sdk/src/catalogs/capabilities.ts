@@ -10,7 +10,7 @@ export interface CapabilityInfo {
   readonly lets: string;
   /** What the OK says about it (§5.6), in English; trusted packs translate it under `clover.capability.<name>`. */
   readonly ok: string;
-  /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "can hear your microphone"). */
+  /** The OK words it specially (§5.4: "controls the screen…", "restyles approval cards", "hears what you say to your bots…"). */
   readonly warns: boolean;
   /** Only the bundled `clover` tree may hold it, as only its process may use `keys.*`: the validator refuses it for any
    *  other plugin, and the core never grants it to one (`mayHoldCapability`). */
@@ -18,10 +18,10 @@ export interface CapabilityInfo {
 }
 
 export const CAPABILITIES: readonly CapabilityInfo[] = [
-  { name: "conversation.read", lets: "Read bots' conversations and follow them live; sealed card fields never reach it", ok: "reads your conversations with bots", warns: false },
-  { name: "conversation.post", lets: "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to bots", warns: false },
+  { name: "conversation.read", lets: "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it", ok: "reads your conversations with all your bots", warns: false },
+  { name: "conversation.post", lets: "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to any of your bots", warns: false },
   { name: "memory.read", lets: "Read bots' memories", ok: "reads your bots' memories", warns: false },
-  { name: "bots.read", lets: "Read the list of bots and their settings", ok: "sees your bots and their settings", warns: false },
+  { name: "bots.read", lets: "Read the list of every bot and their settings (there is no per-bot grant yet)", ok: "sees all your bots and their settings", warns: false },
   { name: "routines.read", lets: "Read the list of routines and their runs", ok: "sees your routines and their runs", warns: false },
   { name: "computers.read", lets: "Read the computer registry: each computer's folders, level and state", ok: "sees your computers, their folders and levels", warns: false },
   { name: "computers.control", lets: "Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running", ok: "controls the screen and input of your computers", warns: true },
@@ -33,20 +33,37 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  plugin's hooks and stdio MCP servers; this lets them write there (never `.git/hooks`, `.git/config` or a
    *  credential file). Bundled plugins hold it the same way. */
   { name: "project.write", lets: "Let its hooks and stdio MCP servers change files in the session's project folders (never `.git/hooks`, `.git/config` or a credential file); without it, those folders are read-only to them", ok: "changes files in your project folders", warns: true },
-  { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false },
+  /** The bundled `clover` tree only for now: this build serves `browser.*` to no plugin (the core runs no Clover
+   *  Browser for plugins yet), and a third-party plugin's OK must not put it in force for later (try 12's ruling). */
+  { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false, bundledOnly: true },
   /** Not in §5.4's table: lane F's request for the terminal panel. The bundled `clover` tree only (the controller's
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */
   { name: "terminal", lets: "Show the user's terminals on their computers, fed only with what the runtime derives from the user's own key presses and pastes; never on a computer at read-only", ok: "runs commands on your computers", warns: true, bundledOnly: true },
+  /** The window itself (`shell.*`): a plugin that draws its own bar, sidebar or controls in a bot's tab. Reads answer where the window is; acts are the user's own press and change only the window's place. */
+  { name: "shell.read", lets: "Read where the window is: the tab showing, the sidebar's and panels' state, the sidebar's app buttons and how far the native window controls reach", ok: "sees which tab and panels are showing", warns: false },
+  { name: "shell.control", lets: "Move the window's own parts when the user presses its controls: show a tab, a panel or the settings, fold the sidebar, open the bot's editor, drag the window; never a conversation, a card or a file", ok: "lets its own buttons move around Clover's window", warns: false },
   { name: "plugins.install", lets: "Install plugins from the indexes and npm for the user to OK: each lands found, with its sealed OK card, and nothing it installs runs before that OK", ok: "installs plugins for you to OK", warns: false, bundledOnly: true },
+  /** Events only (the controller's ruling for the Plugins page): `plugin_changed`, `plugin_removed`, `plugin_found` and
+   *  `plugin_card_note` on a layer, ids and states and Clover's own words, never a folder; no method or API call names
+   *  it, so it opens nothing callable. The bundled `clover` tree only. */
+  { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees which plugins you have and whether they're on", warns: false, bundledOnly: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
-  { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs", warns: false },
+  { name: "logs.read", lets: "Read Clover's logs and every plugin's", ok: "reads Clover's logs and every plugin's logs", warns: false },
+  { name: "avatar.read", lets: "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change", ok: "sees your bot's figure", warns: false },
+  { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, or look at a point; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
+  /** The bundled `clover` tree only: the stage tells the core which renderer drew a bot's figure, its names and its box. */
+  { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "reports your bots' figures", warns: false, bundledOnly: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
-  { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "can hear your microphone", warns: true },
+  { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app, including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound, including as your bots' voices", warns: true },
+  /** The voice providers' endpoints (`voices.*`, §6.6): their audio or text back as the plugin's own data (a narration
+   *  track, a transcript). A voice mode has it by being one. Nothing sounds through it: the player is the active
+   *  voice mode's alone. */
+  { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to speak text or transcribe audio, getting the audio or text back", ok: "can ask your voice providers to speak or transcribe, which may use your accounts with them", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
-   *  only, the dangerous-domain list, a card before a private address, the audit log). Its components get no host from
+   *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from
    *  it. The bundled `clover` tree only. */
-  { name: "network:public", lets: "Reach any public host through the core's fetch, with its web floors: public addresses only, the dangerous-domain list, a card before a private address, and the audit log; its components reach no host from it", ok: "connects to any public website, through Clover's web safeguards", warns: true, bundledOnly: true },
+  { name: "network:public", lets: "Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, size and time caps, no key, and the audit log; its components reach no host from it", ok: "connects to any public website, through Clover's web safeguards", warns: true, bundledOnly: true },
   { name: "network:<host>", lets: "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host", ok: "connects to {host}", warns: false },
 ];
 

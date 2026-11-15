@@ -14,8 +14,8 @@
 // the SDK's family adapter for it as a `ModelAdapter`, which the core calls through the plugin host:
 //   * keyless on the keyed fetch (`modelAdapterFromProviderAdapter`): Azure OpenAI, Google, Codex, xAI's subscription;
 //   * signing with its secret in a process of its own (`modelAdapterFromSigningAdapter`): Bedrock (SigV4) and Vertex
-//     (a service account's JWT), declared `host.runtime: "node"`, the manifest's one way to say "a process of its
-//     own" until lane B gives Bun one (the report's ask).
+//     (a service account's JWT), declared `host.process: "own"` on Bun (spec §5.2): only there does `secrets.get`
+//     exist, and no other plugin shares the process that holds the secret.
 // Their `host/` folders are hand-written; the generator writes and checks only `clover.json` and `catalog.json`.
 //
 // SIGN-INS stay in the core (§3.3). An API key is an `api-key` entry whose placement is the header its protocol's
@@ -48,8 +48,9 @@ export type AuthEntry =
   | { method: "custom"; handler: string };
 
 export interface CodePluginTemplate {
-  /** `bun`: a worker in the `clover` plugin host; `node`: a process of its own (it signs with its secret). */
-  runtime: "bun" | "node";
+  /** Absent: a worker in the `clover` plugin host; `own`: a Bun process of its own (it signs with its secret, which
+   *  `secrets.get` reads only there). */
+  process?: "own";
   capabilities: string[];
   auth: AuthEntry[];
 }
@@ -76,28 +77,24 @@ export const VERTEX_LOCATIONS: readonly string[] = [
 
 export const CODE_PLUGINS: Readonly<Record<string, CodePluginTemplate>> = {
   "azure-openai": {
-    runtime: "bun",
     capabilities: ["network:*.openai.azure.com", "network:*.cognitiveservices.azure.com"],
     auth: [{ method: "api-key", secret: API_KEY_SECRET, help: keyHelp("Azure OpenAI"), placement: { header: "api-key" } }],
   },
   google: {
-    runtime: "bun",
     capabilities: ["network:generativelanguage.googleapis.com"],
     auth: [{ method: "api-key", secret: API_KEY_SECRET, help: keyHelp("Google AI Studio"), placement: { header: "x-goog-api-key" } }],
   },
   "codex-oauth": {
-    runtime: "bun",
     capabilities: ["network:chatgpt.com"],
     // Codex's own public client (codex-rs), redirecting to a loopback port its registration allows.
     auth: [{ method: "oauth-pkce", authorizeUrl: CODEX.authorizeUrl, tokenUrl: CODEX.tokenUrl, clientId: CODEX.clientId, scopes: CODEX.scope.split(" "), secret: "chatgpt" }],
   },
   "xai-oauth": {
-    runtime: "bun",
     capabilities: ["network:cli-chat-proxy.grok.com"],
     auth: [{ method: "custom", handler: "signIn" }],
   },
   bedrock: {
-    runtime: "node",
+    process: "own",
     // Exact hosts, never `*.amazonaws.com` (which covers every AWS customer's buckets and gateways): Bedrock's two,
     // `bedrock-runtime.<region>` (turns) and `bedrock.<region>` (discovery), in each region of `BEDROCK_REGIONS`. Every
     // request goes out through the plugin's `net.fetch`, so a region off the list is refused there (agent SDK 0.0.65's
@@ -107,7 +104,7 @@ export const CODE_PLUGINS: Readonly<Record<string, CodePluginTemplate>> = {
     auth: [{ method: "api-key", secret: "aws", help: "An AWS access key for Bedrock, as JSON ({\"kind\":\"aws\",\"accessKeyId\":…,\"secretAccessKey\":…}). Only this plugin's own process reads it, to sign each request." }],
   },
   vertex: {
-    runtime: "node",
+    process: "own",
     // Exact hosts, never `*.googleapis.com`: `<location>-aiplatform.googleapis.com` for each location of
     // `VERTEX_LOCATIONS`, and Google's token endpoint, where the service account's JWT is exchanged. As for Bedrock,
     // every request goes out through the plugin's `net.fetch`, and a location off the list is refused there.

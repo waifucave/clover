@@ -39,7 +39,7 @@ async function boot(): Promise<void> {
     return fail(`This part couldn't start: its client module failed — ${err instanceof Error ? err.message : String(err)}`);
   }
   const modules = (mod.modules as Record<string, ClientModule> | undefined) ?? { [info.pluginId]: mod as ClientModule };
-  configureLayer({ bridge, modules });
+  configureLayer({ bridge, modules, ...(info.sleepAfterMs !== undefined ? { sleepAfterMs: info.sleepAfterMs } : {}) });
   createRoot(document.getElementById("clover-root")!).render(<LayerRoot info={info} />);
 }
 

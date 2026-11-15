@@ -69,6 +69,8 @@ export interface UiRuntime {
   sealed?: SealedRenderers;
   /** The host's OS, for `when.os`. */
   os?: string;
+  /** What `useKept` keeps across a remount (a test's stand-in for the window's session storage). */
+  kept?: Map<string, string>;
 }
 
 /** A runtime with only some members, the rest empty: a test that needs only sealed frames, say. */
@@ -98,6 +100,25 @@ export interface ComposerHost {
   setModel(model: string, effort?: string): Promise<unknown>;
   interrupt(): Promise<void>;
   stop(): Promise<void>;
+  /** The slash menu's commands (the SDK's `ComposerHost.commands`): the bundled composer's only. */
+  commands?(): Promise<{ commands: ComposerCommand[] }>;
+  /** Runs a command as the user, inside their key press or click (the SDK's `runCommand`). */
+  runCommand?(name: string, args?: unknown): Promise<{ result: unknown }>;
+  /** Push-to-talk (the SDK's `listenStatus`, `listenStart`, `listenStop`): the bundled composer's only. The app records. */
+  listenStatus?(): Promise<{ listens: boolean }>;
+  listenStart?(): Promise<{ note?: string }>;
+  listenStop?(): Promise<{ text?: string; note?: string }>;
+}
+
+/** A command the slash menu lists (the SDK's `ComposerCommand`). */
+export interface ComposerCommand {
+  name: string;
+  pluginId: string;
+  pluginName: string;
+  description: string;
+  args?: Record<string, unknown>;
+  scope?: "bots" | "agents" | "both";
+  own: boolean;
 }
 
 export interface Ui {
@@ -112,6 +133,9 @@ export interface Ui {
   useCore(): CoreClient | undefined;
   useUserSend(): UserSend | undefined;
   useComposerHost(): ComposerHost | undefined;
+  /** State that outlives a document's reload (the SDK's `useKept`): here the runtime's `kept` store when it has one
+   *  (a test of the reload), else plain state. */
+  useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void];
   useTokens(): Readonly<Record<string, TokenValue>>;
   useT(): (key: string, params?: Record<string, string | number>) => string;
   useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
@@ -124,6 +148,10 @@ export interface Ui {
 }
 
 const built = new WeakMap<object, Ui>();
+
+/** The stage's avatar hub and the cue check, from the SDK's `ui` module (the one module a part's bundle takes from the
+ *  layer): the gallery's and the tests' stand-in uses the SDK's own. */
+export { AvatarControlHub, cleanAvatarCue } from "@waifucave/clover-plugin-sdk/ui";
 
 /** The UI API, built from the caller's React. One per React, so every part in one bundle shares its contexts. */
 export function uiFor(react: ReactLike): Ui {
@@ -229,6 +257,29 @@ export function uiFor(react: ReactLike): Ui {
     return runtime?.composerHost?.(id);
   }
 
+  function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
+    const store = useRuntime()?.kept;
+    const k = `clover.kept:${pluginOf(useScope())}:${key}`;
+    const read = (key: string): T => {
+      const raw = store?.get(key);
+      return raw !== undefined ? (JSON.parse(raw) as T) : typeof initial === "function" ? (initial as () => T)() : initial;
+    };
+    // React calls a function initial value once (ReactLike types it as a value).
+    const [state, setState] = useState<{ k: string; v: T }>((() => ({ k, v: read(k) })) as unknown as { k: string; v: T });
+    const current = state.k === k ? state : { k, v: read(k) };
+    if (current !== state) setState(current);
+    useEffect(() => {
+      if (store === undefined) return;
+      if (current.v === undefined) store.delete(current.k);
+      else store.set(current.k, JSON.stringify(current.v));
+    }, [store, current.k, current.v]);
+    // An unmount, or another key: this one goes (a reload, which runs no cleanup, keeps it).
+    useEffect(() => () => void store?.delete(k), [store, k]);
+    const set = (next: T | ((prev: T) => T)) =>
+      (setState as unknown as (f: (s: { k: string; v: T }) => { k: string; v: T }) => void)((s) => ({ k: s.k, v: typeof next === "function" ? (next as (prev: T) => T)(s.v) : next }));
+    return [current.v, set];
+  }
+
   function useTokens(): Readonly<Record<string, TokenValue>> {
     return useRuntime()?.tokens?.() ?? {};
   }
@@ -255,7 +306,7 @@ export function uiFor(react: ReactLike): Ui {
     return createElement(RuntimeContext.Provider, { value: runtime }, children);
   }
 
-  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useUserSend, useComposerHost, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
+  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useUserSend, useComposerHost, useKept, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
   built.set(react, ui);
   return ui;
 }

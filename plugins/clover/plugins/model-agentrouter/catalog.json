@@ -104,7 +104,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "claude-opus-4.8",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "agentrouter/claude-opus-5",
@@ -175,7 +176,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "agentrouter/gpt-5.6-sol",
@@ -228,7 +230,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     }
   ]
 }

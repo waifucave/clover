@@ -5,7 +5,9 @@ import {
   LOGIN_SHELL_PATH_END,
   applyLoginShellPath,
   describeLoginShellPath,
+  LOGIN_SHELL_RETRY_MS,
   loginShellPathDisabled,
+  loginShellPathRetrier,
   mergePathLists,
   parseMarkedPath,
   spawnShellRunner,
@@ -228,5 +230,41 @@ describe("describeLoginShellPath — the one boot log line", () => {
     const env: Record<string, string | undefined> = { PATH: "/usr/bin", SHELL: "/bin/zsh" };
     const line = describeLoginShellPath(await applyLoginShellPath({ env, run: async () => ({ kind: "timeout" }), exists: () => false }));
     expect(line).toContain("timed out");
+  });
+});
+
+describe("loginShellPathRetrier (the review's item on stage 2: a failed boot lookup is tried again)", () => {
+  test("after a fallback: one lookup at a time, at most one per interval, none after it succeeds; the PATH is merged", async () => {
+    const env: Record<string, string | undefined> = { PATH: "/usr/bin:/bin", SHELL: "/bin/zsh" };
+    let t = 0;
+    const calls: Array<{ shell: string; args: string[]; timeoutMs: number }> = [];
+    let answer: "fail" | "ok" = "fail";
+    const run: ShellRunner = async (shell, args, timeoutMs) => {
+      calls.push({ shell, args, timeoutMs });
+      return answer === "ok" ? { kind: "ok", stdout: marked("/Users/u/.cargo/bin:/usr/bin:/bin") } : { kind: "timeout" };
+    };
+    const first = await applyLoginShellPath({ env, run, exists: () => false });
+    expect(first.source).toBe("fallback");
+    const r = loginShellPathRetrier(first, { env, run, exists: () => false }, { now: () => t });
+    expect(r.poke()).toBeUndefined(); // too soon after the boot lookup
+    t += LOGIN_SHELL_RETRY_MS;
+    await r.poke();
+    expect(calls).toHaveLength(2);
+    expect(r.poke()).toBeUndefined(); // still failing, and too soon
+    t += LOGIN_SHELL_RETRY_MS;
+    answer = "ok";
+    const one = r.poke();
+    expect(r.poke()).toBe(one); // one at a time
+    await one;
+    expect(calls).toHaveLength(3);
+    expect(env.PATH!.split(":")).toContain("/Users/u/.cargo/bin");
+    t += 10 * LOGIN_SHELL_RETRY_MS;
+    expect(r.poke()).toBeUndefined(); // it succeeded: never again
+    expect(calls).toHaveLength(3);
+  });
+
+  test("a boot lookup that succeeded is never retried", () => {
+    const r = loginShellPathRetrier({ source: "login-shell", added: [], changed: false, ms: 1 }, { run: async () => { throw new Error("never"); } }, { now: () => 1e12 });
+    expect(r.poke()).toBeUndefined();
   });
 });

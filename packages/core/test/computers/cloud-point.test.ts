@@ -1,6 +1,7 @@
 // The `computer` point end to end, against fakes (plan §4 J, M3; `cloud-support.ts` has the plugins, the fake host and
 // the fake Hetzner API), and the cloud computers on a node, run by the main computer alone.
 import { afterEach, describe, expect, test } from "bun:test";
+import { NOT_AVAILABLE_YET } from "@waifucave/clover-protocol";
 import { removeTemps, tempDir } from "../../src/bots/tests/fixtures";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { FakeLeaseAuthority } from "../../src/contracts/fakes/lease";
@@ -11,8 +12,8 @@ import { cloudPlugins, PROVIDER, testUserData, TOKEN } from "./cloud-support";
 
 afterEach(removeTemps);
 
-async function setup(answer: (c: CloudCard) => boolean = () => true) {
-  const { registry, host, hetzner, bundled, folder, clock } = await cloudPlugins();
+async function setup(answer: (c: CloudCard) => boolean = () => true, o: { asShipped?: boolean } = {}) {
+  const { registry, host, hetzner, bundled, folder, clock } = await cloudPlugins(o);
   const cards: CloudCard[] = [];
   const authority = { canAct: () => true, tenure: () => "group:1" };
   const cloud = new CloudComputers({
@@ -24,6 +25,16 @@ async function setup(answer: (c: CloudCard) => boolean = () => true) {
 }
 
 describe("the computer point", () => {
+  test("as this build ships it: the Hetzner provider is parked, so a cloud computer folder makes nothing and asks nothing", async () => {
+    const { registry, bundled, hetzner, cards, cloud, point } = await setup(() => true, { asShipped: true });
+    expect(bundled.report.children.find((c) => c.folder === "provider-hetzner")?.ok).toBe(true);
+    expect([registry.get(PROVIDER)?.state, registry.get(PROVIDER)?.reason]).toEqual(["off", NOT_AVAILABLE_YET]);
+    expect(registry.entries("computerProviders")).toEqual([]);
+    expect(providerIds(registry)).toEqual([]);
+    expect(await point.sync()).toMatchObject({ created: [] });
+    expect([cards, hetzner.servers.size, cloud.get("Cloud1")?.serverId]).toEqual([[], 0, undefined]);
+  });
+
   test("a cloud computer folder makes its VM through the Hetzner plugin, with the official image and the user's token", async () => {
     const { bundled, hetzner, cards, cloud, point } = await setup();
     expect(bundled.report.children.find((c) => c.folder === "provider-hetzner")?.ok).toBe(true);

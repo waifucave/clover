@@ -86,7 +86,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "chatdolphin",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "nlpcloud/dolphin",
@@ -139,7 +140,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "dolphin",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "nlpcloud/finetuned-llama-3-70b",
@@ -185,7 +187,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "finetuned-llama-3-70b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "nlpcloud/llama-3-1-405b",
@@ -231,7 +234,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3.1-405b",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "medium"
     },
     {
       "key": "nlpcloud/llama-3-8b-instruct",
@@ -277,7 +281,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "llama-3-8b-instruct",
-      "modelFamily": "llama"
+      "modelFamily": "llama",
+      "strength": "weak"
     }
   ]
 }

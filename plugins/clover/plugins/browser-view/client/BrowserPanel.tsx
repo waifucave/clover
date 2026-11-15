@@ -103,7 +103,13 @@ export function BrowserPanel({ props }: BrowserEntryProps) {
     setTabs([]);
     setPicked(undefined);
     closed.current.clear();
-    const unwatch = api.watch((tab) => {
+    const unwatch = api.watch((change) => {
+      if (change.type === "closed") {
+        // A tab gone (closed here, by the page or by its bot): out of the row.
+        setTabs((cur) => cur.filter((t) => t.id !== change.id));
+        return;
+      }
+      const tab = change.tab;
       if (!sameOwner(tab.owner, owner) || closed.current.has(tab.id)) return;
       if (load.current.open) load.current.buffered.push(tab);
       setTabs((cur) => upsert(cur, tab));

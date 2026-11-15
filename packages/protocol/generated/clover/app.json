@@ -2,6 +2,1167 @@
   "area": "app",
   "owner": "E (with C, D, G, M)",
   "methods": {
+    "app.open": {
+      "doc": "The user's own navigation of this computer's app from a terminal: shows a bot's tab, a plugin's page, Settings, Plugins, Archive or the coding side in the main window by the route its own sidebar uses, waits until it shows, and says where the window is and its frames; never shows, raises, focuses, moves or resizes a window, and never clicks or types in a page. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.where": {
+      "doc": "Where this computer's app's main window is (the tab showing) and its frames, changing nothing. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.open": {
+      "doc": "The daemon asks the app's main process for `app.open`'s answer (with a target) or `app.where`'s (without).",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.render": {
+      "doc": "The daemon asks the app's main process to draw a place for a bot's AppScreenshot in a render window the user never sees (hidden, offscreen, no input, no sound, a card there a plain placeholder), or to capture the main window as it is (`window`, never while Settings shows), and answers with the picture.",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 320,
+                "maximum": 2560
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 240,
+                "maximum": 1640
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target",
+          "size"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9._:#/-]+$"
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "drawn": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "png": {
+            "type": "string",
+            "maxLength": 7000000
+          },
+          "pixels": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "preview": {
+            "type": "object",
+            "properties": {
+              "png": {
+                "type": "string",
+                "maxLength": 7000000
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "png",
+              "width",
+              "height"
+            ],
+            "additionalProperties": false
+          },
+          "where": {
+            "type": "object",
+            "properties": {
+              "tab": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "id": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "dialog": {
+                "type": "string",
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "tab"
+            ],
+            "additionalProperties": false
+          },
+          "frames": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "mount": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "surface": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "width": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "height": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "visibility": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "silent": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "sealed": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "placeholder"
+                  ]
+                }
+              },
+              "required": [
+                "origin"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "console": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "plugin": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "error",
+                    "warning"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "plugin",
+                "level",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "target",
+          "size",
+          "shown",
+          "drawn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.capture": {
+      "doc": "The user's own look at what this computer's app draws: a window's picture (Electron's own capture of its page, never the screen) with its bounds, its display's scale and its frame list; never shows, raises or resizes a window. A local user's CLI only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._#/-]+$"
+          },
+          "image": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "window"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bounds": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "png": {
+                  "type": "string",
+                  "maxLength": 7000000
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "reduced": {
+                  "type": "boolean"
+                },
+                "views": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bounds": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "composited": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bounds",
+                      "visible",
+                      "composited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "frames": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "origin": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "mount": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "surface": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "visibility": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "silent": {
+                        "type": "boolean"
+                      },
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "sealed": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "placeholder"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "bounds",
+                "scale",
+                "visible",
+                "drawn",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.window.capture": {
+      "doc": "The daemon asks the app's main process for `app.capture`'s answer, one window's picture at a time.",
+      "owner": "D",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._#/-]+$"
+          },
+          "image": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "window"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "bounds": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "width": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "height": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "drawn": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "png": {
+                  "type": "string",
+                  "maxLength": 7000000
+                },
+                "pixels": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "height": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "additionalProperties": false
+                },
+                "reduced": {
+                  "type": "boolean"
+                },
+                "views": {
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "bounds": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "height": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y",
+                          "width",
+                          "height"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "composited": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bounds",
+                      "visible",
+                      "composited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "frames": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "origin": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "mount": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "surface": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "width": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "visibility": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "silent": {
+                        "type": "boolean"
+                      },
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "sealed": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "placeholder"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "bounds",
+                "scale",
+                "visible",
+                "drawn",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ],
+        "additionalProperties": false
+      }
+    },
     "pair.status": {
       "doc": "What would stop if this computer quit, for Quit's question (§3.1).",
       "owner": "C",
@@ -463,6 +1624,16 @@
                     "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
                     "minLength": 2
                   }
+                },
+                "shown": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                    "minLength": 2
+                  }
                 }
               },
               "required": [
@@ -542,6 +1713,15 @@
               "maxLength": 81,
               "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
             }
+          },
+          "voice": {
+            "type": "object",
+            "properties": {
+              "speakReplies": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -641,6 +1821,16 @@
                         "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
                         "minLength": 2
                       }
+                    },
+                    "shown": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
                     }
                   },
                   "required": [
@@ -717,6 +1907,14 @@
                   "type": "string",
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "voice": {
+                "type": "object",
+                "properties": {
+                  "speakReplies": {
+                    "type": "boolean"
+                  }
                 }
               }
             }
@@ -826,6 +2024,41 @@
         "additionalProperties": false
       }
     },
+    "voice.status": {
+      "doc": "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "listens": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "listens"
+        ],
+        "additionalProperties": false
+      }
+    },
     "voice.play": {
       "doc": "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
       "owner": "D",
@@ -895,6 +2128,132 @@
         },
         "required": [
           "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "voice.played": {
+      "doc": "The app's player says an utterance it was sent has ended (§6.6): the voice mode's queue goes on.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "utterance": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "bot",
+          "utterance"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "voice.stop": {
+      "doc": "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "bot"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "voice.speak": {
+      "doc": "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "session",
+          "seq"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "speaking": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "speaking"
         ],
         "additionalProperties": false
       }
@@ -1094,6 +2453,80 @@
         "additionalProperties": false
       }
     },
+    "notify.mutes": {
+      "doc": "The plugins whose notifications the user muted.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "muted": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "muted"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notify.setMuted": {
+      "doc": "Mutes or unmutes a plugin's notifications (`notify.send`); the user's own choice, never a plugin's.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pluginId",
+          "muted"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
     "app.notify": {
       "doc": "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",
       "owner": "G",
@@ -1126,12 +2559,16 @@
           },
           "urgent": {
             "type": "boolean"
+          },
+          "silent": {
+            "type": "boolean"
           }
         },
         "required": [
           "id",
           "title"
-        ]
+        ],
+        "additionalProperties": false
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1364,6 +2801,16 @@
                         "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
                         "minLength": 2
                       }
+                    },
+                    "shown": {
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$",
+                        "minLength": 2
+                      }
                     }
                   },
                   "required": [
@@ -1440,6 +2887,14 @@
                   "type": "string",
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                }
+              },
+              "voice": {
+                "type": "object",
+                "properties": {
+                  "speakReplies": {
+                    "type": "boolean"
+                  }
                 }
               }
             },

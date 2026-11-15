@@ -1,7 +1,7 @@
 // A stand-in for the plugin API's `browser` member, for the tests and the gallery: no browser, no network, no window.
 // It keeps tabs in memory, answers like lane B's contract says (`show` moves a tab to the view, `hide` back to headless,
 // `navigate` changes its address), and writes every call down so a test can say what was asked, in order.
-import type { BrowserApi, TabOwner, TabView, Viewport } from "../client/types";
+import type { BrowserApi, BrowserChange, TabOwner, TabView, Viewport } from "../client/types";
 import { tabView } from "./fixtures";
 
 export interface Call {
@@ -20,6 +20,8 @@ export interface FakeBrowser extends BrowserApi {
   readonly watchers: number;
   /** Tells every watcher a tab changed (and keeps it, as the browser would). */
   emit(tab: TabView): void;
+  /** Tells every watcher a tab is gone. */
+  emitClosed(id: string): void;
   /** Makes the next call of `method` (`"cdp:Page.reload"` for one DevTools method) fail with `message`. */
   failNext(method: string, message: string): void;
   /** What `Page.getNavigationHistory` answers, per tab. */
@@ -34,7 +36,7 @@ export function fakeBrowser(initial: TabView[] = [], opts: { shows?: boolean } =
   let tabs = [...initial];
   let next = 1;
   const calls: Call[] = [];
-  const watchers = new Set<(tab: TabView) => void>();
+  const watchers = new Set<(change: BrowserChange) => void>();
   const failures = new Map<string, string>();
   const history: FakeBrowser["history"] = {};
 
@@ -66,9 +68,12 @@ export function fakeBrowser(initial: TabView[] = [], opts: { shows?: boolean } =
       return watchers.size;
     },
     history,
+    emitClosed(id) {
+      for (const w of [...watchers]) w({ type: "closed", id });
+    },
     emit(tab) {
       tabs = tabs.some((t) => t.id === tab.id) ? tabs.map((t) => (t.id === tab.id ? tab : t)) : [...tabs, tab];
-      for (const w of [...watchers]) w(tab);
+      for (const w of [...watchers]) w({ type: "changed", tab });
     },
     failNext(method, message) {
       failures.set(method, message);

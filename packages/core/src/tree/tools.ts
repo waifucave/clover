@@ -21,6 +21,7 @@ import type { LocalHolder } from "./holder";
 import { offlineAs } from "./remote";
 import { runKey, type ToolExecutor } from "./service";
 import { withAnswer, type AnswerAsker } from "./judge";
+import type { TurnOrigin } from "@waifucave/clover-protocol";
 import type { CoreTree, TreeDirectory } from "./tree";
 
 /** The tools this layer runs on tree paths. */
@@ -42,6 +43,9 @@ export interface TreeToolContext {
   answer?: SignedCardAnswer;
   /** The lease epoch the call was made under (§6.4). */
   epoch?: number;
+  /** What started the session's turn, for a card shown here when another computer needs the user's answer; left
+   *  out, the card is taken as unattended (it expires). */
+  origin?: TurnOrigin;
   signal?: AbortSignal;
   /** A running Bash call's output, as it comes. */
   onOutput?(chunk: string, stream: "stdout" | "stderr"): void;
@@ -266,7 +270,8 @@ export class TreeTools {
     }
     const off = ctx.signal ? onAbort(ctx.signal, () => { void link.request("tool.cancel", { session: ctx.session, callId: ctx.callId, ...fenceParam(this.#o.fence) }).catch(() => {}); }) : () => {};
     try {
-      const r = await withAnswer(ctx.answer === undefined ? this.#o.ask : undefined, (answer) => link.request<{ output: unknown; isError: boolean }>("tool.run", {
+      const askCtx = { as, ...(ctx.origin === undefined ? {} : { origin: ctx.origin }), ...(ctx.signal === undefined ? {} : { signal: ctx.signal }) };
+      const r = await withAnswer(ctx.answer === undefined ? this.#o.ask : undefined, askCtx, (answer) => link.request<{ output: unknown; isError: boolean }>("tool.run", {
         session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: "Bash", input, level, ...fenceParam(this.#o.fence),
         ...((answer ?? ctx.answer) === undefined ? {} : { answer: answer ?? ctx.answer }),
       }, { priority: "control" }));

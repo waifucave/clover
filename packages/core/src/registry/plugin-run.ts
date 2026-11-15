@@ -121,10 +121,25 @@ const refuse = (p) => fail("refused to load " + p + ": it is outside the plugin'
 // prefix would let a sibling folder through on Linux.
 const esc = (s) => Array.from(s, (c) => ("\\^$.*+?()[]{}|/".includes(c) ? "\\" + c : c)).join("");
 const roots = [root, ...shared].map((r) => esc(r.endsWith(sep) ? r : r + sep)).join("|");
+// "bun -e" and "--print": the command's own code (its arguments, which the plugin's OK card named), loaded as
+// "<working folder>/[eval]", never a file. Bun sends it through onLoad when a folder on the way has a dot in its name
+// (measured on Bun 1.4.4: the data folder under ~/.clover, so every pasted "bun -e" server was refused at start);
+// that one name in this process's own working folder, as it started, is left out of the filter. Only as Bun's own entry
+// (imported by "bun:main") and never a real file of that name: a "[eval]" on disk, or one imported by the plugin's
+// code, is refused when it resolves.
+const evalDirs = [...new Set([process.cwd(), real(process.cwd())])];
+const evals = evalDirs.map((d) => esc(d.endsWith(sep) ? d : d + sep) + "\\[eval\\]$").join("|");
+const onDisk = (p) => { try { statSync(p); return true; } catch { return false; } };
 Bun.plugin({
   name: "clover-plugin-guard",
   setup(build) {
-    build.onLoad({ filter: new RegExp("^(?!(?:" + roots + "))(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)") }, (args) => refuse(args.path));
+    build.onResolve({ filter: /\[eval\]$/ }, (args) => {
+      const p = /^(?:\/|[A-Za-z]:[\\/])/.test(args.path) || args.importer === undefined || args.importer === "" ? args.path : join(dirname(args.importer), args.path);
+      if (!evalDirs.some((d) => p === join(d, "[eval]"))) return undefined;
+      if (args.importer !== "bun:main" || onDisk(p)) refuse(p);
+      return undefined;
+    });
+    build.onLoad({ filter: new RegExp("^(?!(?:" + roots + "|" + evals + "))(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)") }, (args) => refuse(args.path));
   },
 });
 // A require of a file with no extension Bun knows skips onLoad (measured on Bun 1.4.4), never the resolver: held to
@@ -357,6 +372,19 @@ export interface PluginRunGuard {
   /** The plugin-process fence (`plugin-fence.ts`, 2f): on by default where the OS has one; false runs unfenced (tests
    *  of what the load guard alone holds); `userHome` names the home it denies (tests pass a temp one). */
   fence?: false | { userHome?: string };
+  /** A plugin tree's network proxy (2g, `startPluginHost`'s `proxyFor`): a fenced process reaches the network only
+   *  through it; with none, not at all. */
+  proxyFor?: (pluginId: string) => { port: number; env: Record<string, string> } | undefined;
+  /** Whether a plugin's stdio MCP servers and hooks reach any host rather than only through its proxy: a wrapper's
+   *  with the grant on its install record and no `network:` host declared (`wrapperOpensNetwork`, the owner's ruling
+   *  of 2026-11-10). Fenced for files the same. Absent or false: through the proxy. */
+  openNetwork?: (pluginId: string) => boolean;
+  /** A wrapped stdio server's own folders in the user's home, read-only (its install record's `wrapped.reads`,
+   *  re-checked: `wrapperReads`). Absent: none. */
+  reads?: (pluginId: string) => readonly string[];
+  /** The files and folders the user picked for a plugin (`PluginGrants.fencePaths`): its processes read the open picks
+   *  and read and write the save picks and export folders. Absent: none. */
+  picked?: (pluginId: string) => { read: readonly string[]; write: readonly string[] };
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
@@ -471,8 +499,10 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
-    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
-    Object.assign(env, toolEnv);
+    const open = pluginId !== undefined && guard.openNetwork?.(pluginId) === true;
+    const proxy = pluginId !== undefined && !open ? guard.proxyFor?.(pluginId) : undefined;
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}), ...(pluginId !== undefined ? { reads: guard.reads?.(pluginId) ?? [] } : {}), ...(pluginId !== undefined && guard.picked ? { picked: guard.picked(pluginId) } : {}) });
+    Object.assign(env, toolEnv, proxy?.env ?? {});
     // Started by the runtime, in the folder it chooses; the trampoline makes it its own TCC-responsible process.
     const spawned = fencedSpawn({ cmd: [command, ...(entry.args ?? [])], env, fence, files: guard.files });
     const [cmd, ...args] = spawned.cmd;

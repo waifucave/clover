@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { utf16 } from "@waifucave/clover-protocol";
 import { EntryId, HandlerName, Path, Text } from "../manifest/fields";
-import { avatarFileProblem } from "./avatars";
+import { AVATAR_CAPABILITIES, AVATAR_FILE_CAPS, AVATAR_FILE_TYPES, AVATAR_FINDERS, AVATAR_MODEL_MAX_FILES, avatarFileProblem } from "./avatars";
 import { SPOTS } from "./spots";
 
 export interface CorePointInfo {
@@ -43,7 +43,9 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "triggers", side: "daemon", shape: "keyed", uniqueBy: "type", kind: "code", runsOn: "each computer, started at once",
     doc: "Arms them for routine files (§7).", shipsWith: "schedule, webhook" },
   { name: "voices", side: "daemon", shape: "list", uniqueBy: "id", kind: "code", runsOn: "the computer the user is talking on",
-    doc: "Speech-to-text and text-to-speech for the bot's voice choice (§6.6).", shipsWith: "Fish Audio" },
+    doc: "Speech-to-text and text-to-speech for the bot's voice choice (§6.6), which the active voice mode takes.", shipsWith: "Fish Audio" },
+  { name: "voiceModes", side: "daemon", shape: "list", uniqueBy: "id", kind: "code", runsOn: "the computer the user is talking on",
+    doc: "The voice slot (§6.6): one voice mode is active (Settings › Voice); it speaks the bots' replies, plays sound as their voices through its one queue, and hears push-to-talk. The others neither speak nor hear.", shipsWith: "Clover Voice" },
   { name: "computerProviders", side: "daemon", shape: "keyed", uniqueBy: "id", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
     doc: "Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2).", shipsWith: "Google Cloud, Hetzner" },
   { name: "computer", side: "daemon", shape: "single", kind: "data", runsOn: "data",
@@ -51,7 +53,7 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "relays", side: "daemon", shape: "list", kind: "code", runsOn: "every device that uses them",
     doc: "Carries encrypted traffic when two devices can't connect directly, or holds encrypted sync mail (§8.3).", shipsWith: "n0's public relays; the cloud computer relay" },
   { name: "notifiers", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
-    doc: "Wakes companions when something happens (§10).", shipsWith: "waifucave push; desktop notifications" },
+    doc: "Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify the user or wake a companion (§10). The OK card says so.", shipsWith: "waifucave push; desktop notifications" },
   { name: "companions", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
     doc: "Serves a remote client within the fixed list of remote calls (§10).", shipsWith: "the iOS app; clover.waifucave.com" },
   { name: "themes", side: "app", shape: "list", kind: "data", runsOn: "every app instance",
@@ -78,11 +80,45 @@ export interface DataPointInfo {
   readonly doc: string;
 }
 
+/** One `avatar.formats` entry: what a renderer plugin declares about the model format it draws. */
+export const AvatarFormatEntry = z.strictObject({
+  id: EntryId,
+  /** The format id: the key of the `avatar` entry that draws it, and a bot's `avatar.format`. */
+  format: utf16(32, 1).regex(/^[a-z0-9-]+$/),
+  name: Text,
+  /** What `avatar.file` names: its extensions, lower case with the dot (`.vrm`, `.model3.json`). */
+  entry: z.strictObject({ extensions: z.array(utf16(32, 2).regex(/^\.[a-z0-9]+(\.[a-z0-9]+)*$/)).min(1).max(8) }),
+  files: z.strictObject({
+    /** The kinds of file a model is made of, each with its extensions and a cap. */
+    kinds: z.array(z.strictObject({
+      ext: z.array(utf16(32, 2).regex(/^\.[a-z0-9]+(\.[a-z0-9]+)*$/)).min(1).max(16),
+      type: z.enum(AVATAR_FILE_TYPES),
+      maxBytes: z.number().int().min(1).max(Math.max(...Object.values(AVATAR_FILE_CAPS))).optional(),
+    }).superRefine((k, ctx) => {
+      if (k.maxBytes !== undefined && k.maxBytes > AVATAR_FILE_CAPS[k.type]) ctx.addIssue({ code: "custom", path: ["maxBytes"], message: `a ${k.type} file may be at most ${AVATAR_FILE_CAPS[k.type]} bytes` });
+    })).min(1).max(16),
+    find: z.enum(AVATAR_FINDERS).default("folder"),
+    maxFiles: z.number().int().min(1).max(AVATAR_MODEL_MAX_FILES).optional(),
+  }),
+  /** What the avatar picker may offer for this format. */
+  import: z.strictObject({ accepts: z.array(z.enum(["folder", "zip", "file"])).min(1).max(3) }).optional(),
+  capabilities: z.array(z.enum(AVATAR_CAPABILITIES)).max(8).optional(),
+  /** A picture to show when the model cannot be drawn: a file in the renderer's folder. */
+  portrait: Path.optional(),
+});
+export type AvatarFormatEntry = z.infer<typeof AvatarFormatEntry>;
+
 export const DATA_POINTS: readonly DataPointInfo[] = [
   { name: "webhook.ingress", shape: "list", declaredBy: "clover/trigger-webhook", kind: "code",
     entry: z.strictObject({ id: EntryId, name: Text.optional(), handler: HandlerName }),
     doc: "Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7)." },
-  { name: "avatar.packs", shape: "list", declaredBy: "clover/bot-editor", kind: "data",
+  { name: "island.line", shape: "list", declaredBy: "clover/island", kind: "code",
+    entry: z.strictObject({ id: EntryId, handler: HandlerName }),
+    doc: "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when Clover isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line." },
+  { name: "avatar.formats", shape: "list", declaredBy: "clover/character", kind: "data",
+    entry: AvatarFormatEntry,
+    doc: "A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is hardcoded per format (§5.5)." },
+  { name: "avatar.packs", shape: "list", declaredBy: "clover/character", kind: "data",
     entry: z.strictObject({ id: EntryId, name: Text.optional(), file: Path, format: utf16(32, 1).regex(/^[a-z0-9-]+$/), portrait: Path.optional(), license: utf16(200).optional() })
       .superRefine((a, ctx) => {
         const problem = avatarFileProblem(a.format, a.file);

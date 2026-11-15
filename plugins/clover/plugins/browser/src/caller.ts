@@ -13,7 +13,7 @@ import type { Caller, ClientKind, SessionKind, TabOwner } from "./types";
 
 /** The tool call's context as the plugin host carries it, looked up by the request; undefined when the host gives
  *  none. Whatever it returns is checked (`parseCaller`) before it is used. */
-export type CallerOf = (request: { id: string | number }) => unknown;
+export type CallerOf = (request: { id: string | number }) => unknown | Promise<unknown>;
 
 /** The plugin host carries no tool call's context yet (B-M2 does): nothing is known about the caller. */
 export const NO_CONTEXT: CallerOf = () => undefined;

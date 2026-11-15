@@ -1,0 +1,335 @@
+// Row 4.19's drawing: the usage plugin's island tab and its Settings section, read as drawn on the real app (offscreen).
+// What a turn counted shows as "Today … N tokens" with a Clover row; an empty section says "No usage yet" or "Nothing used today".
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Cdp } from "./cdp";
+
+/** What is wrong with a drawn usage view's text, or undefined when it shows a day's tokens under Clover. */
+export function usageDrawnProblem(text: string): string | undefined {
+  if (/Nothing used today|No usage yet/.test(text)) return `it says it has no usage: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
+  if (!/Today/.test(text)) return `it has no Today group: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
+  if (!/Clover/.test(text)) return `it has no Clover row: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
+  if (!/\d[\d.,]*[kKmM]? tokens/.test(text)) return `it shows no token count: ${JSON.stringify(text.replace(/\s+/g, " ").slice(0, 160))}`;
+  return undefined;
+}
+
+/** The same for the Settings section's own vocabulary (a period, a total "N in · M out", a table by source): no Today group. */
+export function settingsDrawnProblem(text: string): string | undefined {
+  const flat = JSON.stringify(text.replace(/\s+/g, " ").slice(0, 200));
+  if (/No usage yet/.test(text)) return `it says it has no usage: ${flat}`;
+  if (!/Clover/.test(text)) return `it has no Clover row: ${flat}`;
+  if (!/\d[\d.,]*[kKmM]? in · \d[\d.,]*[kKmM]? out/.test(text)) return `it shows no "N in · M out" total: ${flat}`;
+  return undefined;
+}
+
+const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/") || d.url.startsWith("clover-plugin://alpha"));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined>, hint?: () => Promise<string>): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await probe().catch(() => undefined);
+    if (v !== undefined) return v;
+    if (Date.now() > end) throw new Error(`${what} didn't show within ${ms} ms${hint === undefined ? "" : `: ${await hint().catch(() => "")}`}`);
+    await sleep(300);
+  }
+}
+
+async function clickIn(cdp: Cdp, what: string, selector: string, text: string | undefined, ms = 20_000): Promise<void> {
+  const at = await until(what, ms, async () => {
+    for (const d of await treeDocs(cdp)) {
+      const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+      if (c !== undefined) return { session: d.session, c };
+    }
+    return undefined;
+  });
+  await cdp.click(at.session, at.c.x, at.c.y);
+}
+
+/** The Settings window's Usage section, opened the user's way (the sidebar's gear, then the section), and its drawn text. */
+export async function settingsUsageText(cdp: Cdp): Promise<string> {
+  await clickIn(cdp, "the Settings button", "button[aria-label=Settings]", undefined);
+  await clickIn(cdp, "the Settings window's Usage section", "button.cl-settings__section", "Usage");
+  const text = await until("the Usage section's drawn text", 20_000, async () => {
+    for (const d of await treeDocs(cdp)) {
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Plans/.test(t) && /\\d[\\d.,]*[kKmM]? in · \\d[\\d.,]*[kKmM]? out|No usage yet/.test(t) && !/Reading usage/.test(t) ? t : null; })()`).catch(() => null);
+      if (typeof v === "string" && v !== "") return v;
+    }
+    return undefined;
+  }, async () => {
+    const seen: string[] = [];
+    for (const d of await treeDocs(cdp)) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 90) : ''").catch(() => "")).slice(0, 90)}`);
+    const dialogs: string[] = [];
+    for (const d of await treeDocs(cdp)) {
+      const v = await cdp.evaluate(d.session, "(() => { const s = document.querySelector('[class*=cl-settings]'); return s ? s.innerText.replace(/\\s+/g, ' ').slice(0, 500) : null; })()").catch(() => null);
+      if (typeof v === "string") dialogs.push(v);
+    }
+    const errors = cdp.console.filter((c) => /error|warn/i.test(c.level)).slice(-8).map((c) => `${c.level}: ${c.text.replace(/\s+/g, " ").slice(0, 200)}`);
+    return `settings text: ${dialogs.join(" || ") || "no settings element"}; console: ${errors.join(" | ") || "none"}; documents: ${seen.join(" | ")}`;
+  });
+  // Closed again the user's way, so no later step meets the dialog.
+  for (const type of ["keyDown", "keyUp"]) for (const d of await treeDocs(cdp)) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
+  return text;
+}
+
+/** The island's Usage tab, chosen on its tab dots while the island is open (a card is pending), and its drawn text. */
+/** A picture of the island's own page, offscreen, in dark and light: `island-<name>-<scheme>.png` in `dir`. The overlay is
+ *  transparent, so the capture lays a flat ground under it (the picture's, not the app's). */
+export function islandShooter(cdp: Cdp, dir: string, setAppearance?: (scheme: "dark" | "light" | "system") => void): { shoot: (name: string) => Promise<string[]>; done: () => Promise<void> } {
+  const ground = { dark: { r: 0x20, g: 0x20, b: 0x20, a: 255 }, light: { r: 0xf5, g: 0xf5, b: 0xf5, a: 255 } } as const;
+  const page = async () => (await cdp.documents()).find((d) => /[?&]surface=island/.test(d.url));
+  return {
+    async shoot(name) {
+      const doc = await page();
+      if (doc === undefined) return [];
+      const out: string[] = [];
+      for (const scheme of ["dark", "light"] as const) {
+        setAppearance?.(scheme);
+        for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+        await cdp.send("Emulation.setDefaultBackgroundColorOverride", { color: ground[scheme] }, doc.session).catch(() => undefined);
+        await sleep(1_200);
+        const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, doc.session) as { data: string };
+        writeFileSync(join(dir, `island-${name}-${scheme}.png`), Buffer.from(shot.data, "base64"));
+        out.push(`island-${name}-${scheme}.png`);
+      }
+      return out;
+    },
+    async done() {
+      setAppearance?.("system");
+      const doc = await page();
+      if (doc !== undefined) await cdp.send("Emulation.setDefaultBackgroundColorOverride", {}, doc.session).catch(() => undefined);
+      for (const d of await cdp.documents()) await cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
+    },
+  };
+}
+
+export async function islandUsageText(cdp: Cdp, shoot?: (name: string) => Promise<unknown>, thirdParty?: { label: string; words: string; say?: (line: { text?: string; progress?: number }) => Promise<unknown> }): Promise<string> {
+  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
+  // A card on top rests small; the strip at the top opens the island (its tab dots live there).
+  await shoot?.("1-closed-strip");
+  await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 20_000);
+  /** Chooses a tab on the dots by its label, clicking again until it reads as selected (a dot takes a click once the island rests). */
+  /** The pointer over the open island (it puts itself away a moment after the pointer leaves, and a click alone doesn't move it);
+   *  an island that has put itself away is opened again from its strip. */
+  const hold = async (): Promise<void> => {
+    for (const d of await here()) {
+      const c = await cdp.centerOf(d.session, ".clv-open", undefined).catch(() => undefined);
+      if (c !== undefined) { await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y }, d.session).catch(() => undefined); return; }
+    }
+    await clickIn(cdp, "the island's strip", ".clv-strip[role=button]", undefined, 10_000).catch(() => undefined);
+    await sleep(1_200);
+  };
+  const choose = async (label: string): Promise<void> => {
+    const selector = `[role=tab][aria-label=${JSON.stringify(label)}]`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await hold();
+      await sleep(600);
+      await clickIn(cdp, `the island's ${label} tab dot`, selector, undefined, 20_000).catch(async (err: unknown) => {
+        const seen: string[] = [];
+        for (const d of await here()) seen.push(String(await cdp.evaluate(d.session, "[...document.querySelectorAll('[role=tab]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-selected')).join(',') || (document.body ? 'no dots; ' + document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : '')").catch(() => "")));
+        throw new Error(`${(err as Error).message} (attempt ${attempt + 1}; dots: ${seen.filter((x) => x !== "").join(" | ")})`);
+      });
+      await sleep(400);
+      for (const d of await here()) {
+        const v = await cdp.evaluate(d.session, `(() => { const t = document.querySelector(${JSON.stringify(selector)}); return t ? t.getAttribute('aria-selected') === 'true' : null; })()`).catch(() => null);
+        if (v === true) return;
+      }
+    }
+    throw new Error(`the ${label} tab dot never read as selected`);
+  };
+  // The island morphs open first: its dots only take a click once it rests, so the click is repeated until the tab is chosen.
+  const chosen = async (): Promise<boolean> => {
+    for (const d of await here()) {
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.querySelector('[role=tab][aria-label="Usage"]'); return t ? t.getAttribute('aria-selected') === 'true' : null; })()`).catch(() => null);
+      if (typeof v === "boolean") return v;
+    }
+    return false;
+  };
+  await sleep(1_000);
+  await shoot?.("2-open-default");
+  await (async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await sleep(700);
+      await clickIn(cdp, "the island's Usage tab dot", '[role=tab][aria-label="Usage"]', undefined, 20_000);
+      await sleep(400);
+      if (await chosen()) return;
+    }
+  })().catch(async (err: unknown) => {
+    const seen: string[] = [];
+    for (const d of await here()) seen.push(`${d.url.slice(0, 60)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 300) : ''").catch(() => "")).slice(0, 700)}`);
+    throw new Error(`${(err as Error).message} (the island's documents: ${seen.join(" | ") || "none"})`);
+  });
+  const text = await until("the Usage tab's drawn text", 20_000, async () => {
+    for (const d of await here()) {
+      // The tab's entry is its own frame inside the panel: the text is read where it is drawn.
+      const v = await cdp.evaluate(d.session, `(() => { const t = document.body ? document.body.innerText : ''; return /Today/.test(t) && /Clover/.test(t) && /\\d[\\d.,]*[kKmM]? tokens|No usage yet/.test(t) && !/Waiting to use/.test(t) ? t : null; })()`).catch(() => null);
+      if (typeof v === "string" && v.trim() !== "") return v;
+    }
+    return undefined;
+  }).catch(async (err: unknown) => {
+    const seen: string[] = [];
+    for (const d of await here()) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); const tabs = [...document.querySelectorAll('[role=tab]')].map((x) => x.getAttribute('aria-label') + ':' + x.getAttribute('aria-selected')).join(','); return p ? 'PANEL[' + tabs + '] ' + p.outerHTML.replace(/\\s+/g, ' ').slice(0, 600) : ''; })()").catch(() => "")).slice(0, 700)}`);
+    throw new Error(`${(err as Error).message} (documents: ${seen.join(" | ")})`);
+  });
+  await shoot?.("3-open-usage");
+  // The Devices tab (a bundled plugin of its own, `devices.watch`): its rows are read, not only its dot chosen: this computer's
+  // own row, in the Computers group, says it is this device.
+  await choose("Devices");
+  const devices = await until("the Devices tab's rows", 30_000, async () => {
+    for (const d of await here()) {
+      const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ') : ''").catch(() => "");
+      if (typeof v === "string" && /Computers\s+\d+ of \d+ online/.test(v) && /this device/i.test(v)) return v;
+    }
+    return undefined;
+  }, async () => {
+    const seen: string[] = [];
+    for (const d of await here()) seen.push(`${d.url.slice(0, 50)}: ${String(await cdp.evaluate(d.session, "document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 300) : ''").catch(() => "")).slice(0, 300)}`);
+    return seen.join(" | ");
+  });
+  const rows = /Computers\s+\d+ of \d+ online.*/.exec(devices)?.[0] ?? devices;
+  await sleep(1_000);
+  await shoot?.("4-open-devices");
+  // A third-party plugin's tab, on the same dots (labelled with its plugin's name), drawn by that plugin's own frame.
+  if (thirdParty !== undefined) {
+    await choose(thirdParty.label);
+    await until("the third-party tab's own words", 20_000, async () => {
+      // Its own plugin's layer draws it: a document of its own, not the island's or the clover tree's.
+      for (const d of (await cdp.documents()).filter((x) => x.url.startsWith("clover-plugin://acceptance-tab/"))) {
+        const v = await cdp.evaluate(d.session, "document.body ? document.body.innerText : ''").catch(() => "");
+        if (typeof v === "string" && v.includes(thirdParty.words)) return true;
+      }
+      return undefined;
+    }, async () => {
+      const seen: string[] = [];
+      for (const d of await cdp.documents()) if (/surface=island|clover-plugin:\/\/(acceptance-tab|clover)\//.test(d.url)) seen.push(`${d.url.slice(0, 55)}: ${String(await cdp.evaluate(d.session, "(() => { const p = document.querySelector('[role=tabpanel]'); return p ? 'PANEL ' + p.getAttribute('aria-label') + ' ' + p.innerHTML.replace(/\\s+/g, ' ').slice(0, 260) : (document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 80) : ''); })()").catch(() => "")).slice(0, 320)}`);
+      return seen.join(" | ");
+    });
+    await shoot?.("5-open-third-party");
+  }
+  // The plugin's own line (its `island.line` entry, called by the island while its Needs you tab is up): the island draws its words
+  // in its own rows with the plugin's name (a bot's name only for that bot's own plugin), an update shows, and removing it clears it.
+  let lineNote = "";
+  if (thirdParty?.say !== undefined) {
+    const say = thirdParty.say;
+    /** The plugin's line as drawn (the island's `.clv-line` rows of the acceptance plugin), or undefined. */
+    const drawn = async (): Promise<{ from: string; text: string; icon: boolean; bar: string | null; style: string | null } | undefined> => {
+      for (const d of await here()) {
+        const v = await cdp.evaluate(d.session, `(() => { const r = document.querySelector('.clv-line[data-plugin="acceptance-tab"]'); if (!r) return null; const b = r.querySelector('[role=progressbar]'); return JSON.stringify({ from: r.querySelector('.clv-line-from')?.textContent ?? '', text: r.querySelector('.clv-line-text')?.textContent ?? '', icon: r.querySelector('svg[data-glyph]') !== null, bar: b ? b.getAttribute('aria-valuenow') : null, style: r.getAttribute('style') }); })()`).catch(() => null);
+        if (typeof v === "string") return JSON.parse(v);
+      }
+      return undefined;
+    };
+    await say({ text: "Rendering 1 of 3", progress: 0.33 });
+    await choose("Needs you");
+    const first = await until("the third-party plugin's line on Needs you", 40_000, async () => {
+      const l = await drawn();
+      return l !== undefined && l.text === "Rendering 1 of 3" ? l : undefined;
+    }, async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    // The line names bot "alpha", but the sender is the acceptance plugin, not that bot's own: its name stays off the line.
+    if (first.from !== "acceptance-tab") throw new Error(`the line says it is from "${first.from}", not the plugin alone`);
+    if (first.bar !== "33" || !first.icon) throw new Error(`the line's icon/progress read ${JSON.stringify(first)}`);
+    if (first.style !== null) throw new Error(`the sender's row carries a style of its own (${first.style})`);
+    await say({ text: "Rendering 2 of 3", progress: 0.66 });
+    const second = await until("the update shown", 40_000, async () => {
+      const l = await drawn();
+      return l !== undefined && l.text === "Rendering 2 of 3" ? l : undefined;
+    }, async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    if (second.bar !== "66") throw new Error(`the updated line's progress reads ${second.bar}`);
+    await say({});
+    await until("the line removed", 40_000, async () => ((await drawn()) === undefined ? true : undefined), async () => `the island's lines read ${JSON.stringify(await drawn())}`);
+    lineNote = `\n[line] ${first.from} | ${first.text} (${first.bar}%) -> ${second.text} (${second.bar}%) -> removed`;
+  }
+  return `${text}\n[devices] ${rows.slice(0, 300)}${lineNote}`;
+}
+
+/** The island's first line on the CLOSED strip (the owner's ruling: only when Clover isn't in front). The plugin's line is set,
+ *  the open island is put away (the pointer leaves it), and the small pill under the strip must show the plugin's words; with
+ *  the window in front it must go, with it back it must return. `front` is the test seam's say-so. Reads the island's own
+ *  document(s) only, never the pointer's place for a card. */
+export async function islandStripLine(cdp: Cdp, deps: { say: (line: { text?: string; progress?: number }) => Promise<unknown>; front: (front: boolean) => void }): Promise<string> {
+  const here = async () => (await cdp.documents()).filter((d) => /[?&]surface=island/.test(d.url) || d.url.startsWith("clover-plugin://clover/"));
+  const pill = async (): Promise<{ from: string; text: string; bar: string | null } | undefined> => {
+    for (const d of await here()) {
+      const v = await cdp.evaluate(d.session, `(() => { const r = document.querySelector('.clv-stripline[data-plugin="acceptance-tab"]'); if (!r) return null; const b = r.querySelector('[role=progressbar]'); return JSON.stringify({ from: r.querySelector('.clv-line-from')?.textContent ?? '', text: r.querySelector('.clv-line-text')?.textContent ?? '', bar: b ? b.getAttribute('aria-valuenow') : null }); })()`).catch(() => null);
+      if (typeof v === "string") return JSON.parse(v);
+    }
+    return undefined;
+  };
+  const dump = async () => `the strip's line reads ${JSON.stringify(await pill())}`;
+  deps.front(false);
+  await deps.say({ text: "Closed strip line", progress: 0.5 });
+  // Put the open island away: the pointer leaves it, and it closes a moment later.
+  await until("the open island put away", 40_000, async () => {
+    let open = false;
+    for (const d of await here()) {
+      if ((await cdp.evaluate(d.session, "document.querySelector('.clv-open') !== null").catch(() => false)) === true) {
+        open = true;
+        await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2000 }, d.session).catch(() => undefined);
+      }
+    }
+    return open ? undefined : true;
+  });
+  const shown = await until("the plugin's line on the closed strip", 40_000, async () => {
+    const l = await pill();
+    return l !== undefined && l.text === "Closed strip line" ? l : undefined;
+  }, dump);
+  if (shown.from !== "acceptance-tab" || shown.bar !== "50") throw new Error(`the strip's line reads ${JSON.stringify(shown)}`);
+  deps.front(true);
+  await until("the strip's line gone with the window in front", 20_000, async () => ((await pill()) === undefined ? true : undefined), dump);
+  await sleep(1_500);
+  if ((await pill()) !== undefined) throw new Error("the strip's line came back while the window was still in front");
+  deps.front(false);
+  await until("the strip's line back with the window not in front", 40_000, async () => ((await pill()) !== undefined ? true : undefined), dump);
+  return `${shown.from} | ${shown.text} (${shown.bar}%): on the closed strip, gone with the window in front, back with it not`;
+}
+
+/** Whether the closed strip draws a plugin line now (any `.clv-stripline` in the island's documents). */
+export async function islandStripLineShown(cdp: Cdp): Promise<boolean> {
+  for (const d of await cdp.documents()) {
+    if ((await cdp.evaluate(d.session, "document.querySelector('.clv-stripline') !== null").catch(() => false)) === true) return true;
+  }
+  return false;
+}
+
+/** A pending card on the island's top, with the pointer put on it (the card grows a little under the pointer) and watched for
+ *  `holdMs`: the geometry of the card, sampled every 100 ms, each distinct state kept once with its time. The window the
+ *  island sits in is sized to the card's room, which a hover must not change: the caller reads the app's log for the bounds it
+ *  was given after `hoveredAt` (`beforeHover` marks where). Whether the card carries a Review, and the Review's own size, are read too. */
+export async function islandCardHolds(cdp: Cdp, holdMs = 5_000, beforeHover?: () => void): Promise<{ states: { at: number; sig: string }[]; review: boolean }> {
+  const doc = await until("the island's card", 30_000, async () => {
+    for (const d of await cdp.documents()) {
+      const v = await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false);
+      if (v === true) return d;
+    }
+    return undefined;
+  });
+  // The card is born and rests before the pointer comes.
+  await sleep(2_000);
+  const c = await cdp.centerOf(doc.session, "[data-clover-card]", undefined);
+  if (c === undefined) throw new Error("the island's card has no place to put the pointer on");
+  beforeHover?.();
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y }, doc.session);
+  const probe = `(() => {
+    const h = (s) => { const e = document.querySelector(s); return e ? Math.round(e.getBoundingClientRect().height * 10) / 10 : -1; };
+    const card = document.querySelector('[data-clover-card]');
+    const shell = document.querySelector('.clv-card-shell');
+    return 'win=' + innerWidth + 'x' + innerHeight + ' card=' + h('[data-clover-card]') + ' hovered=' + (shell ? shell.getAttribute('data-hovered') : '-') + ' review=' + h('.clover-card-review');
+  })()`;
+  const states: { at: number; sig: string }[] = [];
+  const t0 = Date.now();
+  while (Date.now() - t0 < holdMs) {
+    const sig = String(await cdp.evaluate(doc.session, probe).catch(() => ""));
+    if (states.length === 0 || states[states.length - 1]!.sig !== sig) states.push({ at: Date.now() - t0, sig });
+    await sleep(100);
+  }
+  const review = (await cdp.evaluate(doc.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true;
+  return { states, review };
+}
+
+/** Whether any of the app's documents draws a plugin OK card's Review (the island's card, the only place it is drawn here). */
+export async function islandDrawsOkCard(cdp: Cdp): Promise<boolean> {
+  for (const d of await cdp.documents()) {
+    if ((await cdp.evaluate(d.session, "document.querySelector('.clover-card-review') !== null").catch(() => false)) === true) return true;
+  }
+  return false;
+}

@@ -11,6 +11,8 @@ import { ARCHIVED, HISTORY as ARCHIVE_HISTORY } from "../../archive/gallery/fixt
 import botEditorManifest from "../../bot-editor/clover.json";
 import * as botEditorClient from "../../bot-editor/client/index";
 import { AVATARS } from "../../bot-editor/gallery/fixtures";
+import characterManifest from "../../character/clover.json";
+import * as characterClient from "../../character/client/index";
 import composerManifest from "../../composer/clover.json";
 import * as composerClient from "../../composer/client/index";
 import { MODELS } from "../../composer/gallery/stories";
@@ -62,6 +64,7 @@ interface Manifest {
 
 const PARTS: { dir: string; manifest: Manifest; client: Record<string, unknown> }[] = [
   { dir: "shell", manifest: shellManifest as Manifest, client: shellClient },
+  { dir: "character", manifest: characterManifest as Manifest, client: characterClient },
   { dir: "sidebar", manifest: sidebarManifest as Manifest, client: sidebarClient },
   { dir: "conversation", manifest: conversationManifest as Manifest, client: conversationClient },
   { dir: "composer", manifest: composerManifest as Manifest, client: composerClient },
@@ -109,6 +112,9 @@ export const BUNDLED: { pluginId: string; capabilities: string[]; entries: UiEnt
 // In flight
 // -------------------------------------------------------------------------------------------------
 
+/** How long no call may have been in flight before the world is idle: a call's answer sets state, and the part's next call comes
+ *  from its effect after that render, which on a loaded runner (happy-dom, many stories) takes well over a few ms. */
+const IDLE_GRACE_MS = 300;
 let pending = 0;
 const idleWaiters = new Set<() => void>();
 
@@ -116,7 +122,7 @@ function track<T>(p: Promise<T>): Promise<T> {
   pending++;
   const done = () => {
     pending--;
-    if (pending === 0) setTimeout(() => pending === 0 && idleWaiters.forEach((w) => w()), 30);
+    if (pending === 0) setTimeout(() => pending === 0 && idleWaiters.forEach((w) => w()), IDLE_GRACE_MS);
   };
   p.then(done, done);
   return p;
@@ -131,7 +137,7 @@ export function whenIdle(): Promise<void> {
       resolve();
     };
     idleWaiters.add(check);
-    setTimeout(check, 60);
+    setTimeout(check, IDLE_GRACE_MS);
   });
 }
 
@@ -290,6 +296,8 @@ const coreHandlers: Handlers = {
       uiPluginView("midnight", [{ id: "midnight", file: "midnight.css" }], [{ lang: "de", file: "de.json" }, { lang: "fr", file: "fr.json" }]),
     ],
   }),
+  "plugin.settings.get": () => ({ settings: [] }),
+  "plugin.auth.list": () => ({ auth: [] }),
   "plugin.index.list": () => ({ indexes: INDEXES }),
   "plugin.index.search": ({ query }) => ({ entries: INDEX_ENTRIES.filter((e) => !query || `${e.id} ${e.name ?? ""} ${e.description ?? ""}`.toLowerCase().includes(query.toLowerCase())) }),
   "plugin.install": ({ source }) => ({ id: source.from === "index" ? source.id : "local", state: "found" }),
@@ -376,6 +384,11 @@ export function world(options: WorldOptions = {}): UiRuntime {
     const caps = new Set(plugins.find((p) => p.pluginId === pluginId)?.capabilities ?? []);
     const has = (c: string) => pluginId.startsWith("clover/") || caps.has(c);
     const points: Record<string, PointEntry[]> = {
+      // The two renderers Clover ships, as they declare their formats (what the Avatar section's import takes).
+      "avatar.formats": [
+        { pluginId: "clover/vrm", entryId: "vrm", value: { id: "vrm", format: "vrm", name: "VRM", entry: { extensions: [".vrm"] }, files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary" }], maxFiles: 1 }, import: { accepts: ["file"] } } },
+        { pluginId: "clover/live2d", entryId: "live2d", value: { id: "live2d", format: "live2d", name: "Live2D (Cubism)", entry: { extensions: [".model3.json", ".zip"] }, files: { kinds: [{ ext: [".json"], type: "json" }] }, import: { accepts: ["folder", "zip"] } } },
+      ],
       "avatar.packs": AVATARS.map((a) => ({ pluginId: a.id.split("#")[0]!, entryId: a.id.split("#")[1]!, value: { id: a.id.split("#")[1]!, name: a.name, file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })),
     };
     const base = fakeApi({ pluginId, computer: "Studio" });
@@ -397,18 +410,8 @@ export function world(options: WorldOptions = {}): UiRuntime {
         : {}),
       ...(has("computers.read") ? { computers: { list: () => later(COMPUTERS), watch: () => () => undefined } } : {}),
       ...(has("devices.read") ? { devices: { list: () => later(DEVICES), watch: () => () => undefined } } : {}),
-      ...(has("approvals")
-        ? {
-            approvals: {
-              pending: () => later(cards),
-              watch: (fn: (c: CardMeta[]) => void) => {
-                const l = () => fn(cards);
-                listeners.add(l);
-                return () => void listeners.delete(l);
-              },
-            },
-          }
-        : {}),
+      // No `approvals` area: a plugin doesn't read the cards that wait (the catalog's `notYet`); parts hear cards through
+      // the runtime's own approvals (the `approvals` below).
       ...(has("files")
         ? {
             files: {
@@ -423,6 +426,12 @@ export function world(options: WorldOptions = {}): UiRuntime {
               glob: () => later({ paths: [], truncated: false }),
               // The gallery's folder never changes.
               watch: () => later(() => undefined),
+              // No grants and no file picker in the gallery (lane A's files.path, lane G's pickers and media URL).
+              path: () => fail("the gallery holds no granted files"),
+              pickOpen: () => fail("the gallery has no file picker"),
+              pickFolder: () => fail("the gallery has no file picker"),
+              pickSave: () => fail("the gallery has no file picker"),
+              url: () => "",
             },
           }
         : {}),

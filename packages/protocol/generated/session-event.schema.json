@@ -985,6 +985,11 @@
         },
         "argsJson": {
           "type": "string"
+        },
+        "displayTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
         }
       },
       "required": [
@@ -1093,6 +1098,35 @@
             ],
             "additionalProperties": false
           }
+        },
+        "display": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{1,24}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "swatch": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
+          },
+          "required": [
+            "kind",
+            "label",
+            "value"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

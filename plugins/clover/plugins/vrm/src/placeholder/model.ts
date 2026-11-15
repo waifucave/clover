@@ -25,6 +25,10 @@ const PALETTE = {
   mint: ["#5ED6B4", "#2F9F86"],
   stocking: ["#3E3560", "#251E3E"],
   shoe: ["#4D3F94", "#2E2563"],
+  // Her other two outfits (`OUTFITS`): a navy uniform with a white collar and hem, and a yellow raincoat.
+  navy: ["#33407E", "#1E2655"],
+  raincoat: ["#FFD34E", "#E0A92A"],
+  raincoatTrim: ["#E7A923", "#B97C12"],
   eye: ["#2A2145", "#2A2145"],
   iris: ["#3FC7A4", "#2A8F78"],
   pupil: ["#17112D", "#17112D"],
@@ -36,6 +40,10 @@ const PALETTE = {
 
 type Paint = keyof typeof PALETTE;
 const OUTLINE = hex("#3B2E6E");
+
+/** Her outfits, each a set of parts marked on the model's nodes for the renderer (`extras.clover.outfit`): one shows at a
+ *  time, the first by default (the others' marks say `"on": false`). Alpha's `outfit` setting picks among them. */
+export const OUTFITS = ["lilac-dress", "navy-uniform", "yellow-raincoat"] as const;
 
 /** The morph targets on the face, in order; expressions bind them by index. */
 export const FACE_TARGETS = ["aa", "ih", "ou", "ee", "oh", "blinkLeft", "blinkRight", "happy", "surprised"] as const;
@@ -110,8 +118,9 @@ export function makePlaceholderVrm(): Uint8Array {
   }
   b.use("VRMC_materials_mtoon");
 
-  /** One mesh node under `bone`: each paint a primitive, every point relative to the bone. */
-  const part = (bone: string, name: string, pieces: [Paint, Shape][], targets?: number[][][]): number => {
+  /** One mesh node under `bone`: each paint a primitive, every point relative to the bone. `outfit` marks it as part of
+   *  one of her outfits (`OUTFITS`), shown at first only for the first. */
+  const part = (bone: string, name: string, pieces: [Paint, Shape][], targets?: number[][][], outfit?: (typeof OUTFITS)[number]): number => {
     const origin = world.get(bone)!;
     const primitives = pieces.map(([paint, shape], p) => {
       const local = shape.positions.map((v, i) => v - origin[i % 3]!);
@@ -128,7 +137,8 @@ export function makePlaceholderVrm(): Uint8Array {
     });
     const mesh: Record<string, unknown> = { name, primitives };
     if (targets) mesh.extras = { targetNames: [...FACE_TARGETS] };
-    return b.node({ name, mesh: b.mesh(mesh) }, nodes.get(bone));
+    const extras = outfit === undefined ? {} : { extras: { clover: outfit === OUTFITS[0] ? { outfit } : { outfit, on: false } } };
+    return b.node({ name, mesh: b.mesh(mesh), ...extras }, nodes.get(bone));
   };
 
   // The head and the hair.
@@ -162,20 +172,34 @@ export function makePlaceholderVrm(): Uint8Array {
 
   // The body.
   part("neck", "Neck", [["skin", tube([0, 1.155, -0.006], [0, 1.06, -0.006], 0.033, 0.035, 18)]]);
-  part("chest", "Bodice", [
-    ["dress", tube([0, 1.078, 0], [0, 0.86, 0], 0.074, 0.064, 26, 0.72, "flat")],
-    ["mint", merge(tube([0, 1.082, 0], [0, 1.056, 0], 0.08, 0.093, 26, 0.74, "flat"), ellipsoid([0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12), ellipsoid([-0.02, 1.032, 0.062], [0.018, 0.011, 0.008], 8, 12))],
-  ]);
-  part("hips", "Skirt", [
-    ["skirt", tube([0, 0.875, 0], [0, 0.6, 0], 0.066, 0.19, 30, 0.84, "flat")],
-    ["mint", tube([0, 0.62, 0], [0, 0.598, 0], 0.183, 0.193, 30, 0.84, "flat")],
-  ]);
+  // Her three outfits: a bodice, a skirt (or a coat's hem) and two sleeves each, one outfit shown at a time.
+  const looks: { outfit: (typeof OUTFITS)[number]; suffix: string; body: Paint; trim: Paint; skirt: Paint; hem: Paint; sleeve: Paint; arm: Paint; coat: boolean }[] = [
+    { outfit: "lilac-dress", suffix: "", body: "dress", trim: "mint", skirt: "skirt", hem: "mint", sleeve: "dress", arm: "skin", coat: false },
+    { outfit: "navy-uniform", suffix: "Navy", body: "navy", trim: "dress", skirt: "navy", hem: "dress", sleeve: "navy", arm: "skin", coat: false },
+    { outfit: "yellow-raincoat", suffix: "Raincoat", body: "raincoat", trim: "raincoatTrim", skirt: "raincoat", hem: "raincoatTrim", sleeve: "raincoat", arm: "raincoat", coat: true },
+  ];
+  for (const l of looks) {
+    // A coat sits a little proud of the body and hangs a little lower.
+    const g = l.coat ? 0.006 : 0;
+    part("chest", `Bodice${l.suffix}`, [
+      [l.body, tube([0, 1.078, 0], [0, 0.86, 0], 0.074 + g, 0.064 + g, 26, 0.72, "flat")],
+      [l.trim, merge(tube([0, 1.082, 0], [0, 1.056, 0], 0.08 + g, 0.093 + g, 26, 0.74, "flat"), ellipsoid([0.02, 1.032, 0.062 + g], [0.018, 0.011, 0.008], 8, 12), ellipsoid([-0.02, 1.032, 0.062 + g], [0.018, 0.011, 0.008], 8, 12))],
+    ], undefined, l.outfit);
+    const hemAt = l.coat ? 0.56 : 0.6;
+    part("hips", `Skirt${l.suffix}`, [
+      [l.skirt, tube([0, 0.875, 0], [0, hemAt, 0], 0.066 + g, 0.19 + g, 30, 0.84, "flat")],
+      [l.hem, tube([0, hemAt + 0.02, 0], [0, hemAt - 0.002, 0], 0.183 + g, 0.193 + g, 30, 0.84, "flat")],
+    ], undefined, l.outfit);
+    for (const s of [1, -1]) {
+      const side = s > 0 ? "left" : "right";
+      part(`${side}UpperArm`, `${side}Sleeve${l.suffix}`, [
+        [l.sleeve, ellipsoid([s * 0.108, 1.035, 0], [0.042 + g, 0.034 + g, 0.035 + g], 12, 18)],
+        [l.arm, tube([s * 0.12, 1.035, 0], [s * 0.3, 1.035, 0], 0.024 + (l.coat ? 0.004 : 0), 0.021 + (l.coat ? 0.004 : 0), 16)],
+      ], undefined, l.outfit);
+    }
+  }
   for (const s of [1, -1]) {
     const side = s > 0 ? "left" : "right";
-    part(`${side}UpperArm`, `${side}Sleeve`, [
-      ["dress", ellipsoid([s * 0.108, 1.035, 0], [0.042, 0.034, 0.035], 12, 18)],
-      ["skin", tube([s * 0.12, 1.035, 0], [s * 0.3, 1.035, 0], 0.024, 0.021, 16)],
-    ]);
     part(`${side}LowerArm`, `${side}Forearm`, [["skin", tube([s * 0.3, 1.035, 0], [s * 0.465, 1.035, 0], 0.021, 0.018, 16)]]);
     part(`${side}Hand`, `${side}Hand`, [["skin", ellipsoid([s * 0.5, 1.033, 0.002], [0.034, 0.02, 0.028], 10, 16)]]);
     part(`${side}UpperLeg`, `${side}Thigh`, [["skin", tube([s * 0.075, 0.72, 0], [s * 0.075, 0.42, 0], 0.05, 0.04, 18)]]);

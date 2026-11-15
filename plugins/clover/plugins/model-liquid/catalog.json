@@ -81,7 +81,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "liquid-lfm-40b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

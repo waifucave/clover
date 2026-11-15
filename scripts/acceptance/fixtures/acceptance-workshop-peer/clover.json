@@ -1,0 +1,10 @@
+{
+  "manifest": 1,
+  "id": "acceptance-workshop-peer",
+  "name": "Acceptance workshop peer",
+  "description": "The acceptance run's second bot, for the workshop row: a plain bot with no code, which tries to read the state of, and edit, a plugin another bot built.",
+  "version": "0.0.1",
+  "contributes": {
+    "bot": { "name": "Workshop peer", "instructions": "bot/instructions.md" }
+  }
+}

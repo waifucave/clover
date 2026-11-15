@@ -94,7 +94,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-r1-0528",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     }
   ]
 }

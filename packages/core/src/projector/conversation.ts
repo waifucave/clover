@@ -1,5 +1,6 @@
 import { takeFileDiff } from "../runtime-sdk/diff-attach";
 import { siteIconsForResult } from "../runtime-sdk/site-icons";
+import type { ToolDisplay } from "@waifucave/clover-protocol";
 import type { ProjectedEvent, ProtocolSdkMessage } from "./types";
 
 /**
@@ -136,14 +137,20 @@ export function assistantText(frame: AssistantFrame): string {
  * name on a card and the name in the transcript cannot drift. An unmapped Clover name falls through
  * unchanged rather than being dropped.
  */
-export function toolCalls(frame: AssistantFrame, sessionId: string, threadId: string, renameTool: (cloverName: string) => string): ProjectedEvent[] {
+export function toolCalls(
+  frame: AssistantFrame, sessionId: string, threadId: string, renameTool: (cloverName: string) => string,
+  displayTitle?: (runtimeName: string) => string | undefined,
+): ProjectedEvent[] {
   const out: ProjectedEvent[] = [];
   for (const b of frame.message.content) {
     if (b.type !== "tool_use") continue;
     const callId = str(b.id);
     const name = str(b.name);
     if (callId === undefined || callId.length === 0 || name === undefined || name.length === 0) continue;
-    out.push({ type: "tool_call", sessionId, threadId, callId, name: renameTool(name), argsJson: JSON.stringify(b.input ?? {}) });
+    // A plugin tool's own title (`ProjectorDeps.toolDisplayTitle`), looked up by the runtime's name, beside it: display
+    // only, never the name anything is decided by.
+    const title = displayTitle?.(name);
+    out.push({ type: "tool_call", sessionId, threadId, callId, name: renameTool(name), argsJson: JSON.stringify(b.input ?? {}), ...(title === undefined ? {} : { displayTitle: title }) });
   }
   return out;
 }
@@ -195,7 +202,7 @@ export function isErrorResult(block: ContentBlock): boolean {
  * (`diff-attach.ts`'s own doc), so a replayed `tool_result` never re-attaches a diff — the summary
  * rides the event exactly once, the same turn it was produced on. `siteIcons` follows the same rule.
  */
-export function toolResults(frame: UserFrame, sessionId: string, threadId: string): ProjectedEvent[] {
+export function toolResults(frame: UserFrame, sessionId: string, threadId: string, takeDisplay?: (callId: string) => ToolDisplay | undefined): ProjectedEvent[] {
   const out: ProjectedEvent[] = [];
   for (const b of frame.message.content) {
     if (b.type !== "tool_result") continue;
@@ -207,10 +214,15 @@ export function toolResults(frame: UserFrame, sessionId: string, threadId: strin
     // block by the runtime (WebFetch/WebSearch/Search). Read here for the same
     // reason `fileDiff` is taken here: this is the one emission site.
     const siteIcons = siteIconsForResult(sessionId, callId, b);
+    // `display` (`runtime-sdk/tool-display.ts`): what a plugin tool's result showed, taken once, and only for a success
+    // (a failed call's is taken too, so it never waits for a later result, and dropped).
+    const taken = takeDisplay?.(callId);
+    const display = isError ? undefined : taken;
     out.push({
       type: "tool_result", sessionId, threadId, callId, output: toolResultOutput(b), isError,
       ...(fileDiff === undefined ? {} : { fileDiff }),
       ...(siteIcons === undefined ? {} : { siteIcons }),
+      ...(display === undefined ? {} : { display }),
     });
   }
   return out;

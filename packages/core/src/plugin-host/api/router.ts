@@ -10,7 +10,8 @@
 // * a call where it doesn't exist (`secrets.get` outside a process of the plugin's own, `ui.send` from a component …)
 //   is refused the same way;
 // * a plugin that isn't on and running has no API: `plugin_stopped` with its state;
-// * a call the catalog has but no handler serves yet answers `refused` ("not served on this computer"), never a guess.
+// * a call the catalog marks not served yet (`notYet`) answers `refused` with why ("isn't available yet"); one it has
+//   that no handler here serves answers `refused` ("not served on this computer"), never a guess.
 //
 // The handlers get the caller the core bound (R7): the session whose tool call the plugin is serving, or the plugin
 // itself, and never anything the plugin wrote.
@@ -18,7 +19,7 @@ import { apiCallAllowed, API_CALLS, type ApiCallInfo, type ApiCallPath } from "@
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
 import type { ApiRouter } from "../../contracts/plugin-host";
-import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
+import { RUNNING_STATES, type PluginRecord, type PluginRegistry } from "../../contracts/plugin-registry";
 
 /** What a handler gets: the plugin (its record as the core holds it), where the call came from, and whom it acts for. */
 export interface ApiCallContext {
@@ -43,10 +44,14 @@ export interface ApiRouterOptions {
   commandOwner?: (name: string) => string | undefined;
   /** Whether `network:` capabilities reach a host (`net.fetch`'s target). Absent: no host is reached. */
   allowNetwork?: (capabilities: readonly string[], host: string, port?: number) => boolean;
+  /** The origin the USER set for a plugin's provider (`providers.<id>.baseUrl`, runtime-sdk/model-plugins/
+   *  user-endpoint.ts), read at each call: the plugin's `net.fetch` reaches that origin as if its OK listed it, beside
+   *  the hosts its OK does list. */
+  userEndpoint?: (pluginId: string) => string | undefined;
 }
 
-/** The states in which a plugin's host half may use the API. */
-const LIVE = new Set(["running", "waiting"]);
+/** The states in which a plugin's host half may use the API (`grantsInForce`'s, for its other connections). */
+const LIVE: ReadonlySet<string> = RUNNING_STATES;
 
 /** The handler a list serves for a path: the last one that has it. */
 export function handlerOf(list: readonly ApiHandlers[], path: ApiCallPath): ApiHandler | undefined {
@@ -61,19 +66,51 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
   return async (call) => {
     const path = call.path as ApiCallPath;
     if (!Object.hasOwn(API_CALLS, path)) throw new ContractError("refused", `${call.path} isn't a call of the plugin API`);
+    // Listed in the catalog, served by no side yet (`ApiCallInfo.notYet`): the SDK types it as absent, and here it says why.
+    const notYet = (API_CALLS[path] as ApiCallInfo).notYet;
+    if (notYet !== undefined) throw new ContractError("refused", `${path} isn't available yet: ${notYet}`, { call: path });
     const record = o.registry.get(call.pluginId);
     if (record === undefined) throw new ContractError("not_installed", `${call.pluginId} isn't installed`);
     if (!record.enabled || !LIVE.has(record.state)) {
       throw new ContractError("plugin_stopped", `${call.pluginId} is ${record.enabled ? record.state : "off"}${record.reason ? `: ${record.reason}` : ""}`);
     }
     const target = targetOf(path, call.args, o.commandOwner);
-    if (!apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
+    // A plugin runs its own tree's commands with no `call:` (§5.4: `call:<plugin-id>` is for another plugin's).
+    const ownCommand = path === "commands.run" && target?.plugin !== undefined && target.plugin.split("/")[0] === call.pluginId.split("/")[0];
+    // The user's own endpoint for this plugin's provider counts as a granted host, for that origin's host and port.
+    const userOrigin = path === "net.fetch" && target?.host !== undefined ? o.userEndpoint?.(call.pluginId) : undefined;
+    let granted = userOrigin !== undefined && userOrigin === originOf(call.args[0]) ? [...record.granted, `network:${hostEntryOf(target!.host!, target!.port)}`] : record.granted;
+    // A voice mode holds `voices.use` by being one (§6.6): its OK card says it uses your voice providers.
+    if (path.startsWith("voices.") && !granted.includes("voices.use") && isVoiceMode(record)) granted = [...granted, "voices.use"];
+    if (!ownCommand && !apiCallAllowed(path, call.process, granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
     const fn = handlerOf(o.handlers, path);
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
     return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
   };
+}
+
+/** Whether a plugin's manifest makes it a voice mode (`contributes.voiceModes`). */
+function isVoiceMode(record: PluginRecord): boolean {
+  const modes = (record.manifest as { contributes?: { voiceModes?: unknown } } | undefined)?.contributes?.voiceModes;
+  return Array.isArray(modes) && modes.length > 0;
+}
+
+/** A URL's origin, or undefined. */
+function originOf(raw: unknown): string | undefined {
+  try {
+    const u = new URL(typeof raw === "string" ? raw : raw instanceof URL ? raw.href : "");
+    return u.protocol === "https:" || u.protocol === "http:" ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A `network:` entry naming exactly one host and port (an IPv6 address in brackets). */
+function hostEntryOf(host: string, port: number | undefined): string {
+  const h = host.includes(":") ? `[${host}]` : host;
+  return port === undefined ? h : `${h}:${port}`;
 }
 
 /** The target a capability is checked against: a command's plugin, a URL's host. */
@@ -93,15 +130,17 @@ function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (n
     } catch {
       throw new ContractError("invalid", "net.fetch takes an absolute URL");
     }
-    return { host: url.hostname.toLowerCase(), ...(url.port === "" ? {} : { port: Number(url.port) }) };
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw new ContractError("invalid", "net.fetch takes an http or https URL");
+    // The port the request goes to: the URL's, or its scheme's (a `network:` entry without a port means 443 or 80).
+    return { host: url.hostname.toLowerCase().replace(/^\[|\]$/g, ""), port: url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port) };
   }
   return undefined;
 }
 
 function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plugin?: string; host?: string }): string {
   const info: ApiCallInfo = API_CALLS[path];
-  if (info.where === "ui") return `${path} exists only in components`;
-  if (process === "ui" && info.where !== "both") return `${path} exists only in a plugin's host code`;
+  if (info.where === "ui" && process !== "ui") return `${path} exists only in components`;
+  if (process === "ui" && info.where !== "both" && info.where !== "ui") return `${path} exists only in a plugin's host code`;
   if (info.where === "own" && process !== "own") return `${path} exists only in a process of the plugin's own`;
   if (info.where === "clover" && process !== "clover") return `${path} exists only in the clover plugin host`;
   const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}` : info.capability;

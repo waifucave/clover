@@ -45,9 +45,84 @@ export interface ThemeFile {
   css?: string;
   fonts?: { family: string; src: string }[];
   icons?: Record<string, string>;
+  /** The window chrome in the bot's palette while its tab shows (packages/plugin-sdk/src/formats/shell.ts): the bar, the accent and the panels, never the sidebar. */
+  shell?: { tokens: Record<string, string>; dark?: { tokens: Record<string, string> } };
 }
 
-const THEME_KEYS = new Set(["theme", "name", "appearance", "tokens", "dark", "css", "fonts", "icons"]);
+const THEME_KEYS = new Set(["theme", "name", "appearance", "tokens", "dark", "css", "fonts", "icons", "shell"]);
+
+/** The shell block's groups (the SDK's `SHELL_GROUPS`; a test keeps the two equal). */
+export const SHELL_GROUPS = {
+  bar: ["bar", "bar.text", "bar.rule"],
+  accent: ["accent"],
+} as const;
+/** The sidebar's old names (the SDK's `SHELL_NOT_OFFERED`; the same test keeps them equal): Bots doesn't offer the sidebar,
+ *  so they still load and are ignored. */
+export const SHELL_NOT_OFFERED: readonly string[] = [
+  "sidebar", "sidebar.text", "sidebar.muted", "sidebar.selected", "sidebar.hover",
+  "sidebar.mode", "sidebar.start", "sidebar.width", "sidebar.inset", "sidebar.radius", "sidebar.density", "sidebar.material",
+];
+/** The shape names (the SDK's `SHELL_SHAPE`; the same test keeps them equal): closed choices and bounded whole numbers. */
+export const SHELL_SHAPE: Readonly<Record<string, readonly string[] | { min: number; max: number }>> = {
+  // `standard`: the translucent bar over the tab's top, as every tab has. `none`: no bar; the layout places the parts (an unplaced part is not shown). `float`: a bar inset from the edges with rounded corners.
+  "bar.mode": ["standard", "none", "float"],
+  "bar.height": { min: 28, max: 96 },
+  "bar.inset": { min: 0, max: 32 },
+  "bar.radius": { min: 0, max: 40 },
+  // Where a panel the user opens shows: `column` (the standard right column), `drawer` (over the page's right edge), `float` (a card over the page), `sheet` (a sheet up from the bottom). A layout that places `chrome.panels` puts the panels in that spot instead.
+  "panel.mode": ["column", "drawer", "float", "sheet"],
+  "panel.width": { min: 280, max: 720 },
+  "panel.radius": { min: 0, max: 40 },
+};
+const shapeOk = (name: string, value: unknown): boolean => {
+  const rule = SHELL_SHAPE[name];
+  if (rule === undefined || typeof value !== "string") return false;
+  if (Array.isArray(rule)) return (rule as readonly string[]).includes(value);
+  const r = rule as { min: number; max: number };
+  return /^\d{1,3}$/.test(value) && Number(value) >= r.min && Number(value) <= r.max;
+};
+const SHELL_GRADIENT = /^linear-gradient\((?:\s*(?:to (?:top|bottom|left|right)(?: (?:top|bottom|left|right))?|-?\d+(?:\.\d+)?deg)\s*,)?(?:\s*#[0-9a-f]{3,8}(?:\s+\d+(?:\.\d+)?%)?\s*,?)+\)$/i;
+
+/** Problems with a `shell` block: only the listed names, hex colours (the bar's paint may also be `transparent` or a gradient
+ *  of hex colours), and each group whole with its text pairs at 4.5:1 over the theme's own surface. The sidebar's old names
+ *  are no problem: they load and are ignored. */
+function checkShell(where: string, shell: unknown, theme: Record<string, unknown>, problems: string[]): void {
+  if (typeof shell !== "object" || shell === null) return void problems.push(`"${where}" must be { tokens }`);
+  const block = shell as { tokens?: unknown; dark?: { tokens?: unknown } };
+  const sets: [string, unknown][] = [["shell.tokens", block.tokens], ...(block.dark === undefined ? [] : [["shell.dark.tokens", block.dark?.tokens] as [string, unknown]])];
+  const names = new Set<string>([...Object.values(SHELL_GROUPS).flat(), ...Object.keys(SHELL_SHAPE)]);
+  const surface = (t: unknown, dark: boolean): string => {
+    const own = typeof t === "object" && t !== null ? (t as Record<string, unknown>)["color.surface"] : undefined;
+    return typeof own === "string" && isHexColor(own) ? own : dark ? "#1E1E1E" : "#FFFFFF";
+  };
+  const tokens = theme.tokens as Record<string, unknown> | undefined;
+  const darkTokens = { ...(tokens ?? {}), ...((theme.dark as { tokens?: Record<string, unknown> } | undefined)?.tokens ?? {}) };
+  sets.forEach(([label, values], index) => {
+    if (typeof values !== "object" || values === null) return void problems.push(`"${label}" must be an object`);
+    const v = values as Record<string, unknown>;
+    const merged = index === 0 ? v : { ...(block.tokens as Record<string, unknown>), ...v };
+    for (const [name, value] of Object.entries(v)) {
+      if (SHELL_NOT_OFFERED.includes(name)) continue;
+      if (!names.has(name)) problems.push(`${label}: ${name} is not a shell token`);
+      else if (SHELL_SHAPE[name] !== undefined) { if (!shapeOk(name, value)) problems.push(`${label}: ${name} must be ${Array.isArray(SHELL_SHAPE[name]) ? `one of ${(SHELL_SHAPE[name] as readonly string[]).join(", ")}` : `a whole number from ${(SHELL_SHAPE[name] as { min: number }).min} to ${(SHELL_SHAPE[name] as { max: number }).max}`}`); }
+      else if (typeof value !== "string" || !(isHexColor(value) || (name === "bar" && (value === "transparent" || SHELL_GRADIENT.test(value))))) problems.push(`${label}: ${name} must be a hex colour${name === "bar" ? ", transparent or a gradient of hex colours" : ""}`);
+    }
+    const ground = surface(index === 0 ? tokens : darkTokens, index !== 0);
+    const stops = (paint: unknown): string[] => (typeof paint !== "string" ? [] : paint === "transparent" ? [ground] : [...paint.matchAll(/#[0-9a-f]{3,8}\b/gi)].map((m) => composite(parseHex(m[0]), parseHex(ground)).a === 1 ? hexOf(composite(parseHex(m[0]), parseHex(ground))) : ground));
+    for (const group of Object.keys(SHELL_GROUPS) as (keyof typeof SHELL_GROUPS)[]) {
+      const have = SHELL_GROUPS[group].filter((n) => merged[n] !== undefined);
+      if (have.length === 0) continue;
+      if (have.length !== SHELL_GROUPS[group].length) { problems.push(`${label}: the ${group} group needs all of ${SHELL_GROUPS[group].join(", ")}`); continue; }
+      const text = (fg: string, paint: string, floor: number) => {
+        const ink = merged[fg];
+        if (typeof ink !== "string" || !isHexColor(ink)) return;
+        for (const bg of stops(merged[paint])) if (contrast(ink, bg, ground) < floor) return void problems.push(`${label}: ${fg} on ${paint} is under ${floor}:1`);
+      };
+      if (group === "bar") text("bar.text", "bar", 4.5);
+    }
+  });
+}
+const hexOf = (c: { r: number; g: number; b: number }) => `#${[c.r, c.g, c.b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("")}`;
 
 /** A path inside a plugin folder: relative, no `..` segment, no scheme, no backslash. */
 export function isPluginPath(path: unknown): path is string {
@@ -186,6 +261,7 @@ export function checkTheme(json: unknown, options: CheckThemeOptions = {}): stri
     if (typeof dark !== "object" || dark === null) problems.push(`"dark" must be { tokens }`);
     else checkTokens("dark.tokens", dark.tokens, problems, options);
   }
+  if (theme.shell !== undefined) checkShell("shell", theme.shell, theme, problems);
   if (theme.css !== undefined && !isPluginPath(theme.css)) problems.push(`"css" must be a path inside the plugin`);
   if (theme.fonts !== undefined) {
     if (!Array.isArray(theme.fonts)) problems.push(`"fonts" must be a list`);

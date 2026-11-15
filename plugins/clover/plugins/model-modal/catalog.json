@@ -80,7 +80,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemini-2.0-flash",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "weak"
     }
   ]
 }

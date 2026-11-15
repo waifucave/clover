@@ -56,14 +56,38 @@
       ],
       "additionalProperties": false
     },
+    "shell": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "dark": {
+          "type": "object",
+          "properties": {
+            "tokens": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": [
+            "tokens"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "tokens"
+      ],
+      "additionalProperties": false
+    },
     "css": {
-      "$ref": "#/$defs/__schema1"
+      "$ref": "#/$defs/__schema2"
     },
     "fonts": {
       "maxItems": 64,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema2"
+        "$ref": "#/$defs/__schema3"
       }
     },
     "icons": {
@@ -75,7 +99,7 @@
         "pattern": "^[a-z0-9][a-z0-9.-]*$"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema1"
+        "$ref": "#/$defs/__schema2"
       }
     }
   },
@@ -107,13 +131,23 @@
       }
     },
     "__schema1": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "__schema2": {
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
       "format": "path",
       "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
     },
-    "__schema2": {
+    "__schema3": {
       "type": "object",
       "properties": {
         "family": {
@@ -123,7 +157,7 @@
           "pattern": "^[A-Za-z0-9 _-]+$"
         },
         "src": {
-          "$ref": "#/$defs/__schema1"
+          "$ref": "#/$defs/__schema2"
         },
         "weight": {
           "type": "string",

@@ -10,7 +10,7 @@ import type { CardMeta } from "@waifucave/clover-protocol";
 
 /** A pending card as the island draws it: a subset of the island's `IslandCard`, kept in sync by the layer build. */
 export type IslandStripCard =
-  | { id: string; kind: "approval"; computer?: string; issuedAt?: number; options?: readonly { id: string; kind: "approve" | "deny"; remember?: "always" }[] }
+  | { id: string; kind: "approval"; tool?: boolean; computer?: string; issuedAt?: number; options?: readonly { id: string; kind: "approve" | "deny"; remember?: "always" }[] }
   | { id: string; kind: "link"; computer?: string; issuedAt?: number; options?: readonly { id: string; kind: "approve" | "deny"; remember?: "always" }[] };
 
 /** The island's strip from the pending cards' metas. */
@@ -26,6 +26,6 @@ export function islandCards(cards: readonly CardMeta[]): IslandStripCard[] {
       ...options,
     };
     if (c.kind === "elicitation") return { ...base, kind: "link" as const };
-    return { ...base, kind: "approval" as const };
+    return { ...base, kind: "approval" as const, ...(c.kind === "tool" ? { tool: true } : {}) };
   });
 }

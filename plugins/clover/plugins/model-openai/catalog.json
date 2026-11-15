@@ -137,7 +137,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4.1",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "openai/gpt-4.1-mini",
@@ -235,7 +236,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4.1-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "openai/gpt-4.1-nano",
@@ -340,7 +342,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4.1-nano",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "openai/gpt-4o",
@@ -438,7 +441,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4o",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "openai/gpt-4o-2024-11-20",
@@ -536,7 +540,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4o-2024-11-20",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "openai/gpt-4o-mini",
@@ -634,7 +639,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "gpt-4o-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "openai/gpt-5",
@@ -765,7 +771,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5-pro",
@@ -892,7 +899,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5-pro",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.1",
@@ -1024,7 +1032,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.1",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.2",
@@ -1157,7 +1166,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.2",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.2-pro",
@@ -1285,7 +1295,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.2-pro",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.3-codex",
@@ -1415,7 +1426,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.3-codex",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.4",
@@ -1590,7 +1602,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.4",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.4-mini",
@@ -1772,7 +1785,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.4-mini",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "openai/gpt-5.4-nano",
@@ -1954,7 +1968,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.4-nano",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "weak"
     },
     {
       "key": "openai/gpt-5.4-pro",
@@ -2111,7 +2126,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.4-pro",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.5",
@@ -2286,7 +2302,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.5",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.5-pro",
@@ -2450,7 +2467,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.5-pro",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.6",
@@ -2611,7 +2629,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.6",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.6-luna",
@@ -2772,7 +2791,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "openai/gpt-5.6-sol",
@@ -2933,7 +2953,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-5.6-terra",
@@ -3094,7 +3115,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-5.6-terra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-6-astra",
@@ -3281,7 +3303,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-6-astra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-6-luna",
@@ -3469,7 +3492,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-6-luna",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "openai/gpt-6-sol",
@@ -3657,7 +3681,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[{\"type\":\"function\",\"name\":…}]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\"; \"When you use tool search, tool_choice still applies to the tools that are currently callable in the turn.\" No model list on the page; set on the same GPT-5.4+ rows. NOT on codex-oauth: codex-rs always sends tool_choice \"auto\" (core/src/client.rs:1004) and its allowed_tools is a client-side filter (ext/extension-api/src/tool_policy.rs:14-36) -- the live probe decides. Retrieved 2026-09-26."
       },
       "canonicalModelId": "gpt-6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-6.1-sol",
@@ -3853,7 +3878,8 @@
         "observedAt": "2026-10-07T09:00:00Z"
       },
       "canonicalModelId": "gpt-6.1-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/gpt-6.1-terra",
@@ -4059,7 +4085,8 @@
         "observedAt": "2026-10-29T12:00:00Z"
       },
       "canonicalModelId": "gpt-6.1-terra",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "openai/o3",
@@ -4210,7 +4237,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/prompt-caching — the Responses API takes prompt_cache_key: \"Use a stable prompt_cache_key to optimize cache routing for requests that share a reusable prefix\" (pre-GPT-5.6); on GPT-5.6+ routing is automatic and the key is \"optional for separate cache accounting\"."
       },
       "canonicalModelId": "o3",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "strong"
     },
     {
       "key": "openai/o3-mini",
@@ -4334,7 +4362,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/prompt-caching — the Responses API takes prompt_cache_key: \"Use a stable prompt_cache_key to optimize cache routing for requests that share a reusable prefix\" (pre-GPT-5.6); on GPT-5.6+ routing is automatic and the key is \"optional for separate cache accounting\"."
       },
       "canonicalModelId": "o3-mini",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "medium"
     },
     {
       "key": "openai/o4-mini",
@@ -4488,7 +4517,8 @@
         "sourceRef": "https://developers.openai.com/api/docs/guides/prompt-caching — the Responses API takes prompt_cache_key: \"Use a stable prompt_cache_key to optimize cache routing for requests that share a reusable prefix\" (pre-GPT-5.6); on GPT-5.6+ routing is automatic and the key is \"optional for separate cache accounting\"."
       },
       "canonicalModelId": "o4-mini",
-      "modelFamily": "o-series"
+      "modelFamily": "o-series",
+      "strength": "medium"
     }
   ]
 }

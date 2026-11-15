@@ -69,6 +69,9 @@ export type DeliveredInput =
   /** A plugin's `conversation.send`, or an MCP Apps page's `ui/message` (`app`), which is never the user's (§5.5). */
   | { from: "plugin"; pluginId: string; text: string; app?: { callId: string } }
   | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } }
+  /** Clover's own message to a bot that starts a turn, where a note waits for one: a plugin the bot built stopped
+   *  (crash-notice.ts). Shown as the core's note (`label`); its turn's origin is `plugin`, at the bot's own level. */
+  | { from: "notice"; label: string; text: string }
   /** A background task the session's own runtime ran (a Bash run in the background, a monitor) finished, failed or
    *  was stopped, or (`event`) a running monitor reported an event and goes on running. A driver never starts a turn by itself: it hands this to the host (`BotSessionContext.wake`), which
    *  records it and folds it into the running turn or starts one (through the pause, the lease and the update gate),
@@ -96,6 +99,7 @@ export function originOf(input: TurnInput): TurnOrigin {
       return "routine";
     case "plugin":
     case "note":
+    case "notice":
       return "plugin";
   }
 }
@@ -132,6 +136,8 @@ export interface SessionSpec {
   effort?: string;
   root?: string;
   routine?: string;
+  /** An agent's plugin agent definition, `<plugin>:<id>` (`SessionView.definition`). */
+  definition?: string;
 }
 
 export interface TurnEnd {
@@ -182,7 +188,8 @@ export interface SessionDriver {
 export type CompactReason = "cache" | "full" | "user";
 
 export type SessionRecordBody =
-  | { type: "input"; input: TurnInput; disposition: Disposition }
+  | { type: "input"; input: TurnInput; disposition: Disposition; /** The seq of the earlier record of this same input, put
+     *  back in line (a fold the turn's driver never took): not shown again. */ requeues?: number }
   | { type: "turn_started"; origin: TurnOrigin }
   | { type: "turn_ended"; end: TurnEnd }
   | { type: "status"; status: SessionStatus; failure?: SessionFailure }

@@ -1,0 +1,81 @@
+{
+  "manifest": 1,
+  "id": "example-weather",
+  "name": "Weather",
+  "description": "Forecasts from your weather service, for your bots, and a rain alert you can send yourself. It reaches one host on the network with your key, and it can notify you: so its tools ask before they run, even the ones that only read or only keep a place.",
+  "icon": "assets/icon.svg",
+  "version": "1.0.0",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "capabilities": [
+    "network:api.example.com",
+    "notify"
+  ],
+  "host": {
+    "entry": "server/index.ts",
+    "runtime": "bun"
+  },
+  "settings": {
+    "WEATHER_KEY": {
+      "type": "secret",
+      "title": {
+        "en": "Weather service key",
+        "ja": "天気サービスのキー"
+      },
+      "description": {
+        "en": "Your weather service's API key. Clover keeps it in your credential store and hands it only to this plugin's forecast server.",
+        "ja": "天気サービスの API キー。Clover が資格情報ストアに保管し、このプラグインの予報サーバーにだけ渡します。"
+      }
+    }
+  },
+  "contributes": {
+    "mcpServers": {
+      "forecast": {
+        "type": "stdio",
+        "command": "bun",
+        "args": [
+          "${plugin}/stdio/forecast.mjs",
+          "${data}"
+        ],
+        "env": {
+          "WEATHER_URL": "https://api.example.com/v1",
+          "WEATHER_KEY_FILE": "${secretFile:WEATHER_KEY}"
+        },
+        "tools": {
+          "*": "preload"
+        },
+        "readOnly": [
+          "forecast"
+        ],
+        "contained": [
+          "save_place"
+        ]
+      }
+    },
+    "commands": [
+      {
+        "name": "rain-alert",
+        "description": {
+          "en": "Send yourself a rain alert notification.",
+          "ja": "雨の通知を自分に送ります。"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "place": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          },
+          "required": [
+            "place"
+          ],
+          "additionalProperties": false
+        },
+        "handler": "rainAlert"
+      }
+    ]
+  }
+}

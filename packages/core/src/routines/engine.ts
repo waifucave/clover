@@ -34,7 +34,7 @@ import { botSegment, transcriptsDir } from "../sessions/ids";
 import type { SideThreadRun } from "../bots/service";
 import { settingsDir } from "../bots/gate";
 import { readOwnFile } from "../bots/own-file";
-import { parseRoutine, routineHash, triggerSummary, withId, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutineTrigger } from "./file";
+import { parseRoutine, routineHash, triggerSummary, withId, withPaused, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutineTrigger } from "./file";
 import { firesBetween, nextRunInZone } from "./zone";
 import { isLate, untrusted, WEBHOOK_LATE_MS } from "../../../../plugins/clover/plugins/trigger-webhook/src/webhook";
 
@@ -46,6 +46,11 @@ export const RESCAN_MS = 60_000;
 /** The largest webhook payload a run gets. */
 export const WEBHOOK_PAYLOAD_MAX_BYTES = 256 * 1024;
 export const RUNS_KEPT = 500;
+/** What a bot or the user is told when webhook triggers can't work here (no active webhook trigger or ingress in the
+ *  registry: in this build the forwarder, the default ingress, is parked). */
+export const WEBHOOKS_UNAVAILABLE = "Webhook triggers aren't available in this build";
+/** The note a routine file's webhook trigger lists with while they aren't (a file from an earlier build). */
+export const WEBHOOK_NOT_AVAILABLE_NOTE = "not available in this build: it doesn't run from a webhook, and its key is kept";
 /** How long a run delivery's id is remembered: longer than an ingress holds a delivery (the forwarder's 7 days). */
 export const DELIVERIES_KEPT_MS = 8 * 24 * 60 * 60 * 1000;
 export const DELIVERIES_KEPT_MAX = 50_000;
@@ -84,6 +89,8 @@ export interface RoutineEngineOptions {
   bots: {
     has(id: string): boolean;
     runSideThread(id: string, run: SideThreadRun): Promise<RoutineRunView>;
+    /** A note of Clover's in the bot's conversation, which starts no turn (a routine it paused). */
+    note?(id: string, label: string, text: string): Promise<void>;
     onEvent?(fn: (event: { type: string }) => void): Unsubscribe;
   };
   /** This computer's approval level (lane J's registry). */
@@ -107,6 +114,10 @@ export interface RoutineEngineOptions {
   triggerOwners?(type: string): string[];
   /** Registers a webhook routine with its ingress (its trigger's named one, else the first), giving its URL. */
   registerWebhook?(id: string, key: string, ingress?: string): Promise<string>;
+  /** Whether webhook triggers can work here, read at each use (the registry's active webhook trigger and ingress).
+   *  Absent: they can. While they can't, no key is minted and nothing is registered, and a routine file's webhook
+   *  trigger lists with a note (its stored key is left alone). */
+  webhooksAvailable?(): boolean;
   warn?: (message: string) => void;
 }
 
@@ -131,7 +142,14 @@ interface EngineState {
   deliveries?: Record<string, number>;
   /** The routines whose webhook key the user has been shown (`routine.webhookKey` shows it once). */
   keysShown?: Record<string, number>;
+  /** Why Clover paused a routine (a plugin's trigger over `PLUGIN_FIRES_PER_HOUR`), by id, while its file says paused. */
+  pausedWhy?: Record<string, string>;
 }
+
+/** The most runs a plugin's triggers may start for one routine in any hour; the next fire pauses it (each run is a
+ *  paid bot turn, and a bot-built trigger with a bug fires in a loop). A constant, not a setting. */
+export const PLUGIN_FIRES_PER_HOUR = 30;
+const PLUGIN_FIRES_WINDOW_MS = 3_600_000;
 
 interface RoutineOk {
   hash: string;
@@ -152,6 +170,10 @@ export class RoutineEngine {
   readonly #o: RoutineEngineOptions;
   readonly #loaded = new Map<string, Loaded>();
   readonly #running = new Set<string>();
+  /** Fires that came while a routine's run was going, by id: counted on that run, never a record each. */
+  readonly #skippedWhileRunning = new Map<string, { count: number; why: string }>();
+  /** When a plugin's trigger started each routine's runs in the last hour. */
+  readonly #pluginFires = new Map<string, number[]>();
   readonly #asking = new Set<string>();
   readonly #changes = new Listeners<{ bot?: string }>();
   #state: EngineState;
@@ -165,7 +187,7 @@ export class RoutineEngine {
     this.#o = opts;
     const saved = readJson(this.#stateFile()) as Partial<EngineState> | undefined;
     const deliveries = saved?.deliveries !== null && typeof saved?.deliveries === "object" && !Array.isArray(saved.deliveries) ? saved.deliveries : {};
-    this.#state = { fires: { ...(saved?.fires ?? {}) }, lastRunAt: { ...(saved?.lastRunAt ?? {}) }, deliveries: { ...deliveries }, keysShown: { ...(saved?.keysShown ?? {}) } };
+    this.#state = { fires: { ...(saved?.fires ?? {}) }, lastRunAt: { ...(saved?.lastRunAt ?? {}) }, deliveries: { ...deliveries }, keysShown: { ...(saved?.keysShown ?? {}) }, pausedWhy: { ...(saved?.pausedWhy ?? {}) } };
   }
 
   async start(): Promise<void> {
@@ -244,6 +266,8 @@ export class RoutineEngine {
     const l = this.#must(id);
     const trigger = l.routine.triggers.find((t): t is Extract<RoutineTrigger, { type: "webhook" }> => t.type === "webhook");
     if (trigger === undefined) throw new ContractError("invalid", `the routine ${id} has no webhook trigger`);
+    // Before a key is minted or stored: nothing is made for a trigger that can't work.
+    if (!this.webhooksAvailable()) throw new ContractError("refused", `${WEBHOOKS_UNAVAILABLE}, so ${id} has no webhook URL`);
     if (!this.#o.secrets) throw new ContractError("refused", "no credential store holds webhook keys here");
     const ref = { owner: { kind: "core" as const }, name: `routine-webhook:${id}` };
     let key = opts.rotate ? undefined : (await this.#o.secrets.get(ref))?.value.reveal();
@@ -268,10 +292,17 @@ export class RoutineEngine {
     return out;
   }
 
+  /** Whether webhook triggers can work here now (`EngineOptions.webhooksAvailable`). */
+  webhooksAvailable(): boolean {
+    return this.#o.webhooksAvailable?.() ?? true;
+  }
+
   /** The routines here with a webhook trigger, each with the ingress its trigger names (the ingress registers each,
    *  and again when the name changes). */
   webhookRoutines(): { id: string; ingress?: string }[] {
     const out: { id: string; ingress?: string }[] = [];
+    // None while webhook triggers can't work: nothing to register, and no retry or warning for one.
+    if (!this.webhooksAvailable()) return out;
     for (const [key, l] of this.#loaded) {
       if (key.includes("@") || l.state !== "active") continue;
       const t = l.routine.triggers.find((x): x is Extract<RoutineTrigger, { type: "webhook" }> => x.type === "webhook");
@@ -283,6 +314,8 @@ export class RoutineEngine {
   /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the
    *  missed-run rule for one held while this computer was away. */
   async deliverWebhook(d: { ingress: string; id: string; routine: string; receivedAt: number; body: string; contentType?: string }): Promise<"accepted" | "refused" | "missed" | "duplicate"> {
+    // Never while webhook triggers can't work here, whatever an ingress still holds (not only because none is chosen).
+    if (!this.webhooksAvailable()) return "refused";
     const l = this.#loaded.get(d.routine);
     if (!l || l.state !== "active" || !l.routine.triggers.some((t) => t.type === "webhook")) return "refused";
     const seen = (this.#state.deliveries ??= {});
@@ -304,6 +337,7 @@ export class RoutineEngine {
 
   /** A webhook arrived for a routine here (lane I's forwarder, through the `webhook.ingress` point). */
   async receiveWebhook(w: { routine: string; key: string; body: string; contentType?: string; receivedAt?: number }): Promise<"accepted" | "refused" | "missed"> {
+    if (!this.webhooksAvailable()) return "refused";
     const l = this.#loaded.get(w.routine);
     if (!l || !l.routine.triggers.some((t) => t.type === "webhook") || !this.#o.secrets) return "refused";
     const stored = (await this.#o.secrets.get({ owner: { kind: "core" }, name: `routine-webhook:${w.routine}` }))?.value.reveal();
@@ -322,14 +356,58 @@ export class RoutineEngine {
   /** A plugin trigger fired (lane B's API, for the plugin that armed it). */
   /** A plugin's trigger fired a routine. Only a plugin that contributes that trigger type (an active `triggers`
    *  entry, `triggerOwners`) fires it; the bundled schedule and webhook types are the core's own, never fired so. */
-  async fire(id: string, type: string, from: { pluginId: string }, payload?: string): Promise<void> {
+  async fire(id: string, type: string, from: { pluginId: string; name?: string }, payload?: string, o: { detach?: boolean } = {}): Promise<void> {
     if (type === "schedule" || type === "webhook") throw new ContractError("refused", `${type} triggers are the core's own; no plugin fires them`);
     const owners = this.#o.triggerOwners?.(type) ?? [];
     if (!owners.includes(from.pluginId)) throw new ContractError("refused", `${from.pluginId} doesn't contribute the ${type} trigger, so it can't fire it`);
     const l = this.#must(id);
     if (!l.routine.triggers.some((t) => t.type === type)) throw new ContractError("refused", `the routine ${id} has no ${type} trigger`);
+    if (l.state === "paused") throw new ContractError("refused", `the routine ${l.routine.name} is paused${this.#state.pausedWhy?.[id] ? ` (${this.#state.pausedWhy[id]})` : ""}; it runs again once the user resumes it`);
     if (l.state !== "active") return;
-    await this.#run(l, `its ${type} trigger`, payload === undefined ? undefined : untrusted(`the ${type} trigger`, payload));
+    // At most PLUGIN_FIRES_PER_HOUR runs started by plugin triggers in any hour; the next pauses the routine. A fire
+    // while a run is going starts nothing, so it isn't counted (it is noted on that run).
+    if (!this.#running.has(id)) {
+      const now = this.#o.clock.now();
+      const fires = (this.#pluginFires.get(id) ?? []).filter((t) => now - t < PLUGIN_FIRES_WINDOW_MS);
+      if (fires.length >= PLUGIN_FIRES_PER_HOUR) {
+        this.#pluginFires.set(id, fires);
+        const who = (from.name ?? "").trim() || from.pluginId;
+        this.#pauseForFires(l, `Paused: ${who} started it ${PLUGIN_FIRES_PER_HOUR} times in an hour`);
+        throw new ContractError("refused", `the routine ${l.routine.name} is paused: ${who} started it ${PLUGIN_FIRES_PER_HOUR} times in an hour; it runs again once the user resumes it`);
+      }
+      fires.push(now);
+      this.#pluginFires.set(id, fires);
+    }
+    const run = this.#run(l, `its ${type} trigger`, payload === undefined ? undefined : untrusted(`the ${type} trigger`, payload));
+    // `detach`: the plugin's call answers once the run has started (a run is a whole turn); its refusals come before.
+    if (o.detach !== true) await run;
+  }
+
+  /** Clover pauses a routine (a plugin's trigger over its hourly cap): `paused: true` in its file, as a user would write
+   *  it, so the user's ordinary resume (taking it out) resumes it; the why shows in the list until then; one note in the
+   *  bot's conversation. */
+  #pauseForFires(l: Loaded, why: string): void {
+    const id = l.routine.id;
+    if (this.#state.pausedWhy?.[id] !== undefined) return;
+    (this.#state.pausedWhy ??= {})[id] = why;
+    this.#saveState();
+    this.#disarm(l);
+    l.state = "paused";
+    try {
+      const read = readOwnFile(this.#o.home, l.path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
+      if (read.ok) {
+        const text = withPaused(read.data.toString("utf8"));
+        replaceFile(l.path, text);
+        l.hash = routineHash(text);
+        l.routine = { ...l.routine, paused: true };
+      }
+    } catch (err) {
+      this.#warn(`${l.path} couldn't be marked paused: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    this.#warn(`${id}: ${why}`);
+    this.#changes.emit({ bot: l.bot });
+    void this.#o.bots.note?.(l.bot, "Routine paused", `${why}: the routine "${l.routine.name}" won't run until you resume it (take \`paused: true\` out of its file).`)
+      .catch((err: unknown) => this.#warn(`${id}'s pause note didn't reach ${l.bot}: ${err instanceof Error ? err.message : String(err)}`));
   }
 
   /** Reads every file again. With `catchUp`, missed fires follow the missed-run rule. */
@@ -350,6 +428,12 @@ export class RoutineEngine {
       if (before && before.hash === f.hash && before.path === f.path && before.state === this.#stateOf(f) && before.level === this.#levelOf(f)) continue;
       if (before) this.#disarm(before);
       const l: Loaded = { ...f, state: this.#stateOf(f), level: this.#levelOf(f), timers: [] };
+      // The user resumed a routine Clover paused (took `paused` out of its file): the why goes, and the hour's count.
+      if (!f.routine.paused && this.#state.pausedWhy?.[f.routine.id] !== undefined) {
+        delete this.#state.pausedWhy[f.routine.id];
+        this.#pluginFires.delete(f.routine.id);
+        this.#saveState();
+      }
       this.#loaded.set(f.routine.id, l);
       changedBots.add(l.bot);
       if (l.state === "waiting-for-ok") void this.#askForRaise(l);
@@ -573,8 +657,16 @@ export class RoutineEngine {
 
   async #run(l: Loaded, why: string, extra?: string, onSession?: (id: string) => void): Promise<RoutineRunView> {
     const id = l.routine.id;
-    if (this.#running.has(id)) return this.#record(l, { outcome: "skipped", summary: `Fired by ${why} while its last run was still going.` });
+    // A fire while its run is going starts nothing: counted on that run (its summary says so when it ends), with no
+    // record or change of its own, so a trigger firing in a loop doesn't rewrite the runs file each time.
+    if (this.#running.has(id)) {
+      const s = this.#skippedWhileRunning.get(id);
+      this.#skippedWhileRunning.set(id, { count: (s?.count ?? 0) + 1, why: s?.why ?? why });
+      const now = this.#o.clock.now();
+      return { routine: id, session: "none", startedAt: now, endedAt: now, outcome: "skipped", summary: `Fired by ${why} while its last run was still going.` };
+    }
     this.#running.add(id);
+    this.#skippedWhileRunning.delete(id);
     try {
       const run = await this.#o.bots.runSideThread(l.bot, {
         routine: id, name: l.routine.name, text: extra === undefined ? l.routine.body : `${l.routine.body.trimEnd()}\n\n${extra}`,
@@ -582,17 +674,29 @@ export class RoutineEngine {
       });
       this.#state.lastRunAt[id] = run.startedAt;
       this.#saveState();
-      this.#appendRun(id, run);
+      const noted = this.#withSkipped(id, run);
+      this.#appendRun(id, noted);
       this.#changes.emit({ bot: l.bot });
       // TODO(B-M2): send the result to the notifier plugins (kind "routine-result", `failed: run.outcome === "failed"`)
       // once lane B's plugin host (B-M2) carries the core's notifier calls. No core path reaches notifiers on main yet,
       // so until then no routine result reaches a notifier at all, failed or not.
-      return run;
+      return noted;
     } catch (err) {
-      return this.#record(l, { outcome: "skipped", summary: `It didn't run: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000) });
+      const summary = `It didn't run: ${err instanceof Error ? err.message : String(err)}`;
+      return this.#record(l, { outcome: "skipped", summary: this.#withSkipped(id, { summary }).summary! });
     } finally {
       this.#running.delete(id);
+      this.#skippedWhileRunning.delete(id);
     }
+  }
+
+  /** A run's summary with the fires that came while it ran (they started nothing), at most 4000 characters. */
+  #withSkipped<R extends { summary?: string }>(id: string, run: R): R {
+    const s = this.#skippedWhileRunning.get(id);
+    this.#skippedWhileRunning.delete(id);
+    if (s === undefined) return { ...run, ...(run.summary === undefined ? {} : { summary: run.summary.slice(0, 4000) }) };
+    const note = `\n(${s.count} more fire${s.count === 1 ? "" : "s"}, by ${s.why}, came while it ran and started nothing.)`;
+    return { ...run, summary: `${(run.summary ?? "").slice(0, 4000 - note.length)}${note}` };
   }
 
   #record(l: Loaded, r: { outcome: RoutineRunView["outcome"]; summary: string }): RoutineRunView {
@@ -638,7 +742,9 @@ export class RoutineEngine {
     return {
       id: l.routine.id, name: l.routine.name.slice(0, 200), bot: l.bot, computer: this.#o.computer,
       file: `home/${this.#o.computer}/.clover/routines/${botSegment(l.bot)}/${basename(l.path)}`,
-      triggers: l.routine.triggers.map(triggerSummary), level: l.level, state: l.state,
+      triggers: l.routine.triggers.map((t) => (t.type === "webhook" && !this.webhooksAvailable() ? { type: "webhook", summary: WEBHOOK_NOT_AVAILABLE_NOTE } : triggerSummary(t))),
+      level: l.level, state: l.state,
+      ...(l.state === "paused" && this.#state.pausedWhy?.[l.routine.id] !== undefined ? { pausedWhy: this.#state.pausedWhy[l.routine.id]!.slice(0, 300) } : {}),
       ...(last === undefined ? {} : { lastRunAt: last }),
       ...(l.state === "active" && l.nextRunAt !== undefined ? { nextRunAt: l.nextRunAt } : {}),
     };

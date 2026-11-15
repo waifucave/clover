@@ -1,5 +1,7 @@
 // The acceptance fixture's host half: one in-process MCP server, `echo`, with one tool, `Echo`, which answers
-// `acceptance-echo-pong: <text>`. No network, no files, no other process.
+// `acceptance-echo-pong: <text>`; given `acceptance-hold`, it never answers (the reopen step that quits mid tool call).
+// And one command, `acceptance-echo.say`, which answers `acceptance-echo-said: <text> (by <who called>)`: the slash
+// menu's step runs it from the composer, as the user. No network, no files, no other process.
 interface McpServerTransport {
   start(): Promise<void>;
   send(message: Record<string, unknown>): Promise<void>;
@@ -15,6 +17,11 @@ const TOOLS = [{
 }];
 
 export async function start(): Promise<void> {}
+
+/** The command `say`: the text back, and the kind of caller the core said ran it. */
+export async function say(args: { text?: unknown }, ctx: { caller?: { kind?: unknown } }): Promise<{ text: string }> {
+  return { text: `acceptance-echo-said: ${String(args?.text ?? "")} (by ${String(ctx?.caller?.kind ?? "nobody")})` };
+}
 export async function stop(): Promise<void> {}
 
 export const mcp = {
@@ -31,6 +38,7 @@ export const mcp = {
         reply(m.id, { result: { tools: TOOLS } });
       } else if (m.method === "tools/call" && params.name === "Echo") {
         const text = String((params.arguments as { text?: unknown } | undefined)?.text ?? "");
+        if (text === "acceptance-hold") return;
         reply(m.id, { result: { content: [{ type: "text", text: `acceptance-echo-pong: ${text}` }] } });
       } else {
         reply(m.id, { error: { code: -32601, message: `unknown: ${String(m.method)}` } });

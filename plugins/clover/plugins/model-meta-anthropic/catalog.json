@@ -145,7 +145,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "muse-spark-1.1",
-      "modelFamily": "muse"
+      "modelFamily": "muse",
+      "strength": "medium"
     },
     {
       "key": "meta-anthropic/muse-spark-1.2",
@@ -259,7 +260,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "muse-spark-1.2",
-      "modelFamily": "muse"
+      "modelFamily": "muse",
+      "strength": "medium"
     },
     {
       "key": "meta-anthropic/muse-spark-1.3",
@@ -373,7 +375,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "muse-spark-1.3",
-      "modelFamily": "muse"
+      "modelFamily": "muse",
+      "strength": "medium"
     }
   ]
 }

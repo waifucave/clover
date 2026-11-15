@@ -98,7 +98,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "deepseek-v4-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/deepseek-v4-pro",
@@ -179,7 +180,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4-pro",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "strong"
     },
     {
       "key": "ollama-cloud/gemma4:31b",
@@ -260,7 +262,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gemma4-31b",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "ollama-cloud/glm-5.1",
@@ -323,7 +326,8 @@
       "unsupportedParameters": [],
       "status": "deprecated",
       "canonicalModelId": "glm-5.1",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "ollama-cloud/glm-5.2",
@@ -404,7 +408,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "ollama-cloud/gpt-oss:120b",
@@ -483,7 +488,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/gpt-oss:20b",
@@ -562,7 +568,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-20b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "weak"
     },
     {
       "key": "ollama-cloud/kimi-k2.6",
@@ -636,7 +643,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.6",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/kimi-k2.7-code",
@@ -712,7 +720,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/kimi-k3",
@@ -788,7 +797,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "ollama-cloud/minimax-m2.7",
@@ -869,7 +879,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/minimax-m3",
@@ -951,7 +962,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/nemotron-3-super",
@@ -1032,7 +1044,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3-super",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/nemotron-3-ultra",
@@ -1107,7 +1120,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "nemotron-3-ultra",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "medium"
     },
     {
       "key": "ollama-cloud/qwen3.5:397b",
@@ -1170,7 +1184,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.5-397b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "medium"
     }
   ]
 }

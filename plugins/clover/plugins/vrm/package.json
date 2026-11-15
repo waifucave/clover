@@ -7,7 +7,8 @@
   "exports": {
     ".": "./client/index.tsx",
     "./gallery": "./src/gallery.tsx",
-    "./lipsync": "./src/lipsync/index.ts"
+    "./lipsync": "./src/lipsync/index.ts",
+    "./control": "./src/control.ts"
   },
   "scripts": {
     "test": "bun test",

@@ -79,7 +79,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "claude-3.5-sonnet-20241022",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "aimlapi/deepseek-chat",
@@ -150,7 +151,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "deepseek-chat",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "aimlapi/gemini-1.5-pro",
@@ -196,7 +198,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gemini-1.5-pro",
-      "modelFamily": "gemini"
+      "modelFamily": "gemini",
+      "strength": "medium"
     },
     {
       "key": "aimlapi/gpt-4o",
@@ -277,7 +280,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-4o",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "aimlapi/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
@@ -323,7 +327,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "meta-llama-3.1-70b-instruct-turbo",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "aimlapi/mistral-large-latest",
@@ -369,7 +374,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "mistral-large-latest",
-      "modelFamily": "mistral"
+      "modelFamily": "mistral",
+      "strength": "medium"
     }
   ]
 }

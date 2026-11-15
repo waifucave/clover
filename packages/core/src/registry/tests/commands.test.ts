@@ -27,7 +27,9 @@ const CALLERS: Caller[] = [
   { kind: "user", client: "app" },
   { kind: "user", client: "cli" },
   { kind: "session", sessionId: "s_1", sessionKind: "bot", bot: "luna" },
-  { kind: "plugin", pluginId: "deck" },
+  // A plugin runs its own tree's commands with no `call:` (another's is refused before its args: layer-target-methods.test.ts).
+  { kind: "plugin", pluginId: "tarot" },
+  { kind: "plugin", pluginId: "tarot/spreads" },
   { kind: "core" },
 ];
 

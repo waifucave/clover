@@ -1,0 +1,8 @@
+{
+  "manifest": 1,
+  "id": "acceptance-kids",
+  "name": "Acceptance kids",
+  "description": "The acceptance run's child-plugin fixture: a parent with no parts of its own and one child, `pager`, which brings a page (a sidebar app button), a tool and a command of its own. The OK card covers the tree.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" }
+}

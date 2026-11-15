@@ -139,6 +139,51 @@ export function memoryVault(held: AnswerKeyHolder = "none"): KeyVault {
   };
 }
 
+/** A test run's kept key (`CLOVER_TEST_ANSWER_KEY`, the acceptance's file beside its throwaway keychain FILE): the
+ *  key in a plain file (0600) and its staged replacement beside it, so a test app that quits and opens again, or an
+ *  upgraded one, registers the SAME key. Only a test-marked or unpackaged headless app ever takes it (index.ts); the
+ *  core hears "none", as from the in-memory vault. Never a release's: there the OS's store holds the key. */
+export function fileVault(file: string, held: AnswerKeyHolder = "none"): KeyVault {
+  const staged = `${file}.staged`;
+  const read = (path: string): string | undefined => {
+    try { return existsSync(path) ? readFileSync(path, "utf8").trim() : undefined; } catch { return undefined; }
+  };
+  const write = (path: string, text: string) => {
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, text, { mode: 0o600 });
+    renameSync(tmp, path);
+  };
+  return {
+    held,
+    load() {
+      const text = read(file);
+      return text === undefined || text === "" ? undefined : new Uint8Array(Buffer.from(text, "base64"));
+    },
+    save(secret) { write(file, Buffer.from(secret).toString("base64")); },
+    clear() { rmSync(file, { force: true }); },
+    loadStaged() {
+      const text = read(staged);
+      if (text === undefined) return undefined;
+      try {
+        const v = JSON.parse(text) as { secret?: unknown; at?: unknown; card?: unknown };
+        if (typeof v.secret !== "string" || typeof v.at !== "number") return undefined;
+        return { secret: new Uint8Array(Buffer.from(v.secret, "base64")), at: v.at, ...(typeof v.card === "string" ? { card: v.card } : {}) };
+      } catch {
+        return undefined;
+      }
+    },
+    saveStaged(st) { write(staged, JSON.stringify({ secret: Buffer.from(st.secret).toString("base64"), at: st.at, ...(st.card === undefined ? {} : { card: st.card }) })); },
+    clearStaged() { rmSync(staged, { force: true }); },
+    promoteStaged() {
+      const v = this.loadStaged();
+      if (!v) throw new Error("no staged key");
+      write(file, Buffer.from(v.secret).toString("base64"));
+      rmSync(staged, { force: true });
+    },
+  };
+}
+
 /** What the app signs to show the core it holds the key (lane H's `answerKeyStatement`). */
 export function answerKeyStatement(deviceId: string, publicKey: string, held: AnswerKeyHolder): Uint8Array {
   return new TextEncoder().encode(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`);
@@ -298,20 +343,31 @@ export class AnswerKey {
    *  with this signature. A staged replacement the core already holds (a yes the app missed, or one before a crash) is
    *  promoted first; one no card can approve any more is dropped. */
   async register(client: AnswerKeyClient, deviceId: string): Promise<boolean> {
+    return "registered" in (await this.registerOnce(client, deviceId));
+  }
+
+  /** One registration, and what it came to: `registered`; `again` when the core can't take it yet (it isn't serving
+   *  the method yet, says to try again, or didn't answer), so a later try may; `refused` on the core's definite no (a
+   *  different key already held, a device whose key was removed, a signature it didn't take). The log says "waiting"
+   *  for a try that may take later (a device registry still opening) and "not registered" only for the core's no;
+   *  `quiet` leaves a retry's repeated wait out of the log, never a no. */
+  async registerOnce(client: AnswerKeyClient, deviceId: string, o: { quiet?: boolean } = {}): Promise<Registration> {
     const st = this.staged();
-    if (st && (await this.adoptIfHeld(client, deviceId, st.key)) === "held") return true;
+    if (st && (await this.adoptIfHeld(client, deviceId, st.key)) === "held") return { registered: true };
     try {
       const publicKey = this.publicKey();
       const signature = Buffer.from(this.sign(answerKeyStatement(deviceId, publicKey, this.held))).toString("base64");
       await client.request("device.answerKey.set", { publicKey, held: this.held, signature }, 10_000);
       this.log(`answer key: registered (${this.held})`);
     } catch (err) {
-      // An older daemon, a device that isn't a desktop, or one whose key was removed (pair again): said, not fatal.
-      this.log(`answer key: not registered (${err instanceof Error ? err.message.slice(0, 200) : "refused"})`);
-      return false;
+      const why = err instanceof Error ? err.message.slice(0, 200) : "refused";
+      const kind = notYet(err);
+      if (kind === false) this.log(`answer key: not registered (${why})`);
+      else if (!o.quiet) this.log(kind === "again" ? `answer key: waiting for the core to take it (${why})` : `answer key: waiting: the core's answer said nothing about it (${why})`);
+      return kind === "again" ? { again: why } : kind === "fault" ? { again: why, fault: true } : { refused: why };
     }
     if (st) await this.resolveStaged(client, deviceId);
-    return true;
+    return { registered: true };
   }
 
   /** What became of a staged replacement: `adopted` (the core holds it, now the key), `dropped` (no card can approve
@@ -389,6 +445,102 @@ export class AnswerKey {
       this.log("answer key: the new key stays staged in this computer's store until the next start");
     }
   }
+}
+
+/** How a registration went (`AnswerKey.registerOnce`). */
+export type Registration = { registered: true } | { again: string; fault?: true } | { refused: string; fault?: true };
+
+/** An answer that tells nothing (an internal error, an error with no code) is tried again this many times in a row,
+ *  then reported as a refusal: a fault that persists surfaces instead of being retried for ever. */
+export const REGISTER_FAULT_TRIES = 5;
+
+/** The waits between tries while the core can't take the key yet: growing, then every 30 s while connected. */
+export const REGISTER_WAITS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000, 30_000] as const;
+
+/** This connection's registration of the answer key: tried at once, then again on a growing wait while the core can't
+ *  take it yet (a daemon whose device registry is still opening, or an older one that serves the method only once its
+ *  links are up), until it is registered, definitely refused, or the connection goes. A press on a card asks
+ *  `ready()`, which tries again at once rather than waiting out the current wait: the key is registered before the
+ *  answer it signs is sent. */
+export class KeyRegistration {
+  private state: Registration | undefined;
+  private wake: (() => void) | undefined;
+  private settledWaiters: Array<() => void> = [];
+  private stopped = false;
+  private tries = 0;
+  private faults = 0;
+
+  constructor(
+    private readonly key: AnswerKey, private readonly client: AnswerKeyClient, private readonly deviceId: string,
+    private readonly alive: () => boolean, private readonly log: (line: string) => void = () => {},
+    private readonly waits: readonly number[] = REGISTER_WAITS_MS,
+  ) {
+    void this.run();
+  }
+
+  /** The last outcome: registered, refused, or still trying (`again`), undefined before the first answer. */
+  get current(): Registration | undefined {
+    return this.state;
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.wake?.();
+  }
+
+  /** Registered (or definitely refused) within `timeoutMs`, trying again at once if a wait is running. */
+  async ready(timeoutMs: number): Promise<Registration> {
+    if (this.state !== undefined && !("again" in this.state)) return this.state;
+    this.wake?.();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      new Promise<void>((r) => this.settledWaiters.push(r)),
+      new Promise<void>((r) => { timer = setTimeout(r, timeoutMs); }),
+    ]);
+    clearTimeout(timer);
+    return this.state ?? { again: "the core hasn't answered yet" };
+  }
+
+  private async run(): Promise<void> {
+    for (;;) {
+      if (this.stopped || !this.alive()) return this.settle();
+      let r = await this.key.registerOnce(this.client, this.deviceId, { quiet: this.tries > 0 });
+      this.tries++;
+      this.faults = "fault" in r ? this.faults + 1 : 0;
+      if ("again" in r && this.faults >= REGISTER_FAULT_TRIES) {
+        r = { refused: `${r.again} (the same fault ${this.faults} times in a row)`, fault: true };
+        this.log(`answer key: not registered, and no longer tried on this connection (a reconnect tries again): ${r.refused}`);
+      }
+      this.state = r;
+      if (!("again" in r)) {
+        if ("registered" in r && this.tries > 1) this.log(`answer key: registered after ${this.tries} tries`);
+        return this.settle();
+      }
+      // Each try's outcome wakes a press waiting on it, registered or not.
+      for (const w of this.settledWaiters.splice(0)) w();
+      const wait = this.waits[Math.min(this.tries - 1, this.waits.length - 1)]!;
+      if (this.tries === 1) this.log(`answer key: trying again (in ${wait / 1000} s, and on a growing wait while the core can't take it)`);
+      await new Promise<void>((r) => {
+        const t = setTimeout(r, wait);
+        this.wake = () => { clearTimeout(t); r(); };
+      });
+      this.wake = undefined;
+    }
+  }
+
+  private settle(): void {
+    for (const w of this.settledWaiters.splice(0)) w();
+  }
+}
+
+/** Whether a later try may take the key: `again` when the core can't take it yet (not served, an older daemon before
+ *  its links are up; told to try again; a timeout or a closed connection); `fault` when the answer tells nothing (an
+ *  internal error, an error with no code), tried again only `REGISTER_FAULT_TRIES` times in a row; false on the core's
+ *  definite no. */
+function notYet(err: unknown): "again" | "fault" | false {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code !== "number" || code === ERR.INTERNAL) return "fault";
+  return code === ERR.METHOD_NOT_FOUND || code === ERR.RETRY || code === CLIENT_ERR.CLOSED || code === CLIENT_ERR.TIMEOUT ? "again" : false;
 }
 
 /** The core cancels a replacement's card this long after it shows (`ANSWER_KEY_ROTATION_CARD_MS`), and a minute's

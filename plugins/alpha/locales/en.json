@@ -1,0 +1,20 @@
+{
+  "locale": 1,
+  "lang": "en",
+  "strings": {
+    "alpha.stage.thinking": "thinking",
+    "alpha.stage.celebrating": "celebrating",
+    "alpha.stage.today": "Today: {turns} turns, {tools} tools",
+    "alpha.stage.pinned": "Pinned",
+    "alpha.stage.noModel": "Loading her model…",
+    "alpha.mood.calm": "Calm",
+    "alpha.mood.focused": "Focused",
+    "alpha.mood.alert": "Alert",
+    "alpha.mood.joy": "Joy",
+    "alpha.mood.sad": "Sad",
+    "alpha.scene.meadow": "Clover meadow",
+    "alpha.scene.study": "Study corner",
+    "alpha.scene.starry": "Starry night",
+    "alpha.scene.rain": "Rainy window"
+  }
+}

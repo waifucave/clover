@@ -117,7 +117,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "freeaiapikey/anthropic/claude-opus-4.7",
@@ -199,7 +200,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.7",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "freeaiapikey/anthropic/claude-opus-4.8",
@@ -281,7 +283,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-4.8",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "freeaiapikey/anthropic/claude-opus-5",
@@ -363,7 +366,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "freeaiapikey/anthropic/claude-sonnet-4.6",
@@ -445,7 +449,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-4.6",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "freeaiapikey/anthropic/claude-sonnet-5",
@@ -527,7 +532,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "claude-sonnet-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "medium"
     },
     {
       "key": "freeaiapikey/openai/gpt-4o",
@@ -580,7 +586,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gpt-4o",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "medium"
     },
     {
       "key": "freeaiapikey/openai/gpt-5.4",
@@ -633,7 +640,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "gpt-5.4",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "freeaiapikey/openai/gpt-5.5",
@@ -715,7 +723,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.5",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     },
     {
       "key": "freeaiapikey/openai/gpt-5.6-sol",
@@ -797,7 +806,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "gpt-5.6-sol",
-      "modelFamily": "gpt"
+      "modelFamily": "gpt",
+      "strength": "strong"
     }
   ]
 }

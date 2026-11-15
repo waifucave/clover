@@ -1,13 +1,14 @@
 import { useId, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "../context";
 import { clip, firstLine, hostOf } from "../format";
-import { IconChevron } from "../icons";
+import { IconChevron, IconFileText, IconGlobe, IconPencil, IconSparkles, IconTerminal, IconWrench } from "../icons";
 import { StatusGlyph } from "../parts";
 import { Link } from "../Link";
 import { safeAsset } from "../links";
 import { AppView } from "../sdk";
 import { S } from "../strings";
-import { runStatus, sharedComputer, splitPluginTool, toolSentence } from "../tool-phrases";
+import { ToolResult, shortPath, writeVerb } from "../result";
+import { isOwnTool, runStatus, sharedComputer, splitPluginTool, titleFor, toolSentence, toolWords } from "../tool-phrases";
 import type { ToolCall, ToolRunItem } from "../types";
 
 /** Bounds on what one output block DRAWS (the core already capped what it stores). */
@@ -37,9 +38,53 @@ export function outputPreview(output: string): { text: string; moreLines: number
   return { text, moreLines, cut };
 }
 
-function callName(call: ToolCall): string {
+/** The tool as a theme can name it in CSS: `data-tool="write"`, `"bash"`, `"websearch"`; a plugin's tool by its own name.
+ *  A run of one kind carries that kind (Write, Edit and the like read as `write`), a mixed run `"mixed"`. */
+export function toolKind(name: string): string {
+  const plugin = splitPluginTool(name);
+  return (plugin ? plugin.tool : name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "tool";
+}
+function runKind(calls: readonly ToolCall[]): string {
+  // Edits of files read as one kind: a Write and an Edit in a run are file work.
+  const kinds = new Set(calls.map((c) => { const k = toolKind(c.name); return k === "edit" || k === "multiedit" || k === "notebookedit" ? "write" : k; }));
+  return kinds.size === 1 ? [...kinds][0]! : "mixed";
+}
+
+/** The run's kind as one icon, for a theme that shows the run as a card (`.cl-conv-tools__icon`, hidden in the stock look). */
+function kindIcon(kind: string): { name: string; glyph: ReactNode } {
+  if (kind === "write") return { name: "edit", glyph: <IconPencil /> };
+  if (kind === "bash") return { name: "terminal", glyph: <IconTerminal /> };
+  if (kind === "websearch" || kind === "webfetch" || kind === "browser") return { name: "web", glyph: <IconGlobe /> };
+  if (kind === "agent" || kind === "task") return { name: "agent", glyph: <IconSparkles /> };
+  if (kind === "read" || /(^|-)(read|note|notes|file|files)(-|$)/.test(kind)) return { name: "file", glyph: <IconFileText /> };
+  return { name: "tool", glyph: <IconWrench /> };
+}
+
+/** A one-call run's result in a few words, for a theme that shows the run as a card (`.cl-conv-tools__meta`): its
+ *  output's lines once it is done, that it failed or was cut off; nothing while it runs or waits (its mark says so). */
+function resultMeta(call: ToolCall): string | undefined {
+  if (call.status === "failed") return S.toolFailed;
+  if (call.status === "interrupted") return S.toolInterrupted;
+  if (call.status !== "succeeded") return undefined;
+  const text = (call.output ?? "").replace(/\n+$/, "");
+  if (text === "") return undefined;
+  return S.toolLines(text.split("\n").length);
+}
+
+/** The call's name: a bot's own plugin's tools by words alone, another plugin's with its name after. */
+function callName(call: ToolCall, botId: string): string {
   const plugin = splitPluginTool(call.name);
-  return plugin ? `${plugin.tool} (${plugin.namespace})` : call.name;
+  if (!plugin) return call.name;
+  // A row always names the tool as the plugin serves it (its own name, never a title that could pass for Clover's).
+  return isOwnTool(call.name, botId) ? plugin.tool : `${plugin.tool} (${plugin.namespace})`;
+}
+
+/** One own-plugin call as a chip: the tool's own one-line answer when it gave one ("Scene: starry night"), else its name in words. */
+function chipText(call: ToolCall): string {
+  if (call.display && call.status === "succeeded") return `${call.display.label}: ${call.display.value}`;
+  const line = call.status === "succeeded" ? (call.output ?? "").trim() : "";
+  if (line !== "" && line.length <= 56 && !line.includes("\n") && !line.startsWith("{")) return line.replace(/\.$/, "");
+  return toolWords(call.name);
 }
 
 function failureSummary(calls: readonly ToolCall[]): string | undefined {
@@ -54,7 +99,8 @@ function DiffChip({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
   if (!diff) return null;
   const body = (
     <>
-      <span className="cl-conv-diff__path">{diff.path.split("/").slice(-2).join("/")}</span>
+      <span className="cl-conv-diff__verb">{writeVerb(call.output) === "created" ? S.resultCreated : S.resultEdited}</span>
+      <span className="cl-conv-diff__path">{shortPath(diff.path)}</span>
       <span className="cl-conv-diff__removed">-{diff.removed}</span>
       <span className="cl-conv-diff__added">+{diff.added}</span>
     </>
@@ -110,7 +156,7 @@ function CallDetail({ call, ctx }: { call: ToolCall; ctx: MessageContext }) {
       </button>
     );
   }
-  return <span className="cl-conv-call__detail">{detail ?? callName(call)}</span>;
+  return detail === undefined ? null : <span className="cl-conv-call__detail">{detail}</span>;
 }
 
 export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRunProps) {
@@ -120,10 +166,18 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
   const computer = sharedComputer(calls);
   const reviewing = calls.some((c) => c.reviewing);
   const failure = status === "failed" ? failureSummary(calls) : undefined;
+  const own = calls.filter((c) => isOwnTool(c.name, ctx.botId));
+  const others = calls.filter((c) => !isOwnTool(c.name, ctx.botId));
   const diffs = calls.filter((c) => c.diff);
   const apps = calls.filter((c) => c.app);
+  // What a theme can show of the run as a card (hidden in the stock look): the kind's icon, and for one call its hint
+  // and its result in a few words.
+  const kind = kindIcon(runKind(calls));
+  const single = others.length === 1 && own.length === 0 ? others[0] : undefined;
+  const detail = single ? (titleFor(single, ctx.botId) ?? single.detail) : undefined;
+  const meta = single ? resultMeta(single) : undefined;
   return (
-    <div className="cl-conv-tools" data-kind="tool" data-status={status} data-open={expanded || undefined}>
+    <div className="cl-conv-tools" data-kind="tool" data-tool={runKind(calls)} data-status={status} data-open={expanded || undefined}>
       <button
         type="button"
         className="cl-conv-tools__summary"
@@ -132,8 +186,23 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
         title={expanded ? S.toolHideDetails : S.toolShowDetails}
         onClick={onToggle}
       >
+        <span className="cl-conv-tools__icon" data-icon={kind.name} aria-hidden="true">
+          {kind.glyph}
+        </span>
         <StatusGlyph status={status} />
-        <span className="cl-conv-tools__sentence">{toolSentence(calls)}</span>
+        {others.length > 0 && <span className="cl-conv-tools__sentence">{toolSentence(others)}</span>}
+        {detail !== undefined && detail !== "" && <span className="cl-conv-tools__detail">{detail}</span>}
+        {meta !== undefined && <span className="cl-conv-tools__meta">{meta}</span>}
+        {own.length > 0 && (
+          <span className="cl-conv-tools__chips">
+            {own.map((c) => (
+              <span key={c.callId} className="cl-conv-chip" data-tool={toolKind(c.name)} data-kind={c.display?.kind} data-status={c.status} title={titleFor(c, ctx.botId)}>
+                {c.display?.swatch && /^#[0-9A-Fa-f]{6}$/.test(c.display.swatch) ? <span className="cl-conv-chip__swatch" aria-hidden="true" style={{ background: c.display.swatch }} /> : null}
+                {chipText(c)}
+              </span>
+            ))}
+          </span>
+        )}
         {computer && <span className="cl-conv-tools__computer">{S.toolOnComputer(computer)}</span>}
         {reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}
         <span className="cl-conv-chevron" aria-hidden="true">
@@ -151,19 +220,21 @@ export function ToolRun({ item, ctx, expanded, onToggle, renderResult }: ToolRun
       {expanded && (
         <ol className="cl-conv-tools__calls" id={bodyId}>
           {calls.map((call) => {
+            const drawn = ToolResult({ call, agents: ctx.agents });
             const standard = (
               <>
-                <Output call={call} />
+                {drawn ?? <Output call={call} />}
                 <DiffChip call={call} ctx={ctx} />
-                <Sites call={call} ctx={ctx} />
+                {!(drawn && toolKind(call.name) === "websearch") && <Sites call={call} ctx={ctx} />}
               </>
             );
             const custom = renderResult?.(call, standard);
             return (
-              <li key={call.callId} className="cl-conv-call" data-status={call.status}>
+              <li key={call.callId} className="cl-conv-call" data-tool={toolKind(call.name)} data-status={call.status}>
                 <div className="cl-conv-call__head">
                   <StatusGlyph status={call.status} />
-                  <span className="cl-conv-call__name">{callName(call)}</span>
+                  <span className="cl-conv-call__name">{callName(call, ctx.botId)}</span>
+                  {titleFor(call, ctx.botId) ? <span className="cl-conv-call__detail">{titleFor(call, ctx.botId)}</span> : null}
                   <CallDetail call={call} ctx={ctx} />
                   {call.computer && !computer && <span className="cl-conv-call__computer">{S.toolOnComputer(call.computer)}</span>}
                   {call.reviewing && <span className="cl-conv-tools__reviewing">{S.toolReviewing}</span>}

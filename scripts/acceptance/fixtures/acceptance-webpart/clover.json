@@ -1,0 +1,12 @@
+{
+  "manifest": 1,
+  "id": "acceptance-webpart",
+  "name": "Acceptance web part",
+  "description": "The acceptance run's web page part: no code, one ui entry of kind web (a page in its own folder) at the conversation spot. Installed from its folder, its OK pressed, the page draws in an isolated view of its own and reaches nothing of the app.",
+  "version": "0.0.1",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["conversation.read"],
+  "contributes": {
+    "ui": [{ "spot": "conversation", "web": { "entry": "page.html", "partition": "main" } }]
+  }
+}

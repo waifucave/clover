@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { BridgeHandlers } from "./handlers";
-import type { BridgeToolDef } from "./tools";
+import { listedBridgeTool, type BridgeToolDef } from "./tools";
 
 export interface InProcessBridgeOptions {
   /** The server's name: the session's bridge server name (`clover_<id>`), as the stdio bridge's. */
@@ -23,7 +23,7 @@ export async function inProcessBridgeServer(h: BridgeHandlers, o: InProcessBridg
   const { tools } = await h.tools(o.sessionId);
   const list: BridgeToolDef[] = [...tools];
   const instance: WinterMcpServerInstance = {
-    listTools: () => list.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    listTools: () => list.map(listedBridgeTool),
     async callTool(name, args) {
       if (!o.live()) return result("Not run: this agent's bridge was closed.", true);
       try {

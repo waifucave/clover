@@ -20,7 +20,7 @@ import {
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type CloverTokens } from "../auth/clover-tokens";
 import { proveDaemon } from "../platform/pair/run-files";
-import { gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
+import { capabilityRefusal, gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
 import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import { defaultAppPeerCheck, type AppPeerPolicy } from "../platform/peer-signature";
@@ -148,6 +148,12 @@ export interface CloverServerDeps {
   readonly appToken?: string;
   /** Other lanes' Clover methods, by wire name. */
   readonly handlers?: Readonly<Record<string, CloverHandler>>;
+  /** Settles once the daemon's late doors are in: the parts that start after the socket listens (the plugin registry's
+   *  `plugin.auth.*`, the links' `devices.*`, the computer node's and the bot side's methods) have each finished their
+   *  first start or are waiting on something only the user can give (a locked secret store). A call to a method with no
+   *  handler yet waits for it, so a client that connects the moment the socket answers is answered when its door is
+   *  in, never "not served yet" in between; after it, a method with no handler is one this daemon doesn't serve. */
+  readonly lateDoors?: () => Promise<void>;
   /** M-M2: whether the app may leave for an update now (`pair.exiting{update}`): the update gate closed and idle, and
    *  then committed to the restart. */
   acceptUpdateExit?(): boolean;
@@ -155,6 +161,8 @@ export interface CloverServerDeps {
   /** A plugin's granted capabilities (lane B's registry), for the `core.event`s that need one; without it a plugin's
    *  connection gets none of those. */
   pluginCapabilities?(pluginId: string): readonly string[] | undefined;
+  /** Whether a plugin is on and running (a plugin's own settings events go only to one that is). */
+  pluginRunning?(pluginId: string): boolean;
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
   readonly endpoint?: string;
@@ -210,8 +218,11 @@ export interface CloverServer {
   linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web"; stillLinked?: () => boolean }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
-  /** A response from the client to one of the daemon's requests (the heartbeat's). */
-  response(conn: CloverConn, msg: { id?: unknown }): void;
+  /** A response from the client to one of the daemon's requests (the heartbeat's, or one `ask` waits on). */
+  response(conn: CloverConn, msg: { id?: unknown; result?: unknown; error?: { code?: unknown; message?: unknown; data?: unknown } }): void;
+  /** Sends the client a request from the daemon and waits for its answer: its result, or its error thrown as a
+   *  `CloverRpcError`; refused with RETRY when nothing comes within `timeoutMs` or the connection closes first. */
+  ask(conn: CloverConn, method: string, params: unknown, timeoutMs: number): Promise<unknown>;
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
@@ -234,6 +245,16 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const spentAnswers = new Set<string>();
   const conns = new Map<number, CloverConn>();
   let requestSeq = 0;
+  // The daemon's requests waiting on an answer (`ask`), by the connection and the request's id.
+  const asked = new Map<string, { connId: number; resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  const settleAsked = (id: string, fn: (w: { resolve: (v: unknown) => void; reject: (e: Error) => void }) => void): boolean => {
+    const w = asked.get(id);
+    if (w === undefined) return false;
+    asked.delete(id);
+    clearTimeout(w.timer);
+    fn(w);
+    return true;
+  };
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
   const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
   const now = deps.heartbeat?.now ?? Date.now;
@@ -243,9 +264,19 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
   });
   const stopBeat = (connId: number) => { const b = beats.get(connId); if (b) { clearInterval(b.timer); beats.delete(connId); } };
+  // A tick that comes this much later than the one before means this process did not run in between: the computer
+  // slept, or the daemon itself was held up. That silence is not the app's.
+  const beatGap = Math.max(beatEvery * 2, beatEvery + 2_000);
   const startBeat = (conn: CloverConn, pid: number | null, handle?: PeerHandle) => {
+    let ticked = now();
     const beat = { heard: now(), pid, ...(handle ? { handle } : {}), pending: new Set<string>(), timer: setInterval(() => {
-      if (now() - beat.heard > beatTimeout) {
+      const t = now();
+      // After a sleep the first tick used to find the last answer older than the timeout and end the app at once, with
+      // no ping sent since the wake: every wake restarted it in safe mode (85 times in one night on the owner's Mac).
+      // The count starts again from the wake, and the app gets a ping and its full time to answer it.
+      if (t - ticked > beatGap) beat.heard = t;
+      ticked = t;
+      if (t - beat.heard > beatTimeout) {
         stopBeat(conn.connId);
         deps.log?.(`[clover] the app (connection ${conn.connId}) didn't answer app.ping for ${beatTimeout} ms`);
         // With no pid it can't be ended, and a new one beside it would be a second app (review M6): its
@@ -325,6 +356,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
 
   // One request through the role's allow list, `userOnly` (unless the user's signed answer for this call stands
   // in), the method's params, then its handler.
+  const capabilityLogged = new Set<string>();
   const run = async (conn: CloverConn, method: string, params: unknown, answered: boolean): Promise<unknown> => {
     if (binding.has(conn.connId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection is opening a coding session; it takes nothing until then");
     if (relayed.has(conn.connId) && method !== "codeAgent.send") {
@@ -332,11 +364,26 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     }
     const spec = CLOVER_METHODS.get(method);
     if (spec === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `no such method ${method}`);
-    const refused = gateCloverRequest(conn.role, answered ? { kind: "user", client: "app" } : conn.caller, method);
+    const caller: Caller = answered ? { kind: "user", client: "app" } : conn.caller;
+    // A plugin's connection: the method's capability, as its OK granted it (the registry's record, read per call).
+    const lacking = gateCloverRequest(conn.role, caller, method) === null
+      ? capabilityRefusal(conn.role, caller, method, caller.kind === "plugin" ? deps.pluginCapabilities?.(caller.pluginId) : undefined)
+      : null;
+    if (lacking !== null && caller.kind === "plugin" && !capabilityLogged.has(`${caller.pluginId}\0${method}`)) {
+      // Once per plugin and method (never what the call carried), so a dead button leaves a trace in the daemon's log.
+      capabilityLogged.add(`${caller.pluginId}\0${method}`);
+      console.error(`[plugins] ${caller.pluginId}: ${lacking.message}`);
+    }
+    const refused = gateCloverRequest(conn.role, caller, method) ?? lacking;
     if (refused) throw new CloverRpcError(refused.code, refused.message);
     const p = spec.params.safeParse(params ?? {});
     if (!p.success) throw new CloverRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
-    const handler = own[method] ?? deps.handlers?.[method];
+    let handler = own[method] ?? deps.handlers?.[method];
+    if (handler === undefined && deps.lateDoors !== undefined) {
+      // A door that comes up after the socket listens: this call waits for it rather than racing the daemon's start.
+      await deps.lateDoors();
+      handler = own[method] ?? deps.handlers?.[method];
+    }
     if (handler === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);
     return handler(conn, p.data);
   };
@@ -560,6 +607,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       stopBeat(conn.connId);
       conns.delete(conn.connId);
       ends.delete(conn.connId);
+      // Whatever the daemon still waited on from it gets no answer now.
+      for (const [id, w] of [...asked]) if (w.connId === conn.connId) settleAsked(id, (x) => x.reject(new CloverRpcError(ERR.RETRY, "the connection closed before it answered")));
       for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
       conn.follows.clear();
       const b = bridged.get(conn.connId);
@@ -572,6 +621,27 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     response(conn, msg) {
       const b = beats.get(conn.connId);
       if (b && typeof msg.id === "string" && b.pending.delete(msg.id)) b.heard = now();
+      // An answer to an `ask`, from the connection it was sent to only.
+      if (typeof msg.id === "string" && asked.get(msg.id)?.connId === conn.connId) {
+        // Any answer also shows the app's main process is responsive.
+        if (b) b.heard = now();
+        settleAsked(msg.id, (w) => {
+          if (msg.error !== undefined) {
+            const e = msg.error;
+            w.reject(new CloverRpcError(typeof e.code === "number" ? e.code : ERR.INTERNAL, typeof e.message === "string" ? e.message.slice(0, 500) : "the client refused", e.data));
+          } else w.resolve(msg.result);
+        });
+      }
+    },
+
+    ask(conn, method, params, timeoutMs) {
+      return new Promise<unknown>((resolve, reject) => {
+        if (!conns.has(conn.connId)) { reject(new CloverRpcError(ERR.RETRY, "that connection has closed")); return; }
+        const id = conn.send(method, params);
+        const timer = setTimeout(() => settleAsked(id, (w) => w.reject(new CloverRpcError(ERR.RETRY, `${conn.clientName} didn't answer ${method} within ${Math.round(timeoutMs / 1000)} s`))), timeoutMs);
+        (timer as { unref?: () => void }).unref?.();
+        asked.set(id, { connId: conn.connId, resolve, reject, timer });
+      });
     },
 
     tellAppQuit(reason, connIds) {
@@ -596,6 +666,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       return sendCoreEvent({
         connections: () => conns.values(),
         pluginCapabilities: (id) => deps.pluginCapabilities?.(id),
+        pluginRunning: (id) => deps.pluginRunning?.(id) === true,
         log: (line) => deps.log?.(line),
       }, event, opts);
     },

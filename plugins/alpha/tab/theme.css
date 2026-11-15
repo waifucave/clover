@@ -1,44 +1,39 @@
-/* Alpha's tab, on top of Clover's base theme: lavender and mint, and the stage as a little clover meadow under
-   a sky with a few sparkles. Everything here dresses Alpha's own layout (`layout.json`'s classes); approval
-   cards keep the app's card styling. Kept to the theme CSS rules (`tab.test.ts`). */
+/* Alpha's tab theme: what her tab's own sheet still dresses in the parts. The conversation and the composer wear her
+   pane's look from their own `style` entries (tab/pane.json and tab/pane.css), so nothing here styles their rows, bubbles,
+   tool cards or the composer; what is left is the figure's framing on her stage and the strip of her own stage tools.
+   Filters, opacity and rotation are kept out (a sealed approval card must stay visible). */
 
-.alpha-stage {
-  position: relative;
-  isolation: isolate;
-  border-left: 1px solid var(--clover-color-hairline, #E6DEF5);
-  background: var(--clover-stage-background, linear-gradient(180deg, #F3EEFF 0%, #EEF0FF 52%, #E4F7EE 100%));
+/* The figure's framing is the renderer's own: a 3D or Live2D figure reads --clover-avatar-framing / -crop / -headroom (layout.css, on the
+   stage cell) and frames what it draws, so the canvas is exactly the stage's box (the renderer's own style). It was once drawn larger
+   than the stage and shifted so the stage's edge cropped her; that fitted the whole model canvas into an oversized box, and a model with
+   a big canvas came out huge and low, over her room's tools. */
+
+/* At the wide size her room has a left column (the name, the chips, today's tally, the stage tools) over the left of the stage: a Live2D
+   figure is drawn in what is right of it, so no wing of hair or sleeve lies over the column's words. (The canvas, not the stage's box:
+   the box the figure reports stays the stage's, which is the room's own origin.) */
+@media (min-width: 1101px) {
+  .clvl-view .clvl-canvas { left: min(320px, 22vw); width: calc(100% - min(320px, 22vw)); }
 }
 
-/* The meadow: soft hills with clover leaves along the bottom of the stage. */
-.alpha-stage::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34%;
-  z-index: -1;
-  background: url("meadow.svg") center bottom / cover no-repeat;
-  pointer-events: none;
-}
+/* Her stage tools: one strip, a chip per tool (glyph + the tool's own words), in mixed runs too. */
+.cl-conv-tools__chips { gap: 6px 8px; }
+.cl-conv-chip { font-family: var(--alpha-display); font-size: 13px; font-weight: 550; padding: 2px 10px 2px 8px; border-radius: 14px; background: color-mix(in srgb, var(--clover-color-accent) 14%, var(--clover-color-raised)); border-color: color-mix(in srgb, var(--clover-color-accent) 45%, var(--clover-color-hairline)); }
+.cl-conv-chip::before { content: "✦"; font-size: 12px; }
+.cl-conv-chip[data-tool="set-scene"]::before { content: "🌄"; }
+.cl-conv-chip[data-tool="set-mood"]::before { content: "🎨"; }
+.cl-conv-chip[data-tool="set-expression"]::before { content: "😊"; }
+.cl-conv-chip[data-tool="play-motion"]::before { content: "💃"; }
+.cl-conv-chip[data-tool="toggle-outfit"]::before { content: "👗"; }
+.cl-conv-chip:is([data-tool="pin-note"], [data-tool="unpin-note"])::before { content: "📌"; }
+.cl-conv-chip[data-tool="celebrate"]::before { content: "🎉"; }
+.cl-conv-chip[data-tool="stage-status"]::before { content: "🎭"; }
+.cl-conv-tools:has(.cl-conv-chip) > .cl-conv-tools__summary > .cl-conv-status { display: none; }
 
-/* A few sparkles in the sky (white with a lavender halo, so they read on the light sky and the dark one), and a
-   soft light behind where the avatar stands. */
-.alpha-stage::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    radial-gradient(circle at 18% 16%, #FFFFFF 0 1.5px, #B8A5FF80 2.2px, #B8A5FF00 4px),
-    radial-gradient(circle at 82% 11%, #FFFFFF 0 2px, #B8A5FF80 2.8px, #B8A5FF00 5px),
-    radial-gradient(circle at 70% 30%, #FFFFFF 0 1px, #7FF2D266 1.8px, #7FF2D200 3px),
-    radial-gradient(circle at 27% 38%, #FFFFFF 0 1px, #B8A5FF66 1.8px, #B8A5FF00 3px),
-    radial-gradient(circle at 44% 8%, #FFFFFF 0 1px, #B8A5FF4D 1.6px, #B8A5FF00 3px),
-    radial-gradient(ellipse 55% 42% at 50% 46%, var(--clover-stage-glow, #B8A5FF3D) 0%, #FFFFFF00 100%);
-  pointer-events: none;
-}
-
-.alpha-talk {
-  background: var(--clover-color-surface, #FCFAFF);
+/* The panels as a sheet of hers, shaped like her conversation sheet. */
+.cl-chrome-panels {
+  flex: 1 1 auto; pointer-events: auto;
+  border-radius: 30px; overflow: hidden;
+  background: color-mix(in srgb, var(--clover-color-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--clover-color-hairline-raised) 65%, transparent);
+  box-shadow: 0 28px 70px -26px var(--alpha-shadow);
 }

@@ -33,8 +33,9 @@ export const ThemeRef = utf16(300, 3).regex(/^[a-z][a-z0-9/-]*#[A-Za-z0-9._-]+$/
 export const UiSettings = z.object({
   /** The user's pick in a single spot or keyed cell, for one bot or globally; `null` shows nothing there (a hide). */
   picks: z.array(z.object({ spot: utf16(128), key: utf16(256).optional(), bot: BotId.optional(), entry: EntryRef.nullable() })).max(10_000),
-  /** Order and hidden entries of list spots. */
-  lists: z.array(z.object({ spot: utf16(128), bot: BotId.optional(), order: z.array(EntryRef).max(1000), hidden: z.array(EntryRef).max(1000) })).max(1000),
+  /** Order and hidden entries of list spots; `shown`, entries the user keeps though a plugin's `hide` names them. On
+   *  `bot.tab` (for one bot, or every bot), `hidden` is the layout patches the user switched off there (`<plugin>#<entry>`). */
+  lists: z.array(z.object({ spot: utf16(128), bot: BotId.optional(), order: z.array(EntryRef).max(1000), hidden: z.array(EntryRef).max(1000), shown: z.array(EntryRef).max(1000).optional() })).max(1000),
   /** The base theme for bot tabs and the global theme; unset means `clover`'s base theme (§5.5). */
   baseTheme: ThemeRef.optional(),
   globalTheme: ThemeRef.optional(),
@@ -49,10 +50,151 @@ export const UiSettings = z.object({
   textSize: z.enum(["small", "default", "large"]).optional(),
   /** A pack chosen for a language when two translate the same keys (§5.5). */
   packs: z.record(z.string(), AnyPluginId).optional(),
+  /** Voice (§6.6). `speakReplies`: a bot that has a voice speaks each reply of its main conversation aloud when its turn
+   *  ends (`voice.play`); `false` is the app's one mute. Unset is on. Set with `ui.set` (the whole `voice` object). */
+  voice: z.object({ speakReplies: z.boolean().optional() }).optional(),
 });
 export type UiSettings = z.infer<typeof UiSettings>;
 
+/** A rectangle in screen points (a window's bounds, a view's within its window). */
+const Bounds = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().nonnegative(), height: z.number().finite().nonnegative() });
+
+/** What `app.capture` asks for: one window by name (`main`, or a surface's own name such as `island` or `pill`), or
+ *  `all` for the list of windows with no picture (the CLI then asks for each). `image: false` leaves the picture out;
+ *  `frames` adds each window's frame list. */
+export const AppCaptureParams = z.object({
+  window: utf16(128, 1).regex(/^[A-Za-z0-9._#/-]+$/),
+  image: z.boolean().optional(),
+  frames: z.boolean().optional(),
+}).strict();
+export type AppCaptureParams = z.infer<typeof AppCaptureParams>;
+
+/** One document of a window: its origin, the part's mount id, its size in CSS pixels and whether it is visible. Ids
+ *  and sizes only, never a page's text. */
+export const CapturedFrame = z.object({
+  origin: utf16(512),
+  mount: utf16(128).optional(),
+  surface: utf16(128).optional(),
+  width: z.number().int().nonnegative().optional(),
+  height: z.number().int().nonnegative().optional(),
+  visibility: utf16(32).optional(),
+  /** The frame didn't answer within a second (a hung or loading page): its sizes are missing. */
+  silent: z.boolean().optional(),
+  pid: z.number().int().nonnegative().optional(),
+  /** A card's sealed frame: `card` (a live one, from the sealed scheme's card host) or `placeholder` (a render window's
+   *  stand-in). Its origin reads `null` either way; its address, which holds its token, is never sent. */
+  sealed: z.enum(["card", "placeholder"]).optional(),
+});
+
+/** One window as the app drew it. `drawn: false` (hidden, minimised, or never painted): no picture, and `note` says
+ *  why. The picture is the window's page with the views it holds (web parts, the browser's view) composited over it
+ *  where they are placed. */
+export const CapturedWindow = z.object({
+  name: utf16(128),
+  bounds: Bounds,
+  /** The display's scale factor (2 on a Retina display). */
+  scale: z.number().finite().positive(),
+  visible: z.boolean(),
+  drawn: z.boolean(),
+  note: utf16(300).optional(),
+  /** The PNG, base64, and its size in pixels; `reduced` when it was drawn at a smaller scale to fit a message. */
+  png: utf16(7_000_000).optional(),
+  pixels: z.object({ width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }).optional(),
+  reduced: z.boolean().optional(),
+  /** The views laid over the window's page, in their order, and whether each made it into the picture. */
+  views: z.array(z.object({ bounds: Bounds, visible: z.boolean(), composited: z.boolean() })).max(64),
+  frames: z.array(CapturedFrame).max(256).optional(),
+});
+export type CapturedWindow = z.infer<typeof CapturedWindow>;
+export const AppCaptureResult = z.object({ windows: z.array(CapturedWindow).max(32) });
+export type AppCaptureResult = z.infer<typeof AppCaptureResult>;
+
+/** Where `app.open` goes: `bot:<id>`, `app:<key>` or a `main` spot key (a plugin's page), `settings` or
+ *  `settings:<section>`, `plugins`, `archive`, `code`. */
+export const AppOpenTarget = utf16(200, 1).regex(/^[A-Za-z0-9._:#/-]+$/);
+export const AppOpenParams = z.object({ target: AppOpenTarget, frames: z.boolean().optional() }).strict();
+export const AppWhereParams = z.object({ frames: z.boolean().optional() }).strict();
+/** The window's place as its shell reports it: the tab showing (`kind`, and the bot's id, a session's, or an app's key)
+ *  and the bot whose tab shows. */
+export const AppPlace = z.object({
+  tab: z.object({ kind: utf16(32), id: utf16(256).optional() }),
+  bot: utf16(256).optional(),
+  side: utf16(16).optional(),
+  /** `settings` while Settings shows over the tab. */
+  dialog: utf16(16).optional(),
+});
+/** `app.open`'s and `app.where`'s answer: whether the target shows (`shown`, with why not), the window's place, whether
+ *  it is drawn, and its frames (ids and sizes only). */
+export const AppOpenResult = z.object({
+  target: AppOpenTarget.optional(),
+  shown: z.boolean(),
+  reason: utf16(500).optional(),
+  drawn: z.boolean(),
+  where: AppPlace.optional(),
+  frames: z.array(CapturedFrame).max(256).optional(),
+});
+export type AppOpenResult = z.infer<typeof AppOpenResult>;
+/** What the daemon asks the app: a target to open, or none for where it is. */
+export const AppWindowOpenParams = z.object({ target: AppOpenTarget.optional(), frames: z.boolean().optional() }).strict();
+/** What a bot's `AppScreenshot` asks this computer's app (`app.window.render`): a place drawn in a render window at a
+ *  content size, or `window` (the user's main window as it is). */
+export const AppWindowRenderParams = z.object({
+  target: AppOpenTarget,
+  size: z.object({ width: z.number().int().min(320).max(2560), height: z.number().int().min(240).max(1640) }).strict(),
+  frames: z.boolean().optional(),
+}).strict();
+export type AppWindowRenderParams = z.infer<typeof AppWindowRenderParams>;
+/** A console line a page wrote while it drew (an error or a warning), with the plugin whose frame wrote it. */
+export const RenderConsoleLine = z.object({ plugin: utf16(256), level: z.enum(["error", "warning"]), message: utf16(500) });
+/** `app.window.render`'s answer: whether the place showed and drew, its picture (PNG, base64) and a smaller copy for a
+ *  model when it is large, the place, its frames (ids and sizes) and its pages' console lines. */
+export const AppRenderResult = z.object({
+  target: AppOpenTarget,
+  size: z.object({ width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }),
+  shown: z.boolean(),
+  reason: utf16(500).optional(),
+  drawn: z.boolean(),
+  note: utf16(300).optional(),
+  png: utf16(7_000_000).optional(),
+  pixels: z.object({ width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }).optional(),
+  preview: z.object({ png: utf16(7_000_000), width: z.number().int().nonnegative(), height: z.number().int().nonnegative() }).optional(),
+  where: AppPlace.optional(),
+  frames: z.array(CapturedFrame).max(256).optional(),
+  console: z.array(RenderConsoleLine).max(50).optional(),
+});
+export type AppRenderResult = z.infer<typeof AppRenderResult>;
+
 export const APP_METHODS = {
+  appOpen: defineMethod({
+    name: "app.open", owner: "D", roles: ["cli"], userOnly: true,
+    params: AppOpenParams, result: AppOpenResult,
+    doc: "The user's own navigation of this computer's app from a terminal: shows a bot's tab, a plugin's page, Settings, Plugins, Archive or the coding side in the main window by the route its own sidebar uses, waits until it shows, and says where the window is and its frames; never shows, raises, focuses, moves or resizes a window, and never clicks or types in a page. A local user's CLI only.",
+  }),
+  appWhere: defineMethod({
+    name: "app.where", owner: "D", roles: ["cli"], userOnly: true,
+    params: AppWhereParams, result: AppOpenResult,
+    doc: "Where this computer's app's main window is (the tab showing) and its frames, changing nothing. A local user's CLI only.",
+  }),
+  appWindowOpen: defineMethod({
+    name: "app.window.open", owner: "D", roles: ["app"], direction: "from-daemon",
+    params: AppWindowOpenParams, result: AppOpenResult,
+    doc: "The daemon asks the app's main process for `app.open`'s answer (with a target) or `app.where`'s (without).",
+  }),
+  appWindowRender: defineMethod({
+    name: "app.window.render", owner: "D", roles: ["app"], direction: "from-daemon",
+    params: AppWindowRenderParams, result: AppRenderResult,
+    doc: "The daemon asks the app's main process to draw a place for a bot's AppScreenshot in a render window the user never sees (hidden, offscreen, no input, no sound, a card there a plain placeholder), or to capture the main window as it is (`window`, never while Settings shows), and answers with the picture.",
+  }),
+  appCapture: defineMethod({
+    name: "app.capture", owner: "D", roles: ["cli"], userOnly: true,
+    params: AppCaptureParams, result: AppCaptureResult,
+    doc: "The user's own look at what this computer's app draws: a window's picture (Electron's own capture of its page, never the screen) with its bounds, its display's scale and its frame list; never shows, raises or resizes a window. A local user's CLI only.",
+  }),
+  appWindowCapture: defineMethod({
+    name: "app.window.capture", owner: "D", roles: ["app"], direction: "from-daemon",
+    params: AppCaptureParams, result: AppCaptureResult,
+    doc: "The daemon asks the app's main process for `app.capture`'s answer, one window's picture at a time.",
+  }),
   pairStatus: defineMethod({
     name: "pair.status", owner: "C", roles: ["app", "cli"],
     params: Empty, result: PairStatus,
@@ -119,6 +261,21 @@ export const APP_METHODS = {
     result: z.object({ text: utf16(100_000).optional() }),
     doc: "Push-to-talk audio for a bot's listening voice plugin, on the computer the user talks on (§6.6).",
   }),
+  /** Whether a `voice.listen` for the bot would be taken now: the bot has a voice, its voice plugin is installed and on,
+   *  and that entry listens. The app shows its hold-to-talk control only when it does. It reads the same entry the
+   *  listening itself does, so the control and the call never disagree; it asks nothing of the plugin and never a card. */
+  voiceStatus: defineMethod({
+    name: "voice.status", owner: "D", roles: ["app"],
+    params: z.object({ bot: BotId }),
+    result: z.object({ listens: z.boolean() }),
+    doc: "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
+  }),
+  /** One piece of a bot's spoken reply, to every app connection. The contract the app's player codes against:
+   *  * `utterance` names one reply's speech; its pieces come in order, `seq` 0, 1, 2…, each `audio` base64 of at most
+   *    2 MB (about 1.5 MB of samples). The last piece has `final: true` and empty `audio`: the utterance is complete.
+   *  * `format` is `pcm16-24k` in this build (16-bit little-endian signed mono samples at 24 kHz, no header, a piece
+   *    ends on a whole sample); `mp3` and `opus` are reserved. A new utterance of the same bot replaces the one playing.
+   *  * The user stops a bot's speech with `voice.stop` (the core ends the utterance; the app stops its own playback). */
   voicePlay: defineMethod({
     name: "voice.play", owner: "D", roles: ["app"], direction: "from-daemon",
     params: z.object({
@@ -127,6 +284,38 @@ export const APP_METHODS = {
     }),
     result: Ok,
     doc: "Speech for the app to play, which the avatar lip-syncs to (§6.6).",
+  }),
+  /** The app's player says an utterance it was sent has ended on this device: played out, stopped, cut by a newer one
+   *  of the same bot, or dropped while muted. The core ignores an utterance it didn't send to this app; the report only
+   *  lets the active voice mode's queue go on sooner (its next sound waits for it, or for a deadline when no report
+   *  comes), and never starts a sound. Sent by the app's own shell, never by a plugin. */
+  voicePlayed: defineMethod({
+    name: "voice.played", owner: "D", roles: ["app"],
+    params: z.object({ bot: BotId, utterance: utf16(128, 1) }),
+    result: Ok,
+    doc: "The app's player says an utterance it was sent has ended (§6.6): the voice mode's queue goes on.",
+  }),
+  voiceStop: defineMethod({
+    name: "voice.stop", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ bot: BotId }),
+    result: Ok,
+    doc: "The user stops a bot's speech: the core ends its utterance now (no more `voice.play` pieces, the last one `final`) and the app stops what it is playing. Speaking again waits for the bot's next reply (§6.6).",
+  }),
+  /** The user asks to hear one past reply of a bot (the speak button under a reply), by its click:
+   *  * `seq` is the reply's own: the `seq` of an `assistant_message` event in that bot's MAIN conversation's log. The core
+   *    reads the text from the log, never from the caller; anything else is refused (`invalid`).
+   *  * It replaces whatever that bot is speaking, and it speaks with `voice.speakReplies` off too (the mute is for the
+   *    automatic speaking of new replies; this is the user asking). The pieces come as `voice.play`, as for any reply.
+   *  * `speaking: true` once the first piece went (or the voice is still making it after a while); `speaking: false`
+   *    with a `note` when nothing will be spoken (no voice, a voice plugin that isn't installed or doesn't speak, no
+   *    key, the user's no to its provider, a voice that failed): a short sentence the part shows as is.
+   *  * It never waits on a card: when the voice's provider needs the user's OK (a card raised or pending), it answers
+   *    at once (`speaking: false`, "Answer the card to let <voice> speak.") and speaks that reply when they say yes. */
+  voiceSpeak: defineMethod({
+    name: "voice.speak", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ session: SessionId, seq: z.number().int().nonnegative() }),
+    result: z.object({ speaking: z.boolean(), note: utf16(500).optional() }),
+    doc: "The user asks to hear one past reply of a bot's main conversation, by its seq; the core takes the text from the log and speaks it with the bot's voice, over whatever it was saying, also when replies are muted; a note says why when nothing is spoken. It never waits on a card: a provider that needs the user's OK answers at once with a note and speaks when they say yes (§6.6).",
   }),
   pillSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a `clover`-tree
@@ -156,9 +345,22 @@ export const APP_METHODS = {
     params: z.object({ title: Text, body: Text.optional(), session: SessionId.optional() }), result: Ok,
     doc: "A plugin sends the user a notification through the `notifiers` (§10).",
   }),
+  /** The plugins whose notifications the user turned off (Settings): the core drops a muted plugin's `notify.send`
+   *  before any notifier sees it. Only the user (the app, the CLI) reads or changes the list; a plugin never does. */
+  notifyMutes: defineMethod({
+    name: "notify.mutes", owner: "D", roles: ["app", "cli"],
+    params: Empty, result: z.object({ muted: z.array(AnyPluginId).max(1024) }),
+    doc: "The plugins whose notifications the user muted.",
+  }),
+  notifySetMuted: defineMethod({
+    name: "notify.setMuted", owner: "D", roles: ["app", "cli"],
+    params: z.object({ pluginId: AnyPluginId, muted: z.boolean() }), result: Ok,
+    doc: "Mutes or unmutes a plugin's notifications (`notify.send`); the user's own choice, never a plugin's.",
+  }),
   appNotify: defineMethod({
     name: "app.notify", owner: "G", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional() }),
+    /** No buttons: a banner's click only brings the app forward (at `session`, when given). `silent`: no sound. */
+    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional(), silent: z.boolean().optional() }).strict(),
     /** `shown: false` when the app showed nothing because it is in front showing that session already. */
     result: z.object({ shown: z.boolean() }),
     doc: "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",

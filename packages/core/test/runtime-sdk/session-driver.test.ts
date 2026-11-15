@@ -1187,15 +1187,19 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
     const asked: { session?: string }[] = [];
     const option = { catalog: { path: join(t.home, "run", "models", "catalog-x.json"), sha256: "0".repeat(64) } };
     try {
-      const plain = await t.drivers.create(t.store.createSession("mp-none", { mode: "chat" }));
+      const plainId = t.store.createSession("mp-none", { mode: "chat" });
+      const plain = await t.drivers.create(plainId);
       expect(t.q().options.modelProviders).toBeUndefined();
+      // What the child was given, for the eviction when the model plugins come up (`evictSessionsForModelCatalog`).
+      expect(t.drivers.modelProviderKeyOf?.(plainId)).toEqual({ provider: "openai", key: expect.stringMatching(/^(compiled|generic):/) });
       await plain.end();
-      installModelPlugins({ catalog: undefined, sessionOption: (o: { session?: string }) => (asked.push(o), option) } as unknown as ModelPlugins);
+      installModelPlugins({ catalog: undefined, sessionKey: () => "sha-x:plugin.a", providerKey: (p: string) => `${p}-key-from-plugins`, sessionOption: (o: { session?: string }) => (asked.push(o), option) } as unknown as ModelPlugins);
       const sid = t.store.createSession("mp-on", { mode: "chat" });
       const session = await t.drivers.create(sid);
       expect(t.q().options.modelProviders).toEqual(option);
       // Asked once, for this session (its Clover id, which the plugin host's calls then act for, R7).
       expect(asked.map((a) => a.session)).toEqual([sid]);
+      expect(t.drivers.modelProviderKeyOf?.(sid)).toEqual({ provider: "openai", key: "openai-key-from-plugins" });
       await session.end();
     } finally {
       installModelPlugins(undefined);

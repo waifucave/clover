@@ -387,7 +387,7 @@ test("connector actions take the separate Cowork row: explicit ask stays a card 
   expect((await outcome(build(state("plan"), { connectors: connectorSource({ fx: { act: "ask" } }, true) }), "mcp__fx__act", {})).kind).toBe("card");
   // The model hears which setting refused it.
   const denied = await outcome(build(state("bypass"), { connectors: connectorSource({ fx: { act: "deny" } }, false) }), "mcp__fx__act", {});
-  expect((denied.result as { message: string }).message).toContain("Always deny");
+  expect((denied.result as { message: string }).message).toContain("blocked this tool in Settings");
   // Inside the current grants only: a connector the ceiling does not list, or no connector facts at all, is denied.
   expect((await outcome(build(state("bypass"), { connectors: connectorSource({}, true) }), "mcp__other__act", {})).kind).toBe("deny");
   expect((await outcome(build(state("bypass", { ...FULL, connectors: [] }), { connectors: connectorSource({}, true) }), "mcp__fx__act", {})).kind).toBe("deny");

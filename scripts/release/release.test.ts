@@ -303,8 +303,12 @@ describe("the release build (scripts/release/build.ts)", () => {
     const saved = { id: process.env.CLOVER_MAC_IDENTITY, profile: process.env.APPLE_KEYCHAIN_PROFILE };
     process.env.CLOVER_MAC_IDENTITY = `Developer ID Application: Example (${CLOVER_TEAM_ID})`;
     delete process.env.APPLE_KEYCHAIN_PROFILE;
+    const testLines: string[] = [];
     try {
       expect(await buildMain(["--sign", "--no-notarize", "--dry-run", "--os", "mac"], join(import.meta.dir, "..", ".."))).toBe(0);
+      const mark = lines.length;
+      expect(await buildMain(["--test-build", "--dry-run", "--os", "mac"], join(import.meta.dir, "..", ".."))).toBe(0);
+      testLines.push(...lines.splice(mark));
     } finally {
       console.log = log;
       if (saved.id === undefined) delete process.env.CLOVER_MAC_IDENTITY; else process.env.CLOVER_MAC_IDENTITY = saved.id;
@@ -318,6 +322,10 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(text).toContain("-c.mac.notarize=false");
     expect(text).not.toContain("notarytool");
     expect(text).not.toContain("the daemon's own update");
+    // The app's main process: the release define for a sign-only build (every build but the test twin), never for the twin.
+    expect(text).toContain("the app: (in apps/desktop) bun scripts/build.ts --release");
+    expect(testLines.join("\n")).toContain("the app: (in apps/desktop) bun scripts/build.ts --test-build");
+    expect(testLines.join("\n")).not.toContain("scripts/build.ts --release");
   });
 
   test("--test-build: macOS only, the Developer ID without notarization, its own folder, none of notarization's inputs", () => {

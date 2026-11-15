@@ -5,3 +5,6 @@ html, body, #clover-root { margin: 0; height: 100%; background: transparent; }
 body { overflow: hidden; color: var(--clover-color-text, CanvasText); font-family: var(--clover-font-sans, system-ui, sans-serif); }
 .clover-part-stopped, .clover-part-missing, .clover-web-placeholder { margin: 0; padding: 8px 12px; font-size: 12px; color: var(--clover-color-text-muted, GrayText); }
 .clover-part-stopped button { font: inherit; margin-left: 6px; }
+/* A page in the window's `main` or `panel` spot fills the column it is given (its frame does not take the content's height) and
+   scrolls inside itself when it is longer; every other document keeps its own size and never scrolls. */
+html[data-clover-spot="main"] body, html[data-clover-spot="panel"] body { overflow: auto; }

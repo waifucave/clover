@@ -81,7 +81,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "claude-opus-4.8",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "tabitoken/claude-opus-4-8-thinking",
@@ -127,7 +128,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "claude-opus-4.8-thinking",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "tabitoken/claude-opus-5",
@@ -173,7 +175,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "claude-opus-5",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     },
     {
       "key": "tabitoken/claude-opus-5-thinking",
@@ -219,7 +222,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "claude-opus-5-thinking",
-      "modelFamily": "claude"
+      "modelFamily": "claude",
+      "strength": "strong"
     }
   ]
 }

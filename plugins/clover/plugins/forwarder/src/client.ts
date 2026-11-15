@@ -168,7 +168,12 @@ export class ForwarderClient {
   constructor(private readonly options: ForwarderClientOptions) {
     this.clock = options.clock ?? systemClock;
     this.random = options.random ?? Math.random;
-    this.connectSocket = options.connect ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    // Through the plugin's network proxy (2g: a plugin process reaches the network only through it): Bun's fetch takes
+    // HTTPS_PROXY by itself; its WebSocket takes the `proxy` option.
+    this.connectSocket = options.connect ?? ((url) => {
+      const proxy = typeof process !== "undefined" ? process.env.HTTPS_PROXY ?? process.env.https_proxy : undefined;
+      return new WebSocket(url, ...(proxy ? [{ proxy } as unknown as string[]] : [])) as unknown as WebSocketLike;
+    });
     this.pingIntervalMs = options.pingIntervalMs ?? 30_000;
     this.pongTimeoutMs = options.pongTimeoutMs ?? 10_000;
     this.backoffMinMs = options.backoffMinMs ?? 1_000;

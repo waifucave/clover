@@ -14,10 +14,10 @@
 // it back in. The sandbox profiles (macOS, Linux) apply the same order through `policy`.
 import { lstatSync, readdirSync, type BigIntStats } from "node:fs";
 import { join, posix, win32 } from "node:path";
-import type { Caller, Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId, type Caller, type Os } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  agentConfigPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
+  agentConfigPaths, BOT_READ_DENIED, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
   READ_DENIED_KINDS, writesPluginLoadDeny,
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
@@ -61,6 +61,9 @@ export interface CloverFenceOptions {
   linksOf?: (path: string) => string[];
   /** Enforce `ENFORCED_AHEAD` (default true). Off for B's contract suite until its next version names those kinds. */
   enforceAhead?: boolean;
+  /** The plugins a bot built (its workshop, `FenceContext.workshop`): the ids whose install record says
+   *  `provenance {by: "bot", bot}`. Default none; the daemon follows the registry (`followWorkshop`). */
+  workshopOf?: (bot: string) => readonly string[];
 }
 
 /** How many entries of the fenced set a hard-link walk refuses instead of scanning. */
@@ -109,6 +112,37 @@ export class CloverFence implements Fence {
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
     this.#enforceAhead = opts.enforceAhead ?? true;
+    this.#workshopOf = opts.workshopOf ?? (() => []);
+  }
+
+  #workshopOf: (bot: string) => readonly string[];
+  #knownPlugin: (name: string) => boolean = () => false;
+
+  /** A caller's context with what only this fence knows: a bot caller's workshop, read now (an install or a removal
+   *  reaches the next check). A context that names one already keeps it; any other caller's is left as it is. */
+  #withWorkshop(ctx: FenceContext | undefined): FenceContext | undefined {
+    if (ctx === undefined || !isBotCaller(ctx) || ctx.workshop !== undefined) return ctx;
+    let ids: readonly string[];
+    try { ids = this.#workshopOf(ctx.memoryOf!); } catch { ids = []; } // the records can't be read: no workshop
+    return ids.length === 0 ? ctx : { ...ctx, workshop: [...ids] };
+  }
+
+  contextFor(caller: Caller): FenceContext {
+    return this.#withWorkshop(fenceContextFor(caller))!;
+  }
+
+  /** Follows the plugin registry's install records for the workshop (`workshopOf`): a plugin whose record says
+   *  `provenance {by: "bot", bot}` is that bot's. Watchers are told on each registry change, so a sandbox drawn next
+   *  holds the new set. Returns the stop. */
+  followWorkshop(registry: { list(): readonly { id: string; provenance: { by: string; bot?: string } }[]; watch(fn: () => void): () => void }, drops?: { pending(bot: string): readonly string[] }): () => void {
+    // With the folders a bot dropped into the plugins folder that the registry hasn't recorded yet (the drop): its
+    // sessions go on writing inside them meanwhile.
+    this.#workshopOf = (bot) => [...new Set([...registry.list().filter((r) => r.provenance.by === "bot" && r.provenance.bot === bot).map((r) => r.id), ...(drops?.pending(bot) ?? [])])];
+    // The plugins the records hold, by their folder's name: none of them is a new folder (the drop), there on the disk
+    // or not.
+    this.#knownPlugin = (name) => registry.list().some((r) => r.id === name || (r as { folder?: string }).folder?.split(/[\\/]/).pop() === name);
+    this.#listeners.emit();
+    return registry.watch(() => this.#listeners.emit());
   }
 
   readonly #enforceAhead: boolean;
@@ -226,13 +260,21 @@ export class CloverFence implements Fence {
     } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
   }
 
-  check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
+  check(op: FenceOp, given?: FenceContext): FenceVerdict {
+    let ctx = this.#withWorkshop(given);
     const write = op.op === "write" || op.op === "delete" || op.op === "move";
     const all: string[] = [];
     for (const raw of op.op === "move" ? [op.path, op.to] : [op.path]) {
       const forms = this.#forms(raw);
       if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
       all.push(...forms);
+    }
+    // The drop (the owner's ask on 14c): a bot's own session writes inside a folder it makes NEW in the plugins folder,
+    // one no plugin and no other folder has there yet (`newPluginFolders`); the registry indexes it once it settles and
+    // asks the OK, naming the bot that made it. An existing folder that isn't this bot's stays refused.
+    if (write && isBotCaller(ctx)) {
+      const fresh = this.#newPluginFolders(all);
+      if (fresh.length > 0) ctx = { ...ctx!, workshop: [...(ctx!.workshop ?? []), ...fresh] };
     }
     // A hook planted in any repo under the user's home runs later, outside the sandbox (spec item 1116): refused
     // as `login-start`, ahead of the kinds, whatever the caller.
@@ -370,7 +412,32 @@ export class CloverFence implements Fence {
     return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
   }
 
-  policy(ctx?: FenceContext): SandboxPolicy {
+  /** The names in the plugins folder that `paths` go strictly inside and that aren't there yet: a valid plugin id, no
+   *  dot-name, nothing on the disk under it (a link or a file under that name counts as there). */
+  #newPluginFolders(paths: readonly string[]): string[] {
+    const plugins = joinHome(this.#cloverHome, this.os, "plugins");
+    const root = foldPath(plugins, this.os);
+    const out: string[] = [];
+    for (const p of paths) {
+      const f = foldPath(p, this.os);
+      if (!f.startsWith(`${root}/`)) continue;
+      const rest = p.slice(plugins.length + 1).split(/[\/]/);
+      if (rest.length < 2 || rest[0] === undefined || rest[0].startsWith(".") || !isAnyPluginId(rest[0])) continue;
+      if (this.#knownPlugin(rest[0])) continue;
+      try { lstatSync(joinHome(plugins, this.os, rest[0])); continue; } catch { /* not there: a new folder */ }
+      out.push(rest[0]);
+    }
+    return [...new Set(out)];
+  }
+
+  /** The temp folder every runner may write (`allowWrite`), canonical: a fenced command's `TMPDIR` (lane J's
+   *  executor, #364's review). A cross-lane addition (lane J, the controller's ruling), read only. */
+  get temp(): string {
+    return this.#temp;
+  }
+
+  policy(given?: FenceContext): SandboxPolicy {
+    const ctx = this.#withWorkshop(given);
     // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
     // The `caller` items (`bot-memory`) stay out of the deny lists: the pattern, and the `own…` allows, rule them.
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
@@ -381,8 +448,14 @@ export class CloverFence implements Fence {
       // runner's own memory comes back below as `ownMemory`.
       // B's #234: the whole Clover home too, for every runner (the home default-deny; its own folders come back below,
       // `ownFoldersOf`), and every `node_modules` above a folder plugin code loads from.
-      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
+      // A bot writes every bot's memory (the owner's amendment): no memory pattern in its write list either.
+      denyWrite: [...set.map((i) => i.path), ...(isBotCaller(ctx) ? [] : [patterns[0]!]), `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      // A bot's own conversation and side threads have open access to the home (the owner's ruling of November 9):
+      // no memory or sessions-runtime pattern in their read list (the bot driver's state is a transcript id, no
+      // secret), and what they still can't read named one by one (`BOT_READ_DENIED`),
+      // so the open read can't re-open it (a deny always wins).
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path),
+        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => joinHome(this.#cloverHome, this.os, ...rel)) : patterns), this.#cloverHome],
       ...(() => { const h = [...new Set(set.flatMap((i) => i.links ?? []))]; return h.length > 0 ? { holdLinks: h } : {}; })(),
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
@@ -391,16 +464,20 @@ export class CloverFence implements Fence {
       // The runner's own folders, its memory included: only a valid bot id builds the way back in (`..` would climb
       // out of `bots/`).
       ...ownFoldersOf(ctx, this.#cloverHome),
+      ...(isBotCaller(ctx) ? { botAccess: { home: this.#cloverHome, scratch: joinHome(this.#cloverHome, this.os, "scratch"), bots: joinHome(this.#cloverHome, this.os, "bots") } } : {}),
+      // The drop: a bot's sessions make new folders in the plugins folder (every existing one not its own stays denied).
+      ...(isBotCaller(ctx) ? { pluginDrop: joinHome(this.#cloverHome, this.os, "plugins") } : {}),
     };
   }
 
   /** The fence as one caller meets it (B's `Fence.forCaller`): the caller's context, then the same rules. */
   forCaller(caller: Caller): CallerFence {
+    // The caller's context is read again at each check and policy (`#withWorkshop`): a plugin it builds later counts.
     const context = fenceContextFor(caller);
     const base = this;
     return {
       os: base.os,
-      context,
+      get context() { return base.#withWorkshop(context)!; },
       fencedSet: () => base.fencedSet(),
       touches: (paths: readonly string[]) => base.touches(paths),
       checkAgentRoot: (root: string) => base.checkAgentRoot(root),

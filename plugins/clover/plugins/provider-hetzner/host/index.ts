@@ -5,6 +5,7 @@
 // The plugin never holds the user's token: every request goes through the core's keyed fetch with the entry's `auth`,
 // `hetzner-api-token`. A VM is made with the cloud-init the core hands over (Clover's official image) and gets no
 // cloud credentials: Hetzner has no service accounts, and the image blocks the metadata address.
+import type { HostPluginApi } from "@waifucave/clover-plugin-sdk";
 import { HetznerClient, HetznerError, LABEL, type Server } from "../src/client";
 
 export const HETZNER_SECRET = "hetzner-api-token";
@@ -12,9 +13,7 @@ export const HETZNER_SECRET = "hetzner-api-token";
 /** What this handler uses of the plugin API (`HandlerContext` in the plugin SDK). */
 export interface ProviderContext {
   readonly signal?: AbortSignal;
-  readonly api: {
-    readonly net: { fetch(url: string, init?: RequestInit, opts?: { auth?: string | false }): Promise<Response> };
-  };
+  readonly api: Pick<HostPluginApi, "net">;
 }
 
 const client = (ctx: ProviderContext, sleep?: (ms: number) => Promise<void>) => new HetznerClient({

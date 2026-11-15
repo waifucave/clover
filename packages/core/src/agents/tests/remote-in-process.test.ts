@@ -11,6 +11,7 @@ import { buildCoreBrand } from "../../runtime-sdk/brand";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { IN_PROCESS_BACKEND_ID } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
+import { botChildFor } from "../bot-child";
 import { CLOVER_CODE_ID, CloverCodeBackend } from "../clover-code/backend";
 import { inProcessBackend } from "../index";
 import { darwinTest } from "../../../test/helpers/darwin-only";
@@ -36,8 +37,8 @@ function pairWithInProcess(spawn: SpawnClaudeCodeProcess, sandboxReady?: () => b
   return make({
     b: {
       extraBackends: (wire, self) => [
-        new CloverCodeBackend({ clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, baseOptions: (x) => baseOptionsFor(self.cloverHome, spawn)(x), ...ready }),
-        inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, ...ready }),
+        new CloverCodeBackend({ clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, baseOptions: (x) => baseOptionsFor(self.cloverHome, spawn)(x), botChild: botChildFor({ cloverHome: self.cloverHome, userHome: self.userHome }), ...ready }),
+        inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, userHome: self.userHome, ...ready }),
       ],
     },
   });

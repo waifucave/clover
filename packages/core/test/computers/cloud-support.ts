@@ -46,13 +46,20 @@ function keyedFetch(registry: FakePluginRegistry, secrets: MemorySecretStore, se
   };
 }
 
-/** The plugins a cloud computer needs, on one computer: the folder, the Hetzner provider, the fake host and API. */
-export async function cloudPlugins() {
+/** The plugins a cloud computer needs, on one computer: the folder, the Hetzner provider, the fake host and API.
+ *  The Hetzner provider is parked in this build (its `availability: not-yet` mark): by default it is staged as a build
+ *  that runs it would read it, so the cloud computers stay tested; `asShipped` keeps the mark. */
+export async function cloudPlugins(o: { asShipped?: boolean } = {}) {
   // The bundled `clover` plugin with the Hetzner provider as its child, as the repo keeps it.
   const root = join(tempDir("lane-j-cloud-point-"), "clover");
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, "clover.json"), readFileSync(join(REPO, "plugins", "clover", "clover.json"), "utf8"));
   cpSync(join(REPO, "plugins", "clover", "plugins", "provider-hetzner"), join(root, "plugins", "provider-hetzner"), { recursive: true });
+  if (o.asShipped !== true) {
+    const file = join(root, "plugins", "provider-hetzner", "clover.json");
+    const { availability: _parked, ...runs } = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    writeFileSync(file, `${JSON.stringify(runs, null, 2)}\n`);
+  }
   const bundled = await pluginFromFolder(root, { bundled: true });
   // The user's cloud computer folder: data only.
   const folderDir = writePlugin(tempDir("lane-j-cloud-folder-"), "computer-cloud1", {

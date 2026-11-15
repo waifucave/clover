@@ -35,6 +35,11 @@ export const S = {
   copied: "Copied",
   copyMessage: "Copy message",
   copyCode: "Copy code",
+  speak: "Read aloud",
+  speakMessage: "Read this reply aloud",
+  speaking: "Speaking",
+  speakFailed: "It couldn't be read aloud.",
+  actionFailed: "That didn't work.",
   imageLink: (alt: string) => (alt ? `Image: ${alt}` : "Image"),
 
   // Thinking.
@@ -46,6 +51,8 @@ export const S = {
 
   // Tools.
   toolRunning: "Running",
+  /** A background agent's live status words, by what the sessions area or its finish says. */
+  agentStatus: { starting: "Starting", ready: "Working", prompting: "Working", working: "Working", cancelling: "Stopping", idle: "Done", completed: "Done", stopped: "Stopped", failed: "Failed", stalled: "Stalled" } as Record<string, string>,
   toolWaiting: "Waiting for your OK",
   toolSucceeded: "Done",
   toolFailed: "Failed",
@@ -53,9 +60,21 @@ export const S = {
   toolReviewing: "Safety check",
   toolOnComputer: (computer: string) => `on ${computer}`,
   toolNoOutput: "No output",
+  /** A finished call's result, counted, beside its title in a card (a theme shows it: `.cl-conv-tools__meta`). */
+  toolLines: (count: number) => n(count, "1 line", "# lines"),
   toolMoreLines: (count: number) => n(count, "1 more line", "# more lines"),
   toolMore: (count: number) => n(count, "1 more", "# more"),
   toolMoreCharacters: "The rest is too long to show here.",
+  resultGap: (count: number) => n(count, "1 unchanged line", "# unchanged lines"),
+  resultEarlier: (count: number) => n(count, "… 1 earlier line", "… # earlier lines"),
+  resultExit: (code: number) => (code === 0 ? "Exited cleanly" : `Exited with code ${code}`),
+  resultRange: (from: number, to: number) => (from === to ? `Line ${from}` : `Lines ${from} to ${to}`),
+  resultItems: (count: number) => n(count, "1 item", "# items"),
+  resultFields: (count: number) => n(count, "1 field", "# fields"),
+  resultRaw: "Show raw",
+  resultTidy: "Show tidy",
+  resultCreated: "Created",
+  resultEdited: "Edited",
   toolOpenDiff: (path: string) => `Open the diff for ${path}`,
   toolShowDetails: "Show details",
   toolHideDetails: "Hide details",
@@ -120,6 +139,10 @@ export const S = {
   // Notes.
   notePluginId: "plugin",
   noteHookFrom: "Hook from",
+  /** The failed turn's note: send the message that began it again. */
+  tryAgain: "Try again",
+  tryAgainSending: "Sending\u2026",
+  tryAgainRefused: "It could not be sent again: send it from the composer.",
 
   // Sealed cards with no UI runtime under them.
   sealedUnavailable: "This approval card can only show in Clover's own window.",

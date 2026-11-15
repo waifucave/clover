@@ -23,7 +23,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, CardId, MAX_CHILD_PLUGINS, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
+  AnyPluginId, BotId, CardId, MAX_CHILD_PLUGINS, ComputerName, DeviceId, Empty, OkCheckboxId, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -62,6 +62,17 @@ export const ChangeSubject = z.enum([
   /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants
    *  to use <provider> (<model>) with your stored key". A yes holds for that bot and provider only. */
   "bot-provider",
+  /** Removing a plugin from a part of the app's own tree (the controller's ruling): "Remove <name>?", its saved keys and
+   *  settings on this computer deleted, its data set aside. Only the yes removes. */
+  "plugin-remove",
+  /** A setting that feeds a host the plugin's keys or requests go to: the old host and the new one. */
+  "plugin-setting-host",
+  /** Signing a plugin out from the Plugins page: its saved sign-in on this computer is deleted. */
+  "plugin-sign-out",
+  /** Removing an index that installed plugins came from: they get no more updates from it. */
+  "plugin-index-remove",
+  /** Applying an update from an index or npm from the Plugins page: its new code runs on the OK given before. */
+  "plugin-update",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 
@@ -70,9 +81,11 @@ export type ChangeSubject = z.infer<typeof ChangeSubject>;
  *  this command?"). `command`: the command, the edit or the call's input, as code. `computer`: where it runs. `risk`:
  *  the safety reviewer's verdict. `reason`: why the bot wants it. `source`: who asks (the bot, the agent, the plugin
  *  with its id and source). `host`: the site a link or a fetch goes to (an elicitation's link). `paths`: the files it
- *  touches. `detail`: anything more, as rows. `expires`: when it is denied unanswered. */
+ *  touches. `detail`: anything more, as rows. `expires`: when it is denied unanswered. `rule`: on a card that offers an
+ *  "always", the rule that answer would store, as rows the broker writes from the very record it saves (`kind`, `target`,
+ *  `bot`, `computers`), so a card can say exactly how far the "always" reaches. */
 export const CARD_FIELD_NAMES = [
-  "title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires",
+  "title", "what", "command", "computer", "risk", "reason", "source", "host", "paths", "detail", "expires", "rule",
 ] as const;
 export const CardFieldName = z.enum(CARD_FIELD_NAMES);
 export type CardFieldName = z.infer<typeof CardFieldName>;
@@ -156,7 +169,7 @@ export const Card = CardMeta.extend({
   fields: z.partialRecord(CardFieldName, SealedValue),
   options: z.array(CardOption).min(1).max(8),
   /** A plugin OK covers the plugin and its children, with a checkbox per child (§5.1). */
-  children: z.array(z.object({ id: AnyPluginId, label: Text, checked: z.boolean() })).max(MAX_CHILD_PLUGINS).optional(),
+  children: z.array(z.object({ id: OkCheckboxId, label: Text, checked: z.boolean() })).max(MAX_CHILD_PLUGINS + 1).optional(),
 });
 export type Card = z.infer<typeof Card>;
 
@@ -239,7 +252,7 @@ export function callBindingInput(method: string, params: unknown): string {
 export const SignedCardAnswer = z.object({
   card: Card,
   option: CardOptionId,
-  children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS).optional(),
+  children: z.array(OkCheckboxId).max(MAX_CHILD_PLUGINS + 1).optional(),
   device: DeviceId,
   at: Timestamp,
   /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
@@ -280,8 +293,8 @@ export const APPROVALS_METHODS = {
     name: "card.answer", owner: "C", roles: ["app", "remote", "peer"],
     params: z.object({
       id: CardId, hash: Sha256Hex, option: CardOptionId, proof: CardAnswerProof,
-      /** A plugin OK's checked children; a device signs them too. */
-      children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS).optional(),
+      /** A plugin OK's checked children (and its parts beside its bot, `<id>#app`); a device signs them too. */
+      children: z.array(OkCheckboxId).max(MAX_CHILD_PLUGINS + 1).optional(),
     }),
     result: z.object({ accepted: z.boolean(), reason: utf16(500).optional() }),
     doc: "Answers a card from a sealed frame, or with a paired device's signature; the first answer wins.",

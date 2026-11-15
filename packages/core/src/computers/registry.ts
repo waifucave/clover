@@ -20,6 +20,7 @@ import {
   cardRaiseProblem, holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
 } from "../contracts/computer-registry";
 import { MEMORY_FOLDER } from "../tree/holder";
+import { answerFresh } from "../tree/judge";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -391,6 +392,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
     const { method, params } = levelRaiseCall(name, level);
     if (proof.via === "signed") {
       if (!this.#devices) return "no device registry to check a signed answer";
+      if (!answerFresh(proof.answer, this.#clock.now())) return "the answer is too old";
       const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger, render: this.#render });
       return verdict === "ok" ? null : verdict;
     }

@@ -4,10 +4,11 @@
 // older format to the newest one (§5.1 "Formats").
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
-import { describeOk, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
+import { backgroundOkLines, contributionLabels, describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 import { agentEnvLines } from "./folders";
+import { pluginFenceAvailable } from "./plugin-fence";
 import { TreeProblem, folderReader, folderTreeHash, treeEntries } from "./tree";
 
 export interface PluginSummaryReport {
@@ -22,6 +23,8 @@ export interface PluginSummaryReport {
   toolNames: string[];
   settings: string[];
   fetchesCode: string[];
+  /** The small labels for what it brings (the Plugins page's), from its contributions; a top plugin's include its children's. */
+  labels: string[];
   ok: boolean;
 }
 
@@ -34,15 +37,16 @@ export interface FolderValidation {
   children: (PluginSummaryReport & { folder: string })[];
   bareItem?: string;
   restylesCards: boolean;
+  restylesWindow: boolean;
   /** The OK's text, as the app's card shows it (in English). */
   okText: string[];
   issues: ValidationIssue[];
 }
 
-const summary = (r: ManifestReport, fallback: string): PluginSummaryReport => ({
+const summary = (r: ManifestReport, fallback: string, labels: string[]): PluginSummaryReport => ({
   id: r.id ?? fallback, class: r.class, contributions: r.contributions, declares: r.declares, networkHosts: r.networkHosts,
   dynamicHosts: r.dynamicHosts, helperPermissions: r.helperPermissions, capabilities: r.capabilities, toolNames: r.toolNames,
-  settings: r.settings, fetchesCode: r.fetchesCode, ok: r.ok,
+  settings: r.settings, fetchesCode: r.fetchesCode, labels, ok: r.ok,
 });
 
 export async function validatePluginFolder(folder: string, opts: { os?: "macos" | "windows" | "linux"; bundled?: boolean } = {}): Promise<FolderValidation> {
@@ -61,15 +65,20 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   // ruling): a plugin built in a development folder, where the registry lets it pass, fails before it ships rather
   // than going invalid on someone else's computer. Only Clover's own trees (`bundled`) share the repository's config.
   if (opts.bundled !== true && hash !== undefined) issues.push(...loaderOutsideIssues(folderLoaderReach(folder, treeEntries(folder, { allowHardLinks: true }).map((e) => e.path))));
-  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards }), ...agentEnvLines(folder, tree)] : [];
+  // The OK lines as this computer's card would say them: host code is held to its hosts only where the plugin fence
+  // holds it (macOS with the sandbox on, as `openPluginRegistry` decides); checked for another OS, the fence isn't known.
+  const here = opts.os === undefined || opts.os === (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+  const hostNetworkHeld = here && opts.os === "macos" && pluginFenceAvailable();
+  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), restylesCards: tree.restylesCards, restylesWindow: tree.restylesWindow, hostNetworkHeld, ...(here ? { sandboxed: pluginFenceAvailable() } : {}) }), ...hookOkLines([tree.top, ...tree.children.map((c) => c.report)]), ...backgroundOkLines([tree.top, ...tree.children.map((c) => c.report)]), ...agentEnvLines(folder, tree)] : [];
   return {
     folder,
     ok: hash !== undefined && tree.ok && issues.every((i) => i.severity !== "error"),
     ...(hash ? { treeHash: hash } : {}),
-    ...(tree.top.manifest ? { plugin: summary(tree.top, name) } : {}),
-    children: tree.children.map((c) => ({ ...summary(c.report, `${name}/${c.folder}`), folder: c.folder, ok: c.ok })),
+    ...(tree.top.manifest ? { plugin: summary(tree.top, name, contributionLabels([tree.top.manifest, ...tree.children.map((c) => c.report.manifest)])) } : {}),
+    children: tree.children.map((c) => ({ ...summary(c.report, `${name}/${c.folder}`, contributionLabels([c.report.manifest])), folder: c.folder, ok: c.ok })),
     ...(tree.bareItem ? { bareItem: tree.bareItem } : {}),
     restylesCards: tree.restylesCards,
+    restylesWindow: tree.restylesWindow,
     okText,
     issues,
   };
@@ -81,6 +90,7 @@ export function renderValidation(v: FolderValidation): string {
   const list = (label: string, xs: readonly string[]) => lines.push(`  ${label}: ${xs.length > 0 ? xs.join(", ") : "none"}`);
   const plugin = (p: PluginSummaryReport, indent = "") => {
     lines.push(`${indent}${p.id} (${p.class})`);
+    list(`${indent}brings`, p.labels);
     list(`${indent}contributes`, p.contributions.map((c) => `${c.point} (${c.entries})`));
     if (p.declares.length > 0) list(`${indent}declares`, p.declares.map((d) => `${d.name} (${d.shape}${d.spot ? ", a spot" : ""})`));
     list(`${indent}network hosts`, p.networkHosts.concat(p.dynamicHosts ? ["(more from its settings)"] : []));

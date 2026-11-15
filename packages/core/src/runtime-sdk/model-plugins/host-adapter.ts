@@ -14,8 +14,8 @@
 // * Everything that crosses is structured-clone data: the turn's request without its signal, the connection, the
 //   events. The plugin's key never does: the plugin reaches its provider through the core's keyed fetch (§5.4).
 import type { Caller } from "@waifucave/clover-protocol";
-import { MODEL_ADAPTER_INTERFACE_VERSION, type HostModelAdapter, type HostModelAdapterContext, type ModelAdapterDescription, type ProviderEvent, type TurnRequest } from "@waifucave/clover-provider-runtime";
-import { ContractError } from "../../contracts/common";
+import { MODEL_ADAPTER_INTERFACE_VERSION, ProviderRequestError, type HostModelAdapter, type HostModelAdapterContext, type ModelAdapterDescription, type ProviderEvent, type TurnRequest } from "@waifucave/clover-provider-runtime";
+import { ContractError, isContractError } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
 
 /** A turn may stream this long at most before the host gives up on it (the adapter's own stall watchdog ends a silent one far sooner). */
@@ -40,8 +40,39 @@ function withoutSignal(req: TurnRequest): Omit<TurnRequest, "signal"> {
   return rest;
 }
 
-/** The plugin's adapter as the core serves it to one session. */
-export function pluginHostModelAdapter(host: PluginHost, ref: PluginAdapterRef, opts: { caller: Caller; session?: string; countTokens?: boolean }): HostModelAdapter {
+/**
+ * What the user reads when the plugin itself fails a call (not its provider): it crashed or its host went away mid-
+ * reply (the crash rules start it again), it is stopped, or it couldn't start. A provider's own error (a 429, a bad key)
+ * and the session's own cancel pass through as they are. Bounded: the plugin host fails a dead plugin's calls at once.
+ */
+export function pluginFailure(err: unknown, name: string): unknown {
+  if (!isContractError(err) || err.code === "cancelled") return err;
+  const reason = err.message.replace(/^plugin stopped: /, "").replace(/^the plugin crashed: /, "");
+  if (err.code === "plugin_stopped") {
+    return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin is stopped (${reason}), so this reply couldn't run. Turn it on in Settings → Plugins, then send again.` });
+  }
+  if (err.code === "failed" && /^the plugin crashed/.test(err.message)) {
+    return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin stopped during this reply (${reason}). Clover starts it again: send again to retry.` });
+  }
+  if (err.code === "not_installed" || err.code === "failed" || err.code === "refused" || err.code === "timeout") {
+    return new ProviderRequestError({ code: "server", retryable: false, message: `The ${name} model plugin couldn't run this reply (${err.message}). Send again to retry, or check it in Settings → Plugins.` });
+  }
+  return err;
+}
+
+/** A stream whose plugin-side failure reads as `pluginFailure` says. */
+async function* readable<T>(stream: AsyncIterable<T>, name: string): AsyncGenerator<T, void, undefined> {
+  try {
+    yield* stream;
+  } catch (err) {
+    throw pluginFailure(err, name);
+  }
+}
+
+/** The plugin's adapter as the core serves it to one session. `name`: the plugin's, as the user knows it. */
+export function pluginHostModelAdapter(host: PluginHost, ref: PluginAdapterRef, opts: { caller: Caller; session?: string; countTokens?: boolean; name?: string }): HostModelAdapter {
+  const name = opts.name ?? ref.pluginId;
+  const plain = <T>(p: Promise<T>): Promise<T> => p.catch((err: unknown) => { throw pluginFailure(err, name); });
   const base = { pluginId: ref.pluginId, handler: ref.handler, caller: opts.caller, ...(opts.session !== undefined ? { session: opts.session } : {}) };
   // The A-M2 review: a connection's own `headers` (a user's gateway headers, for the core's generic adapters) never
   // cross to a code plugin; none of the bundled ones reads them, and a header value can be a credential.
@@ -51,11 +82,11 @@ export function pluginHostModelAdapter(host: PluginHost, ref: PluginAdapterRef, 
   };
   const adapter: HostModelAdapter = {
     streamTurn(req: TurnRequest, ctx: HostModelAdapterContext): AsyncIterable<ProviderEvent> {
-      return host.stream<ProviderEvent, void>({ ...base, method: "streamTurn", args: { ...callArgs(ctx), req: withoutSignal(req) }, signal: ctx.signal, timeoutMs: MODEL_TURN_LIMIT_MS, ownLimit: true });
+      return readable(host.stream<ProviderEvent, void>({ ...base, method: "streamTurn", args: { ...callArgs(ctx), req: withoutSignal(req) }, signal: ctx.signal, timeoutMs: MODEL_TURN_LIMIT_MS, ownLimit: true }), name);
     },
-    listModels: (ctx) => host.invoke({ ...base, method: "listModels", args: { ...callArgs(ctx), limits: ctx.limits }, signal: ctx.signal, timeoutMs: ctx.limits.timeoutMs }),
-    validateCredential: (ctx) => host.invoke({ ...base, method: "validateCredential", args: callArgs(ctx), signal: ctx.signal }),
+    listModels: (ctx) => plain(host.invoke({ ...base, method: "listModels", args: { ...callArgs(ctx), limits: ctx.limits }, signal: ctx.signal, timeoutMs: ctx.limits.timeoutMs })),
+    validateCredential: (ctx) => plain(host.invoke({ ...base, method: "validateCredential", args: callArgs(ctx), signal: ctx.signal })),
   };
-  if (opts.countTokens === true) adapter.countTokens = (req, ctx) => host.invoke<number>({ ...base, method: "countTokens", args: { ...callArgs(ctx), req: withoutSignal(req) }, signal: ctx.signal });
+  if (opts.countTokens === true) adapter.countTokens = (req, ctx) => plain(host.invoke<number>({ ...base, method: "countTokens", args: { ...callArgs(ctx), req: withoutSignal(req) }, signal: ctx.signal }));
   return adapter;
 }

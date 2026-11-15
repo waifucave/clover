@@ -89,6 +89,37 @@ describe("the plume's frame budget", () => {
   });
 });
 
+describe("the plume in a hidden window", () => {
+  test("asks for no more frames while the document is hidden, and takes up again when it is shown", async () => {
+    const { Plume } = await import("../src/ui/Plume");
+    let now = 0;
+    let seq = 0;
+    const pending = new Map<number, (time: number) => void>();
+    const timers: FrameTimers = { now: () => now, requestFrame: (fn) => (pending.set(++seq, fn), seq), cancelFrame: (id) => void pending.delete(id) };
+    const real = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+      return new Proxy({}, { get: (_t, key) => (key === "canvas" ? this : () => ({ addColorStop() {} })), set: () => true });
+    } as unknown as typeof real;
+    let hidden = false;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    const step = () => act(() => { now += 17; for (const [id, fn] of [...pending]) (pending.delete(id), fn(now)); });
+    try {
+      render(<Plume width={316} height={44} thrown={[]} repeating={[]} animates timers={timers} />);
+      step();
+      expect(pending.size).toBe(1);
+      hidden = true;
+      step();
+      expect(pending.size).toBe(0);
+      hidden = false;
+      act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+      expect(pending.size).toBe(1);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = real;
+      delete (document as unknown as { hidden?: boolean }).hidden;
+    }
+  });
+});
+
 describe("the Dispatch pill", () => {
   test("rests compact, and frames stop once nothing moves", () => {
     const pill = mount();

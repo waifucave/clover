@@ -156,6 +156,13 @@ export function serializeRoutine(r: Omit<RoutineFile, "triggers"> & { triggers: 
 }
 
 /** The file with its minted id written in, its other lines as they were (§7 "a file without one gets one"). */
+/** The text with `paused: true` in its frontmatter (Clover pausing it; the user resumes by taking it out). */
+export function withPaused(text: string): string {
+  const doc = splitFrontmatter(text);
+  if (!doc) return text;
+  return joinFrontmatter({ ...doc, lines: [...doc.lines.filter((l) => !/^paused\s*:/.test(l)), "paused: true"] });
+}
+
 export function withId(text: string, id: string): string {
   const doc = splitFrontmatter(text);
   if (!doc) return text;

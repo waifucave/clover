@@ -15,7 +15,18 @@ export type PluginRegistryHarness = Pick<FakePluginRegistry, keyof FakePluginReg
 /** Builds the implementation under test from the options the fake takes. */
 export type PluginRegistryFactory = (opts: Omit<FakePluginRegistryOptions, "catalog">) => PluginRegistryHarness;
 
-export function runPluginRegistryConformance(make: PluginRegistryFactory): void {
+export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): void {
+  // Only `approved: true` approves (lane J's question: nothing arrives OK'd by default). The cases seed folders that
+  // were OK'd before, so a seeded plugin says so unless it says `approved: false`; a later put keeps what the records
+  // say, or for a plugin never seen, waits for its OK, as each case states.
+  const seeded = (p: FakePluginInput): FakePluginInput => (p.approved === undefined ? { ...p, approved: true } : p);
+  const make: PluginRegistryFactory = (opts) => {
+    const reg = makeRaw({ ...opts, ...(opts.plugins ? { plugins: opts.plugins.map(seeded) } : {}) });
+    const put = reg.put.bind(reg);
+    // A plugin put for the first time in a case is a folder the case means as OK'd too (an install with its OK).
+    reg.put = (p: FakePluginInput) => put(reg.get(p.id) === undefined ? seeded(p) : p);
+    return reg;
+  };
   const m = (over: Partial<Manifest> = {}): Manifest => ({ manifest: 1, name: "A plugin", ...over });
   const hashOf = (reg: PluginRegistryHarness, id: string) => reg.get(id)!.treeHash!;
 
@@ -62,12 +73,11 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       expect(reg.entries("triggers").map((c) => [c.entryId, c.state])).toEqual([["webhook", "active"]]);
     });
 
-    test("invalid, blocked and stopped plugins say why, and contribute nothing", () => {
+    test("invalid and stopped plugins say why, and contribute nothing", () => {
       const reg = make({
-        plugins: [{ ...webhook, invalid: "needs a newer Clover (plugin API ^2.0.0)" }, { ...forwarder, blocked: "revoked by the official index: malware" }],
+        plugins: [{ ...webhook, invalid: "needs a newer Clover (plugin API ^2.0.0)" }],
       });
       expect(reg.get("webhook")).toMatchObject({ state: "invalid", reason: "needs a newer Clover (plugin API ^2.0.0)", manifest: undefined });
-      expect(reg.get("forwarder")).toMatchObject({ state: "blocked", reason: "revoked by the official index: malware" });
       expect(reg.entries("triggers")).toEqual([]);
       const ok = make({ plugins: [webhook] });
       ok.setStopped("webhook", "crashed 3 times in 10 minutes");
@@ -165,9 +175,9 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       expect(await reg.installed("island", "cli")).toEqual({ state: "running" });
     });
 
-    test("a plugin's granted capabilities are its OK's: none before it, after a refusal or a block (F-M3's text gate)", async () => {
+    test("a plugin's granted capabilities are its OK's: none before it, after a refusal or when invalid (F-M3's text gate)", async () => {
       const withCaps = { ...webhook, manifest: { ...webhook.manifest, capabilities: ["conversation.read", "files"] } };
-      const reg = make({ plugins: [{ ...withCaps, approved: false }, { id: "gone", manifest: m({ name: "Gone", capabilities: ["files"] }), blocked: "malware" }] });
+      const reg = make({ plugins: [{ ...withCaps, approved: false }, { id: "gone", manifest: m({ name: "Gone", capabilities: ["files"] }), invalid: "no manifest format" }] });
       expect(reg.get("webhook")).toMatchObject({ state: "found", capabilities: ["conversation.read", "files"], granted: [] });
       expect(reg.get("gone")).toMatchObject({ capabilities: ["files"], granted: [] });
       await reg.approve("webhook", hashOf(reg, "webhook"));
@@ -189,7 +199,6 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
           { ...island },
           { id: "clover", manifest: m({ name: "Clover" }), source: "bundled" },
           { id: "bad", manifest: m({ name: "Bad" }), invalid: "no manifest format" },
-          { id: "gone", manifest: m({ name: "Gone" }), blocked: "malware" },
           { id: "no", manifest: m({ name: "No" }), approved: false },
         ],
       });
@@ -203,9 +212,9 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       expect(reg.get("island")?.state).toBe("off");
       expect(await reg.setEnabled("island", true)).toEqual({ applied: true });
       expect(reg.get("island")?.state).toBe("running");
-      // Refused: blocked, refused and invalid plugins, either way, and switching Clover's own plugin off.
+      // Refused: refused and invalid plugins, either way, and switching Clover's own plugin off.
       await reg.refuse("no");
-      for (const [id, on] of [["bad", true], ["bad", false], ["gone", true], ["gone", false], ["no", true], ["no", false], ["clover", false]] as const) {
+      for (const [id, on] of [["bad", true], ["bad", false], ["no", true], ["no", false], ["clover", false]] as const) {
         const code = await reg.setEnabled(id, on).then(() => "ok", (e: { code?: string }) => e.code);
         expect([id, on, code]).toEqual([id, on, "refused"]);
       }

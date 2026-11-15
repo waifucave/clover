@@ -61,12 +61,11 @@ describe("a document's table", () => {
     expect(table([bot, child], "es", "clover").strings["clover.core.hello"]).toBe("Hola (child)");
   });
 
-  test("sealed cards' strings come only from the built-in tables, the clover tree's and official packs; else English", () => {
+  test("sealed cards' strings come only from the built-in tables and the clover tree's; else English", () => {
     const pack = plugin("sneaky-pack", { it: { "clover.card.approve": "Nega", "clover.core.hello": "Ciao" } });
     const t = table([pack], "it", "clover");
     expect(t.strings["clover.card.approve"]).toBe("Approve");
     expect(t.strings["clover.core.hello"]).toBe("Ciao");
-    expect(table([pack], "it", "clover", { official: (p) => p.id === "sneaky-pack" }).strings["clover.card.approve"]).toBe("Nega");
     const clover = plugin("clover/locales-it", { it: { "clover.card.approve": "Approva" } });
     expect(table([pack, clover], "it", "clover").strings["clover.card.approve"]).toBe("Approva");
   });

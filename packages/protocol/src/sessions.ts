@@ -34,6 +34,12 @@ export const BotView = z.object({
   effort: utf16(32).optional(),
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
+  /** The avatar it stands with on its stage: the file's asset URL and its format (a renderer's `avatar.formats` id: `vrm`, `live2d`, or one a plugin brings), when it has one (§6.6). */
+  avatar: z.object({
+    src: utf16(4096), format: utf16(32),
+    /** The model's own credit or terms note as a user's own avatar carries it (plain text, at most 300 characters; set at import from the model's own notes, and the user's to edit or clear). */
+    credit: utf16(1200).optional(),
+  }).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
   userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
   /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
@@ -54,7 +60,9 @@ export const UserLayerPatch = z.object({
   model: utf16(200).nullable().optional(),
   effort: utf16(32).nullable().optional(),
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).nullable().optional(),
-  avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional() }).nullable().optional(),
+  avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional(), credit: utf16(1200).optional() }).nullable().optional(),
+  /** Sets (text) or clears (`null`) the credit note of the user's own avatar; the avatar must be the user's own. */
+  avatarCredit: utf16(1200).nullable().optional(),
   theme: utf16(256).nullable().optional(),
   layout: utf16(4096).nullable().optional(),
   /** The bot's LAN setting (lane L's `lanBots`): written only by the person, through their own app or terminal, or a
@@ -116,6 +124,9 @@ export const SessionView = z.object({
   changes: z.number().int().nonnegative().optional(),
   /** A routine run's routine. */
   routine: utf16(128).optional(),
+  /** A background agent started from a plugin's agent definition: `<plugin>:<id>`, as the core read it from the
+   *  plugin registry (never the bot's words). */
+  definition: utf16(200).optional(),
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
    *  marks; a card's content stays behind `approvals` and the sealed frames). */
   needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),
@@ -123,6 +134,8 @@ export const SessionView = z.object({
    *  this computer held from there was kept aside and went to that computer, which shows it after its own, marked late
    *  ("Earlier on <computer>"). A client reads the history again when it changes. */
   rebasedAt: Timestamp.optional(),
+  /** The user put this session in the archive: the sidebar's lists leave it out (the Archive page is where it lives). Absent: not archived. */
+  archived: z.boolean().optional(),
 });
 export type SessionView = z.infer<typeof SessionView>;
 
@@ -183,6 +196,9 @@ export const RoutineView = z.object({
   level: utf16(32),
   /** A raised level waiting for its card, or a copy with the same id paused (§7). */
   state: z.enum(["active", "paused", "waiting-for-ok", "duplicate", "bot-removed"]),
+  /** Why Clover paused it, while it stays paused (a plugin's trigger started it too often, §7); the user's resume (the
+   *  file's `paused` taken out) clears it. */
+  pausedWhy: utf16(300).optional(),
   lastRunAt: Timestamp.optional(),
   nextRunAt: Timestamp.optional(),
 });
@@ -203,6 +219,40 @@ export const MemoryEntry = z.object({ path: utf16(1024), size: z.number().int().
 export type MemoryEntry = z.infer<typeof MemoryEntry>;
 
 const SessionParams = z.object({ id: SessionId });
+
+/** One line of a session's diff: context, added or removed, with its numbers on each side. */
+export const SessionDiffLine = z.object({
+  kind: z.enum(["context", "add", "del"]),
+  old: z.number().int().nonnegative().optional(),
+  new: z.number().int().nonnegative().optional(),
+  text: utf16(100_000),
+});
+export const SessionDiffHunk = z.object({ header: utf16(2_000), lines: z.array(SessionDiffLine) });
+/** One file a coding session or an agent changed in its folder (`session.diff`). `tooLarge`: past the per-file or the
+ *  total bound, listed with its counts but no lines. */
+export const SessionDiffFile = z.object({
+  path: utf16(4_096, 1),
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+  from: utf16(4_096).optional(),
+  added: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+  hunks: z.array(SessionDiffHunk).optional(),
+  tooLarge: z.boolean().optional(),
+  binary: z.boolean().optional(),
+});
+export type SessionDiffFile = z.infer<typeof SessionDiffFile>;
+export const SessionDiff = z.object({
+  /** What it compares against: the folder's branch (or `HEAD`), or that it has no commits yet. Empty for no repo. */
+  base: utf16(256),
+  /** What it compares: the working tree. */
+  target: utf16(256),
+  /** Other targets the panel may offer: none yet. */
+  targets: z.array(utf16(256)).max(16),
+  files: z.array(SessionDiffFile).max(1_000),
+  /** Why the list is empty or short (no folder, not a git repository, on another computer, what the bounds cut). */
+  notice: utf16(1_000).optional(),
+});
+export type SessionDiff = z.infer<typeof SessionDiff>;
 
 /** A model as a picker lists it (`models.list`). */
 export const ModelListing = z.object({
@@ -240,6 +290,30 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: BotId, patch: UserLayerPatch }), result: ChangeResult,
     doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at the next compaction.",
   }),
+  botImportAvatar: defineMethod({
+    name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: BotId, path: utf16(4096) }),
+    result: z.object({
+      /** The model's format, as its renderer declares it (`avatar.formats`), and the format's name in English. */
+      format: utf16(32, 1), name: utf16(200).optional(),
+      files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), credit: utf16(1200).optional(),
+    }),
+    doc: "Copies a model the user owns (a folder or zip holding an installed format's entry file, or one file of a format that imports single files, read on the daemon's own computer) into the user's folder and makes it the bot's avatar; what each format is comes from its renderer's `avatar.formats` declaration, and a model whose renderer isn't installed and on is refused, naming its format. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
+  }),
+  botAvatarFormats: defineMethod({
+    name: "bot.avatarFormats", owner: "D", roles: ["app", "cli"],
+    params: z.object({}),
+    result: z.object({
+      formats: z.array(z.object({
+        format: utf16(32, 1), name: utf16(200),
+        /** What the picker offers for it: a folder, a zip, a single file. */
+        accepts: z.array(z.enum(["folder", "zip", "file"])).max(3),
+        /** The extensions (with the dot) a picked single file of it may have, and what names it in a folder or zip. */
+        files: z.array(utf16(32)).max(32), entries: z.array(utf16(32)).max(16),
+      })).max(64),
+    }),
+    doc: "The avatar formats an import takes now: each installed renderer's that is on (`avatar.formats`), with what the picker offers for it.",
+  }),
   botsPause: defineMethod({
     name: "bots.pause", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,
     params: z.object({ paused: z.boolean() }), result: Ok,
@@ -273,11 +347,41 @@ export const SESSIONS_METHODS = {
     result: z.object({ events: z.array(z.record(z.string(), z.unknown())), hasMore: z.boolean() }),
     doc: "A page of a session's past events, newest last; sealed card fields never reach a plugin (§5.4).",
   }),
+  sessionDiff: defineMethod({
+    name: "session.diff", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: z.object({ id: SessionId, target: utf16(256).optional() }),
+    result: SessionDiff,
+    doc: "A coding session's or an agent's changes in its folder, read only: the working tree against HEAD (untracked files as added), per file with its hunks, bounded per file and in total. A folder that isn't a git repository, or isn't on this computer, answers no files and a notice. A plugin's own connection (a layer) also needs the capability files, since the diff carries file contents.",
+  }),
+  sessionOutputs: defineMethod({
+    name: "session.outputs", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: z.object({ id: SessionId, limit: z.number().int().min(1).max(100).optional() }),
+    result: z.object({ items: z.array(z.object({ id: utf16(255, 1), name: utf16(255, 1), kind: z.enum(["page", "file", "image"]) })).max(100), more: z.number().int().nonnegative() }),
+    doc: "The files a session delivered to its outputs folder (`<home>/outputs/<session>`), newest first: names and kinds only, never their content.",
+  }),
+  sessionContext: defineMethod({
+    name: "session.context", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: SessionParams,
+    result: z.object({ used: z.number().min(0).max(1), tokens: z.number().int().nonnegative(), window: z.number().int().positive() }).nullable(),
+    doc: "How full a session's context is: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's context window; null when either isn't known.",
+  }),
+  sessionConnectors: defineMethod({
+    name: "session.connectors", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "conversation.read",
+    params: SessionParams,
+    result: z.object({ total: z.number().int().nonnegative(), needSignIn: z.number().int().nonnegative() }),
+    doc: "How many plugin MCP servers a session gets, and how many of them belong to a plugin with a sign-in that isn't signed in: counts only.",
+  }),
   sessionSend: defineMethod({
     name: "session.send", owner: "D", roles: ["app", "cli", "remote", "web"], userOnly: true,
     params: z.object({ id: SessionId, message: UserMessageInput }),
     result: z.object({ seq: z.number().int().nonnegative() }),
     doc: "The user's message: it interrupts a bot's main conversation at once; it needs a live connection to the computer running the bot (`BOT_ASLEEP`).",
+  }),
+  sessionResend: defineMethod({
+    name: "session.resend", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ session: SessionId }),
+    result: z.object({ seq: z.number().int().nonnegative() }),
+    doc: "Try again on a bot's main conversation whose latest turn ended in an error: the host sends the message that began that turn again, as a new message from this client, when that message was the user's own (a relay another computer's device did not sign, a task notification, a routine, a plugin, a bot or an agent is refused), nothing was sent or started since, and it carries no file and no picture it no longer holds (a picture is checked as the composer's send checks it; a message with files is refused: send it again from the composer). Once per failed turn. The caller names only the session: never the words, a message id or attachments. Not for a side thread, an agent or a coding session, nor for a conversation another computer runs. App role only: it is the app's \"Try again\" button; the terminal and a phone have none.",
   }),
   sessionPost: defineMethod({
     name: "session.post", owner: "D", roles: ["layer"], capability: "conversation.post",

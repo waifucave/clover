@@ -9,6 +9,7 @@ import type { VrmMeta } from "../src/vrm/validate";
 import { PushedSpeech, speechFrames } from "../src/lipsync/sources";
 import { vowel } from "../src/lipsync/synth";
 import type { Mesh } from "three";
+import type { FigureBox, FigureCue, FigureNames } from "../src/control";
 
 const file = readFileSync(join(import.meta.dir, "..", "..", "..", "..", "alpha", "assets", "alpha.vrm"));
 const bytes = () => file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
@@ -68,6 +69,41 @@ function fakeFrames(step = 16) {
   };
 }
 
+describe("the VRM avatar with the app's avatar control", () => {
+  test("it publishes the mood expressions and outfit parts it has and the figure's box, plays a mood cue with a hold, switches an outfit part, and takes both back", async () => {
+    const fake = fakeRenderer();
+    const frames = fakeFrames();
+    const listeners = new Set<(c: FigureCue) => void>();
+    const names: (FigureNames | undefined)[] = [];
+    const boxes: (FigureBox | undefined)[] = [];
+    const control = { onCue: (l: (c: FigureCue) => void) => { listeners.add(l); return () => listeners.delete(l); }, setCatalogue: (n: FigureNames | undefined) => void names.push(n), setBox: (b: FigureBox | undefined) => void boxes.push(b) };
+    const { unmount, container } = render(<VrmAvatar src={bytes()} name="Alpha" createRenderer={fake.create} frames={frames.clock} control={control} />);
+    await waitFor(() => expect(names.at(-1)).toBeDefined());
+    const have = names.at(-1)!.expressions;
+    expect(have).toContain("happy");
+    expect(names.at(-1)!.motions).toEqual([]);
+    expect(boxes.at(-1)).toMatchObject({ canvas: { width: expect.any(Number) } });
+    // A cue for a name it has plays; one it has not does nothing; a look-at point goes through without trouble.
+    listeners.forEach((l) => l({ type: "expression", name: "happy" }));
+    listeners.forEach((l) => l({ type: "expression", name: "nonsense" }));
+    listeners.forEach((l) => l({ type: "lookAt", point: { x: 0.3, y: 0 } }));
+    listeners.forEach((l) => l({ type: "lookAt", point: null }));
+    // Its outfit parts, with what shows; an outfit cue switches one, says so again, and the figure names what it wears.
+    expect(names.at(-1)!.outfits).toEqual([{ name: "lilac-dress", on: true }, { name: "navy-uniform", on: false }, { name: "yellow-raincoat", on: false }]);
+    expect(container.querySelector("figure")!.getAttribute("data-outfit")).toBe("lilac-dress");
+    listeners.forEach((l) => l({ type: "outfit", part: "lilac-dress", on: false }));
+    listeners.forEach((l) => l({ type: "outfit", part: "yellow-raincoat", on: true }));
+    listeners.forEach((l) => l({ type: "outfit", part: "cape", on: true }));
+    await waitFor(() => expect(container.querySelector("figure")!.getAttribute("data-outfit")).toBe("yellow-raincoat"));
+    expect(names.at(-1)!.outfits.filter((o) => o.on).map((o) => o.name)).toEqual(["yellow-raincoat"]);
+    frames.run(300);
+    unmount();
+    expect(listeners.size).toBe(0);
+    expect(names.at(-1)).toBeUndefined();
+    expect(boxes.at(-1)).toBeUndefined();
+  });
+});
+
 describe("the VRM avatar", () => {
   test("waits with the portrait, then shows the model with its placeholder credit", async () => {
     const fake = fakeRenderer();
@@ -81,7 +117,7 @@ describe("the VRM avatar", () => {
     expect(screen.getByText(/Alpha \(placeholder model\) · by Clover contributors · VRM Public License 1.0/)).toBeTruthy();
     // Alive: a frame loop, drawing.
     expect(frames.pending).toBe(1);
-    frames.run(100);
+    frames.run(300);
     expect(fake.calls.render).toBeGreaterThan(3);
   });
 
@@ -189,7 +225,7 @@ describe("the VRM avatar", () => {
     expect(fake.calls.disposed).toBe(1);
   });
 
-  test("draws at most 30 frames a second while quiet, and 60 while speech sounds", async () => {
+  test("draws 60 frames a second while the user is about and while speech sounds, never more", async () => {
     let audio = 0;
     const speech = new PushedSpeech(() => audio);
     const fake = fakeRenderer();
@@ -199,8 +235,8 @@ describe("the VRM avatar", () => {
     await waitFor(() => { expect(onReady).toHaveBeenCalled(); expect(frames.pending).toBe(1); }); // ready, and the frame loop running (React commits after onReady)
     let before = fake.calls.render;
     frames.run(1000);
-    expect(fake.calls.render - before).toBeLessThanOrEqual(31);
-    expect(fake.calls.render - before).toBeGreaterThanOrEqual(28);
+    expect(fake.calls.render - before).toBeLessThanOrEqual(63);
+    expect(fake.calls.render - before).toBeGreaterThanOrEqual(55);
     act(() => speech.push(speechFrames(vowel("a", 2), 48000, 0)));
     audio = 0.5;
     before = fake.calls.render;
@@ -235,6 +271,11 @@ describe("reading the avatar file", () => {
     expect(error).toBeInstanceOf(AvatarError);
     expect((error as AvatarError).reason).toBe("too-large");
     expect(pulled.count).toBeLessThanOrEqual(1);
+  });
+
+  test("a 413 from the app's own server is the same too-large sentence, not a generic failure", async () => {
+    const error = await fetchCapped("a.vrm", 1000, async () => new Response("too big", { status: 413 })).catch((e: unknown) => e);
+    expect((error as AvatarError).reason).toBe("too-large");
   });
 
   test("stops a body that runs past the cap, whatever its headers said", async () => {

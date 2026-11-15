@@ -120,7 +120,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M2.1",
@@ -210,7 +211,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.1",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M2.1-highspeed",
@@ -300,7 +302,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.1-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M2.5",
@@ -390,7 +393,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.5",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M2.5-highspeed",
@@ -480,7 +484,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.5-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M2.7",
@@ -570,7 +575,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M2.7-highspeed",
@@ -660,7 +666,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m2.7-highspeed",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M3",
@@ -774,7 +781,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimax-m3",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "medium"
     },
     {
       "key": "minimax-anthropic/MiniMax-M3.1-Flash",
@@ -906,7 +914,8 @@
       ],
       "status": "candidate",
       "canonicalModelId": "minimax-m3.1-flash",
-      "modelFamily": "minimax"
+      "modelFamily": "minimax",
+      "strength": "weak"
     }
   ]
 }

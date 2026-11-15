@@ -17,24 +17,32 @@
 //   are otherwise the same as host ones: listing, keys, scope, deferral and the prompt's `<mcp-server>` block. A
 //   stopped plugin's server (crashed too often) keeps its last listing, and its calls answer why.
 // * **Scope:** a server's own `scope`, else its plugin's, says whether bots get it (`both` by default).
-// * **Names:** a bundled plugin's server (registry source `bundled`, top plugin `clover`) keeps its plain name, so
-//   `mcp__web__WebSearch` is the web plugin's. Any other plugin's server is served under the key
-//   `pluginMcpServerKey`: `<plugin id, its "/" as "-">-<server>`, a namespace that round-trips through a tool name, so
-//   it can't take another's tools. A
-//   non-bundled server named like a reserved name (`clover`, `clover_core`) or like any bundled plugin's server is
-//   refused and logged. Two servers that come to the same key are refused and logged (never first wins): both of them,
-//   unless exactly one is bundled, which keeps the key.
-// * Only `host` servers are served here; a plugin's `stdio` and `http` servers are the MCP host's (lanes B and D).
+// * **Names:** a bundled plugin's server (registry source `bundled`, top plugin `clover`) is keyed by its plain name
+//   (`web`), so channels, ticks and listings stay apart by plugin and server, and today a session sees it under that
+//   name: `mcp__web__WebSearch`. §5.3's `mcp__clover__…` waits on the agent runtime, which reserves `clover` for its
+//   standing server (docs/research/2026-11-10-agent-sdk-host-tools-in-standing-server.md); `bundledServer` turns it
+//   on. Then every bundled server is offered as that one name, a call to it finds its server by the tool's name, and a
+//   tool name two bundled servers both give is refused for both, logged with both named, never first wins. Any other
+//   plugin's server is served under the key `pluginMcpServerKey`: `<plugin id, its "/" as "-">-<server>`, a namespace
+//   that round-trips through a tool name, so it can't take another's tools. A non-bundled server named like a reserved
+//   name (`clover`, `clover_core`) or like any bundled plugin's server is refused and logged. Two servers that come to
+//   the same key are refused and logged (never first wins): both of them, unless exactly one is bundled, which keeps
+//   the key.
+// * **http servers** (a remote server the plugin names by url, a pasted MCP URL's included) open through the core's
+//   own MCP client (`computers/http-mcp.ts`), to that url only; they only talk to the web, so they run where the
+//   session does (remote), like a `host` server that isn't `perComputer`.
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
-import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
+import { NAMESPACE_RE, parseInterpolation } from "@waifucave/clover-plugin-sdk";
 import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
 import { isBundledClover } from "../model-plugins/load";
+import { toolDisplayTitle } from "../tool-display";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
+import { scopeOf, servesBackend, servesScope, type PluginScope } from "./only-backends";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
 export const PLUGIN_MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -48,8 +56,37 @@ const CLOSED_POLL_MS = 1_000;
 const INSTRUCTIONS_MAX_CHARS = 4_096;
 /** The most a tool call's result may hold, as JSON text; past it the content is cut and a marker added. */
 export const RESULT_MAX_CHARS = 1_048_576;
+/** The server every bundled plugin's tools are to be offered under (§5.3): `mcp__clover__WebSearch`, once the agent
+ *  runtime lets a host add tools to its standing `clover` server (`PluginMcpOptions.bundledServer`). */
+export const BUNDLED_SERVER = "clover";
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
-const RESERVED_NAMES: readonly string[] = ["clover", "clover_core"];
+const RESERVED_NAMES: readonly string[] = [BUNDLED_SERVER, "clover_core"];
+
+/** How long a plugin whose tree changed in place waits for its host half to run the new code before its servers are
+ *  listed again anyway. */
+export const TREE_RELIST_WAIT_MS = 10_000;
+
+/** How long a setting's changes gather before the servers that name it are listed again (one restart for a burst). */
+export const MCP_RELIST_DEBOUNCE_MS = 500;
+
+/** The `stdio` servers of a manifest whose command, arguments or environment name the setting or secret `key`
+ *  (`${setting:key}`, `${secret:key}`, `${secretFile:key}`): the ones a change to it must start again. */
+export function serversNamingSetting(manifest: unknown, key: string): string[] {
+  const servers = ((manifest as { contributes?: { mcpServers?: unknown } } | undefined)?.contributes?.mcpServers ?? {}) as Record<string, unknown>;
+  const out: string[] = [];
+  for (const [name, raw] of Object.entries(servers)) {
+    const s = raw as { type?: unknown; command?: unknown; args?: unknown; env?: unknown } | null;
+    if (s === null || typeof s !== "object" || s.type !== "stdio") continue;
+    const values = [s.command, ...(Array.isArray(s.args) ? s.args : []), ...(s.env !== null && typeof s.env === "object" ? Object.values(s.env as Record<string, unknown>) : [])];
+    const names = values.some((v) => {
+      if (typeof v !== "string") return false;
+      const r = parseInterpolation(v);
+      return r.ok && r.parts.some((p) => (p.kind === "setting" || p.kind === "secret" || p.kind === "secretFile") && p.key === key);
+    });
+    if (names) out.push(name);
+  }
+  return out;
+}
 
 /** The longest server key. */
 export const SERVER_KEY_MAX = 64;
@@ -192,11 +229,16 @@ class ChannelClient {
 }
 
 export interface PluginMcpOptions {
-  registry: Pick<PluginRegistry, "entries" | "get" | "watch">;
-  /** The plugin host; its `status`, when it has one, says why a server's plugin went (a failed listing's log line). */
-  host: Pick<PluginHost, "openMcp"> & Partial<Pick<PluginHost, "status">>;
+  /** Called after each successful listing of a server (the Tools tab drops values for tools a listing no longer names). */
+  onListed?: () => void;
+  registry: Pick<PluginRegistry, "entries" | "get" | "watch"> & Partial<Pick<PluginRegistry, "watchTrees">>;
+  /** The plugin host; its `status`, when it has one, says why a server's plugin went (a failed listing's log line), and
+   *  its `watch` when a plugin whose tree changed in place runs its new code (its servers are listed again then). */
+  host: Pick<PluginHost, "openMcp"> & Partial<Pick<PluginHost, "status" | "watch">>;
   /** This computer's name: where a `perComputer` server runs. */
   self(): string;
+  /** This computer's system, for a server's `when.os`; this process's by default. */
+  os?: "macos" | "windows" | "linux";
   log?(line: string): void;
   /** How long one server's listing may take, its `open()` included (default 30 s). */
   listTimeoutMs?: number;
@@ -208,15 +250,22 @@ export interface PluginMcpOptions {
   computers?(server: string): readonly string[];
   /** Per-computer servers another computer runs and lists (lane J's node, `mcpRemoteServers`), ready for the prompt:
    *  placement fields, scope applied, `load` set. They fill only names this computer doesn't list itself. */
-  remoteServers?(kind: "bot" | "side-thread" | "agent" | "coding"): readonly BotMcpServer[];
+  remoteServers?(kind: "bot" | "side-thread" | "agent" | "coding", bot?: string): readonly BotMcpServer[];
   /** The door to the plugins' `stdio` servers (lane J's `StdioMcpLauncher`: each open spawns the server fenced, a close
    *  stops it and releases what it held). Left out, `stdio` entries aren't served here. */
   stdio?: Pick<PluginHost, "openMcp">;
+  /** The door to the plugins' remote `http` servers (`HttpMcpOpener`: each open is a session with the server, through
+   *  the core's pinned fetch, to the url its OK named only). Left out, `http` entries aren't served here. */
+  http?: Pick<PluginHost, "openMcp">;
   /** Why a `host` server can't work in this build, when it can't (its plugin needs `net.fetch`, which can't cross the
    *  plugin host yet: `NET_FETCH_CROSSES_PLUGIN_HOST`). Such a server is neither started nor listed nor waited for;
    *  the reason is logged once, here and in its plugin's own log (`pluginLog`, shown on its Settings page). */
   notServed?(server: { pluginId: string; name: string; type: string }): string | undefined;
   pluginLog?(pluginId: string, line: string): void;
+  /** The one server name every bundled plugin's tools are offered under (§5.3's `clover`, `BUNDLED_SERVER`), each call
+   *  finding its server by the tool's name. Left out (today), each bundled server is offered under its own key: the
+   *  agent runtime 0.0.76 reserves `clover` for its standing server and exits before init when a host server takes it. */
+  bundledServer?: string;
 }
 
 /** One per-computer server as this computer lists it, for lane J's node to serve to the others (`mcp.list`): the raw
@@ -227,6 +276,8 @@ export interface PluginMcpListing {
   /** The server's own name, as its plugin declares it: `server` is `pluginMcpServerKey(plugin, name)`, or `name` itself
    *  for a bundled plugin's server; either way `isServerKey(server)`. */
   name: string;
+  /** The name a session sees it under: `bundledServer` for a bundled plugin's server when that is set, else `server`. */
+  exposed: string;
   tools: (McpToolDef & { load: "preload" | "on-demand" })[];
   instructions?: string;
   scope: "bots" | "agents" | "both";
@@ -234,6 +285,8 @@ export interface PluginMcpListing {
 
 interface Listed {
   plugin: string;
+  /** A bundled plugin's server: offered under `bundledServer` when that is set, its tools found by name. */
+  bundled: boolean;
   /** The server's own name, as its plugin knows it (`server` in `openMcp`); the served key may differ. */
   name: string;
   entry: HostServerEntry;
@@ -249,6 +302,13 @@ interface Listed {
 function isLocal(entry: HostServerEntry): boolean {
   return entry.perComputer === true || entry.type === "stdio";
 }
+
+/** A bundled tool offered only while its plugin holds a capability: one that could only refuse without it isn't
+ *  listed (the web plugin's WebFetch reads any public page through `network:public`; without it, it could reach only
+ *  the plugin's own `network:` hosts). */
+export const BUNDLED_TOOL_NEEDS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "clover/web": { WebFetch: "network:public" },
+};
 
 /** How long a bot's turn waits, at its start, for the first listing of a server just installed or enabled. */
 export const MCP_FIRST_LISTING_WAIT_MS = 5_000;
@@ -269,24 +329,86 @@ export class PluginMcp {
   readonly #failed = new Set<string>();
   /** The reason last logged for each server not served (`notServed`), so it's said once, not at each refresh. */
   readonly #notServedSaid = new Map<string, string>();
+  /** The bundled tool names refused for a clash, as last logged. */
+  #clashSaid = "";
   #closed = false;
   readonly #off: Unsubscribe;
+  /** Plugins whose tree changed in place while their host half ran the old one: listed again once it runs the new code
+   *  (`went`: the old one stopped since), or after `TREE_RELIST_WAIT_MS` whatever the host said. */
+  readonly #treeWaits = new Map<string, { went: boolean; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(o: PluginMcpOptions) {
     this.#o = o;
-    this.#off = o.registry.watch((change) => {
+    const offWatch = o.registry.watch((change) => {
       if (change.type !== "entries" || change.point === "mcpServers") void this.refresh();
     });
+    // A tree changed under a running plugin (an update applied, a workshop plugin's edit in place): the registry's
+    // `watch` says nothing, and the plugin host reloads its host half; its servers are listed again on the new code, so
+    // a tool's changed description or a new tool reaches the bots, and no channel stays open to the old module.
+    const offTrees = o.registry.watchTrees?.(({ id }) => this.#treeChanged(id));
+    const offHost = o.host.watch?.((s) => {
+      const w = this.#treeWaits.get(s.pluginId);
+      if (w === undefined) {
+        // Running again after its listing failed or found it stopped (the crash rules' stop, then its builder's fix
+        // restarting it): listed again now, or its tools keep answering the old stop until something else changes.
+        if (s.state === "running" && this.#stale(s.pluginId)) this.#relistPlugin(s.pluginId);
+        return;
+      }
+      if (s.state !== "running") w.went = true;
+      else if (w.went) this.#relistPlugin(s.pluginId);
+    });
+    this.#off = () => {
+      offWatch();
+      offTrees?.();
+      offHost?.();
+      for (const w of this.#treeWaits.values()) clearTimeout(w.timer);
+      this.#treeWaits.clear();
+    };
   }
 
-  #client(key: string, plugin: string, name: string, stdio = false): ChannelClient {
+  #treeChanged(pluginId: string): void {
+    if (this.#closed) return;
+    const running = this.#o.host.status?.(pluginId).state === "running";
+    // Not running (or no host to watch): a listing starts it on the new tree now.
+    if (!running || this.#o.host.watch === undefined) return void this.#relistPlugin(pluginId);
+    clearTimeout(this.#treeWaits.get(pluginId)?.timer);
+    const timer = setTimeout(() => this.#relistPlugin(pluginId), TREE_RELIST_WAIT_MS);
+    (timer as { unref?: () => void }).unref?.();
+    this.#treeWaits.set(pluginId, { went: false, timer });
+  }
+
+  /** Whether a server of `pluginId` this computer serves holds a failed or stopped listing. */
+  #stale(pluginId: string): boolean {
+    for (const [key, c] of this.#want) {
+      if (c.pluginId !== pluginId) continue;
+      if (this.#failed.has(key) || this.#listed.get(key)?.stopped !== undefined) return true;
+    }
+    return false;
+  }
+
+  /** Every server of `pluginId` this computer serves: its channel closed and listed again. */
+  #relistPlugin(pluginId: string): void {
+    const w = this.#treeWaits.get(pluginId);
+    if (w !== undefined) clearTimeout(w.timer);
+    this.#treeWaits.delete(pluginId);
+    if (this.#closed) return;
+    const keys = [...this.#want].filter(([, c]) => c.pluginId === pluginId).map(([key]) => key);
+    if (keys.length > 0) this.#o.log?.(`plugin MCP ${pluginId}: its tree changed; its servers are listed again`);
+    for (const key of keys) {
+      this.#clients.get(key)?.client.close();
+      this.#clients.delete(key);
+    }
+    for (const key of keys) void this.#listOne(key);
+  }
+
+  #client(key: string, plugin: string, name: string, type: HostServerEntry["type"] = "host"): ChannelClient {
     let c = this.#clients.get(key);
     if (c !== undefined && (c.plugin !== plugin || c.name !== name)) {
       c.client.close();
       c = undefined;
     }
     if (c === undefined) {
-      const door: Pick<PluginHost, "openMcp"> = stdio && this.#o.stdio !== undefined ? this.#o.stdio : this.#o.host;
+      const door: Pick<PluginHost, "openMcp"> = type === "stdio" && this.#o.stdio !== undefined ? this.#o.stdio : type === "http" && this.#o.http !== undefined ? this.#o.http : this.#o.host;
       c = { plugin, name, client: new ChannelClient(() => door.openMcp(plugin, name), this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS) };
       this.#clients.set(key, c);
     }
@@ -294,10 +416,14 @@ export class PluginMcp {
   }
 
   #hostEntries(): Contribution[] {
+    const os = this.#o.os ?? (process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
     return this.#o.registry.entries("mcpServers").filter((c) => {
       if (c.state !== "active" || !isObject(c.value)) return false;
+      // `when.os` (§5.1): a server for other systems isn't served on this one.
+      const only = (c.value as { when?: { os?: unknown } }).when?.os;
+      if (Array.isArray(only) && only.length > 0 && !only.includes(os)) return false;
       const type = (c.value as { type?: unknown }).type;
-      return type === "host" || (type === "stdio" && this.#o.stdio !== undefined);
+      return type === "host" || (type === "stdio" && this.#o.stdio !== undefined) || (type === "http" && this.#o.http !== undefined);
     });
   }
 
@@ -378,7 +504,7 @@ export class PluginMcp {
   async #list(key: string, c: Contribution): Promise<Listed> {
     const name = this.#nameOf(c);
     const timeoutMs = this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS;
-    const client = this.#client(key, c.pluginId, name, (c.value as HostServerEntry).type === "stdio");
+    const client = this.#client(key, c.pluginId, name, (c.value as HostServerEntry).type);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -389,13 +515,24 @@ export class PluginMcp {
     });
     try {
       const r = await Promise.race([client.request("tools/list", {}, { timeoutMs }), timeout]);
-      const tools = (isObject(r) && Array.isArray(r.tools) ? r.tools : []).filter((t): t is Record<string, unknown> => isObject(t) && typeof t.name === "string").map((t) => ({
-        name: t.name as string,
-        ...(typeof t.description === "string" ? { description: t.description } : {}),
-        inputSchema: (isObject(t.inputSchema) ? { ...t.inputSchema, type: "object" } : { type: "object" }) as McpToolDef["inputSchema"],
-      }));
+      const needs = BUNDLED_TOOL_NEEDS[c.pluginId];
+      const granted = needs === undefined ? [] : (this.#o.registry.get(c.pluginId)?.granted ?? []);
+      const tools = (isObject(r) && Array.isArray(r.tools) ? r.tools : []).filter((t): t is Record<string, unknown> => isObject(t) && typeof t.name === "string").filter((t) => {
+        const need = needs?.[t.name as string];
+        return need === undefined || granted.includes(need);
+      }).map((t) => {
+        // The tool's `title`, for display only (plain, one line, 60 at most); its MCP `annotations` are never read.
+        const title = toolDisplayTitle(t.title);
+        return {
+          name: t.name as string,
+          ...(typeof t.description === "string" ? { description: t.description } : {}),
+          inputSchema: (isObject(t.inputSchema) ? { ...t.inputSchema, type: "object" } : { type: "object" }) as McpToolDef["inputSchema"],
+          ...(title === undefined ? {} : { title }),
+        };
+      });
       const instructions = this.#instructions(c);
-      return { plugin: c.pluginId, name, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) };
+      const record = this.#o.registry.get(c.pluginId);
+      return { plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record), name, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) };
     } finally {
       clearTimeout(timer);
     }
@@ -421,7 +558,21 @@ export class PluginMcp {
       }
     }
     for (const key of [...this.#failed]) if (!want.has(key)) this.#failed.delete(key);
+    this.#sayClashes();
     return Promise.all([...want.keys()].map((key) => this.#listOne(key))).then(() => {});
+  }
+
+  /** Lists again the servers of `pluginId` named in `servers` (its manifest's names): a server whose arguments or
+   *  environment name a setting or a secret that just changed. Its open channel closes first, so a stdio process starts
+   *  again with the new value. Only servers this computer serves now; nothing else is touched. */
+  relist(pluginId: string, servers: readonly string[]): Promise<void> {
+    if (this.#closed || servers.length === 0) return Promise.resolve();
+    const keys = [...this.#want].filter(([, c]) => c.pluginId === pluginId && servers.includes(this.#nameOf(c))).map(([key]) => key);
+    for (const key of keys) {
+      this.#clients.get(key)?.client.close();
+      this.#clients.delete(key);
+    }
+    return Promise.all(keys.map((key) => this.#listOne(key))).then(() => {});
   }
 
   /** Whether a server can't work in this build (`notServed`): logged once per reason, here and in its plugin's log. */
@@ -487,9 +638,20 @@ export class PluginMcp {
           }
           this.#listed.set(key, listed);
           this.#failed.delete(key);
+          this.#sayClashes();
+          try { this.#o.onListed?.(); } catch { /* a listener never fails a listing */ }
         } catch (err) {
           if (this.#closed) return;
-          this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}${this.#why(c.pluginId)}`);
+          // Its plugin went while the listing was on (removed, switched off; the host closes its channels then): the server
+          // isn't wanted any more, so nothing failed and there is nothing to say (refresh already dropped what it had).
+          if (this.#want.get(key) === undefined) return;
+          const said = err instanceof Error ? err.message : String(err);
+          // A server whose command, arguments or environment name a key or setting the user hasn't set yet isn't broken:
+          // it waits for the user (the re-list starts it once they set it, `relist`).
+          const waits = /^(?:secret|setting) \S+ is not set$/.exec(said);
+          this.#o.log?.(waits !== null
+            ? `plugin MCP ${c.pluginId}/${this.#nameOf(c)}: waits for the user to set ${said.replace(/ is not set$/, "")}; it starts once they do`
+            : `plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${said}${this.#why(c.pluginId)}`);
           this.#failed.add(key);
           // A stopped plugin's server keeps its last listing, its calls answering why (§5.1); any other failure
           // drops it until a listing succeeds.
@@ -519,61 +681,163 @@ export class PluginMcp {
     clearTimeout(timer);
   }
 
-  placement(server: string): McpServerPlacement | undefined {
-    const l = this.#listed.get(server);
+  /** The bundled tools by name, each with its server's key, and the names two or more bundled servers give (refused
+   *  for all of them: `mcp__clover__<name>` must be one server's). */
+  #bundledTools(): { byName: Map<string, string>; clashes: Map<string, string[]> } {
+    const claims = new Map<string, string[]>();
+    if (this.#o.bundledServer === undefined) return { byName: new Map(), clashes: new Map() };
+    for (const [key, l] of this.#listed) {
+      if (!l.bundled) continue;
+      for (const t of l.tools) claims.set(t.name, [...(claims.get(t.name) ?? []), key]);
+    }
+    const byName = new Map<string, string>();
+    const clashes = new Map<string, string[]>();
+    for (const [name, keys] of claims) (keys.length === 1 ? byName.set(name, keys[0]!) : clashes.set(name, keys));
+    return { byName, clashes };
+  }
+
+  /** Logs the bundled tool names refused for a clash, once each time the set changes, naming every server that gives one. */
+  #sayClashes(): void {
+    const { clashes } = this.#bundledTools();
+    const lines = [...clashes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([name, keys]) =>
+      `the tool ${mcpToolName(this.#o.bundledServer!, name)} is refused: ${keys.map((k) => `${this.#listed.get(k)!.plugin}/${this.#listed.get(k)!.name}`).join(" and ")} both give it`);
+    const said = lines.join("\n");
+    if (said === this.#clashSaid) return;
+    this.#clashSaid = said;
+    for (const line of lines) this.#o.log?.(`plugin MCP: ${line}`);
+  }
+
+  /** The name a session sees `key`'s server under. */
+  #exposed(key: string, bundled: boolean): string {
+    return bundled && this.#o.bundledServer !== undefined ? this.#o.bundledServer : key;
+  }
+
+  /** The key of the server that runs `server`'s `tool` as a session names them: with `bundledServer` set, that name and
+   *  a bundled tool's name give its bundled server, and a bundled server's own key is never a session's name; any other
+   *  name is its key. */
+  #resolve(server: string, tool: string | undefined): string | undefined {
+    const shared = this.#o.bundledServer;
+    if (shared === undefined) return server;
+    if (server === shared) return tool === undefined ? undefined : this.#bundledTools().byName.get(tool);
+    return this.#listed.get(server)?.bundled === true ? undefined : server;
+  }
+
+  /** Where `server`'s `tool` runs, as a session names them (`mcp__web__WebSearch` is `web` and `WebSearch`): lane J's
+   *  router asks per tool, since bundled servers can share one name (`bundledServer`). */
+  placement(server: string, tool?: string): McpServerPlacement | undefined {
+    const key = this.#resolve(server, tool);
+    return key === undefined ? undefined : this.#placementOf(key, server);
+  }
+
+  #placementOf(key: string, name: string = key): McpServerPlacement | undefined {
+    const l = this.#listed.get(key);
     if (l === undefined) return undefined;
-    if (!isLocal(l.entry)) return { name: server, kind: "remote", computers: [] };
+    if (!isLocal(l.entry)) return { name, kind: "remote", computers: [] };
     // Exactly the computers that tick it: none ticked (no OK card answered on any computer), or no list, runs it nowhere.
-    return { name: server, kind: "local", computers: [...(this.#o.computers?.(server) ?? [])] };
+    return { name, kind: "local", computers: [...(this.#o.computers?.(key) ?? [])] };
   }
 
   /** The `perComputer` servers the plugins declare, with their plugin, whether this computer ticks them or not: what
    *  lane J's node ticks per computer (`localServers`). Read from the registry, so naming one starts nothing. */
-  localServers(): { server: string; plugin: string }[] {
+  localServers(): { server: string; plugin: string; bundled: boolean }[] {
     // Only plugins installed, enabled and OK'd HERE (a synced plugin not OK'd here is never offered for a tick, so J's
     // first-run adoption can't tick it), whether their servers run yet or not.
     return this.#keys().served.filter(({ c }) => {
       if (!isLocal(c.value as HostServerEntry)) return false;
       const record = this.#o.registry.get(c.pluginId);
       return record !== undefined && record.enabled === true && this.#okd(record);
-    }).map(({ key, c }) => ({ server: key, plugin: c.pluginId }));
+    }).map(({ key, c }) => {
+      const record = this.#o.registry.get(c.pluginId);
+      // A bundled plugin's server: the node ticks it here by rule, unless the user unticked it (lane J's ticks).
+      return { server: key, plugin: c.pluginId, bundled: record !== undefined && isBundledClover(record) };
+    });
   }
 
-  /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only
-   *  where it's ticked (lane J's `computers`). With no list it fails closed: no per-computer server starts. */
+  /** Whether `key`'s process may run on this computer: any server but a per-computer one, and a per-computer one only
+   *  while its plugin is enabled with the user's OK covering its tree as it is now (no switch-off, revoked OK, changed
+   *  tree), and while it's ticked here (lane J's `computers`). With no list it fails closed: no per-computer server
+   *  starts. Asked at every refresh, so one that stops qualifying is closed there, its process stopped with it (a
+   *  stdio server's channel close ends its process group, `computers/stdio-mcp.ts`). */
   #runsHere(key: string, c: Contribution): boolean {
     if (!isLocal(c.value as HostServerEntry)) return true;
+    const record = this.#o.registry.get(c.pluginId);
+    if (record === undefined || record.enabled !== true || !this.#okd(record)) return false;
     return this.#o.computers?.(key).includes(this.#o.self()) ?? false;
   }
 
-  fields(server: string): McpFields {
-    const l = this.#listed.get(server);
-    const p = this.placement(server);
+  /** The fields `server`'s `tool` carries, as a session names them. */
+  fields(server: string, tool?: string): McpFields {
+    const key = this.#resolve(server, tool);
+    const l = key === undefined ? undefined : this.#listed.get(key);
+    const p = key === undefined ? undefined : this.#placementOf(key);
     return l === undefined || p === undefined ? {} : placementFields(p, l.tools).fields;
   }
 
-  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`). */
-  servers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] {
+  /** The plugin, server (its own name, as its manifest has it) and tool that a session of `kind`'s call `call`
+   *  (`mcp__<served key>__<tool>`) is routed to, from this computer's own listing: found by comparing each tool's full
+   *  served name with the call's, never by splitting the call's name, so a crafted name borrows nothing, and only a
+   *  name served exactly once routes anywhere. A server
+   *  another computer lists isn't one (its plugin's tree is that computer's). For the approval policy's declared
+   *  lists (`pluginToolReadOnly`, `pluginToolContained`), asked at each call. */
+  routedTool(kind: "bot" | "side-thread" | "agent" | "coding", call: string, backend?: string, bot?: string): { plugin: string; server: string; tool: string } | undefined {
+    const { clashes } = this.#bundledTools();
+    // Every full name this computer serves, wherever it routes: a name served twice (two servers, or one listing a
+    // tool twice) routes to none, so a declared list never answers for a call that could reach something else.
+    let found: { plugin: string; server: string; tool: string } | undefined;
+    let times = 0;
+    for (const [key, l] of this.#listed) {
+      const serves = servesScope(this.#scopeOf(l.plugin, l.entry), { kind, ...(bot === undefined ? {} : { bot }) }, l.plugin);
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
+      const served = this.#exposed(key, l.bundled);
+      const shared = l.bundled && this.#o.bundledServer !== undefined;
+      for (const t of l.tools) {
+        if (shared && clashes.has(t.name)) continue;
+        if (`mcp__${served}__${t.name}` !== call) continue;
+        times++;
+        found = { plugin: l.plugin, server: l.name, tool: t.name };
+      }
+    }
+    return times === 1 ? found : undefined;
+  }
+
+  /** The servers a session of `kind` gets, as the driver lists them (`BotDriverDeps.mcp.servers`); an agent's or a
+   *  coding session's only from plugins whose `onlyBackends` name its `backend` (default Clover's own). */
+  servers(kind: "bot" | "side-thread" | "agent" | "coding", backend?: string, bot?: string): BotMcpServer[] {
     const out: BotMcpServer[] = [];
-    for (const [server, l] of this.#listed) {
-      const scope = this.#scopeOf(l.plugin, l.entry);
-      const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
-      if (!serves) continue;
-      const p = this.placement(server)!;
+    const { clashes } = this.#bundledTools();
+    for (const [key, l] of this.#listed) {
+      const serves = servesScope(this.#scopeOf(l.plugin, l.entry), { kind, ...(bot === undefined ? {} : { bot }) }, l.plugin);
+      if (!serves || !servesBackend(this.#o.registry, l.plugin, kind, backend)) continue;
+      const server = this.#exposed(key, l.bundled);
+      const p = this.#placementOf(key, server)!;
       const loads = l.entry.tools ?? {};
-      const tools: BotMcpTool[] = placementFields(p, l.tools).tools.map((t) => ({
+      const shared = l.bundled && this.#o.bundledServer !== undefined;
+      const offered = shared ? l.tools.filter((t) => !clashes.has(t.name)) : l.tools;
+      if (shared && offered.length === 0) continue;
+      const tools: BotMcpTool[] = placementFields(p, offered).tools.map((t) => ({
         name: t.name,
         ...(t.description === undefined ? {} : { description: t.description }),
         inputSchema: t.inputSchema,
         load: loads[t.name] ?? loads["*"] ?? "on-demand",
+        ...(t.title === undefined ? {} : { title: t.title }),
       }));
       out.push({ server, plugin: l.plugin, tools, ...(l.instructions === undefined ? {} : { instructions: l.instructions }), ...(p.kind === "local" ? { computers: p.computers } : {}), reachable: true });
     }
     // Servers other computers run fill the names this one doesn't list. This computer's own listing wins, a server it
     // lists but scopes out for this kind included; a reserved name, or one this computer's registry gives to another
-    // plugin, is never taken from a remote listing.
+    // plugin, is never taken from a remote listing. With `bundledServer` set, a bundled plugin's server another computer
+    // lists comes under that name: taken only for a plugin this computer's registry says is bundled, and only for tool
+    // names no bundled server listed here gives.
     const declared = new Map(this.#keys().served.map(({ key, c }) => [key, c.pluginId] as const));
-    for (const r of this.#o.remoteServers?.(kind) ?? []) {
+    const ownBundled = new Set([...this.#listed.values()].filter((l) => l.bundled).flatMap((l) => l.tools.map((t) => t.name)));
+    for (const r of this.#o.remoteServers?.(kind, bot) ?? []) {
+      if (this.#o.bundledServer !== undefined && r.server === this.#o.bundledServer) {
+        const record = this.#o.registry.get(r.plugin);
+        if (record === undefined || !isBundledClover(record)) continue;
+        const tools = r.tools.filter((t) => !ownBundled.has(t.name) && !clashes.has(t.name));
+        if (tools.length > 0) out.push({ ...r, tools });
+        continue;
+      }
       if (this.#listed.has(r.server) || out.some((s) => s.server === r.server)) continue;
       if (RESERVED_NAMES.includes(r.server) || !isServerKey(r.server)) continue;
       const owner = declared.get(r.server);
@@ -589,13 +853,16 @@ export class PluginMcp {
    *  a per-computer `host` server of exactly that name, served under a key no other plugin here also reaches (`#keys`
    *  refuses every claimant of a shared key: `a-b/c`'s and `a/b-c`'s `x` are both `a-b-c-x`). The key always comes
    *  from this registry, never from the peer's strings. Undefined otherwise. */
-  known(plugin: string, name: string): { server: string; scope: "bots" | "agents" | "both" } | undefined {
+  known(plugin: string, name: string): { server: string; exposed: string; scope: "bots" | "agents" | "both" } | undefined {
     const record = this.#o.registry.get(plugin);
     if (record === undefined || record.enabled !== true || (record.state !== "running" && record.state !== "stopped")) return undefined;
     if (!this.#okd(record)) return undefined;
     const hit = this.#keys().served.find(({ c }) => c.pluginId === plugin && this.#nameOf(c) === name);
     if (hit === undefined || !isLocal(hit.c.value as HostServerEntry)) return undefined;
-    return { server: hit.key, scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
+    // A server scoped to its own bot isn't another computer's to serve: a listing can't carry whose bot it is.
+    const scope = this.#scopeOf(plugin, hit.c.value as HostServerEntry);
+    if (scope === "own-bot") return undefined;
+    return { server: hit.key, exposed: this.#exposed(hit.key, isBundledClover(record)), scope };
   }
 
   /** Whether the user's OK covers the plugin's folder as it is now: a bundled one is the core's own; a child carries
@@ -606,8 +873,17 @@ export class PluginMcp {
     return own !== undefined && own.okHash !== undefined && own.okHash === own.treeHash;
   }
 
-  #scopeOf(plugin: string, entry: HostServerEntry): "bots" | "agents" | "both" {
-    return entry.scope ?? (this.#o.registry.get(plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope ?? "both";
+  /** A server's scope: its entry's, else its plugin's, else its tree's (`scopeOf`, the one rule's). */
+  #scopeOf(plugin: string, entry: HostServerEntry): PluginScope {
+    return scopeOf(this.#o.registry, plugin, entry.scope);
+  }
+
+  /** Every server listed here with the tools it gives, local or not, by the key a bot sees it under: the Tools tab's list. */
+  toolListing(): { server: string; plugin: string; name: string; tools: { name: string; title?: string }[] }[] {
+    return [...this.#listed].map(([key, l]) => ({
+      server: this.#exposed(key, l.bundled), plugin: l.plugin, name: l.name,
+      tools: l.tools.map((t) => ({ name: t.name, ...(t.title === undefined ? {} : { title: t.title }) })),
+    }));
   }
 
   /** The per-computer servers listed here, for lane J's node to serve to the other computers (`mcp.list`; the node
@@ -616,22 +892,27 @@ export class PluginMcp {
     const out: PluginMcpListing[] = [];
     for (const [server, l] of this.#listed) {
       if (!isLocal(l.entry)) continue;
+      const scope = this.#scopeOf(l.plugin, l.entry);
+      // Scoped to its own bot: served here only (a listing can't carry whose bot it is).
+      if (scope === "own-bot") continue;
       const loads = l.entry.tools ?? {};
       out.push({
-        server, plugin: l.plugin, name: l.name,
+        server, plugin: l.plugin, name: l.name, exposed: this.#exposed(server, l.bundled),
         tools: l.tools.map((t) => ({ ...t, load: loads[t.name] ?? loads["*"] ?? "on-demand" })),
         ...(l.instructions === undefined ? {} : { instructions: l.instructions }),
         // Always stated: a remote listing with no scope serves no one (lane J's node).
-        scope: this.#scopeOf(l.plugin, l.entry),
+        scope,
       });
     }
     return out;
   }
 
   /** Runs one tool call on this computer (lane J's `McpCaller`), as the session's caller. */
-  readonly call: McpCaller = async ({ server, tool, input, as, signal }) => {
-    const l = this.#listed.get(server);
-    if (l === undefined) throw new ContractError("not_installed", `no MCP server ${server}`);
+  readonly call: McpCaller = async ({ server: named, tool, input, as, signal }) => {
+    const server = this.#resolve(named, tool);
+    if (server === undefined && named === this.#o.bundledServer) throw new ContractError("not_found", `no tool ${mcpToolName(named, tool)}`);
+    const l = server === undefined ? undefined : this.#listed.get(server);
+    if (l === undefined || server === undefined) throw new ContractError("not_installed", `no MCP server ${named}`);
     // Its tick may have gone since the listing: then nothing starts it here, and its channel closes.
     if (isLocal(l.entry) && !(this.#o.computers?.(server).includes(this.#o.self()) ?? false)) {
       this.#clients.get(server)?.client.close();
@@ -640,7 +921,7 @@ export class PluginMcp {
     }
     if (l.stopped !== undefined) throw new ContractError("plugin_stopped", l.stopped);
     if (!l.tools.some((t) => t.name === tool)) throw new ContractError("not_found", `the MCP server ${server} has no tool ${tool}`);
-    const r = await this.#client(server, l.plugin, l.name, l.entry.type === "stdio").request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
+    const r = await this.#client(server, l.plugin, l.name, l.entry.type).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };
     return capResult({ ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] });
   };
@@ -689,7 +970,7 @@ export function localMcpRunner(mcp: PluginMcp, self: () => string): McpRunner {
   return {
     async run(server, tool, input, ctx) {
       const args = { ...input };
-      const saveTo = mcp.fields(server).saveTo;
+      const saveTo = mcp.fields(server, tool).saveTo;
       if (saveTo !== undefined) delete args[saveTo];
       const result = await mcp.call({ server, tool, input: args, as: ctx.as, session: ctx.session, ...(ctx.signal === undefined ? {} : { signal: ctx.signal }) });
       return { result, computer: self() };

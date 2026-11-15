@@ -161,7 +161,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
       run: async (r) => {
         const template = ensureGitTemplate(o.fence.cloverHome);
         if (typeof template !== "string") return template;
-        const ctx = fenceContextFor(r.who.caller);
+        const ctx = o.fence.contextFor?.(r.who.caller) ?? fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
         // The holder folders the profile holds against renaming, made first where missing (#392's review).
         makeHolders(o.fence, policy);
@@ -219,7 +219,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         writeFileSync(file, filter, { mode: 0o600 });
         const fd = openSync(file, "r");
         try {
-          const ctx = fenceContextFor(r.who.caller);
+          const ctx = o.fence.contextFor?.(r.who.caller) ?? fenceContextFor(r.who.caller);
           const template = ensureGitTemplate(o.fence.cloverHome);
           if (typeof template !== "string") return template;
           const caller = callerPlaces(o.fence.cloverHome, os, ctx);

@@ -4,6 +4,13 @@
   "strings": {
     "clover.island.label": "Clover island.",
     "clover.island.nothingNeedsYou": "Nothing needs you",
+    "clover.island.lines": "Updates from plugins",
+    "clover.island.stripLine": "{from}: {text}. Open the island.",
+    "clover.island.lineProgress": "{percent} percent",
+    "clover.island.linesMore": {
+      "one": "1 more",
+      "other": "{count} more"
+    },
     "clover.island.needsYouCount": {
       "one": "1 thing needs you.",
       "other": "{count} things need you."
@@ -22,6 +29,8 @@
     "clover.island.otherPlaceholder": "Something else",
     "clover.island.typeAnswer": "Type an answer",
     "clover.island.next": "Next question",
+    "clover.island.showEverything": "Show everything",
+    "clover.island.showLess": "Show less",
     "clover.island.previous": "Previous question",
     "clover.island.send": "Send",
     "clover.island.showWaiting": "Waiting: {line}. Show it.",

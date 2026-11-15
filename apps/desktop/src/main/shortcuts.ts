@@ -40,3 +40,12 @@ export function appShortcut(input: KeyInput, platform: NodeJS.Platform): AppShor
 export function fallbackMayShow(input: { headless: boolean; smokeFallback: boolean; testInput: boolean }): boolean {
   return !input.headless || (input.smokeFallback && input.testInput);
 }
+
+/** What one sealed button frame's visibility report does to its card's fallback timer (§5.5: the app's own fallback card
+ *  shows only when no plugin has both buttons visible within 2 s). A report that leaves both buttons visible somewhere
+ *  disarms it; a frame that stops showing starts it again only while no surface still has both buttons visible and the
+ *  fallback isn't already up. */
+export function fallbackOnVisibility(input: { visible: boolean; bothVisible: boolean; fallbackOpen: boolean }): "disarm" | "arm" | "keep" {
+  if (input.visible) return input.bothVisible ? "disarm" : "keep";
+  return input.bothVisible || input.fallbackOpen ? "keep" : "arm";
+}

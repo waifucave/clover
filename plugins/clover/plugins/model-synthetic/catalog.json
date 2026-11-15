@@ -109,7 +109,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "minimaxai/minimax-m3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "medium"
     },
     {
       "key": "synthetic/hf:Qwen/Qwen3.6-27B",
@@ -183,7 +184,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "qwen3.6-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "synthetic/hf:Qwen/Qwen3.8-27B",
@@ -277,7 +279,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "qwen3.8-27b",
-      "modelFamily": "qwen"
+      "modelFamily": "qwen",
+      "strength": "weak"
     },
     {
       "key": "synthetic/hf:deepseek-ai/DeepSeek-V4.1-Flash",
@@ -373,7 +376,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "deepseek-v4.1-flash",
-      "modelFamily": "deepseek"
+      "modelFamily": "deepseek",
+      "strength": "medium"
     },
     {
       "key": "synthetic/hf:moonshotai/Kimi-K2.7-Code",
@@ -447,7 +451,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "kimi-k2.7-code",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "medium"
     },
     {
       "key": "synthetic/hf:moonshotai/Kimi-K3",
@@ -541,7 +546,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "kimi-k3",
-      "modelFamily": "kimi"
+      "modelFamily": "kimi",
+      "strength": "strong"
     },
     {
       "key": "synthetic/hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
@@ -625,7 +631,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "nvidia-nemotron-3-super-120b-a12b-nvfp4",
-      "modelFamily": "nemotron"
+      "modelFamily": "nemotron",
+      "strength": "medium"
     },
     {
       "key": "synthetic/hf:openai/gpt-oss-120b",
@@ -709,7 +716,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "gpt-oss-120b",
-      "modelFamily": "gpt-oss"
+      "modelFamily": "gpt-oss",
+      "strength": "medium"
     },
     {
       "key": "synthetic/hf:zai-org/GLM-4.7-Flash",
@@ -793,7 +801,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "glm-4.7-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "weak"
     },
     {
       "key": "synthetic/hf:zai-org/GLM-5.2",
@@ -866,7 +875,8 @@
       "unsupportedParameters": [],
       "status": "candidate",
       "canonicalModelId": "glm-5.2",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "strong"
     },
     {
       "key": "synthetic/hf:zai-org/GLM-5.3-Flash",
@@ -960,7 +970,8 @@
         "observedAt": "2026-09-28T00:00:00Z"
       },
       "canonicalModelId": "glm-5.3-flash",
-      "modelFamily": "glm"
+      "modelFamily": "glm",
+      "strength": "medium"
     }
   ]
 }

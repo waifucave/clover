@@ -21,4 +21,5 @@ export const S = {
   base: "Base",
   target: "Compare with",
   none: "No changes",
+  refused: (why: string) => `The changes couldn't be read: ${why.slice(0, 300)}`,
 };

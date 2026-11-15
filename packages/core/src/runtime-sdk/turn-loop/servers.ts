@@ -20,7 +20,20 @@ export interface CoreToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  run(input: unknown): Promise<{ text: string; isError: boolean; meta?: Record<string, unknown> }>;
+  run(input: unknown): Promise<CoreToolResult>;
+}
+
+/** A core tool's result. `endTurn`: the runtime's turn ends once this call's result is in, and the driver goes on at
+ *  once in a new runtime turn led by `note`, inside the same host turn (lane C's `RequestAccess`: the sandbox a grant
+ *  widened only takes when the runtime opens again). */
+export interface CoreToolResult {
+  text: string;
+  isError: boolean;
+  /** Pictures after the text, as MCP `image` items (base64 PNG and the like): the model sees each as an image
+   *  (`AppScreenshot`; the item-10 probe pins an image item reaching the model's input). */
+  images?: readonly { data: string; mimeType: string }[];
+  meta?: Record<string, unknown>;
+  endTurn?: { note: string };
 }
 
 /** The core tools' server name; never a plugin's (plugin ids can't hold `_`). */
@@ -33,6 +46,9 @@ export interface BotMcpTool {
   inputSchema: { type: "object"; [k: string]: unknown };
   /** `preload` is always visible; `on-demand` is found and loaded through `Glossary` (the default). */
   load?: "preload" | "on-demand";
+  /** The tool's own title, for the conversation only (`tool_call.displayTitle`): never in what the runtime lists to the
+   *  model, never on a card. */
+  title?: string;
 }
 
 /** A plugin's MCP server as the session sees it (lanes B and D's host, J's placement). */
@@ -50,7 +66,7 @@ export interface BotMcpServer {
 
 /** Lane J's MCP router (`ComputerNode.mcp`, `McpRouter.run`), as the driver calls it. */
 export interface McpRunner {
-  run(server: string, tool: string, input: Record<string, unknown>, ctx: { session: string; as: Caller; callId: string; epoch?: number; signal?: AbortSignal }): Promise<{ result: { content: unknown[]; isError?: boolean }; computer: string }>;
+  run(server: string, tool: string, input: Record<string, unknown>, ctx: { session: string; as: Caller; callId: string; epoch?: number; signal?: AbortSignal }): Promise<{ result: { content: unknown[]; isError?: boolean; structuredContent?: unknown }; computer: string }>;
 }
 
 function text(t: string, isError: boolean): { content: unknown[]; isError: boolean } {
@@ -69,7 +85,9 @@ export function coreToolsServer(tools: () => readonly CoreToolDef[]): McpSdkServ
       if (def === undefined) return text(`unknown tool: ${name}`, true);
       try {
         const r = await def.run(args);
-        return { ...text(r.text, r.isError), ...(r.meta === undefined ? {} : { _meta: r.meta }) };
+        const images = (r.images ?? []).filter((i) => /^image\/[a-z0-9.+-]+$/i.test(i.mimeType) && /^[A-Za-z0-9+/=]+$/.test(i.data)).map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType.toLowerCase() }));
+        const out = text(r.text, r.isError);
+        return { content: [...out.content, ...images], isError: out.isError, ...(r.meta === undefined ? {} : { _meta: r.meta }) };
       } catch (err) {
         return text(err instanceof Error ? err.message : String(err), true);
       }
@@ -95,6 +113,10 @@ export function routedMcpServer(o: {
   callIds?: CallIds;
   /** Called once a routed call answers, with the computer that ran it. */
   onRan?(call: { server: string; tool: string; computer: string }): void;
+  /** Where a result's `structuredContent` waits, by call id, for the projector's `tool_result.display`
+   *  (`ToolDisplays`, which keeps only a success's valid display). The runtime, and so the model, gets the content
+   *  alone, as before. */
+  displays?: { put(callId: string, result: { isError?: unknown; structuredContent?: unknown }): void; drop(callId: string): void };
 }): McpSdkServerConfigWithInstance {
   const { server } = o;
   const names = new Set(server.tools.map((t) => t.name));
@@ -114,8 +136,13 @@ export function routedMcpServer(o: {
           session: o.session, as: o.as, callId, ...(epoch === undefined ? {} : { epoch }), ...(extra?.signal === undefined ? {} : { signal: extra.signal }),
         });
         o.onRan?.({ server: server.server, tool: name, computer });
+        // A call cancelled while it ran shows nothing: its result never reaches the conversation as a success.
+        if (extra?.signal?.aborted === true) o.displays?.drop(callId);
+        else o.displays?.put(callId, result);
         return { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
       } catch (err) {
+        // A call that failed, timed out or was cancelled: nothing of it waits to be shown.
+        o.displays?.drop(callId);
         const msg = err instanceof Error ? err.message : String(err);
         return text(isContractError(err) ? `${msg} (${err.code})` : msg, true);
       }

@@ -634,7 +634,12 @@ export interface IpcServerOptions {
   providerLoginUrlHintWaitMs?: number;
 }
 
-export interface IpcServer { stop(): void }
+export interface IpcServer {
+  stop(): void;
+  /** Takes no new connection from now on (the socket file goes with the listener), the open ones stay until `stop()`:
+   *  a daemon that is stopping must not look connectable (try 9: an app reopened onto a daemon going away). */
+  stopAccepting(): void;
+}
 
 /** `data` rides the JSON-RPC error envelope's own `data` field (the pump below forwards it
  *  structurally; `sync.push`'s DIVERGED uses the same slot). P8b Task 16: the Clover leg's typed
@@ -5526,6 +5531,9 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
   // grace) — a server torn down without stopping them leaves callbacks that fire against a dead
   // store, which in a test run is a cross-test leak rather than a crash (they're unref'd).
   return {
+    stopAccepting() {
+      server.stop(false);
+    },
     stop() {
       // Before anything else: a queued mint-time reaper sweep must never outlive the server (it
       // would run against a store its owner closes right after this returns — see `pendingReaps`).

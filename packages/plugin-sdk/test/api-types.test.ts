@@ -27,7 +27,8 @@ const beforeTool: Handler<HookInput, HookOutput> = (input) =>
 // A service: an object of handlers, whose caller names the one it calls (the waifucave forwarder's `webhook.ingress`).
 const ingress: WebhookIngressHandler = {
   register: async (args, ctx) => {
-    const pub = await ctx.api.keys?.publicKey("forwarder");
+    // The `clover` process's own key pair (only there: elsewhere the core refuses it).
+    const pub: Uint8Array | undefined = await ctx.api.keys?.publicKey("forwarder");
     const res = await ctx.api.net.fetch("https://hooks.waifucave.com/v1/routines", { method: "POST", body: JSON.stringify({ ...args, key: pub?.length }) }, { auth: WAIFUCAVE_AUTH });
     return res.status === 409 ? { conflict: { device: "Laptop" } } : { url: `https://hooks.waifucave.com/t/${args.routine}` };
   },
@@ -112,7 +113,7 @@ const manifest: Manifest = {
     commands: [{ name: "draw", description: "Draw cards", handler: "draw", args: { type: "object" } }],
     hooks: [{ id: "ask-first", on: ["tool.before"], tools: ["Bash"], handler: "beforeTool" }],
     mcpServers: { tarot: { type: "host", tools: { Read: "preload" } } },
-    ui: [{ spot: "panel", key: "luna", component: "TarotPanel" }],
+    ui: [{ spot: "panel", key: "luna", component: "TarotPanel", title: "Tarot" }],
     "luna.cards": [{ id: "fool" }],
   },
 };

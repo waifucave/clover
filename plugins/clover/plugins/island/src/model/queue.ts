@@ -16,6 +16,8 @@ export interface QueueEntry {
   readonly selfCompacts: boolean;
   /** When it compacts by itself; null: never. */
   compactAt: number | null;
+  /** How long it stays after it was last touched (seconds); absent: `selfCompactAfter`. */
+  holdFor?: number;
 }
 
 export class IslandQueue {
@@ -63,14 +65,36 @@ export class IslandQueue {
     return q;
   }
 
-  private entry(id: string, selfCompacts: boolean, now: number): QueueEntry {
-    return { id, selfCompacts, compactAt: selfCompacts ? now + IslandQueue.selfCompactAfter : null };
+  private entry(id: string, selfCompacts: boolean, now: number, holdFor?: number): QueueEntry {
+    return { id, selfCompacts, compactAt: selfCompacts ? now + (holdFor ?? IslandQueue.selfCompactAfter) : null, ...(holdFor !== undefined ? { holdFor } : {}) };
   }
 
-  /** A card arrives on top. One the queue already holds stays where it is. */
-  arrive(id: string, selfCompacts: boolean, now: number): void {
+  /** A card arrives on top. One the queue already holds stays where it is. `holdFor`: how long a card someone is reading
+   *  stays before it folds (seconds); absent, `selfCompactAfter`. */
+  arrive(id: string, selfCompacts: boolean, now: number, holdFor?: number): void {
     if (this.ids.has(id)) return;
-    this.place(this.entry(id, selfCompacts, now));
+    this.place(this.entry(id, selfCompacts, now, holdFor));
+  }
+
+  /** Nothing is on top and cards wait in the strip: the oldest comes up at once (the pill that showed it has stepped aside).
+   *  `holdFor` says how long each stays, by id. */
+  bringBack(now: number, holdFor?: (id: string) => number | undefined): boolean {
+    if (this.current || this.compacted.length === 0) return false;
+    const [first, ...rest] = this.compacted;
+    this.compacted = rest;
+    this.current = this.entry(first!.id, first!.selfCompacts, now, holdFor?.(first!.id));
+    this.currentHovered = false;
+    this.currentTyping = false;
+    return true;
+  }
+
+  /** The person touched the card on top (moved over it, scrolled, pressed a key, opened something in it): its fold starts
+   *  its wait again, and never comes sooner than it was. */
+  touchCurrent(now: number): void {
+    const cur = this.current;
+    if (!cur || cur.compactAt === null) return;
+    const next = now + (cur.holdFor ?? IslandQueue.selfCompactAfter);
+    if (next > cur.compactAt) this.current = { ...cur, compactAt: next };
   }
 
   private place(next: QueueEntry): void {
@@ -152,7 +176,7 @@ export class IslandQueue {
       if (cur.selfCompacts) this.compact(cur);
       else this.waiting = cur;
     }
-    this.current = this.entry(w.id, w.selfCompacts, now);
+    this.current = this.entry(w.id, w.selfCompacts, now, w.holdFor);
     this.refillWaiting();
     this.currentHovered = false;
     this.currentTyping = false;
@@ -190,7 +214,7 @@ export class IslandQueue {
       next = this.inLine.shift()!;
     }
     if (!next) return;
-    this.current = this.entry(next.id, next.selfCompacts, now);
+    this.current = this.entry(next.id, next.selfCompacts, now, next.holdFor);
     this.currentHovered = false;
     this.currentTyping = false;
     this.refillWaiting();

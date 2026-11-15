@@ -3,7 +3,7 @@
 // back to the bot's plugin. A change that waits on a card says so under its field. The LAN switch is the person's
 // alone (§9.1, lane D's #263): off by default, and turning it off clears it.
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { IconBack, IconCheck } from "./icons";
+import { IconBack } from "./icons";
 import { S } from "./strings";
 import type { BotEditorProps, BotField } from "./types";
 
@@ -129,37 +129,8 @@ export function BotEditor(props: BotEditorProps) {
           )}
         </Row>
 
-        <Row label={S.avatar} detail={S.avatarDetail} wide {...row("avatar")}>
-          {props.avatars.length === 0 ? (
-            <p className="cl-bot-editor__empty">{S.noAvatars}</p>
-          ) : (
-            <ul className="cl-bot-editor__avatars" role="radiogroup" aria-label={S.avatar}>
-              {props.avatars.map((a) => {
-                const on = props.avatar === a.file;
-                return (
-                  <li key={a.id}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      className="cl-bot-editor__avatar"
-                      onClick={() => onChange({ avatar: { file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })}
-                    >
-                      {a.portraitUrl ? <img className="cl-bot-editor__avatar-face" src={a.portraitUrl} alt="" /> : <span className="cl-bot-editor__avatar-face" aria-hidden="true">{initial(a.name)}</span>}
-                      <span className="cl-bot-editor__avatar-name">{a.name}</span>
-                      <span className="cl-bot-editor__avatar-pack">{S.avatarFrom(a.pack)}</span>
-                      {on && (
-                        <span className="cl-bot-editor__avatar-check">
-                          <IconCheck />
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Row>
+        {/* The sections other plugins add: the avatar's is the character plugin's (`bot.editor.section`). */}
+        {props.sections}
 
         <Row label={S.voice} detail={S.voiceDetail} {...row("voice")}>
           <span className="cl-bot-editor__value">{props.voice ? S.voiceOf(props.voice.provider, props.voice.voice) : S.noVoice}</span>
@@ -184,6 +155,38 @@ export function BotEditor(props: BotEditorProps) {
         <Row label={S.layout} detail={S.layoutDetail} {...row("layout")}>
           <span className="cl-bot-editor__value">{is("layout") ? S.layoutYours : S.layoutOwn}</span>
         </Row>
+
+        {/* Other plugins' patches to this tab: each a switch, the user's alone (`lists` on `bot.tab` for this bot). */}
+        {props.tabPatches && props.tabPatches.length > 0 && (
+          <Row label={S.rearrangedBy} detail={S.rearrangedByDetail} {...row("layout")} own={false} wide>
+            <ul className="cl-bot-editor__patches">
+              {props.tabPatches.map((t) => (
+                <li key={t.ref} className="cl-bot-editor__patch">
+                  <span className="cl-bot-editor__value">{t.name}</span>
+                  <button type="button" role="switch" aria-checked={t.on} aria-label={S.tabPatchOn(t.name)} className="cl-bot-editor__switch" onClick={() => props.onTabPatch?.(t.ref, !t.on)}>
+                    <span className="cl-bot-editor__knob" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Row>
+        )}
+
+        {/* What other plugins hide in this tab: each a switch that shows it again (the user's `shown`, for this bot). */}
+        {props.hiddenParts && props.hiddenParts.length > 0 && (
+          <Row label={S.hiddenBy} detail={S.hiddenByDetail} {...row("layout")} own={false} wide>
+            <ul className="cl-bot-editor__patches">
+              {props.hiddenParts.map((h) => (
+                <li key={h.ref} className="cl-bot-editor__patch">
+                  <span className="cl-bot-editor__value">{S.hiddenPart(h.title, h.by)}</span>
+                  <button type="button" role="switch" aria-checked={h.shown} aria-label={S.showPart(h.title)} className="cl-bot-editor__switch" onClick={() => props.onHiddenPart?.(h, !h.shown)}>
+                    <span className="cl-bot-editor__knob" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Row>
+        )}
 
         {/* The switch is the whole field: off clears it, so it has no Reset of its own. */}
         <Row label={S.lan} detail={S.lanDetail(bot.name)} {...row("lan")} own={false}>

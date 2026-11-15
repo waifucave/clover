@@ -373,7 +373,7 @@ describe("calls that never ended", () => {
     // The daemon dies here: no close, no turn end.
     const again = hostOn(home, clock);
     const records = again.host.history("b_alpha");
-    expect(driverEvents(records, "tool_result").slice(1)).toEqual([{ type: "tool_result", callId: "c2", output: interruptedCallOutput(), isError: true }]);
+    expect(driverEvents(records, "tool_result").slice(1)).toEqual([{ type: "tool_result", callId: "c2", output: interruptedCallOutput(), isError: true, interrupted: true }]);
     expect(records.at(-2)).toMatchObject({ type: "turn_ended", end: { reason: "interrupted" } });
   });
 
@@ -400,7 +400,7 @@ describe("calls that never ended", () => {
     expect(sd.turns).toHaveLength(0);
     expect(studio.catchUp("b_alpha")).toBe(1);
     const records = studio.history("b_alpha");
-    expect(driverEvents(records, "tool_result").at(-1)).toEqual({ type: "tool_result", callId: "b", output: interruptedCallOutput("Laptop"), isError: true });
+    expect(driverEvents(records, "tool_result").at(-1)).toEqual({ type: "tool_result", callId: "b", output: interruptedCallOutput("Laptop"), isError: true, interrupted: true });
     expect(records.at(-1)).toMatchObject({ type: "turn_ended", end: { reason: "interrupted" } });
     expect(studio.catchUp("b_alpha")).toBe(0);
     runsHere = true;
@@ -424,7 +424,7 @@ describe("calls that never ended", () => {
     const studio = new DurableSessionHost({ home: studioHome, clock, computer: "Studio" });
     const sd = openBot(studio);
     await flush();
-    expect(driverEvents(studio.history("b_alpha"), "tool_result")).toEqual([{ type: "tool_result", callId: "x", output: interruptedCallOutput("Laptop"), isError: true }]);
+    expect(driverEvents(studio.history("b_alpha"), "tool_result")).toEqual([{ type: "tool_result", callId: "x", output: interruptedCallOutput("Laptop"), isError: true, interrupted: true }]);
     // The bot message Laptop was running isn't run again here.
     expect(sd.turns).toHaveLength(0);
   });

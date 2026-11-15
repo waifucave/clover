@@ -18,7 +18,7 @@
 // "The smaller part": the part a plugin dresses is the smallest spot holding all its entries in that tab, a child
 // counting as its own plugin (a send-button plugin dresses the button, a bot's tab look the whole tab, a shell the
 // app). The spots form a tree: the catalog's declarations, and each plugin's `declares` under the spot its entry fills.
-import { SPOTS, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
+import { SAME_ON_EVERY_TAB, SPOTS, isOwnPanelKey, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type PointDeclaration, type UiEntry, type UiPlugin } from "./model";
 
 export type Os = "macos" | "windows" | "linux";
@@ -31,7 +31,7 @@ export interface CellContext {
   /** The kind of session the part shows (`coding`, `bot`, …), for `when.session`. */
   session?: string;
   safeMode?: boolean;
-  /** The bot layout's `prefer` lists, by spot (rule 3), from the tab's bot's layout (layout.ts). */
+  /** The bot layout's `prefer` lists, by spot (rule 4), from the tab's bot's layout (layout.ts). */
   prefer?: Readonly<Record<string, readonly string[]>>;
   /** A plugin's setting, for `when.setting`; unknown settings don't hold an entry back. */
   setting?: (pluginId: string, key: string) => unknown;
@@ -40,7 +40,7 @@ export interface CellContext {
 /** The user's UI choices that the resolver reads (`UiSettings` in lane B's protocol). */
 export interface UiChoices {
   picks: readonly { spot: string; key?: string; bot?: string; entry: string | null }[];
-  lists: readonly { spot: string; bot?: string; order: readonly string[]; hidden: readonly string[] }[];
+  lists: readonly { spot: string; bot?: string; order: readonly string[]; hidden: readonly string[]; shown?: readonly string[] }[];
 }
 
 export const NO_CHOICES: UiChoices = { picks: [], lists: [] };
@@ -170,10 +170,14 @@ export function privateTo(spot: string, plugins: readonly UiPlugin[]): string | 
 
 const list = (v: string | readonly string[] | undefined): readonly string[] | undefined => (v === undefined ? undefined : typeof v === "string" ? [v] : v);
 
-/** The bots an entry is limited to, or `all` (rule 4 and `when.bot`): a bot's own entries are limited to that bot; the
- *  user's ticks (the plugin's `bots`) replace `when.bot`. */
+/** The bots an entry is limited to, or `all` (rules 2 and 5, and `when.bot`): a bot's own entries are limited to that bot; the
+ *  user's ticks (the plugin's `bots`) replace `when.bot`. A part that looks the same on every tab (§5.5: the sidebar,
+ *  Settings, the bots' Edit page) takes no per-bot scope: it applies on every tab, or, a bot's own entry there (which
+ *  validation refuses), on none. So an entry there never counts as limited to a bot for rule 2. */
 export function botScope(plugin: UiPlugin, e: UiEntry): "all" | readonly string[] {
-  if (plugin.isBot) return [plugin.id];
+  if (SAME_ON_EVERY_TAB.has(e.spot)) return plugin.isBot && e.app !== true ? [] : "all";
+  // A part beside the bot (`app`, §5.5) follows the app's rules: limited only as any plugin's entry is.
+  if (plugin.isBot && e.app !== true) return [plugin.id];
   if (plugin.bots !== "all") return plugin.bots;
   return list(e.when?.bot) ?? "all";
 }
@@ -199,7 +203,7 @@ export function applies(plugin: UiPlugin, e: UiEntry, ctx: CellContext): boolean
 /** The key an entry fills: its own, or in a bot's own plugin, a keyless `bot.tab` entry takes the bot's id. */
 export function effectiveKey(plugin: UiPlugin, e: UiEntry): string | undefined {
   if (e.key !== undefined) return e.key;
-  if (plugin.isBot && e.spot === "bot.tab") return plugin.id;
+  if (plugin.isBot && e.spot === "bot.tab" && e.app !== true) return plugin.id;
   return undefined;
 }
 
@@ -237,12 +241,16 @@ export interface CellResult {
   styles: Candidate[];
   /** A hide entry or the user's pick of nothing won, so nothing shows (never for a kept key). */
   hidden: boolean;
-  /** The winner was decided by "the most recently enabled": Settings shows a conflict badge with a picker. */
+  /** The winner was decided by "the most recently enabled" (rule 7): Settings shows a conflict badge with a picker. */
   conflict: boolean;
   /** Entries hidden by the user in a list spot. */
   hiddenByUser: Candidate[];
+  /** In a list spot, entries a plugin's `hide` took out (and which), for Settings to offer back. */
+  hiddenByPlugin: { entry: Candidate; by: Candidate }[];
   skipped: Skipped[];
-  /** Which rule decided the winner over the runner-up, 1–6; 0 when there was no contest or a key decided; 7 for a full
+  /** The entries that lost a single or keyed cell, best first: what a winner may place inside itself with `<Spot entry>` (a bot's own panel around Clover's stock one). */
+  runnersUp: Candidate[];
+  /** Which rule decided the winner over the runner-up, 1–7; 0 when there was no contest or a key decided; 8 for a full
    *  tie, settled by plugin id. */
   decidedBy: number;
 }
@@ -279,26 +287,36 @@ function specificity(scope: "all" | readonly string[]): number {
   return scope.length === 1 ? 2 : 1;
 }
 
-/** Ranks a cell's contenders by rules 2–6 (rule 1, the user's pick, is applied before), best first, and says which
- *  rule separated the top two. */
+/** Ranks a cell's contenders by rules 2–7 (rule 1, the user's pick, is applied before), best first, and says which
+ *  rule separated the top two. Rule 2 is "more scoped wins" (the owner, November 14): in a bot's tab, an entry limited to
+ *  that bot (its own plugin's, a `when.bot` naming it, or the user's ticks) beats an entry for all bots, before the
+ *  smaller part (rule 3) decides among the limited ones. */
 export function rank(cands: readonly Candidate[], cellNode: string, input: ResolveInput, tree: SpotTree): { ranked: Candidate[]; decidedBy: number } {
   const prefer = input.ctx.prefer?.[cellNode] ?? input.ctx.prefer?.[cellNode.replace(/\[.*$/, "")] ?? [];
   const facts = new Map<Candidate, number[]>();
+  // A bot's own plugin's entry for a spot of its own tab (no layout naming it) takes the spot from the shipped stock one
+  // (the `clover` tree's), though a plugin that fills one spot alone is a smaller part than the bot's whole tab.
+  const ownHere = cands.some((c) => c.plugin.isBot && c.plugin.topId !== "clover" && input.ctx.bot === c.plugin.id && c.entry.kind !== "style");
   for (const c of cands) {
-    const part = partOf(c.plugin, cellNode, input, tree);
+    const stock = ownHere && c.plugin.topId === "clover" && c.plugin.source === "bundled";
+    const part = stock ? undefined : partOf(c.plugin, cellNode, input, tree);
     const preferAt = prefer.findIndex((r) => refNames(r, c.entry));
     facts.set(c, [
       // Keys first: an exact key over a pattern over none ("after exact ones").
       c.tier,
-      // 2. The smaller part: the deeper node.
-      part === undefined ? -1 : tree.depth(part),
-      // 3. The bot layout's preference: listed beats unlisted, earlier beats later.
+      // 2. More scoped wins: limited to this bot over every bot (outside a bot's tab a limited entry doesn't apply at all).
+      botScope(c.plugin, c.entry) === "all" ? 0 : 1,
+      // 3. The smaller part: the deeper node. A bot's own layout naming its own entry for a cell in its own tab is the
+      // look the bot declares for that tab: it counts as the smallest part there (only for that bot, in its tab, in the
+      // cells its layout names).
+      preferAt >= 0 && c.plugin.isBot && input.ctx.bot === c.plugin.id ? Number.MAX_SAFE_INTEGER : part === undefined ? -1 : tree.depth(part),
+      // 4. The bot layout's preference: listed beats unlisted, earlier beats later.
       preferAt < 0 ? -1 : prefer.length - preferAt,
-      // 4. The most specific `when.bot`.
+      // 5. The most specific `when.bot`: one bot over some bots.
       specificity(botScope(c.plugin, c.entry)),
-      // 5. A plugin the user installed over a bundled one.
+      // 6. A plugin the user installed over a bundled one.
       c.plugin.source === "bundled" ? 0 : 1,
-      // 6. The most recently enabled.
+      // 7. The most recently enabled.
       c.plugin.enabledAt,
     ]);
   }
@@ -313,9 +331,9 @@ export function rank(cands: readonly Candidate[], cellNode: string, input: Resol
     const fa = facts.get(ranked[0]!)!;
     const fb = facts.get(ranked[1]!)!;
     const i = fa.findIndex((v, n) => v !== fb[n]);
-    // The tier is not one of the six rules (a key covers its cell before any rule runs: 0); a full tie falls to the
-    // plugin id, which is no rule either (7) and raises the conflict badge like rule 6.
-    decidedBy = i < 0 ? 7 : i === 0 ? 0 : i + 1;
+    // The tier is not one of the seven rules (a key covers its cell before any rule runs: 0); a full tie falls to the
+    // plugin id, which is no rule either (8) and raises the conflict badge like rule 7.
+    decidedBy = i < 0 ? 8 : i === 0 ? 0 : i + 1;
   }
   return { ranked, decidedBy };
 }
@@ -329,6 +347,31 @@ function userPick(choices: UiChoices, spot: string, key: string | undefined, bot
   return choices.picks.find((p) => matches(p) && p.bot === undefined);
 }
 
+/** The key a part asks the `panel` spot's entries with to get every panel a plugin ADDS (an entry whose key isn't a stock
+ *  panel's, §5.5), instead of one key's: the shell lists them for its toggles. */
+export const OWN_PANELS_KEY = "*";
+
+/** The panels plugins add that apply in this context (the tab's bot and kind of session), in their order: by `order`, then
+ *  plugin and id. Each is its own cell's candidate: the shell places an entry by its ref (`<Spot entry>`). Two entries of one
+ *  plugin with one key (one per kind of tab) are one panel here: the first that applies. */
+export function ownPanelCandidates(input: Pick<ResolveInput, "plugins" | "ctx">): Candidate[] {
+  const found: Candidate[] = [];
+  const seen = new Set<string>();
+  for (const plugin of input.plugins) {
+    if (!runs(plugin, input.ctx)) continue;
+    for (const entry of plugin.entries) {
+      if (entry.spot !== "panel" || entry.key === undefined || !isOwnPanelKey(entry.key)) continue;
+      if (entry.kind !== "component" && entry.kind !== "web") continue;
+      if (!applies(plugin, entry, input.ctx)) continue;
+      const id = `${plugin.id}#${entry.key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      found.push({ plugin, entry, tier: 2 });
+    }
+  }
+  return found.sort((a, b) => (a.entry.order ?? 500) - (b.entry.order ?? 500) || (a.plugin.id < b.plugin.id ? -1 : a.plugin.id > b.plugin.id ? 1 : 0) || (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0));
+}
+
 /** Resolves one cell: what shows there, what dresses it, and why. */
 export function resolveCell(input: ResolveInput, spot: string, key?: string): CellResult {
   const tree = input.tree ?? new SpotTree(input.plugins);
@@ -339,7 +382,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   const inner: ResolveInput = { ...input, ctx, tree };
   const node = nodeId(spot, cellKey);
   const choices = input.choices ?? NO_CHOICES;
-  const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], skipped: [], decidedBy: 0 };
+  const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], hiddenByPlugin: [], runnersUp: [], skipped: [], decidedBy: 0 };
 
   const fill: Candidate[] = [];
   const style: Candidate[] = [];
@@ -378,9 +421,26 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   // Style entries never compete; each applies inside the part, the would-be winner last.
   result.styles = rank(style, node, inner, tree).ranked.reverse();
 
+  // The user's own list for the spot (this bot's, else every bot's). Its `shown` names entries the user keeps though a
+  // plugin's hide names them, or a plugin's hide itself (`<plugin>#<hide-id>`), which the user switched off: in a list
+  // and in a single or keyed cell alike (the bot editor's "Hidden by plugins").
+  const own = choices.lists.find((l) => l.spot === spot && l.bot !== undefined && l.bot === ctx.bot) ?? choices.lists.find((l) => l.spot === spot && l.bot === undefined);
+  const hideOff = (c: Candidate) => c.entry.kind === "hide" && own?.shown?.some((r) => refNames(r, c.entry)) === true;
   if (shape === "list") {
-    const own = choices.lists.find((l) => l.spot === spot && l.bot !== undefined && l.bot === ctx.bot) ?? choices.lists.find((l) => l.spot === spot && l.bot === undefined);
-    const shown = fill.filter((c) => c.entry.kind !== "hide");
+    // A plugin's hide names the entry it takes out (`target`); it stacks and applies as any entry does (`when`, the
+    // bot it is for), and the user's own list wins both ways: what they hid stays hidden, what they keep (`shown`) stays.
+    const hides = fill.filter((c) => c.entry.kind === "hide" && c.entry.target !== undefined && !hideOff(c));
+    const keptByUser = (c: Candidate) => own?.shown?.some((r) => refNames(r, c.entry)) === true;
+    const hiddenBy = (c: Candidate) => hides.find((h) => refNames(h.entry.target!, c.entry));
+    const shown = fill.filter((c) => {
+      if (c.entry.kind === "hide") return false;
+      const by = hiddenBy(c);
+      if (by !== undefined && !keptByUser(c)) {
+        result.hiddenByPlugin.push({ entry: c, by });
+        return false;
+      }
+      return true;
+    });
     const userAt = (c: Candidate) => {
       const i = own?.order.findIndex((r) => refNames(r, c.entry)) ?? -1;
       return i < 0 ? Number.MAX_SAFE_INTEGER : i;
@@ -394,7 +454,7 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   }
 
   const kept = cellKey !== undefined && (decl?.keep ?? []).includes(cellKey);
-  const contenders = kept ? fill.filter((c) => c.entry.kind !== "hide") : fill;
+  const contenders = fill.filter((c) => c.entry.kind !== "hide" || (!kept && !hideOff(c)));
 
   // 1. The user's pick, for this bot first, then globally.
   const pick = userPick(choices, spot, cellKey, ctx.bot);
@@ -415,10 +475,11 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
 
   const { ranked, decidedBy } = rank(contenders, node, inner, tree);
   result.decidedBy = decidedBy;
-  result.conflict = decidedBy >= 6;
+  result.conflict = decidedBy >= 7;
   const winner = ranked[0];
   if (winner === undefined) return result;
   if (winner.entry.kind === "hide") result.hidden = true;
   else result.shown = [winner];
+  result.runnersUp = ranked.slice(1).filter((c) => c.entry.kind === "component");
   return result;
 }

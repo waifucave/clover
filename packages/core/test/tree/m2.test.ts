@@ -396,13 +396,15 @@ describe("MCP tools across computers", () => {
       calls.push(`${self} ${c.server}.${c.tool} ${JSON.stringify(c.input)} as ${c.as.kind}`);
       return { content: [{ type: "text", text: `done on ${self}` }, { type: "image", data: PNG, mimeType: "image/png" }] };
     };
-    const servers = new Map([["blender", blender], ["figma", figma]]);
+    const servers = new Map([["blender", blender], ["figma", figma], ["sketch", figma]]);
+    // `sketch`'s tool has a saveTo of its own, so the router's folder field is cloverSaveTo for it.
+    const ownSaveTo = [{ name: "x", inputSchema: { type: "object" as const, properties: { saveTo: { type: "string" } } } }];
     const { studio, laptop } = await two({
       levels: { Laptop1: "automatic" },
       extra: {
         mcp: (name) => ({
           placement: (s) => servers.get(s),
-          fields: (s) => placementFields(servers.get(s)!, [{ name: "x", inputSchema: { type: "object" } }]).fields,
+          fields: (s) => placementFields(servers.get(s)!, s === "sketch" ? ownSaveTo : [{ name: "x", inputSchema: { type: "object" } }]).fields,
           call: host(name),
           scratch: () => `home/${name}/scratch`,
         }),
@@ -423,6 +425,13 @@ describe("MCP tools across computers", () => {
     const f = await studio.node.mcp!.run("figma", "Export", { node: "1", saveTo: "home/Laptop1/designs" }, { ...ctx, callId: "call_2" });
     expect(f.computer).toBe("Laptop1");
     expect(readFileSync(join(laptop.home, "designs", "call_2-0.png"), "base64")).toBe(PNG);
+    // A tool with a saveTo of its own: the folder rides as cloverSaveTo to the holder, and the tool's own saveTo reaches
+    // the tool untouched, never taken for the folder.
+    calls.length = 0;
+    const own = await studio.node.mcp!.run("sketch", "Export", { saveTo: "its-own-arg", cloverSaveTo: "home/Laptop1/designs" }, { ...ctx, callId: "call_4" });
+    expect(own.computer).toBe("Laptop1");
+    expect(calls).toEqual(['Laptop1 sketch.Export {"saveTo":"its-own-arg"} as peer']);
+    expect(readFileSync(join(laptop.home, "designs", "call_4-0.png"), "base64")).toBe(PNG);
     // Without saveTo, this computer calls and keeps it in the session's scratch folder.
     const g = await studio.node.mcp!.run("figma", "Export", { node: "2" }, { ...ctx, callId: "call_3" });
     expect(g.computer).toBe("Studio");

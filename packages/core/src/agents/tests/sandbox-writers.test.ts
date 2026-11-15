@@ -6,7 +6,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SandboxPolicy } from "../../contracts/fence";
+import { secretReadPlaces, type SandboxPolicy } from "../../contracts/fence";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { againstBaseline, codexSandboxArgv, gateFixture, gateProbes, judgeBaseline, runProbes, type ProbeResult } from "../sandbox/live-gates";
 import {
@@ -29,6 +29,12 @@ const policy = (over: Partial<SandboxPolicy> = {}): SandboxPolicy => ({
   ...over,
 });
 const ctx = { root: `${H}/work`, dir: `${C}/sessions-runtime/s1/setup`, home: H };
+// The user's secret places, which every writer denies for reads and writes whatever the policy says.
+const OS = process.platform === "darwin" ? "macos" as const : "linux" as const;
+const secretsOf = (home: string) => secretReadPlaces(OS, home).map((x) => x.path);
+const SECRETS = secretsOf(H);
+const secretDeny = (home: string) => Object.fromEntries(secretsOf(home).map((x) => [x, "deny"]));
+const withoutSecrets = (list: readonly string[], homes: readonly string[]) => list.filter((x) => !homes.some((h) => secretsOf(h).includes(x)));
 const VENDOR = [`${H}/.codex`, `${H}/.claude`, `${H}/.claude.json`, `${H}/work/.codex`, `${H}/work/.claude`, `${H}/work/.mcp.json`, `${H}/.mcp.json`];
 const message = (f: () => unknown) => {
   try {
@@ -83,14 +89,14 @@ describe("Codex's profile", () => {
     const config = JSON.parse(setup.env!["CODEX_CONFIG"]!);
     expect(config.default_permissions).toBe(CODEX_PROFILE);
     expect(config.permissions[CODEX_PROFILE]).toEqual({
-      filesystem: { ":root": "read", [H]: "write", "/tmp": "write", [`${H}/dev`]: "read", [C]: "deny", ...Object.fromEntries(VENDOR.map((v) => [v, "read"])) },
+      filesystem: { ":root": "read", [H]: "write", "/tmp": "write", [`${H}/dev`]: "read", [C]: "deny", ...Object.fromEntries(VENDOR.map((v) => [v, "read"])), ...secretDeny(H) },
       network: { enabled: false },
     });
   });
 
   test("an entry never reopens what a folder above it closes; a stricter entry inside a looser one stays", () => {
     const fs = codexProfile(policy({ allowWrite: [H, `${C}/scratch`], denyWrite: [`${H}/dev`, `${C}/credentials`], denyRead: [C, `${H}/dev/keys`] }), ctx).filesystem;
-    expect(fs).toEqual({ ":root": "read", [H]: "write", [`${H}/dev`]: "read", [C]: "deny", [`${H}/dev/keys`]: "deny", ...Object.fromEntries(VENDOR.map((v) => [v, "read"])) });
+    expect(fs).toEqual({ ":root": "read", [H]: "write", [`${H}/dev`]: "read", [C]: "deny", [`${H}/dev/keys`]: "deny", ...Object.fromEntries(VENDOR.map((v) => [v, "read"])), ...secretDeny(H) });
     // The same path in two lists keeps its strictest access.
     expect(codexProfile(policy({ allowWrite: [H], denyWrite: [`${H}/x`], denyRead: [`${H}/x`] }), ctx).filesystem[`${H}/x`]).toBe("deny");
     // No write folders: the session's root, as clover-code does.
@@ -128,7 +134,9 @@ describe.skipIf(process.platform === "win32")("a home reached through a link", (
     expect(fs[join(real, ".clover", "credentials")]).toBeUndefined();
     expect(fs[join(real, ".codex")]).toBe("read");
     const o = claudeOptions(p, c);
-    expect(o["sandbox"].filesystem.denyRead).toEqual([join(link, ".clover"), join(real, ".clover")]);
+    expect(withoutSecrets(o["sandbox"].filesystem.denyRead, [link, real])).toEqual([join(link, ".clover"), join(real, ".clover")]);
+    // A secret place by the path through the link and by its real path.
+    expect(o["sandbox"].filesystem.denyRead).toEqual(expect.arrayContaining([join(link, ".aws"), join(real, ".aws")]));
     expect(o["sandbox"].filesystem.denyWrite).toEqual(expect.arrayContaining([join(real, ".clover"), join(real, ".clover", "credentials"), join(real, ".claude")]));
     expect(o["settings"].permissions.deny).toEqual(expect.arrayContaining([`Read(/${join(real, ".clover")}/**)`, `Edit(/${join(real, ".claude")}/**)`]));
   });
@@ -147,7 +155,8 @@ describe("Claude Code's _meta", () => {
     });
     const fsys = o["sandbox"].filesystem as { allowWrite: string[]; denyWrite: string[]; denyRead: string[] };
     expect(fsys.allowWrite).toEqual([H, "/tmp"]);
-    expect(fsys.denyRead).toEqual([`${C}/run`, `${C}/sessions-runtime`, C]);
+    expect(withoutSecrets(fsys.denyRead, [H])).toEqual([`${C}/run`, `${C}/sessions-runtime`, C]);
+    for (const x of SECRETS) expect(fsys.denyRead).toContain(x);
     // A read-denied folder is write-denied too, the vendors' config is, and no pattern reaches the vendor.
     for (const d of [...fsys.denyRead, ...VENDOR]) expect(fsys.denyWrite).toContain(d);
     expect([...fsys.denyRead, ...fsys.denyWrite].some((p) => p.includes("*"))).toBe(false);

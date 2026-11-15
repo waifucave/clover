@@ -1,0 +1,21 @@
+{
+  "manifest": 1,
+  "name": "Kids pager",
+  "description": "The child: its own page, its own tool (kids_ping) and its own command (acceptance-kids.nudge, which sends Alpha's conversation a message as a plugin).",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["conversation.post"],
+  "host": { "entry": "host/index.js" },
+  "client": { "entry": "client/index.tsx" },
+  "contributes": {
+    "mcpServers": {
+      "tools": { "type": "host", "tools": { "kids_ping": "preload" }, "scope": "bots" }
+    },
+    "commands": [
+      { "name": "nudge", "description": "Sends a bot's conversation a message, as this plugin.", "handler": "nudge", "args": { "type": "object", "properties": { "session": { "type": "string" } }, "required": ["session"] } }
+    ],
+    "ui": [
+      { "spot": "main", "key": "acceptance-kids-pager", "component": "PagerMain" },
+      { "spot": "sidebar.app", "id": "acceptance-kids-pager-app", "component": "PagerBadge", "title": "Kids pager", "icon": "assets/icon.svg", "opens": "acceptance-kids-pager", "order": 952 }
+    ]
+  }
+}

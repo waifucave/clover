@@ -18,6 +18,7 @@
 // gap stays (decision 94): a remote ICE candidate can still make a directly mounted document send checks to an
 // undeclared address; the windows' `disable_non_proxied_udp` policy is the defence in depth.
 import { createHash } from "node:crypto";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 
 export const LAYER_SCHEME = "clover-plugin";
 export const CORE_SCHEME = "clover-core";
@@ -28,31 +29,36 @@ export const WEB_SCHEME = "clover-web";
 /** What the layer runtime serves under `/_clover/`. */
 export const RUNTIME_PATH = "/_clover/";
 
-/** The bare specifiers every layer provides, each to the layer's one copy. */
-export const IMPORT_MAP = {
-  imports: {
-    react: "/_clover/vendor/react.js",
-    "react/jsx-runtime": "/_clover/vendor/react-jsx-runtime.js",
-    "react/jsx-dev-runtime": "/_clover/vendor/react-jsx-runtime.js",
-    "react-dom": "/_clover/vendor/react-dom.js",
-    "react-dom/client": "/_clover/vendor/react-dom-client.js",
-    "@waifucave/clover-plugin-sdk/ui": "/_clover/sdk-ui.js",
-  },
-} as const;
+/** The bare specifiers every layer provides, each to the layer's one copy: exactly `CLIENT_BARE_IMPORTS`, the names a
+ *  client's build keeps as imports and the loader check lets a client-only file import without shipping. A plugin
+ *  that ships its own react still gets this one in its layer. */
+const IMPORT_PATHS: Record<(typeof CLIENT_BARE_IMPORTS)[number], string> = {
+  react: "/_clover/vendor/react.js",
+  "react/jsx-runtime": "/_clover/vendor/react-jsx-runtime.js",
+  "react/jsx-dev-runtime": "/_clover/vendor/react-jsx-runtime.js",
+  "react-dom": "/_clover/vendor/react-dom.js",
+  "react-dom/client": "/_clover/vendor/react-dom-client.js",
+  "@waifucave/clover-plugin-sdk/ui": "/_clover/sdk-ui.js",
+};
+export const IMPORT_MAP = { imports: Object.fromEntries(CLIENT_BARE_IMPORTS.map((name) => [name, IMPORT_PATHS[name]])) } as const;
 
 const IMPORT_MAP_TEXT = JSON.stringify(IMPORT_MAP);
 const IMPORT_MAP_HASH = `'sha256-${createHash("sha256").update(IMPORT_MAP_TEXT).digest("base64")}'`;
 
-/** The layer's own declared hosts (none until lane B's registry hands them over). */
-export function layerCsp(hosts: readonly string[] = []): string {
+/** The layer's own declared hosts (none until lane B's registry hands them over). `wasm`: WebAssembly may be compiled in the
+ *  layer's document (a third-party plugin's own tools: a codec, ffmpeg.wasm). It is not `'unsafe-eval'`: strings still never
+ *  become code, and the module's bytes come from a script-src source, the plugin's own folder (`/_p/`, fetched under
+ *  `connect-src 'self'`). The bundled `clover` layer never gets it. */
+export function layerCsp(hosts: readonly string[] = [], wasm = false): string {
   const net = hosts.join(" ");
   return [
     "default-src 'none'",
-    `script-src 'self' ${IMPORT_MAP_HASH}`,
+    `script-src 'self' ${IMPORT_MAP_HASH}${wasm ? " 'wasm-unsafe-eval'" : ""}`,
     // React sets styles through the CSSOM; some parts add a <style> element of their own.
     `style-src 'self' 'unsafe-inline'${net ? ` ${net}` : ""}`,
     `img-src 'self' data: blob:${net ? ` ${net}` : ""}`,
     `font-src 'self'${net ? ` ${net}` : ""}`,
+    // `'self'` is the plugin's own files (`/_p/`) and the files the user handed it (`/_g/`, with Range support); blob: is what it makes.
     "media-src 'self' blob:",
     `connect-src 'self'${net ? ` ${net}` : ""}`,
     "worker-src 'self' blob:",
@@ -111,6 +117,19 @@ export const CORE_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
+/** The one origin that may record: the bundled `clover` layer's, whose shell is the app's push-to-talk recorder (spec §6.6; the
+ *  app records and plugins never get the microphone). Every other document of the app's schemes keeps `microphone=()`. */
+export const MICROPHONE_ORIGIN = `${LAYER_SCHEME}://clover`;
+
+/** `headers` with the microphone policy opened to `allow` (`(self)` for the clover layer's own document, the layer's origin for
+ *  the core root that frames it); the iframe still needs `allow="microphone"` (root.ts), and main's permission handler
+ *  still answers only while the user's press has a recording open (listen.ts). */
+export function withMicrophone(headers: Record<string, string>, allow: "(self)" | `(self "${string}")`): Record<string, string> {
+  const policy = headers["Permissions-Policy"];
+  if (policy === undefined || !policy.includes("microphone=()")) return headers;
+  return { ...headers, "Permissions-Policy": policy.replace("microphone=()", `microphone=${allow}`) };
+}
+
 /** Headers every response on the app's schemes carries. */
 export function commonHeaders(): Record<string, string> {
   return {
@@ -119,14 +138,32 @@ export function commonHeaders(): Record<string, string> {
     "Cache-Control": "no-store",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=(), serial=(), hid=(), bluetooth=(), display-capture=(), clipboard-read=()",
     "X-DNS-Prefetch-Control": "off",
+    // The app is cross-origin isolatable (SharedArrayBuffer for a plugin that asks, `client.isolated`): every document and script
+    // of its schemes says so. `credentialless`, not `require-corp`: a no-cors cross-origin image or media a layer is allowed to
+    // load (a declared host) still loads, without credentials, and needs no CORP. Isolation itself reaches a frame only with
+    // `allow="cross-origin-isolated"`, which the core sets on the frames of plugins whose manifest asks, and nowhere else.
+    "Cross-Origin-Embedder-Policy": "credentialless",
+    // A frame of another origin inside an isolated document must opt in too (else ERR_BLOCKED_BY_RESPONSE): the app's schemes
+    // are never reachable from a web page, so this admits nothing new.
+    "Cross-Origin-Resource-Policy": "cross-origin",
   };
 }
 
+/** The headers of a plugin web page's own scheme (`clover-web:`): `commonHeaders` without the isolation pair. A web page is
+ *  its own top-level view with its own session and may embed any site's frames (a map, a video, a sign-in), which an
+ *  embedder policy would block unless each of those sent one. Nothing of it is ever isolated. */
+export function webHeaders(): Record<string, string> {
+  const h = commonHeaders();
+  delete h["Cross-Origin-Embedder-Policy"];
+  delete h["Cross-Origin-Resource-Policy"];
+  return h;
+}
+
 /** The headers of a response on a layer's origin. A document (`text/html`) names the installed layers it may frame. */
-export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = []): Record<string, string> {
-  const h: Record<string, string> = { ...commonHeaders(), "Content-Type": contentType };
+export function layerHeaders(contentType: string, hosts: readonly string[] = [], layers: readonly string[] = [], wasm = false, microphone = false): Record<string, string> {
+  const h: Record<string, string> = { ...(microphone ? withMicrophone(commonHeaders(), "(self)") : commonHeaders()), "Content-Type": contentType };
   const doc = contentType.startsWith("text/html");
-  if (doc) h["Content-Security-Policy"] = layerCsp(hosts);
+  if (doc) h["Content-Security-Policy"] = layerCsp(hosts, wasm);
   if (doc || contentType.startsWith("text/javascript")) h["Connection-Allowlist"] = connectionAllowlist(hosts, doc ? layers : undefined);
   return h;
 }

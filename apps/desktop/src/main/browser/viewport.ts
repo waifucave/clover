@@ -85,7 +85,8 @@ export class Viewport {
       target.window.contentView.addChildView(this.view);
       this.parent = target.window;
     }
-    this.view.setBounds(target.bounds);
+    const b = target.bounds;
+    this.view.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)) });
   }
 
   detach(): void {

@@ -335,3 +335,39 @@ describe("SettingsWatcher", () => {
     expect(applied).toBe(0);
   });
 });
+
+describe("the stat look (an fs event that is late or never comes)", () => {
+  test("a write whose event never arrives is applied within a look; one with an event is applied once", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "clover-b-settings-poll-"));
+    const path = join(dir, "settings.json");
+    writeFileSync(path, JSON.stringify({ v: 1 }));
+    const applied: unknown[] = [];
+    let fire: (() => void) | undefined;
+    // An fs.watch that never fires on its own (the late FSEvents stream), and a look every 50 ms.
+    const w = new SettingsWatcher<{ v: number }>({
+      path, debounceMs: 10, pollMs: 50,
+      load: (p) => JSON.parse(require("node:fs").readFileSync(p, "utf8")) as { v: number },
+      apply: (_prev, next) => { applied.push(next.v); },
+      watch: (_p, cb) => { fire = cb; return { close() {} }; },
+    });
+    try {
+      w.start({ v: 1 });
+      await Bun.sleep(1_100); // past the start's catch-ups
+      applied.length = 0;
+      writeFileSync(path, JSON.stringify({ v: 22 }));
+      for (let i = 0; i < 100 && applied.length === 0; i++) await Bun.sleep(10);
+      expect(applied).toEqual([22]);
+      // With its event too: one apply, the look doesn't take the same change again.
+      writeFileSync(path, JSON.stringify({ v: 333 }));
+      fire!();
+      await Bun.sleep(300);
+      expect(applied).toEqual([22, 333]);
+    } finally {
+      w.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

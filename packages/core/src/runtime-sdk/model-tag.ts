@@ -26,6 +26,15 @@ const providerIds = (): Set<string> => new Set(loadCatalog().providers.map((p) =
 
 /** MODEL_TAG_RE && providerId is a PINNED catalog provider, OR s is the sentinel, OR s is a
  *  clover-test double (never validated against the catalog at all). */
+/** What a runtime's `Options.model` carries for a tag: the bare model id, unless that id has a slash of its own
+ *  (`groq/qwen/qwen3.8-27b`'s `qwen/qwen3.8-27b`, an OpenRouter-style upstream id), which the runtime would read as
+ *  qualified for a provider named by its first segment (`qwen`), ignoring the session's provider: then the whole
+ *  tag, which the runtime resolves to the same row by its key. */
+export function runtimeModelId(tag: string): string {
+  const { modelId } = splitTag(tag);
+  return modelId.includes("/") ? tag : modelId;
+}
+
 export function isModelTag(s: string): s is ModelTag {
   if (s === UNSTATED_TAG) return true;
   if (s.startsWith(CLOVER_TEST_PREFIX)) return true;

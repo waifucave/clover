@@ -14,12 +14,17 @@ export * from "./manifest/fields";
 export * from "./manifest/schema";
 export type * from "./manifest/types";
 export * from "./manifest/interpolation";
+export * from "./manifest/hook-command";
 export * from "./manifest/names";
+export * from "./manifest/parts";
 export * from "./manifest/validate";
 export * from "./manifest/tree";
+export * from "./manifest/labels";
 export * from "./manifest/args";
+export * from "./manifest/keys";
 
 export * from "./formats/theme";
+export * from "./formats/shell";
 export * from "./formats/css-url";
 export * from "./formats/layout";
 export * from "./formats/locale";
@@ -32,7 +37,7 @@ export * from "./catalogs/index";
 export * from "./api/keyed-fetch";
 export type * from "./api/plugin-api";
 export {
-  API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYED_FETCH_ERROR_CODES, KEYS_PER_PLUGIN_MAX,
+  API_CALL_MAX_TIMEOUT_MS, API_CALL_TIMEOUT_MS, CONFIRM_TIMEOUT_MS, KEY_NAME_RE, KEYED_FETCH_ERROR_CODES, KEYS_PER_PLUGIN_MAX, ROUTINE_FIRE_PAYLOAD_MAX,
   SYNCED_STORE_LIMIT_BYTES, WAIFUCAVE_AUTH, WAIFUCAVE_DOMAIN, WEBHOOK_BODY_MAX_BYTES, WEBHOOK_NEXT_GRACE_MS, WEBHOOK_NEXT_MAX,
   WEBHOOK_NEXT_MAX_BYTES, WEBHOOK_NEXT_WAIT_MAX_MS, WEBHOOK_ROUTINE_ID_RE, mayUseWaifucaveAuth, webhookKeyHash,
 } from "./api/plugin-api";

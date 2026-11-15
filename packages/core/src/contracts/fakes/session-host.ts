@@ -55,6 +55,7 @@ export class FakeSessionHost implements SessionHost {
       ...(spec.effort === undefined ? {} : { effort: spec.effort }),
       ...(spec.root === undefined ? {} : { root: spec.root }),
       ...(spec.routine === undefined ? {} : { routine: spec.routine }),
+      ...(spec.definition === undefined ? {} : { definition: spec.definition }),
     };
     const s: Hosted = { view, driver, log: [], subscribers: new Listeners(), queue: [], asleep: false };
     this.#sessions.set(id, s);

@@ -104,7 +104,8 @@
         "continuation": "none"
       },
       "canonicalModelId": "4.0ultra",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "sparkdesk/generalv3",
@@ -164,7 +165,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "generalv3",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "sparkdesk/lite",
@@ -224,7 +226,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "lite",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     },
     {
       "key": "sparkdesk/pro-128k",
@@ -284,7 +287,8 @@
         "observedAt": "2026-09-27T00:00:00Z"
       },
       "canonicalModelId": "pro-128k",
-      "modelFamily": "other"
+      "modelFamily": "other",
+      "strength": "weak"
     }
   ]
 }

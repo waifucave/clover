@@ -6,16 +6,14 @@
 //
 // The plugin never holds the user's token: every request goes through the core's keyed fetch with the entry's
 // `auth`, `gcp-oauth`, the user's own sign-in. Instances get no service account.
+import type { HostPluginApi, SettingsApi } from "@waifucave/clover-plugin-sdk";
 import { ComputeClient, GcpError, LABEL, type Instance } from "../src/client";
 
 export const GCP_SECRET = "gcp-oauth";
 
 export interface ProviderContext {
   readonly signal?: AbortSignal;
-  readonly api: {
-    readonly net: { fetch(url: string, init?: RequestInit, opts?: { auth?: string | false }): Promise<Response> };
-    readonly settings: { get<T = unknown>(key: string): Promise<T | undefined> };
-  };
+  readonly api: Pick<HostPluginApi, "net"> & { readonly settings: Pick<SettingsApi, "get"> };
 }
 
 async function client(ctx: ProviderContext): Promise<ComputeClient> {

@@ -51,6 +51,10 @@ export const CRASH_RESTART_FIRST_MS = 1_000;
 export const CRASH_RESTART_MAX_MS = 60_000;
 export const CRASH_LIMIT = 3;
 export const CRASH_WINDOW_MS = 10 * 60_000;
+/** The crash rules' stop reason, from the last crash's. */
+export const crashStopReason = (last: string): string => `crashed ${CRASH_LIMIT} times in 10 minutes: ${last}`;
+/** Whether a stop is the crash rules' (never the user's stop, a removal or a plugin switched off). */
+export const isCrashStop = (reason: string | undefined): boolean => reason !== undefined && reason.startsWith(crashStopReason(""));
 export const HEARTBEAT_TIMEOUT_MS = 30_000;
 /** How long calls in flight get when a worker is replaced (§5.1 "a grace period"); lane B's choice. */
 export const RELOAD_GRACE_MS = 5_000;
@@ -102,8 +106,9 @@ export function guardApiRouter(router: ApiRouter, recordOf: (pluginId: string) =
   };
 }
 
-/** The exports a host module keeps for the host itself, never callable as handlers. */
-export const RESERVED_EXPORTS: ReadonlySet<string> = new Set(["start", "stop", "mcp"]);
+/** The exports a host module keeps for the host itself, never callable as handlers. `ui` is the table of what its
+ *  components may call (`HostModule.ui`), reachable only that way. */
+export const RESERVED_EXPORTS: ReadonlySet<string> = new Set(["start", "stop", "mcp", "ui"]);
 
 /** The function a call runs, with what it runs on: the export itself, or with `method`, one function of an exported
  *  object, its own or its class's, never one every object has (`toString`, `constructor`). `undefined` when there is
@@ -112,7 +117,16 @@ export function resolveHandler(
   module: Readonly<Record<string, unknown>>,
   handler: string,
   method?: string,
+  o: { ui?: boolean } = {},
 ): { fn: (args: unknown, ctx: unknown) => unknown; self: unknown } | undefined {
+  // A component's `host.call`: only the module's `ui` table's own functions, never any other export (a tool's, a
+  // hook's, a command's or a trigger's handler); default-deny.
+  if (o.ui === true) {
+    const table = module.ui;
+    if (method !== undefined || table === null || typeof table !== "object" || !Object.hasOwn(table, handler)) return undefined;
+    const fn = (table as Record<string, unknown>)[handler];
+    return typeof fn === "function" ? { fn: fn as (a: unknown, c: unknown) => unknown, self: table } : undefined;
+  }
   if (RESERVED_EXPORTS.has(handler) || !Object.hasOwn(module, handler)) return undefined;
   const exported = module[handler];
   if (method === undefined) return typeof exported === "function" ? { fn: exported as (a: unknown, c: unknown) => unknown, self: undefined } : undefined;
@@ -136,6 +150,8 @@ export interface InvokeRequest {
   handler: string;
   /** For an export that is an object of handlers: which one (the plugin API's `points.call` `method`). */
   method?: string;
+  /** A component's `host.call`: `handler` names a function of the module's `ui` table, and nothing else is reached. */
+  ui?: true;
   /** Structured-clone data. */
   args: unknown;
   /** Whom the call is for, as the core decided it; API calls the plugin makes while serving it act as this (R7). */
@@ -176,7 +192,7 @@ export const MCP_INVOCATION_META = "clover/invocation";
  *  plugin-host link (plugin-host/tests/net-fetch-link.test.ts, and the web plugin's WebSearch and WebFetch in
  *  web-net-fetch.test.ts), so the `host` MCP servers of a plugin that declares a `network:` capability are offered.
  *  Set it back to false only if that stops holding: such servers are then not offered, and say why (`NET_FETCH_GAP`).
- *  The model plugins' code adapters are a separate switch (`serveCodeAdapters`). */
+ *  The model plugins' code adapters ride it too (`serveCodeAdapters`, on; runtime-sdk/model-plugins/start.ts). */
 export const NET_FETCH_CROSSES_PLUGIN_HOST: boolean = true;
 export const NET_FETCH_GAP = "its tools need net.fetch, which can't cross the plugin host in this build (a fetch's RequestInit and Response don't survive the worker's link)";
 

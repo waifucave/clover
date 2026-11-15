@@ -248,9 +248,14 @@ export function pageScript(call: PageCall): PageReply {
       const t = el.type.toLowerCase();
       if (t === "checkbox" || t === "radio") return { checked: el.indeterminate ? "mixed" : el.checked };
       if (t === "button" || t === "submit" || t === "reset" || t === "image" || t === "file") return {};
-      return el.value ? { value: cut(el.value, 80) } : {};
+      const v = clean(el.value);
+      return v ? { value: cut(v, 80) } : {};
     }
-    if (el instanceof HTMLTextAreaElement) return el.value ? { value: cut(el.value, 80) } : {};
+    // One line, like a name: a text area's own line breaks must not read as further lines of the element list.
+    if (el instanceof HTMLTextAreaElement) {
+      const v = clean(el.value);
+      return v ? { value: cut(v, 80) } : {};
+    }
     if (el instanceof HTMLSelectElement) {
       const chosen = Array.from(el.selectedOptions).map((o) => clean(o.label || o.text)).join(", ");
       return chosen ? { value: cut(chosen, 80) } : {};

@@ -50,13 +50,19 @@ export class BoxKey {
   open(box: string, aad: Uint8Array, info = HANDSHAKE_BOX_INFO): Bytes | undefined {
     const bytes = fromBase64Url(box);
     if (!bytes || bytes.length < 32 + 16) return undefined;
+    return this.openParts(bytes.subarray(0, 32), bytes.subarray(32), aad, utf8(info));
+  }
+
+  /** OpenBase, single shot, from its parts: the sender's encapsulated key (32 bytes), the ciphertext with its tag, the
+   *  AAD and the HPKE `info`. Undefined for a message that doesn't open. */
+  openParts(enc: Uint8Array, ciphertext: Uint8Array, aad: Uint8Array, info: Uint8Array): Bytes | undefined {
+    if (enc.length !== 32 || ciphertext.length < 16) return undefined;
     try {
-      const enc = bytes.subarray(0, 32);
       const dh = diffieHellman({ privateKey: this.#private, publicKey: x25519Public(enc) });
       if (dh.every((b) => b === 0)) return undefined;
       const shared = extractAndExpand(dh, concat(enc, this.publicKey));
-      const { key, nonce } = keySchedule(shared, utf8(info));
-      return aesGcm(false, key, nonce, aad, bytes.subarray(32));
+      const { key, nonce } = keySchedule(shared, info);
+      return aesGcm(false, key, nonce, aad, ciphertext);
     } catch {
       return undefined;
     }

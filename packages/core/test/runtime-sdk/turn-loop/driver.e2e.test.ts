@@ -2,6 +2,8 @@
 // a turn answers, core tools run under their plain names, MCP calls go to the router as the session, the pause holds a
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
+import { agentToolDefs } from "../../../src/agents/tools";
+import type { AgentManager } from "../../../src/agents/manager";
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +12,10 @@ import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clove
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, botFileFence, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_CONVERSATION_SANDBOX, BOT_SANDBOX, BotSessionDriver, botFileFence, runtimeReservedServerNames, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CloverFence } from "../../../src/fence/fence";
+import { botSandboxSettings } from "../../../src/fence/sandbox-settings";
+import { connect, createServer } from "node:net";
 import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
@@ -152,6 +156,38 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  // The level is read when the sandbox is drawn, at a turn's start (the coordinator's ruling of November 11, accepted
+  // as documented): a level lowered while a turn runs reaches the shell at the next turn, never mid-turn.
+  test("a level lowered mid-turn: the running turn keeps the roots it started with; the next turn opens with the narrower ones", async () => {
+    const home = tempHome();
+    const wide = join(home, "wide-root");
+    let level: "automatic" | "ask-risky" = "automatic";
+    const sandbox = () => ({ enabled: false, filesystem: { allowWrite: level === "automatic" ? [wide] : [] } }) as never;
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      return sdkQuery(args);
+    };
+    const core: CoreToolDef[] = [{
+      name: "LowerLevel", description: "Test: the user lowers the level.", inputSchema: { type: "object", properties: {} },
+      run: async () => { level = "ask-risky"; return { text: "lowered", isError: false }; },
+    }];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox, query, coreTools: () => core }));
+    const roots = (i: number) => ((opened[i] as { filesystem?: { allowWrite?: string[] } }).filesystem?.allowWrite ?? []);
+    try {
+      const first = await driver.turn(user(["CALL LowerLevel {}", "CALL LowerLevel {}"].join("\n")), control());
+      expect(first.reason).toBe("end_turn");
+      // One runtime for the whole turn, with the roots it started with.
+      expect(opened).toHaveLength(1);
+      expect(roots(0)).toEqual([wide]);
+      expect((await driver.turn(user("next"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+      expect(roots(1)).toEqual([]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("the sandbox is the host's at each turn start: a bot folder made between two turns is in the second's, and an unchanged one never reopens the runtime", async () => {
     const home = tempHome();
     const bots = join(home, "bots");
@@ -179,11 +215,175 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(third.text).toContain("three");
       expect(opened).toHaveLength(2);
       expect([...denied(1)].sort()).toEqual([join(bots, "luna"), join(bots, "nova")]);
-      // The bot's own floor stays over whatever the host gives.
-      expect(opened[1]).toMatchObject(BOT_SANDBOX);
+      // A bot's own conversation may ask to leave the sandbox on a card: its floor lets the runtime honor the
+      // flag, over whatever the host gives.
+      expect(opened[1]).toMatchObject(BOT_CONVERSATION_SANDBOX);
       // The same list built in another order is the same sandbox: no reopen.
       expect((await driver.turn(user("four"), control())).reason).toBe("end_turn");
       expect(opened).toHaveLength(2);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("a model switch reopens the runtime on the new model (the provider fill runs again, so the allowlist follows it); the same model never reopens", async () => {
+    const home = tempHome();
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown } | undefined)?.model);
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const ctx = context(home, "winter-test/echo");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo"]);
+      // The bot's model changes between turns (its manifest's, or the user's pick): the next turn reopens on it.
+      ctx.bot.model = "winter-test/calls";
+      expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
+      expect(lines.filter((l) => l.includes("reopening: model changed"))).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("an effort change alone goes to the open runtime live (setEffort), with no reopen; one the runtime refuses, or can't take live, reopens with it", async () => {
+    const home = tempHome();
+    const run = async (setEffort: ((target: never) => unknown) | undefined) => {
+      const efforts: (string | null | undefined)[] = [];
+      const t = tappedQuery(setEffort === undefined ? {} : { setEffort });
+      const opened: unknown[] = [];
+      const query: typeof sdkQuery = (args) => { opened.push((args.options as { effort?: unknown }).effort); return t.query(args); };
+      const lines: string[] = [];
+      const ctx = context(home, "winter-test/echo");
+      const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+      try {
+        expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+        ctx.bot.effort = "high";
+        expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+        // The same effort again: nothing to do.
+        expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      } finally {
+        await driver.stop();
+      }
+      return { opened, lines, efforts };
+    };
+    const asked: (string | null | undefined)[] = [];
+    const live = await run(() => async (e?: string | null) => { asked.push(e); });
+    expect(live.opened).toHaveLength(1);
+    expect(asked).toEqual(["high"]);
+    expect(live.lines.filter((l) => l.includes("effort changed live (high)"))).toHaveLength(1);
+    const refused = await run(() => async () => { throw Object.assign(new Error("invalid_effort: no such level"), { name: "InvalidEffort" }); });
+    expect(refused.opened).toEqual([undefined, "high"]);
+    expect(refused.lines.filter((l) => l.includes("reopening: the runtime refused the effort live (InvalidEffort)"))).toHaveLength(1);
+    const none = await run(() => undefined);
+    expect(none.opened).toEqual([undefined, "high"]);
+    expect(none.lines.filter((l) => l.includes("can't change it live"))).toHaveLength(1);
+  }, 120_000);
+
+  test("a model switch that arrives mid-turn lets that turn finish on the model it started on; the next turn reopens on the new one", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/echo");
+    const opened: unknown[] = [];
+    let switched = false;
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown }).model);
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      // The switch lands while the runtime is answering the first turn (its first frame).
+      const tapped: AsyncIterator<unknown> & AsyncIterable<unknown> = {
+        async next() {
+          const r = await it.next();
+          if (!switched) { switched = true; ctx.bot.model = "winter-test/calls"; }
+          return r;
+        },
+        return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+        [Symbol.asyncIterator]() { return this; },
+      };
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => tapped;
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      const first = await driver.turn(user("one"), control());
+      expect(switched).toBe(true);
+      expect(first.reason).toBe("end_turn");
+      expect(first.text).toContain("one");
+      expect(opened).toEqual(["winter-test/echo"]);
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("the sandbox fails closed: a host that throws or gives none fails the turn and leaves no runtime on the old sandbox; a narrowed one reopens", async () => {
+    const home = tempHome();
+    let mode: "ok" | "throw" | "none" = "ok";
+    let denied = ["/denied/a", "/denied/b"];
+    const sandbox = () => {
+      if (mode === "throw") throw new Error("the fence is not ready");
+      if (mode === "none") return undefined;
+      return { enabled: false, filesystem: { denyRead: [...denied] } } as never;
+    };
+    const opened: unknown[] = [];
+    let closedRuntimes = 0;
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => ({
+            next: async () => { const r = await it.next(); if (r.done === true) closedRuntimes += 1; return r; },
+            return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+          });
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { sandbox, query, log: (l) => lines.push(l) }));
+    const deniedOf = (i: number) => ((opened[i] as { filesystem?: { denyRead?: string[] } }).filesystem?.denyRead ?? []);
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(1);
+      // A narrowed sandbox (a deny removed) is a change too: the runtime reopens with it.
+      denied = ["/denied/a"];
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+      expect(deniedOf(1)).toEqual(["/denied/a"]);
+      expect(lines.filter((l) => l.includes("reopening: sandbox changed"))).toHaveLength(1);
+      // The host can't say what the sandbox is: the turn fails, and the runtime open under the old one is closed.
+      mode = "throw";
+      const failed = await driver.turn(user("three"), control());
+      expect(failed.reason).toBe("failed");
+      expect(failed.text).toContain("the fence is not ready");
+      expect(opened).toHaveLength(2);
+      for (let i = 0; i < 200 && closedRuntimes < 2; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(closedRuntimes).toBe(2);
+      // A host with a sandbox that gives none fails closed too, never "floor only".
+      mode = "none";
+      const none = await driver.turn(user("four"), control());
+      expect(none.reason).toBe("failed");
+      expect(none.text).toContain("gave no sandbox");
+      expect(opened).toHaveLength(2);
+      // Once it answers again, a fresh runtime opens on the current sandbox and resumes the transcript.
+      mode = "ok";
+      const back = await driver.turn(user("five"), control());
+      expect(back.reason).toBe("end_turn");
+      expect(back.text).toContain("five");
+      expect(opened).toHaveLength(3);
+      expect(deniedOf(2)).toEqual(["/denied/a"]);
     } finally {
       await driver.stop();
     }
@@ -264,6 +464,142 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 90_000);
+
+  test("its own provider's key changing reopens it at the next turn, once; another provider's change never does", async () => {
+    const home = tempHome();
+    const keys: Record<string, string> = { "winter-test": "compiled:t:1", acme: "absent" };
+    let opened = 0;
+    const query: typeof sdkQuery = (args) => { opened += 1; return sdkQuery(args); };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, modelCatalogKey: (p) => keys[p] ?? "absent", log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect(opened).toBe(1);
+      // Another plugin (another provider) comes up, then changes: no reopen.
+      keys.acme = "host:plugin.acme.adapter@1:abc";
+      await driver.turn(user("again"), control());
+      keys.acme = "host:plugin.acme.adapter@2:abc";
+      await driver.turn(user("and again"), control());
+      expect(opened).toBe(1);
+      // Its own provider's plugin comes up: reopened once.
+      keys["winter-test"] = "host:t@1:x";
+      expect((await driver.turn(user("now"), control())).reason).toBe("end_turn");
+      expect(opened).toBe(2);
+      await driver.turn(user("once more"), control());
+      expect(opened).toBe(2);
+      expect(lines.filter((l) => l.includes("reopening: its provider winter-test changed"))).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  darwinTest("a reopen for its provider is held while its runtime runs background work, and comes at the first turn after it ends; a provider gone reopens at once", async () => {
+    const home = tempHome();
+    const keys: Record<string, string> = { "winter-test": "compiled:t:1" };
+    let opened = 0;
+    const query: typeof sdkQuery = (args) => { opened += 1; return sdkQuery(args); };
+    const lines: string[] = [];
+    const live: number[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, modelCatalogKey: (p) => keys[p] ?? "absent", log: (l) => lines.push(l), observe: { tasks: (_c, n) => live.push(n) } }));
+    try {
+      expect((await driver.turn(user('CALL Bash {"command":"sleep 4; echo finished","run_in_background":true,"description":"wait"}'), control())).reason).toBe("end_turn");
+      expect(live.at(-1)).toBe(1);
+      keys["winter-test"] = "host:t@1:x";
+      await driver.turn(user("while it runs"), control());
+      expect(opened).toBe(1);
+      expect(lines.some((l) => l.includes("its provider winter-test changed; it reopens once its background work ends"))).toBe(true);
+      for (let i = 0; i < 100 && live.at(-1) !== 0; i++) await Bun.sleep(100);
+      expect(live.at(-1)).toBe(0);
+      await driver.turn(user("after it ended"), control());
+      expect(opened).toBe(2);
+      // Background work again, and then its provider gone: reopened at once (the next turn's error says why).
+      await driver.turn(user('CALL Bash {"command":"sleep 4; echo finished","run_in_background":true,"description":"wait"}'), control());
+      expect(live.at(-1)).toBe(1);
+      keys["winter-test"] = "absent";
+      await driver.turn(user("gone"), control());
+      expect(opened).toBe(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 120_000);
+
+  test("a server set that can't be read fails the turn and closes the runtime open under the old set, as the sandbox read does; a readable set opens it again", async () => {
+    const home = tempHome();
+    const runner: McpRunner = { async run(_s, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };
+    const good: BotMcpServer = { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] };
+    // A listing the driver can't read: a server with no name makes the server-set check throw.
+    const unreadable = { server: undefined, plugin: "clover/broken", tools: [] } as unknown as BotMcpServer;
+    let servers: BotMcpServer[] = [good];
+    const opened: string[][] = [];
+    let closedRuntimes = 0;
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => ({
+            next: async () => { const r = await it.next(); if (r.done === true) closedRuntimes += 1; return r; },
+            return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+          });
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"]]);
+      servers = [good, unreadable];
+      const failed = await driver.turn(user("again"), control());
+      expect(failed.reason).toBe("failed");
+      expect(opened).toHaveLength(1);
+      expect(lines.some((l) => l.includes("its MCP servers could not be read"))).toBe(true);
+      for (let i = 0; i < 200 && closedRuntimes < 1; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(closedRuntimes).toBe(1);
+      servers = [good];
+      expect((await driver.turn(user("back"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"], ["clover_core", "web"]]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("a plugin server named like the runtime's own (clover, its standing server) is left out, so the real runtime still starts; the rest are served", async () => {
+    // The agent runtime refuses a configured server under its brand's name and exits before init (acceptance step 3,
+    // 2026-11-10, with the bundled tools offered as mcp__clover__…): the driver must never hand it one.
+    expect(runtimeReservedServerNames().has("clover")).toBe(true);
+    const home = tempHome();
+    const ran: string[] = [];
+    const runner: McpRunner = {
+      async run(server, tool) {
+        ran.push(`${server}.${tool}`);
+        return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" };
+      },
+    };
+    const servers: BotMcpServer[] = [
+      { server: "clover", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
+      { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] },
+    ];
+    const opened: string[][] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      const end = await driver.turn(user("CALL mcp__web__WebSearch {}"), control());
+      expect(end.reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"]]);
+      expect(ran).toEqual(["web.WebSearch"]);
+      expect(lines.filter((l) => l.includes("MCP server clover is left out: the agent runtime keeps that name"))).toHaveLength(1);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
 
   test("the pause holds a tool call until the user resumes; a computer that stops running the bots refuses it", async () => {
     const home = tempHome();
@@ -523,11 +859,13 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     expect(await until(() => !sleeping(n))).toBe(true);
   }, 60_000);
 
-  test("F8: a bot's session closes the paths to launchd (denyLaunchServices), whatever sandbox the host gives", async () => {
+  test("F8: a bot's session closes the paths to launchd (denyLaunchServices), whatever sandbox the host gives, or with none", async () => {
     const home = tempHome();
     const seen: unknown[] = [];
     const query: typeof sdkQuery = (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); };
-    for (const sandbox of [() => ({ enabled: false }), () => undefined]) {
+    // A host with no sandbox at all (left out) runs on the floor; a host that has one and gives none fails closed (the
+    // test above). A bot's own conversation may ask to leave the sandbox on a card, so its floor honors the flag.
+    for (const sandbox of [() => ({ enabled: false }), undefined]) {
       const driver = new BotSessionDriver(context(home, "winter-test/echo", { sessionId: `b_l${seen.length}` }), deps(home, spawn, { query, sandbox }));
       try {
         expect((await driver.turn(user("hi"), control())).reason).toBe("end_turn");
@@ -535,7 +873,10 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         await driver.stop();
       }
     }
-    expect(seen).toEqual([BOT_SANDBOX, BOT_SANDBOX]);
+    // Agent SDK 0.0.77: the file tools held to the write roots (`botSandbox`), whatever the host gives; a bot's own
+    // conversation honors the outside-the-sandbox flag (`BOT_CONVERSATION_SANDBOX`, set after it).
+    const floor = { ...BOT_CONVERSATION_SANDBOX, filesystem: { enforceWriteRootsInFileTools: true } };
+    expect(seen).toEqual([floor, floor]);
   }, 60_000);
 
   // A Monitor's command half reports to the model when its command ends (its lines go to the output file); a Monitor
@@ -543,7 +884,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   // (notification-delivery.engine.test.ts, 0.0.71) covers a folded event.
   darwinTest("a background command's and a Monitor's notifications folded into a running turn reach the model framed, a forged closing tag defused", async () => {
     const home = tempHome();
-    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn));
+    // The live count the link race's interim reads: up while they run, back to 0 when they're done.
+    const live: number[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { observe: { tasks: (_c, n) => live.push(n) } }));
     const c = control();
     try {
       // Round 1 starts a background command, round 2 a monitor, each with a description that forges a closing tag;
@@ -562,19 +905,23 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(said).toContain("\u2039/summary");
       expect(said).not.toContain("\uFF1C/task-notification");
       expect(said).not.toContain("\u3008/summary");
+      expect(Math.max(...live)).toBeGreaterThanOrEqual(1);
+      expect(live[live.length - 1]).toBe(0);
     } finally {
       await driver.stop();
     }
   }, 60_000);
 
-  darwinTest("a bot's command never runs unsandboxed: not with a host sandbox that is off, not when the call asks (dangerouslyDisableSandbox)", async () => {
+  // Stage 3: only a bot's own conversation may run a command outside the sandbox, each one on its own card (the
+  // approval check, which this file's stub stands in for). A side thread never does, whatever its approval says.
+  darwinTest("a side thread's command never runs unsandboxed: not with a host sandbox that is off, not when the call asks (dangerouslyDisableSandbox)", async () => {
     const home = tempHome();
     const dir = workDir(home);
     // Under Seatbelt with the launch denies, running launchctl is refused (unsandboxed it lists the jobs and exits 0),
     // and a write outside the bot's folders is refused too.
     const outside = join(tempHome(), "outside.txt");
     const probe = (tag: string) => `/bin/launchctl list >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(dir, `${tag}.launchctl`))}; touch ${JSON.stringify(`${outside}.${tag}`)} 2>/dev/null; echo "$?" > ${JSON.stringify(join(dir, `${tag}.outside`))}`;
-    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox: () => ({ enabled: false }) }));
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", { kind: "side-thread", sessionId: "s_side" }), deps(home, spawn, { sandbox: () => ({ enabled: false }) }));
     try {
       const calls = [
         `CALL Bash ${JSON.stringify({ command: probe("plain"), description: "probe" })}`,
@@ -592,6 +939,65 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  // The legacy IPC server's admin surface on `<home>/run/core.sock` (and the plugin host's sockets, the SSH agent,
+  // Docker, launchd's) must be out of a bot's shell's reach once its commands run with no card (stage 2): the sandbox
+  // Clover draws (`botSandboxSettings`) carries no network key at any level, so the runtime's profile denies the whole
+  // network, a unix socket's connect included (`(deny network*)` under `(deny default)`), even for a socket inside a
+  // write root the bot has or was granted.
+  darwinTest("a bot's sandboxed shell connects to no unix socket, at the default level and at automatic, in a granted folder too", async () => {
+    // A short home (a unix socket's path is at most 104 bytes on macOS): a temp folder of its own, removed after.
+    const userDir = realpathSync(mkdtempSync("/private/tmp/lc-"));
+    temps.push(userDir);
+    const home = join(userDir, "c");
+    mkdirSync(home);
+    // Its own folder, where its commands write at every level (the probe's answers go there).
+    const dir = context(home, "winter-test/calls").paths.scratch;
+    mkdirSync(dir, { recursive: true });
+    const docs = join(userDir, "Documents");
+    mkdirSync(join(home, "run"), { recursive: true });
+    mkdirSync(docs, { recursive: true });
+    const sockets = { core: join(home, "run", "core.sock"), own: join(dir, "o.sock"), granted: join(docs, "a.sock") };
+    let connected = 0;
+    const servers = Object.values(sockets).map((p) => createServer((c) => { connected++; c.end(); }).listen(p));
+    await Promise.all(servers.map((srv) => new Promise<void>((resolve, reject) => { srv.once("listening", () => resolve()); srv.once("error", reject); })));
+    // Unsandboxed, each socket answers: the probe below is a real connect.
+    for (const p of Object.values(sockets)) {
+      await new Promise<void>((resolve, reject) => { const c = connect(p, () => { c.end(); resolve(); }); c.once("error", reject); });
+    }
+    const unsandboxed = connected;
+    expect(unsandboxed).toBe(3);
+    // Its own temp folder: the system's (/private/tmp) holds this home, and would be written out entry by entry.
+    const fence = new CloverFence({ home: userDir, cloverHome: home, temp: join(userDir, "t") });
+    mkdirSync(join(userDir, "t"));
+    let level: "ask-risky" | "automatic" = "ask-risky";
+    const sandbox = (ctx: BotSessionContext) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), { cloverHome: home, userHome: userDir, level, grantedWrite: [docs] });
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { sandbox }));
+    const probe = (tag: string) => Object.entries(sockets).map(([name, p]) =>
+      `/usr/bin/nc -U ${JSON.stringify(p)} </dev/null >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(dir, `${tag}.${name}.nc`))}; ` +
+      `/usr/bin/perl -e 'use Socket; socket(my $s, PF_UNIX, SOCK_STREAM, 0) or die "socket: $!\\n"; connect($s, pack_sockaddr_un($ARGV[0])) or die "connect: $!\\n";' ${JSON.stringify(p)} >/dev/null 2> ${JSON.stringify(join(dir, `${tag}.${name}.why`))}; echo "$?" > ${JSON.stringify(join(dir, `${tag}.${name}.py`))}`).join("; ");
+    try {
+      for (const tag of ["ask-risky", "automatic"] as const) {
+        level = tag;
+        const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command: probe(tag), description: "probe the sockets" })}`), control());
+        expect(end.reason).toBe("end_turn");
+        for (const name of Object.keys(sockets)) {
+          for (const tool of ["nc", "py"]) { // nc, and perl's connect (its answer in `.py`)
+            const out = join(dir, `${tag}.${name}.${tool}`);
+            expect([tag, name, tool, existsSync(out)]).toEqual([tag, name, tool, true]);
+            expect([tag, name, tool, readFileSync(out, "utf8").trim()]).not.toEqual([tag, name, tool, "0"]);
+          }
+          // Refused by the sandbox (EPERM on the connect), not missing or unreachable for another reason.
+          expect([tag, name, readFileSync(join(dir, `${tag}.${name}.why`), "utf8")]).toEqual([tag, name, expect.stringContaining("Operation not permitted")]);
+        }
+      }
+      // No sandboxed connect ever reached a socket.
+      expect(connected).toBe(unsandboxed);
+    } finally {
+      await driver.stop();
+      for (const srv of servers) srv.close();
+    }
+  }, 90_000);
+
   // The fence's hook on a bot's own file tools (`botFileFence`), through the real runtime: refused calls never run, and
   // a search's hits through a link the bot planted in its scratch (to a file in run/, to run/ itself) never show.
   test("a bot's file tools: its own memory read; the secrets file never read, the settings never written; no search through a link to run/", async () => {
@@ -607,7 +1013,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     writeFileSync(join(ctx.paths.scratch, "notes.txt"), "SECRET-free notes");
     symlinkSync(join(home, "run", "app.token"), join(ctx.paths.scratch, "tok"));
     symlinkSync(join(home, "run"), join(ctx.paths.scratch, "rundir"));
-    const fence = new CloverFence({ home: dirname(home), cloverHome: home });
+    const fence = new CloverFence({ home: dirname(home), cloverHome: home, temp: join(dirname(home), "fence-temp") });
     // Any read denial in the sandbox (as lane C's will have) makes the runtime's search walk its folder by hand, and that
     // walk takes a link to a file as the file: without the hook's filter, Glob lists `tok` and Grep shows the token.
     const sandbox = () => ({ filesystem: { denyRead: [join(home, "elsewhere")] } });
@@ -651,6 +1057,78 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 60_000);
+
+  // The user's secret places (SECRET_READ_PLACES) on the real runtime: the sandbox's denyRead (the driver adds them
+  // whatever the host gives) keeps the shell from reading them (EPERM), Grep and Glob from above leave them out and
+  // say so, and Read, a write and a link from the bot's folder are refused. The runtime's Glob and Grep result forms
+  // are pinned here (what `fenceSearchOutput` parses).
+  darwinTest("the user's secret places: the shell can't read them, a search from above skips them, Read and writes are refused; the search forms pinned", async () => {
+    const home = tempHome();
+    const userHome = realpathSync(tempHome());
+    const ctx = context(home, "winter-test/calls");
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    const SECRET = "SECRETVALUE-acceptance";
+    for (const f of [".aws/credentials", ".ssh/id_ed25519", ".config/gh/hosts.yml", ".zsh_history", "Library/Keychains/login.keychain-db", "Library/Application Support/Google/Chrome/Default/Cookies"]) {
+      mkdirSync(dirname(join(userHome, f)), { recursive: true });
+      writeFileSync(join(userHome, f), `${SECRET} ${f}`);
+    }
+    mkdirSync(join(userHome, "Projects"), { recursive: true });
+    writeFileSync(join(userHome, "Projects", "notes.md"), `${SECRET.slice(0, 6)} ordinary`);
+    symlinkSync(join(userHome, ".aws", "credentials"), join(ctx.paths.scratch, "creds"));
+    const fence = new CloverFence({ home: userHome, cloverHome: home, temp: join(userHome, "fence-temp") });
+    const raw: { tool: string; response: unknown }[] = [];
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, {
+      fileFence: botFileFence(fence, home, "macos", userHome),
+      observe: { toolResult: (_c, tool, response) => raw.push({ tool, response }) },
+    }));
+    try {
+      const q = JSON.stringify;
+      const cats = [".aws/credentials", ".ssh/id_ed25519", ".config/gh/hosts.yml", ".zsh_history", "Library/Keychains/login.keychain-db", "Library/Application Support/Google/Chrome/Default/Cookies"]
+        .map((f) => `cat ${q(join(userHome, f))} >/dev/null 2>&1 && echo "${f}=OK" || echo "${f}=DENIED"`).join("; ");
+      const calls = [
+        `CALL Bash ${q({ command: `${cats}; cat ${q(join(ctx.paths.scratch, "creds"))} >/dev/null 2>&1 && echo link=OK || echo link=DENIED; cat ${q(join(userHome, "Projects", "notes.md"))} >/dev/null && echo ordinary=OK` })}`,
+        `CALL Glossary ${q({ load: ["Glob", "Grep"] })}`,
+        `CALL Glob ${q({ pattern: "**/*", path: userHome })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: userHome, output_mode: "content" })}`,
+        `CALL Grep ${q({ pattern: "ordinary", path: join(userHome, "Projects"), output_mode: "files_with_matches" })}`,
+        `CALL Read ${q({ file_path: join(userHome, ".aws", "credentials") })}`,
+        `CALL Read ${q({ file_path: join(ctx.paths.scratch, "creds") })}`,
+        `CALL Write ${q({ file_path: join(userHome, ".aws", "config"), content: "x" })}`,
+      ].join("\n");
+      const end = await driver.turn(user(calls), control());
+      expect(end.reason).toBe("end_turn");
+      const r = results(end);
+      const bash = r.find((x) => x.name === "Bash")?.content ?? "";
+      for (const line of bash.split("\n").filter((l) => l.includes("="))) if (process.env.LANE_C_TABLE) console.log(`LANE-C-TABLE read ${line}`);
+      expect(bash).toContain("ordinary=OK");
+      expect(bash).toContain("link=DENIED");
+      expect(bash).not.toContain("=OK\n.aws");
+      for (const f of [".aws/credentials", ".ssh/id_ed25519", ".config/gh/hosts.yml", ".zsh_history", "Library/Keychains/login.keychain-db"]) expect(bash).toContain(`${f}=DENIED`);
+      const glob = r.find((x) => x.name === "Glob")?.content ?? "";
+      expect(glob).toContain("notes.md");
+      expect(glob).toContain("some protected places were skipped");
+      for (const x of r) expect([x.name, x.content.includes(SECRET)]).toEqual([x.name, false]);
+      const greps = r.filter((x) => x.name === "Grep");
+      expect(greps[1]?.content).toContain("notes.md");
+      const reads = r.filter((x) => x.name === "Read");
+      expect(reads.map((x) => x.content.includes("cloud credentials"))).toEqual([true, true]);
+      expect(r.find((x) => x.name === "Write")?.content).toContain("never read or change");
+      expect(existsSync(join(userHome, ".aws", "config"))).toBe(false);
+      // The runtime's forms, as the post hook gets them: Glob, one absolute path a line; Grep, JSON with its mode and rows.
+      const rawGlob = raw.find((x) => x.tool === "Glob")?.response;
+      expect(typeof rawGlob).toBe("string");
+      for (const line of (rawGlob as string).split("\n").filter((l) => l !== "")) expect(line.startsWith("/") || line.startsWith("[Truncated to ")).toBe(true);
+      const rawGreps = raw.filter((x) => x.tool === "Grep").map((x) => JSON.parse(x.response as string) as Record<string, unknown>);
+      const rows = rawGreps[0]!["content"] as { file: string; text: string }[];
+      expect(Array.isArray(rows)).toBe(true);
+      // The runtime itself left the secret files out of the scan (the sandbox's denyRead): only the ordinary file.
+      expect(rows.map((x) => x.file)).toEqual([join(userHome, "Projects", "notes.md")]);
+      expect([rawGreps[0]!["mode"], typeof rawGreps[0]!["truncated"]]).toEqual(["content", "boolean"]);
+      expect(rawGreps[1]).toMatchObject({ mode: "files_with_matches", files: [join(userHome, "Projects", "notes.md")] });
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
 
   // A coding session's sandbox (`childSandboxConfigFor`), on real Bash through the same runtime: its own outputs, store
   // entry and run folder read; another session's, a run folder's config copy and the bots' data never (#347's review).
@@ -951,6 +1429,98 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("which calls reach the approval check: writes, commands, core tools and plugin tools do; reads and task notes don't; the observer sees the input and each result", async () => {
+    const home = tempHome();
+    const dir = workDir(home);
+    writeFileSync(join(dir, "note.md"), "hello\n");
+    const asked: string[] = [];
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (name, input) => { asked.push(name); return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const runner: McpRunner = { async run() { return { result: { content: [{ type: "text", text: "ok" }] }, computer: "Studio" }; } };
+    const core: CoreToolDef[] = [{
+      name: "SendMessage", description: "Send a message.", inputSchema: { type: "object", properties: { to: { type: "string" }, message: { type: "string" } } },
+      run: async () => ({ text: "delivered", isError: false }),
+    }];
+    const inputs: string[] = [];
+    const results: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool, coreTools: () => core,
+      mcp: { servers: () => [{ server: "blender", plugin: "blender", tools: [{ name: "Render", inputSchema: { type: "object" }, load: "preload" }] }], runner },
+      observe: {
+        turn: (_c, origin) => inputs.push(`turn:${origin}`), input: (_c, i) => inputs.push(i.from),
+        toolResult: (_c, tool, r) => results.push(`${tool}:${JSON.stringify(r).includes("ok") || JSON.stringify(r).includes("delivered") ? "seen" : "other"}`),
+      },
+    }));
+    try {
+      const calls = [
+        `CALL Read ${JSON.stringify({ file_path: join(dir, "note.md") })}`,
+        `CALL Write ${JSON.stringify({ file_path: join(dir, "new.md"), content: "x" })}`,
+        `CALL Edit ${JSON.stringify({ file_path: join(dir, "note.md"), old_string: "hello", new_string: "hi" })}`,
+        `CALL Bash ${JSON.stringify({ command: "true" })}`,
+        `CALL TaskCreate ${JSON.stringify({ subject: "a", description: "b" })}`,
+        `CALL SendMessage ${JSON.stringify({ to: "alpha", message: "hi" })}`,
+        'CALL mcp__blender__Render {"scene":"cube"}',
+      ];
+      // Another bot's message folded into the running turn: an input, never a new turn (the fetch budget's reset).
+      const ctl = control();
+      ctl.fold({ from: "bot", bot: "sol", session: "s_sol", text: "a note from sol" } as TurnInput);
+      const end = await driver.turn(user(calls.join("\n")), ctl);
+      expect(end.reason).toBe("end_turn");
+      expect(asked).toEqual(["Write", "Edit", "Bash", "SendMessage", "mcp__blender__Render"]);
+      expect(inputs).toEqual(["turn:user", "user", "bot"]);
+      expect(results.filter((r) => r.startsWith("mcp__blender__Render") || r.startsWith("SendMessage"))).toEqual(["SendMessage:seen", "mcp__blender__Render:seen"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("a core tool that ends the turn (RequestAccess): the runtime stops after its round, reopens under the changed sandbox and goes on in the same host turn, with no new turn for the observers", async () => {
+    const home = tempHome();
+    let roots = ["/granted/none"];
+    const sandbox = () => ({ enabled: false, filesystem: { allowWrite: [...roots] } }) as never;
+    const opened: unknown[] = [];
+    const tap = tappedQuery();
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      return tap.query(args);
+    };
+    const asked: string[] = [];
+    const canUseTool: BotDriverDeps["canUseTool"] = () => async (name, input) => { asked.push(name); return { behavior: "allow", updatedInput: input as Record<string, unknown> }; };
+    const note = `Access to /granted/folder is granted; continue. ${"The retry runs under the new sandbox. ".repeat(20)}`;
+    const core: CoreToolDef[] = [{
+      name: "Grant", description: "Grant access.", inputSchema: { type: "object", properties: {} },
+      run: async () => {
+        roots = ["/granted/none", "/granted/folder"];
+        return { text: "granted", isError: false, endTurn: { note } };
+      },
+    }];
+    const turns: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      canUseTool, coreTools: () => core, sandbox, query, observe: { turn: (_c, origin) => turns.push(origin) },
+    }));
+    try {
+      const end = await driver.turn(user("CALL Grant {}"), control());
+      expect(end.reason).toBe("end_turn");
+      expect(asked).toEqual(["Grant"]);
+      // The runtime's turn stopped right after the call's round (no model request between), then a second runtime
+      // turn ran, led by the note: the model's input grew by it.
+      const results = tap.frames.map((f) => f.msg).filter((m) => m.type === "result");
+      expect(results.map((r) => r.terminal_reason ?? "end")).toEqual(["hook_stopped", "end"]);
+      const input = (r: Record<string, unknown>) => (r.usage as { input_tokens: number }).input_tokens;
+      expect(input(results[1]!) - input(results[0]!)).toBeGreaterThan(note.length / 8);
+      expect(end.usage!.inputTokens).toBe(input(results[0]!) + input(results[1]!));
+      // Opened once for the turn, again for the grant's wider sandbox; one host turn, as the observers saw it.
+      expect(opened).toHaveLength(2);
+      expect((opened[1] as { filesystem: { allowWrite: string[] } }).filesystem.allowWrite).toEqual(["/granted/none", "/granted/folder"]);
+      expect(turns).toEqual(["user"]);
+      // The next host turn is an ordinary one: nothing carried over, no reopen.
+      expect((await driver.turn(user("CALL Grant {}"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+      expect(turns).toEqual(["user", "user"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("Glob and Grep start on-demand; Glossary finds and loads them, and returns a skill's instructions", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
@@ -983,6 +1553,77 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(r[2]!.content).toContain("Use pdftk to fill forms.");
       expect(r[3]!.isError).toBe(false);
       expect(r[3]!.content).toContain("notes.md");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  darwinTest("a tool.before hook's rewrite is what the approval sees and what runs: the hooks run first, the card is asked on the rewritten input (Bash and Write)", async () => {
+    const home = tempHome();
+    // In the bot's own folder, a write root (agent SDK 0.0.77 holds a bot's file tools to its write roots; this stub
+    // approval answers with the path as given, so a path outside them would be refused: bot-check hands the real one).
+    const target = join(workDir(home), "approved.txt");
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const i = input as Record<string, unknown>;
+        if (tool.name === "Bash") return { input: { ...i, command: "echo rewritten-by-the-hook > out.txt && cat out.txt" } };
+        if (tool.name === "Write") return { input: { ...i, content: "rewritten-by-the-hook" } };
+        return { input };
+      },
+    };
+    // The approval check (the card): it records the input it was asked about, and approves exactly that.
+    const asked: { name: string; input: Record<string, unknown> }[] = [];
+    const canUseTool = () => async (name: string, input: Record<string, unknown>) => {
+      asked.push({ name, input: { ...input } });
+      return { behavior: "allow" as const, updatedInput: input };
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { hooks, canUseTool: canUseTool as never }));
+    try {
+      // A command that writes (never one the runtime lets through as read-only), so the approval is asked.
+      const bash = await driver.turn(user('CALL Bash {"command":"echo original > out.txt && cat out.txt","description":"say"}'), control());
+      expect(asked.find((a) => a.name === "Bash")?.input.command).toBe("echo rewritten-by-the-hook > out.txt && cat out.txt");
+      expect(results(bash)[0]!.content).toContain("rewritten-by-the-hook");
+      expect(results(bash)[0]!.content).not.toContain("original");
+      // A read-only command (never asked on its own) that the hook turns into a write is asked, on the write.
+      asked.length = 0;
+      const sneaky = await driver.turn(user('CALL Bash {"command":"echo hello","description":"say"}'), control());
+      expect(asked.map((x) => [x.name, x.input.command])).toEqual([["Bash", "echo rewritten-by-the-hook > out.txt && cat out.txt"]]);
+      expect(results(sneaky)[0]!.content).toContain("rewritten-by-the-hook");
+      const write = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: target, content: "original" })}`), control());
+      expect(asked.find((a) => a.name === "Write")?.input.content).toBe("rewritten-by-the-hook");
+      expect(results(write)[0]!.isError).toBe(false);
+      expect(readFileSync(target, "utf8")).toBe("rewritten-by-the-hook");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("the bot's Agent call meets tool.before with the backend named, so a guard can refuse delegating to an external agent", async () => {
+    const home = tempHome();
+    const started: string[] = [];
+    // The real Agent tool over a stub manager: only `start` is reached.
+    const manager = { start: async (req: { backend: string }) => { started.push(req.backend); return { sessionId: "agent_x", transcript: "t" }; } } as unknown as AgentManager;
+    const seen: { name: string; backend: unknown }[] = [];
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const backend = (input as { backend?: unknown }).backend;
+        seen.push({ name: tool.name, backend });
+        return tool.name === "Agent" && backend !== "clover" ? { deny: "this bot delegates only to Clover's own agents", input } : { input };
+      },
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, {
+      hooks,
+      coreTools: (ctx) => agentToolDefs(manager, { bot: ctx.botId, session: ctx.sessionId, origin: "bot" }, { backends: () => ["claude-code", "clover"] }),
+    }));
+    try {
+      const out = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "claude-code", root: "home/Studio/p" })}`), control());
+      expect(results(out)[0]!.content).toContain("delegates only to Clover's own agents");
+      const ok = await driver.turn(user(`CALL Agent ${JSON.stringify({ description: "fix", prompt: "Fix it.", backend: "clover", root: "home/Studio/p" })}`), control());
+      expect(results(ok)[0]!.isError).toBe(false);
+      expect(seen).toEqual([{ name: "Agent", backend: "claude-code" }, { name: "Agent", backend: "clover" }]);
+      expect(started).toEqual(["clover"]);
     } finally {
       await driver.stop();
     }
@@ -1087,6 +1728,29 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     } finally {
       await next.stop();
     }
+  }, 60_000);
+
+  test("turn.end's outcome: a reply completes the turn; an abort interrupts it; turn.end's hooks are told which", async () => {
+    const home = tempHome();
+    const ends: [string | undefined, string | undefined][] = [];
+    const hooks: TurnHooks = { ...NO_HOOKS, turnEnd: async (_s, text, outcome) => { ends.push([outcome, text]); } };
+    const echo = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { hooks }));
+    try {
+      expect((await echo.turn(user("hello"), control())).reason).toBe("end_turn");
+    } finally {
+      await echo.stop();
+    }
+    const hang = new BotSessionDriver(context(home, "winter-test/hang", { sessionId: "b_luna_o" }), deps(home, spawn, { hooks }));
+    try {
+      const ctl = control();
+      const p = hang.turn(user("wait forever"), ctl);
+      await Bun.sleep(1_500);
+      ctl.abort();
+      expect((await p).reason).toBe("interrupted");
+    } finally {
+      await hang.release();
+    }
+    expect(ends.map(([o]) => o)).toEqual(["completed", "interrupted"]);
   }, 60_000);
 });
 
