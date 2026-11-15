@@ -11,7 +11,7 @@ import type { HandlerContext } from "../../contracts/sdk-types";
 import { createApiRouter } from "../../plugin-host/api/router";
 import { LoopbackPluginHost } from "../../plugin-host/loopback";
 import { checkTurnName, turnsApi } from "../api";
-import { TurnQueues } from "../queue";
+import { cleanTurnNote, TURN_TAKES_ALL, TURN_TAKES_PER_NAME, TURN_TAKES_PER_PLUGIN, TurnQueues } from "../queue";
 
 function make() {
   const clock = new FakeClock({ start: 1_000_000 });
@@ -130,6 +130,60 @@ describe("turns: the queue", () => {
     q.done(a.id, "tarot");
     off();
     expect(seen.map((s) => [s.holder?.plugin ?? "-", s.waiting])).toEqual([["tarot", 0], ["tarot", 1], ["cards", 0]]);
+  });
+});
+
+describe("turns: the caps on queued takes, and a take's note", () => {
+  const takeOf = (q: TurnQueues, name: string, pluginId: string, note?: string) => q.take(name, { pluginId, side: "shared" }, note !== undefined ? { note } : {}, () => {});
+
+  test("a plugin's takes of one name are capped; one over is refused with why; once one ends another joins", () => {
+    const { q } = make();
+    const held = Array.from({ length: TURN_TAKES_PER_NAME }, () => takeOf(q, "tarot/deck", "tarot"));
+    const over = capture(() => takeOf(q, "tarot/deck", "tarot"));
+    expect(isContractError(over, "refused")).toBe(true);
+    expect((over as Error).message).toBe(`tarot already has ${TURN_TAKES_PER_NAME} takes of tarot/deck held or waiting; one must end before another joins`);
+    expect(q.size).toBe(TURN_TAKES_PER_NAME);
+    // Another name of its own, and another plugin on the same name, are not held up by it.
+    expect(capture(() => takeOf(q, "tarot/spread", "tarot"))).toBeUndefined();
+    expect(capture(() => takeOf(q, "tarot/deck", "cards"))).toBeUndefined();
+    held[3]!.leave();
+    expect(capture(() => takeOf(q, "tarot/deck", "tarot"))).toBeUndefined();
+  });
+
+  test("a plugin's takes over all its names are capped; the cap on every take on the computer too", () => {
+    const { q } = make();
+    const perName = TURN_TAKES_PER_PLUGIN / TURN_TAKES_PER_NAME;
+    for (let n = 0; n < perName; n++) for (let i = 0; i < TURN_TAKES_PER_NAME; i++) takeOf(q, `tarot/n${n}`, "tarot");
+    const over = capture(() => takeOf(q, "tarot/another", "tarot"));
+    expect(isContractError(over, "refused")).toBe(true);
+    expect((over as Error).message).toBe(`tarot already has ${TURN_TAKES_PER_PLUGIN} takes held or waiting; one must end before another joins`);
+    q.endPlugin("tarot", "its plugin is off");
+    expect(q.size).toBe(0);
+    // Every plugin's takes together: fill the computer from many plugins, each under its own caps.
+    const plugins = TURN_TAKES_ALL / TURN_TAKES_PER_PLUGIN;
+    for (let p = 0; p < plugins; p++) for (let n = 0; n < perName; n++) for (let i = 0; i < TURN_TAKES_PER_NAME; i++) takeOf(q, `p${p}/n${n}`, `p${p}`);
+    expect(q.size).toBe(TURN_TAKES_ALL);
+    const full = capture(() => takeOf(q, "fresh/deck", "fresh"));
+    expect(isContractError(full, "refused")).toBe(true);
+    expect((full as Error).message).toBe(`${TURN_TAKES_ALL} takes are held or waiting on this computer; one must end before another joins`);
+    q.endPlugin("p0", "its plugin is off");
+    expect(capture(() => takeOf(q, "fresh/deck", "fresh"))).toBeUndefined();
+    q.close();
+  });
+
+  test("a note's control characters never reach the log or state: each run is one space, the ends trimmed", () => {
+    const { q, lines } = make();
+    const raw = "\u001b[31mline one\r\n\tline two\u0007\u0085\u2028three\u202e\u2066four\u0000 ";
+    takeOf(q, "tarot/deck", "tarot", raw);
+    expect(q.state("tarot/deck").holder?.note).toBe("[31mline one line two three four");
+    expect(lines.at(-1)).toContain(`, "[31mline one line two three four") after 0 ms waiting`);
+    for (const l of lines) expect(l).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/);
+    // A note that is nothing but control characters is no note.
+    const q2 = make();
+    takeOf(q2.q, "tarot/deck", "tarot", "\r\n\u0007");
+    expect(q2.q.state("tarot/deck").holder).not.toHaveProperty("note");
+    expect(q2.lines.at(-1)).toMatch(/^turns: tarot\/deck granted to tarot \(its host half, process shared\) after/);
+    expect(cleanTurnNote("plain words")).toBe("plain words");
   });
 });
 

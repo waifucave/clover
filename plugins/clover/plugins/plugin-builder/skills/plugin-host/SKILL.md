@@ -138,6 +138,8 @@ try {
   the user.
 - `api.turns.state(name)` and `api.turns.watch(name, listener)`: who holds it and how many wait. A take still waiting
   leaves the queue with an `AbortSignal` (`{ signal }`), or when its holder goes.
+- A plugin may have 64 takes of one name and 256 over all its names held or waiting at once (4,096 on the computer);
+  one more is refused with why. A note is for the log and `state`: control characters in it become spaces.
 
 ### Streams: bytes between your halves
 
