@@ -45,7 +45,7 @@ import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { frameChainAt, hitScript, type HitFrame } from "./frame-hit";
-import { FRESH_LIMIT_MS, ownCardPage } from "./sealed-pages";
+import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { gateAnswer } from "./registry-gate";
@@ -102,6 +102,14 @@ declare const __CLOVER_TEST_BUILD__: string | false | undefined;
 // scripts/acceptance/run.ts passes): its label, `false` in every other build. Like the test mark it is tested inline in
 // each condition, so a release build has none of what it guards (scripts/test-build.ts's gate checks).
 declare const __CLOVER_ACCEPTANCE_BUILD__: string | false | undefined;
+// The smoke run's test-only inputs: read only in a test build or the acceptance build, so a real build carries no trace of the names
+// (the marker gate in scripts/test-build.ts looks for them).
+const SMOKE_SEALED_CLICK: string | undefined = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? process.env.CLOVER_SMOKE_SEALED_CLICK : undefined;
+const SMOKE_SEALED_FALLBACK: boolean = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+const SMOKE_DROP_FRESH: boolean = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && process.env.CLOVER_SMOKE_DROP_FRESH === "1";
+// A test-only pin of the sealed page's own periodic verdict to "visible" (so a press reaches the fresh-report check, never the page's old gate).
+const SMOKE_PIN_VISIBLE: boolean = (typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string") && process.env.CLOVER_SMOKE_PIN_VISIBLE === "1";
+pinVisible.on = SMOKE_PIN_VISIBLE;
 // A test-marked build (compile-time only; a real build compiles this out): Chromium's mock keychain from the start, and
 // a refusal to start where it would still reach the login keychain or the live home (test-build.ts).
 if (typeof __CLOVER_TEST_BUILD__ === "string") {
@@ -551,7 +559,7 @@ async function ready(): Promise<void> {
     // The report a press asked for: logged with how long the page took to get it, so a limit that is too short shows in the log.
     sealedFresh: (token: string, seen: boolean, ms: number) => {
       // A test build can drop the report, to prove an answer with no report refuses (never in a packaged app).
-      if (typeof __CLOVER_TEST_BUILD__ === "string" && !app.isPackaged && process.env.CLOVER_SMOKE_DROP_FRESH === "1") return;
+      if (SMOKE_DROP_FRESH && !app.isPackaged) return;
       sealed.noteFresh(token, seen);
       const cardId = sealed.cardOf(token);
       if (cardId === undefined) return;
@@ -971,7 +979,7 @@ function disarmFallback(cardId: string): void {
 async function showFallbackCard(cardId: string): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
-  const smokeFallback = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+  const smokeFallback = SMOKE_SEALED_FALLBACK;
   // The acceptance run's real press (CLOVER_TEST_SEALED_PRESS=1, a headless test-marked or unpackaged run only): the
   // fallback card is drawn OFFSCREEN (never shown, never on any screen), so the run can press its button with a trusted
   // DevTools input event and the answer goes the whole real way: the page's own gates, the app's signature with its
@@ -2504,7 +2512,7 @@ async function smoke(): Promise<void> {
   // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
   // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
   // touched.
-  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
+  if ((SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK) && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
     showInvisible(win);
     log(`window: shown invisible while headless (the sealed smoke's input routing: opacity 0, ignores the mouse)`);
     log(`sealed-click: main window shown invisible for input routing`);
@@ -2588,7 +2596,7 @@ async function smoke(): Promise<void> {
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
     // A sealed run (E-M3) breaks once its click landed, even if the shell's composer never draws: the click needs
     // only the fixture layer's sealed frames laid out, not the shell.
-    const sealedWait = process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+    const sealedWait = SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK;
     if (sealedWait && sealedClicked) break;
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
     // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
@@ -2631,13 +2639,13 @@ async function smoke(): Promise<void> {
     // frame, not the root document, so offsets are summed up through each frame. Gated on the sealed frames
     // themselves, not the shell's composer (which a sealed run never needs).
     if (!sealedClicked) {
-      const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
+      const spec = SMOKE_SEALED_CLICK;
       if (spec !== undefined) {
         try {
           const {
-            cardId, element, cover, opacity, doubleClick, coverLead,
+            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead,
           } = JSON.parse(spec) as {
-            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number;
+            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
@@ -2796,6 +2804,17 @@ async function smoke(): Promise<void> {
               log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
+              if (typeof parentCoverLead === "number") {
+                // The cover an embedder would draw: a click-through, see-through element in the window's own (root) document over the sealed
+                // iframe, `parentCoverLead` ms before the press. The page's own document holds nothing of it.
+                const left = Math.round(offsetX + buttonRect.x);
+                const top = Math.round(offsetY + buttonRect.y);
+                // Lead 0: the cover is sent and the press follows at once, without waiting for the cover's own call to come back.
+                const putCover = win.webContents.mainFrame.executeJavaScript(`(() => { const c = document.createElement('div'); c.id = '__parentCover'; c.style.cssText = 'position:fixed;left:${left}px;top:${top}px;width:${Math.round(buttonRect.width)}px;height:${Math.round(buttonRect.height)}px;z-index:2147483647;pointer-events:none;background:rgba(255,0,0,0.25)'; document.body.appendChild(c); })()`, true).catch(() => undefined);
+                if (parentCoverLead > 0) await putCover;
+                if (parentCoverLead > 0) await new Promise((r) => setTimeout(r, Math.min(2000, parentCoverLead)));
+                log(`sealed-click: press ${Math.round(parentCoverLead)} ms after the parent cover`);
+              }
               if (typeof coverLead === "number") {
                 // A cover drawn `coverLead` ms before the press, on a button the page has long reported ready: the press must not land.
                 await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return; const c = document.createElement('div'); c.style.position = 'absolute'; c.style.inset = '0'; c.style.zIndex = '9999'; c.style.pointerEvents = 'none'; b.parentElement?.insertBefore(c, b); })()`, true).catch(() => undefined);
@@ -2841,7 +2860,7 @@ async function smoke(): Promise<void> {
     // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
     // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only). Gated on the
     // fallback window itself, not the shell.
-    if (!sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
+    if (!sealedClicked && SMOKE_SEALED_FALLBACK) {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
         if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;

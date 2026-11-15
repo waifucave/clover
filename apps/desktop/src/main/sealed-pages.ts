@@ -17,6 +17,10 @@ import type { CardSummary, PreviewBlock } from "./card-summary";
 /** What a sealed page says of a press, one word each: taken, or why not (the app logs it with the card's id). */
 /** How long a press waits for the visibility report it asks for (a new observer made at the press) before it is refused as not checked:
  *  well under half a second, so a press is never felt waiting; the report itself takes about a frame. */
+/** A test build's switch (`CLOVER_SMOKE_PIN_VISIBLE`, set by index.ts only in a test or acceptance build): the island button page's periodic verdict
+ *  stays "visible" once seen, so a press reaches the fresh-report check and not the page's older gate. Off in every real build. */
+export const pinVisible = { on: false };
+
 export const FRESH_LIMIT_MS = 400;
 
 /** The page's way of asking for it, for every sealed page: a NEW observer on the pressed button, whose first report (made after the
@@ -247,6 +251,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     const whole = e.intersectionRatio >= 1;
     const enough = e.target instanceof HTMLElement && e.target.getBoundingClientRect().width >= 24 && e.target.getBoundingClientRect().height >= 24;
     const seen = whole === true && e.isVisible === true && enough === true;
+    if (${pinVisible.on} && visible) return; // a test build's pin (never set in a real one): the periodic verdict stays "visible"
     if (seen && !visible) visibleAt = Date.now();
     visible = seen;
     // Report visibility to the main process so it can disarm the fallback once all of a card's buttons show (S1).

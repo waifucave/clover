@@ -83,9 +83,11 @@ describe("a press at any moment of a fresh page", () => {
       const btn = doc.querySelector(".seal-button")!;
       let early = 0;
       for (let t = 0; t < 12 && answers.length === 0; t++) {
+        // What the press produced decides the assertion, so no wall-clock gap enters it: a page not ready says so at once (the state
+        // text, synchronously) and answers nothing; one that took the press answers once its fresh report comes (a tick in the stub).
         press(win, "pointerdown", btn);
-        await wait(0);
-        if (answers.length === 0) { expect(doc.querySelector(".state")!.textContent).toBe(PRESS_AGAIN_TEXT); early++; }
+        if (doc.querySelector(".state")!.textContent === PRESS_AGAIN_TEXT) { expect(answers).toEqual([]); early++; }
+        else { for (let w = 0; w < 100 && answers.length === 0; w++) await wait(5); expect(answers).toEqual(["approve"]); }
         await wait(60);
       }
       expect(answers).toEqual(["approve"]);
