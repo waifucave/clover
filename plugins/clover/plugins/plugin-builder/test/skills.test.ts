@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   API_CALLS, BotSchema, CommandSchema, CORE_CONTRIBUTION_KEYS, HookSchema, ManifestSchema, McpServerSchema, ModelSchema, PointDeclSchema,
-  SettingSchema, TOKENS, TriggerSchema, UiSchema, VoiceSchema, cssProperty, validateManifest, type ApiCallInfo,
+  SettingSchema, TOKENS, TriggerSchema, UiSchema, cssProperty, validateManifest, type ApiCallInfo,
 } from "@waifucave/clover-plugin-sdk";
 import { mcpToolName } from "../../../../../packages/core/src/computers/mcp";
 import { pluginMcpServerKey } from "../../../../../packages/core/src/runtime-sdk/turn-loop/plugin-mcp";
@@ -81,7 +81,7 @@ describe("plugin-manifest", () => {
   // agent definitions are named as points; their fields are left to the SDK's schema, as the skill says.)
   const ENTRY_SCHEMAS = {
     bot: BotSchema, models: ModelSchema, mcpServers: McpServerSchema, hooks: HookSchema, commands: CommandSchema, triggers: TriggerSchema,
-    voices: VoiceSchema, settings: SettingSchema, ui: UiSchema, declares: PointDeclSchema,
+    settings: SettingSchema, ui: UiSchema, declares: PointDeclSchema,
   } as const;
   for (const [entry, schema] of Object.entries(ENTRY_SCHEMAS)) {
     test(`names every field of a ${entry} entry`, () => {

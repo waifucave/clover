@@ -272,30 +272,6 @@ export const TriggerSchema = z.strictObject({
   ...declares,
 });
 
-/** A voice provider's listening, for push-to-talk (§6.6, the listening half until it is re-founded): `handler`'s
- *  `listen` takes the recording as its input and returns what it heard. Speaking is a provider's entry on Clover
- *  Voice's own point (`clover.voice.providers`), not this one. */
-export const VoiceSchema = z.strictObject({
-  id: EntryId,
-  name: Text,
-  speak: z.boolean().optional(),
-  listen: z.boolean().optional(),
-  auth: z.array(AuthSchema).max(16).optional(),
-  handler: HandlerName,
-  ...declares,
-});
-
-/** A voice mode's listening (§6.6, the listening half until it is re-founded): the one plugin, of those installed,
- *  that hears push-to-talk; the user chooses which in Settings › Voice (Clover Voice's `active` setting). `handler`
- *  names the host export the core calls (`listens`, `listenStart`, `listenPiece`, `listenEnd`: `VoiceModeHandler`). A
- *  voice mode that speaks the replies offers itself on Clover Voice's own point (`clover.voice.modes`). */
-export const VoiceModeSchema = z.strictObject({
-  id: EntryId,
-  name: Text,
-  handler: HandlerName,
-  ...declares,
-});
-
 /** One of a plugin's own turns that another plugin may take (§5.4 "Turns"): `<plugin id>/<name>`. */
 export const TurnEntrySchema = z.strictObject({
   name: utf16(64, 1).regex(TURN_LOCAL_NAME),
@@ -410,8 +386,6 @@ export const CORE_CONTRIBUTION_SCHEMAS = {
   hooks: z.array(HookSchema).max(256),
   commands: z.array(CommandSchema).max(512),
   triggers: z.array(TriggerSchema).max(64),
-  voices: z.array(VoiceSchema).max(64),
-  voiceModes: z.array(VoiceModeSchema).max(1),
   turns: z.array(TurnEntrySchema).max(64),
   computerProviders: z.array(ComputerProviderSchema).max(16),
   computer: ComputerSchema,
@@ -439,8 +413,6 @@ export const ContributionsSchema = z.object({
   hooks: CORE_CONTRIBUTION_SCHEMAS.hooks.optional(),
   commands: CORE_CONTRIBUTION_SCHEMAS.commands.optional(),
   triggers: CORE_CONTRIBUTION_SCHEMAS.triggers.optional(),
-  voices: CORE_CONTRIBUTION_SCHEMAS.voices.optional(),
-  voiceModes: CORE_CONTRIBUTION_SCHEMAS.voiceModes.optional(),
   turns: CORE_CONTRIBUTION_SCHEMAS.turns.optional(),
   computerProviders: CORE_CONTRIBUTION_SCHEMAS.computerProviders.optional(),
   computer: CORE_CONTRIBUTION_SCHEMAS.computer.optional(),

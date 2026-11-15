@@ -37,16 +37,16 @@ describe("the active one", () => {
 
   test("a core point the catalog marks one at a time is one, with no plugin declaring it; its fillers read it", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
-    const mode = (id: string, source?: "bundled"): RegistryInput => ({ id, approved: true, treeHash: `sha256:${id}`, ...(source ? { source } : {}), manifest: m({ name: id, contributes: { voiceModes: [{ id, name: id, handler: "mode" }] } as Manifest["contributes"] }) });
+    const mode = (id: string, source?: "bundled"): RegistryInput => ({ id, approved: true, treeHash: `sha256:${id}`, ...(source ? { source } : {}), manifest: m({ name: id, contributes: { computerProviders: [{ id, name: id, auth: [], handler: "provide" }] } as Manifest["contributes"] }) });
     reg.putAll([mode("theirs"), mode("ours", "bundled"), OTHER]);
-    const catalog = [...CORE_POINTS.filter((p) => p.name !== "voiceModes"), { ...CORE_POINTS.find((p) => p.name === "voiceModes")!, oneAtATime: true, title: "Voice" }];
-    const one = activeOne(reg, "voiceModes", catalog);
-    expect([one?.point.declaredBy, one?.title, ref(one?.active && refOf(one.active))]).toEqual(["core", "Voice", "ours/ours"]);
-    expect(oneAtATimePoints(reg, catalog).map((o) => o.point.name)).toEqual(["voiceModes"]);
-    expect(mayReadActive(reg, "voiceModes", "theirs", catalog).name).toBe("voiceModes");
-    expect(() => mayReadActive(reg, "voiceModes", "other", catalog)).toThrow(/only the plugin that declares/);
-    // As shipped, the voice point is one at a time (F1), titled "Voice".
-    expect([activeOne(reg, "voiceModes")?.title, ref(activeOne(reg, "voiceModes")?.active && refOf(activeOne(reg, "voiceModes")!.active!))]).toEqual(["Voice", "ours/ours"]);
+    const catalog = [...CORE_POINTS.filter((p) => p.name !== "computerProviders"), { ...CORE_POINTS.find((p) => p.name === "computerProviders")!, oneAtATime: true, title: "Cloud computers" }];
+    const one = activeOne(reg, "computerProviders", catalog);
+    expect([one?.point.declaredBy, one?.title, ref(one?.active && refOf(one.active))]).toEqual(["core", "Cloud computers", "ours/ours"]);
+    expect(oneAtATimePoints(reg, catalog).map((o) => o.point.name)).toEqual(["computerProviders"]);
+    expect(mayReadActive(reg, "computerProviders", "theirs", catalog).name).toBe("computerProviders");
+    expect(() => mayReadActive(reg, "computerProviders", "other", catalog)).toThrow(/only the plugin that declares/);
+    // As shipped, no core point is one at a time: the one-at-a-time points are plugins' own (Clover Voice's voices).
+    expect(oneAtATimePoints(reg).map((o) => o.point.name)).toEqual([]);
   });
 
   test("a declarer that fills its own point is one of its fillers, and the default when it is bundled (Clover Voice's way)", () => {
@@ -143,7 +143,7 @@ describe("the active one", () => {
     const user = { caller: { kind: "user", client: "app" } as Caller } as never;
     const plugin = { caller: { kind: "plugin", pluginId: "one" } as Caller } as never;
     const list = await methods["point.active.list"]!({}, user) as { points: unknown[] };
-    expect(list.points).toEqual([{ point: "voiceModes", title: "Voice", declaredBy: "core", fillers: [] }, {
+    expect(list.points).toEqual([{
       point: "deck.mode", title: "Deck mode", declaredBy: "deck",
       fillers: [{ pluginId: "one", entryId: "one", name: "First" }, { pluginId: "two", entryId: "two", name: "Second" }],
       active: { pluginId: "one", entryId: "one" },

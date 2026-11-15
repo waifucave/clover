@@ -80,8 +80,6 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     // The user's own endpoint for this plugin's provider counts as a granted host, for that origin's host and port.
     const userOrigin = path === "net.fetch" && target?.host !== undefined ? o.userEndpoint?.(call.pluginId) : undefined;
     let granted = userOrigin !== undefined && userOrigin === originOf(call.args[0]) ? [...record.granted, `network:${hostEntryOf(target!.host!, target!.port)}`] : record.granted;
-    // A voice mode holds `voices.use` by being one (§6.6): its OK card says it uses your voice providers.
-    if (path.startsWith("voices.") && !granted.includes("voices.use") && isVoiceMode(record)) granted = [...granted, "voices.use"];
     // A capability that is another's for more things (`avatar.control.all`) carries that other with it.
     granted = withImplied(granted);
     if (!ownCommand && !apiCallAllowed(path, call.process, granted, target, o.allowNetwork)) {
@@ -91,12 +89,6 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
     return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
   };
-}
-
-/** Whether a plugin's manifest makes it a voice mode (`contributes.voiceModes`). */
-function isVoiceMode(record: PluginRecord): boolean {
-  const modes = (record.manifest as { contributes?: { voiceModes?: unknown } } | undefined)?.contributes?.voiceModes;
-  return Array.isArray(modes) && modes.length > 0;
 }
 
 /** A URL's origin, or undefined. */

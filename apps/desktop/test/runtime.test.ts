@@ -657,7 +657,7 @@ describe("a message to the main window's shell", () => {
   test("a shell message goes to the window's clover shell document only (not the core root, not another window's)", () => {
     const s = setup([]);
     const shell = mountShell(s);
-    const m = { type: "listen" as const, op: "stop" as const, utterance: "u1" };
+    const m = { type: "shell-provides" as const, sidebar: true, drag: false };
     s.sent.length = 0;
     s.rt.shellMessage(WIN, m);
     expect(s.sent).toEqual([{ to: `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`, m }]);
@@ -1026,7 +1026,8 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const bg = readUiPlugins([folderView(join(FIXTURES, "fixture-background"))] as never);
     const s = setup(bg);
     // Clover Voice's player is the bundled tree's own background part.
-    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true, microphone: false };
+    // Clover Voice holds `microphone` for its hold-to-talk button; a capability is the plugin's, so its player's window carries it too.
+    const VOICE = { ref: "clover/voice#player", pluginId: "clover/voice", audio: true, microphone: true };
     expect(s.rt.backgroundEntries()).toEqual([VOICE, { ref: "fixture-background#ticker", pluginId: "fixture-background", audio: true, microphone: false }]);
     // The surface list doesn't take it, and in safe mode only clover's would run.
     expect(s.rt.surfaceEntries().map((e) => e.id)).not.toContain("ticker");
@@ -1084,7 +1085,9 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const hold = setup(view(["microphone"]));
     expect(hold.rt.layerHolds("fixture-surface", "microphone")).toBe(true);
     expect(hold.rt.layerHolds("fixture-surface", "audio")).toBe(false);
-    expect(hold.rt.layerHolds("clover", "microphone")).toBe(false);
+    // The clover layer holds it through Clover Voice (its hold-to-talk button), one of its plugins.
+    expect(hold.rt.layerHolds("clover", "microphone")).toBe(true);
+    expect(hold.rt.layerHolds("fixture-other", "microphone")).toBe(false);
     expect(hold.rt.layerHolds("someone-else", "microphone")).toBe(false);
     const itemOf = (s: ReturnType<typeof setup>) => {
       s.rt.openWindow(7, { material: "none", surface: { id: "fixture", ref: "fixture-surface#fixture" } });

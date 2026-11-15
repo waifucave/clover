@@ -13,23 +13,22 @@
 //   `speak` handler answers with the audio as it is made (`points.stream`), and this streams it to the plugin's
 //   background part, the player (`streams.open("speech")`), which takes the device's speech turn, plays it and moves
 //   the bot's mouth.
-// * Which voice speaks is the platform's: `voiceModes` takes one filler at a time, the user's pick in Settings (else
-//   Clover Voice). When the active one is another plugin's, its entry on `clover.voice.modes` is handed the reply
-//   (`reply`) and speaks it its own way.
+// * Which voice speaks and hears is the platform's pick on this plugin's own point `clover.voice.modes`, one at a time
+//   (P4, titled "Voice"): the user's pick in Settings, else Clover Voice, which fills it itself. When the active one is
+//   another plugin's, it is handed the reply (`reply`) and speaks it its own way, and push-to-talk's recording (`hear`).
 // * Its ui table: `speak` (the speak button under a reply, `conversation.message.action`), `stop` (the stage's chip),
 //   `voiceOf`/`forget` (a bot's voice for its parts) and `ready` (the player, once it accepts speech).
 // * The player's controls go as `ui.send` messages that carry the whole state (`holds`: the utterances push-to-talk
 //   holds; `stops`: each bot's stop count), so the newest message of each is all a part needs.
-// * Push-to-talk (the listening half, until it is re-founded too): the core's voice slot hands the user's audio to this
-//   plugin's `voiceModes` handler, which feeds the bot's provider (`voices.listen`) and holds the player meanwhile.
+// * Push-to-talk: this plugin's own talk button (`composer.action`) records and streams the audio here (`talk`); the
+//   active voice writes it down (another plugin's `hear`, else the bot's provider's `listen`), the player held meanwhile,
+//   and the button sends the words as the user's message.
 import type { HostPluginApi, HookInput, PointEntry } from "@waifucave/clover-plugin-sdk";
 
 export const PROVIDERS = "clover.voice.providers";
 export const MODES = "clover.voice.modes";
 /** The default voice a plugin gives the bot it brings. */
 export const DEFAULTS = "clover.voice.defaults";
-/** The platform's point of voices, one at a time (Clover Voice fills it too). */
-export const VOICE_MODES = "voiceModes";
 /** The stream to the player. */
 export const SPEECH = "speech";
 /** How long a provider's `ready` answer is kept. */
@@ -45,8 +44,6 @@ let count = 0;
 const lastReply = new Map<string, string>();
 /** What stops each bot's provider stream now. */
 const speaking = new Map<string, Set<AbortController>>();
-/** The push-to-talk utterances being heard: the provider's listening, its id, and what it heard. */
-const hearing = new Map<string, { id: string; close: () => void; heard: Promise<string> }>();
 /** The player's state: the utterances push-to-talk holds, and each bot's stop count (only goes up). */
 const holds = new Set<string>();
 const stops: Record<string, number> = {};
@@ -75,7 +72,6 @@ export function start(given: HostPluginApi): void {
   }
   lastReply.clear();
   speaking.clear();
-  hearing.clear();
   holds.clear();
   for (const k of Object.keys(stops)) delete stops[k];
   readiness.clear();
@@ -448,65 +444,3 @@ export const ui = {
   },
 };
 
-/** A watch's unsubscribe: the function itself in a plugin host, or a promise of it where a call answers late. */
-const unsubscriber = (r: unknown): (() => void) => {
-  if (typeof r === "function") return r as () => void;
-  let stopped = false;
-  let off: (() => void) | undefined;
-  void Promise.resolve(r).then((f) => {
-    if (typeof f !== "function") return;
-    off = f as () => void;
-    if (stopped) off();
-  }, () => undefined);
-  return () => {
-    stopped = true;
-    off?.();
-  };
-};
-
-/** The listening half (`voiceModes`' `handler: "voice"`), as the core's voice slot calls it on push-to-talk. */
-export const voice = {
-  /** Whether a push-to-talk for `bot` would be heard: it has a voice whose provider listens. */
-  async listens(args: { bot: string }): Promise<boolean> {
-    const v = await voiceOf(args.bot);
-    if (v === undefined) return false;
-    const providers = await need().voices?.providers().catch(() => []);
-    return (providers ?? []).some((p) => p.id === v.provider && p.listen);
-  },
-  async listenStart(args: { bot: string; utterance: string; format: "pcm16-16k" | "opus" }): Promise<void> {
-    const a = need();
-    const v = await voiceOf(args.bot);
-    if (v === undefined) throw new Error(`${args.bot} has no voice; it is text-only`);
-    // The user talks: whatever sounds stops, and nothing starts until they let go.
-    hold(args.utterance, true);
-    const id = `cl_${(++count).toString(36)}`;
-    let close = () => {};
-    const heard = new Promise<string>((resolve, reject) => {
-      close = unsubscriber(a.voices!.listen(v.provider, { id, format: args.format }, (e) => {
-        if (e.text !== undefined) resolve(e.text);
-        else reject(new Error(e.error ?? "the voice heard nothing"));
-      }));
-    });
-    heard.catch(() => undefined);
-    hearing.set(args.utterance, { id, close, heard });
-  },
-  async listenPiece(args: { bot: string; utterance: string; data: Uint8Array; final: boolean }): Promise<{ text?: string }> {
-    const h = hearing.get(args.utterance);
-    if (h === undefined) throw new Error(`no push-to-talk ${args.utterance} is being heard`);
-    await need().voices!.feed(h.id, args.data, args.final);
-    if (!args.final) return {};
-    try {
-      return { text: await h.heard };
-    } finally {
-      hearing.delete(args.utterance);
-      h.close();
-      hold(args.utterance, false);
-    }
-  },
-  async listenEnd(args: { bot: string; utterance: string }): Promise<void> {
-    const h = hearing.get(args.utterance);
-    hearing.delete(args.utterance);
-    h?.close();
-    hold(args.utterance, false);
-  },
-};

@@ -120,7 +120,6 @@ function route(over: Over) {
     layer: async () => { calls.push("layer"); return "layer"; },
     log: (l) => logs.push(l),
     refuse: (why) => new Error(why),
-    listens: { piece: async () => ({}) },
     ...rest,
   };
   return { r, calls, logs };
@@ -276,34 +275,6 @@ describe("the re-founded Voice makes no call through this door (F1): its own set
   });
 });
 
-describe("push-to-talk's voice.listen: the shell's pieces, on a hold the user's press opened", () => {
-  const shell = { windowId: 7, pluginId: SHELL_PART };
-  test("only a part with audio may make it, it needs no gesture of its own, and the piece goes to the window's hold with nothing else of the page's", async () => {
-    const got: [number, unknown][] = [];
-    const listens = { piece: async (w: number, p: unknown) => { got.push([w, p]); return { text: "hi" }; } };
-    const { r, calls } = route({ tree: shell, method: "voice.listen", params: { audio: "AAAA", final: true, bot: "luna", utterance: "u1", seq: 9 }, gesture: false, listens });
-    expect(await routeCall(r)).toEqual({ text: "hi" });
-    // The window is main's (partCaller), the params are the page's and are checked by the hold, which names the bot, the utterance and the number itself.
-    expect(got).toEqual([[7, { audio: "AAAA", final: true, bot: "luna", utterance: "u1", seq: 9 }]]);
-    expect(calls).toEqual([]);
-    for (const part of ["clover/sidebar", "clover/settings", PLUGINS_PART]) {
-      const other = route({ tree: { windowId: 7, pluginId: part }, method: "voice.listen", params: { audio: "AAAA", final: true }, gesture: true, listens });
-      await expect(routeCall(other.r)).rejects.toThrow("voice.listen needs the audio capability");
-    }
-    expect(got.length).toBe(1);
-  });
-  test("a piece with no hold open, or an app that can't record, is refused and reaches nothing", async () => {
-    const none = route({ tree: shell, method: "voice.listen", params: { audio: "AAAA", final: false }, listens: { piece: () => Promise.reject(new Error("nothing is being recorded")) } });
-    await expect(routeCall(none.r)).rejects.toThrow("nothing is being recorded");
-    expect(none.calls).toEqual([]);
-    const bare = route({ tree: shell, method: "voice.listen", params: {}, listens: undefined });
-    await expect(routeCall(bare.r)).rejects.toThrow("can't record");
-    // A third-party layer's call never reaches the table: the layer door refuses it.
-    const third = route({ tree: undefined, method: "voice.listen", params: { audio: "AAAA", final: true } });
-    expect(await routeCall(third.r)).toBe("layer");
-  });
-});
-
 describe("the Settings page's ui.set", () => {
   const settings = { windowId: 1, pluginId: "clover/settings" };
   const sent = async (params: unknown, gesture = true) => {
@@ -360,8 +331,6 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "session.context": { needs: ["conversation.read"], gesture: false },
   "session.connectors": { needs: ["conversation.read"], gesture: false },
   "ui.set": { needs: ["app.settings"], gesture: true },
-  // The pieces of a recording the user holds: no press of its own (the composer's `listenStart` took it; the hold carries the pieces).
-  "voice.listen": { needs: ["audio"], gesture: false },
   "ui.secret": { needs: ["plugins.manage", "bots.edit"], gesture: true },
   "plugin.settings.get": { needs: ["plugins.read"], gesture: false },
   "plugin.settings.set": { needs: ["plugins.manage"], gesture: true },
@@ -402,9 +371,8 @@ async function appConnection(method: string): Promise<unknown> {
 
 /** Each live entry's WORST single call from a part, classified (the reviewer's table): a sealed card the core raises, a
  *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
-type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn" | "held recording" | "user's permission press";
+type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn" | "user's permission press";
 const WORST: Record<string, Worst> = {
-  "voice.listen": "held recording", // audio to the bot's own listening voice, only while a hold the user's own press opened is live in that window (listen.ts): main names the bot and numbers the pieces, refuses any with no hold, and the core still asks its provider check; no hold, no call
   "ui.settings": "read", // the app's settings as the parts show them
   "session.diff": "read", // a session's changes in its folder: git read only (no optional locks, no fsmonitor, no external diff or textconv), bounded
   "session.outputs": "read", // the names of the files in a session's outputs folder
@@ -470,8 +438,6 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
     case "plugin.settings.get":
     case "plugin.settings.set":
       return { id: "tarot", key: "k", value: "v" };
-    case "voice.listen":
-      return { audio: "AAAA", final: false };
     case "bot.setUserLayer":
       return { id: "alpha", patch: cap === "bots.avatar" ? { avatar: null } : { theme: null } };
     case "plugin.install":
@@ -515,7 +481,7 @@ describe("the door, table by table: what each entry needs, with what press", () 
 
   test("every live entry's worst single call is classified: sealed card, main-owned dialog, read or harmless change", () => {
     const live = Object.entries(TREE_CALLS).filter(([, c]) => c.disposition !== "card" && c.disposition !== "unserved").map(([m]) => m);
-    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn|held recording|user's permission press)$/)]);
+    for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn|user's permission press)$/)]);
     expect(Object.keys(WORST).sort()).toEqual([...live].sort());
     // A read needs no gesture and a change from the Plugins page does; a read is never one that changes a thing.
     for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, false]);
@@ -558,7 +524,7 @@ describe("the door, table by table: what each entry needs, with what press", () 
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
       [CHARACTER_PART]: ["bot.importAvatar", "plugin.list"],
       [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
-      [SHELL_PART]: ["account.status", "voice.listen", "computer.list"],
+      [SHELL_PART]: ["account.status", "computer.list"],
       "clover/sidebar": ["account.status", "computer.list"],
       "clover/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
       "clover/panel-diff": ["session.diff"],

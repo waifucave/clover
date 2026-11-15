@@ -117,13 +117,14 @@ export const CORE_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
-/** The one origin that may record: the bundled `clover` layer's, whose shell is the app's push-to-talk recorder (spec §6.6; the
- *  app records and plugins never get the microphone). Every other document of the app's schemes keeps `microphone=()`. */
+/** The bundled `clover` layer's origin, which the core root frames with the microphone policy handed down (its own plugins
+ *  may hold `microphone`, Clover Voice for its hold-to-talk button). Every other document keeps `microphone=()` unless
+ *  its own plugin holds it. */
 export const MICROPHONE_ORIGIN = `${LAYER_SCHEME}://clover`;
 
 /** `headers` with the microphone policy opened to `allow` (`(self)` for the clover layer's own document, the layer's origin for
  *  the core root that frames it); the iframe still needs `allow="microphone"` (root.ts), and main's permission handler
- *  still answers only while the user's press has a recording open (listen.ts). */
+ *  still answers only for a layer that holds `microphone` (microphone.ts). */
 export function withMicrophone(headers: Record<string, string>, allow: "(self)" | "*" | `(self "${string}")`): Record<string, string> {
   const policy = headers["Permissions-Policy"];
   if (policy === undefined || !policy.includes("microphone=()")) return headers;

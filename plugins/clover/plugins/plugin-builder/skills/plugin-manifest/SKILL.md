@@ -124,17 +124,16 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   the composer. `scope: "own-bot"` keeps a command inside the plugin's bot: the user may always run it, and of the bots
   only that one. `key` is a default shortcut (building-plugins, "Limits today").
 - **`triggers`** (list): `{ type, title, fields (JSON Schema), handler }`: a new kind of routine trigger.
-- **`voices`** (list): `{ id, name, speak, listen, auth, handler }`: a provider's listening, for push-to-talk (its
-  `listen`). To speak for the bots, fill Clover Voice's own point instead: `"clover.voice.providers": [{ id, name,
-  speak, ready? }]`, whose `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes
-  (`points.stream`) and whose optional `ready` answers `{ ready, why? }`: whether the user set it up (a key saved). A
-  plugin that brings a bot gives that bot a default voice with `"clover.voice.defaults": [{ provider, voice, model? }]`; the user's
-  choice in the bot's Voice section wins, and a default speaks only with a provider that is set up.
-- **`voiceModes`** (list, at most one): `{ id, name, handler }`: the voice the bots speak and listen with. One at a
-  time (`oneAtATime`, titled "Voice"): the user's pick in Settings › Plugins, else Clover Voice; the active one hears
-  push-to-talk (its handler's `listens`, `listenStart`, `listenPiece`, `listenEnd`). To speak the replies your own way
-  while it is the one, add `"clover.voice.modes": [{ id, name, reply }]` and play in a background part of your own,
-  taking `device/speech` (plugin-host, "Turns").
+- **Voices are Clover Voice's own points, not core ones.** A voice provider fills `"clover.voice.providers": [{ id,
+  name, speak, listen?, ready? }]`: its `speak` handler answers `{ text, voice, model?, format }` with the audio as bytes
+  (`points.stream`), its optional `listen` answers `{ audio, format }` (push-to-talk's recording, 16 kHz PCM) with
+  `{ text }`, and its optional `ready` answers `{ ready, why? }`: whether the user set it up (a key saved). A plugin that
+  brings a bot gives that bot a default voice with `"clover.voice.defaults": [{ provider, voice, model? }]`; the user's
+  choice in the bot's Voice section wins, and a default speaks only with a provider that is set up. To be the voice the
+  bots speak and listen with, fill `"clover.voice.modes": [{ id, name, reply?, hear? }]`: one at a time (`oneAtATime`,
+  titled "Voice"), the user's pick in Settings › Plugins, else Clover Voice. While yours is the one, `reply` is handed
+  each reply to speak your own way (play it in a background part of your own, taking `device/speech`; plugin-host,
+  "Turns"), and `hear` is handed push-to-talk's recording, `{ bot, audio, format }`, and answers `{ text }`.
 - **`turns`** (list): `{ name, doc }`: one of the plugin's own one-at-a-time turns (`<plugin id>/<name>`) that other
   plugins may take too (plugin-host, "Turns"). Its own turns need no entry; another plugin's take of one it doesn't list
   is refused.

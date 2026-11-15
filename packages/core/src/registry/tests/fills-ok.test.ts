@@ -80,12 +80,9 @@ describe("a point's fills line", () => {
     expect(classifyChange(snap("a", ["Fills X's \"Y\": z."]), snap("a", []))).toBe("applies");
   });
 
-  test("the core's points carry theirs in the catalog; a line is bounded and plain", () => {
-    const report = validateManifest({ manifest: 1, id: "talk", name: "Talk", engines: ENGINES, host: { entry: "host/index.ts" }, contributes: { voiceModes: [{ id: "talk", name: "Talk", handler: "voice" }], voices: [{ id: "talk", name: "Talk", speak: false, listen: true, handler: "voice" }] } }, { folderName: "talk" });
-    expect([...fillsOkLines([report])].sort()).toEqual([
-      'Fills Clover\'s "Voice listening": plugins you allow can ask it to transcribe, using your account with it.',
-      'Fills Clover\'s "Voice": when you choose it in Settings, it hears what you say with push-to-talk.',
-    ]);
+  test("a core point gives a line only where the catalog carries one (none does as shipped); a line is bounded and plain", () => {
+    const report = validateManifest({ manifest: 1, id: "talk", name: "Talk", engines: ENGINES, host: { entry: "host/index.ts" }, contributes: { computerProviders: [{ id: "talk", name: "Talk", auth: [], handler: "provide" }] } }, { folderName: "talk" });
+    expect(fillsOkLines([report])).toEqual([]);
     const long = fillsLine({ by: "A\u0007B", title: "T".repeat(500), ok: `x${"y".repeat(1000)}` });
     expect(long.length).toBeLessThan(500);
     expect(long).toStartWith('Fills A B\'s "');

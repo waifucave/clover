@@ -17,8 +17,7 @@
     "bots.read",
     "computers.read",
     "conversation.read",
-    "account.read",
-    "audio"
+    "account.read"
   ],
   "contributes": {
     "ui": [

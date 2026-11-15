@@ -28,15 +28,6 @@
         "ready": "ready",
         "listen": "listen"
       }
-    ],
-    "voices": [
-      {
-        "id": "fish-audio",
-        "name": "Fish Audio",
-        "speak": false,
-        "listen": true,
-        "handler": "voice"
-      }
     ]
   }
 }

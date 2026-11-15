@@ -70,7 +70,7 @@ export interface RegistrySnapshot {
 export const EMPTY_SNAPSHOT: RegistrySnapshot = { records: new Map(), entries: new Map(), points: [] };
 
 const ARRAY_POINTS = new Set([
-  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes", "computerProviders",
+  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "computerProviders",
   "relays", "notifiers", "companions", "themes", "locales", "ui",
 ]);
 const SINGLE_POINTS = new Set(["bot", "computer"]);

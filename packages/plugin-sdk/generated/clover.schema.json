@@ -596,32 +596,18 @@
             "$ref": "#/$defs/__schema53"
           }
         },
-        "voices": {
+        "turns": {
           "maxItems": 64,
           "type": "array",
           "items": {
             "$ref": "#/$defs/__schema54"
           }
         },
-        "voiceModes": {
-          "maxItems": 1,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema55"
-          }
-        },
-        "turns": {
-          "maxItems": 64,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema56"
-          }
-        },
         "computerProviders": {
           "maxItems": 16,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema57"
+            "$ref": "#/$defs/__schema55"
           }
         },
         "computer": {
@@ -681,42 +667,42 @@
           "maxItems": 16,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema58"
+            "$ref": "#/$defs/__schema56"
           }
         },
         "notifiers": {
           "maxItems": 16,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema58"
+            "$ref": "#/$defs/__schema56"
           }
         },
         "companions": {
           "maxItems": 16,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema58"
+            "$ref": "#/$defs/__schema56"
           }
         },
         "themes": {
           "maxItems": 256,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema59"
+            "$ref": "#/$defs/__schema57"
           }
         },
         "locales": {
           "maxItems": 512,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema60"
+            "$ref": "#/$defs/__schema58"
           }
         },
         "ui": {
           "maxItems": 1000,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema61"
+            "$ref": "#/$defs/__schema59"
           }
         }
       },
@@ -734,7 +720,7 @@
               "maxItems": 1000,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema66"
+                "$ref": "#/$defs/__schema64"
               }
             }
           ]
@@ -1687,65 +1673,6 @@
     "__schema54": {
       "type": "object",
       "properties": {
-        "id": {
-          "$ref": "#/$defs/__schema5"
-        },
-        "name": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "speak": {
-          "type": "boolean"
-        },
-        "listen": {
-          "type": "boolean"
-        },
-        "auth": {
-          "maxItems": 16,
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/__schema21"
-          }
-        },
-        "handler": {
-          "$ref": "#/$defs/__schema26"
-        },
-        "declares": {
-          "$ref": "#/$defs/__schema29"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "handler"
-      ],
-      "additionalProperties": false
-    },
-    "__schema55": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/__schema5"
-        },
-        "name": {
-          "$ref": "#/$defs/__schema0"
-        },
-        "handler": {
-          "$ref": "#/$defs/__schema26"
-        },
-        "declares": {
-          "$ref": "#/$defs/__schema29"
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "handler"
-      ],
-      "additionalProperties": false
-    },
-    "__schema56": {
-      "type": "object",
-      "properties": {
         "name": {
           "type": "string",
           "minLength": 1,
@@ -1762,7 +1689,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema57": {
+    "__schema55": {
       "type": "object",
       "properties": {
         "id": {
@@ -1793,7 +1720,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema58": {
+    "__schema56": {
       "type": "object",
       "properties": {
         "id": {
@@ -1818,7 +1745,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema59": {
+    "__schema57": {
       "type": "object",
       "properties": {
         "id": {
@@ -1837,7 +1764,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema60": {
+    "__schema58": {
       "type": "object",
       "properties": {
         "lang": {
@@ -1862,7 +1789,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema61": {
+    "__schema59": {
       "type": "object",
       "properties": {
         "spot": {
@@ -1896,7 +1823,7 @@
                   "maxItems": 256,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema62"
+                    "$ref": "#/$defs/__schema60"
                   }
                 }
               ]
@@ -1913,7 +1840,7 @@
                   "maxItems": 64,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema63"
+                    "$ref": "#/$defs/__schema61"
                   }
                 }
               ]
@@ -1936,14 +1863,14 @@
             "session": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/__schema64"
+                  "$ref": "#/$defs/__schema62"
                 },
                 {
                   "minItems": 1,
                   "maxItems": 4,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema64"
+                    "$ref": "#/$defs/__schema62"
                   }
                 }
               ]
@@ -2036,7 +1963,7 @@
               "maxItems": 1,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema65"
+                "$ref": "#/$defs/__schema63"
               }
             }
           },
@@ -2065,17 +1992,17 @@
       ],
       "additionalProperties": {}
     },
-    "__schema62": {
+    "__schema60": {
       "type": "string",
       "minLength": 1,
       "maxLength": 81
     },
-    "__schema63": {
+    "__schema61": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128
     },
-    "__schema64": {
+    "__schema62": {
       "type": "string",
       "enum": [
         "bot",
@@ -2084,13 +2011,13 @@
         "coding"
       ]
     },
-    "__schema65": {
+    "__schema63": {
       "type": "string",
       "enum": [
         "tap"
       ]
     },
-    "__schema66": {
+    "__schema64": {
       "type": "object",
       "propertyNames": {
         "type": "string"

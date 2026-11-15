@@ -248,24 +248,6 @@ export const APP_METHODS = {
     params: z.object({ patch: UiSettings.partial() }), result: ChangeResult,
     doc: "Changes the user's UI choices; from a layer other than `clover`'s it becomes a card (§5.5).",
   }),
-  voiceListen: defineMethod({
-    name: "voice.listen", owner: "D", roles: ["app"], userOnly: true,
-    params: z.object({
-      bot: BotId, utterance: utf16(128, 1), seq: z.number().int().nonnegative(),
-      /** Audio the app recorded while push-to-talk was held (or listening was on), base64. */
-      audio: utf16(2_000_000), format: z.enum(["pcm16-16k", "opus"]), final: z.boolean(),
-    }),
-    result: z.object({ text: utf16(100_000).optional() }),
-    doc: "Push-to-talk audio for the active voice mode, on the computer the user talks on (§6.6; the listening half, until push-to-talk is re-founded).",
-  }),
-  /** Whether a `voice.listen` for the bot would be taken now: the active voice mode says (the bot has a voice, in Clover
-   *  Voice's own settings, whose provider listens). The app shows its hold-to-talk control only when it does. */
-  voiceStatus: defineMethod({
-    name: "voice.status", owner: "D", roles: ["app"],
-    params: z.object({ bot: BotId }),
-    result: z.object({ listens: z.boolean() }),
-    doc: "Whether the bot's voice listens now (the app shows hold-to-talk only then) (§6.6).",
-  }),
   userSend: defineMethod({
     /** From the app's main process only, never a layer (#179's review, S2): the runtime calls it for a part's `useUserSend`
      *  (a composer entry's own session, or any part whose plugin holds the `user.send` capability) inside the key press or click

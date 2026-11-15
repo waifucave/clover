@@ -1,7 +1,7 @@
-// The plugin's host half (../host/index.ts): its `voices` handler speaks in the formats the app plays and listens to
-// push-to-talk audio, with every request going through the keyed fetch it is handed, which adds the key.
+// The plugin's host half (../host/index.ts): its `clover.voice.providers` entry speaks in the formats the app plays and
+// writes down push-to-talk audio, with every request going through the keyed fetch it is handed, which adds the key.
 import { describe, expect, test } from "bun:test";
-import { FISH_SECRET, listen, ready, speak, speakChunks, voice, type VoiceContext } from "../host/index";
+import { FISH_SECRET, listen, ready, speak, speakChunks, type VoiceContext } from "../host/index";
 import { FakeFish } from "./fake-fish";
 
 const KEY = "test-key-not-a-secret";
@@ -73,34 +73,16 @@ describe("Clover Voice's provider entry (speak) and the core's voices entry (lis
     expect(bytes.reduce((n, b) => n + b.length, 0)).toBe(audio.length);
   });
 
-  test("listens to push-to-talk PCM, whole or as the call's input", async () => {
-    const fish = new FakeFish({ key: KEY, ttfaMs: 0, chunkMs: 0, balanceUsd: 1 });
-    const said = "What's on my calendar?";
-    const spoken = joined((await drain(speakChunks({ text: said, voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f", format: "pcm16-24k" }, context(fish)))).values);
-    // The fake hears back the PCM it spoke; the handler wraps PCM in WAV, since Fish refuses raw PCM.
-    const heard = await drain(voice.listen({ audio: spoken, format: "pcm16-16k", language: "en" }, context(fish)));
-    expect(heard.values).toEqual([]);
-    expect(heard.result).toMatchObject({ text: said, languageCode: "en" });
-    expect(fish.calls.at(-1)).toMatchObject({ path: "/v1/asr", billedModel: "transcribe-1", status: 200 });
-    // The recording as it was made, in chunks.
-    async function* mic() {
-      yield spoken.subarray(0, 1000);
-      yield spoken.subarray(1000);
-    }
-    const streamed = await drain(voice.listen({ format: "pcm16-16k", language: "en" }, { ...context(fish), input: mic() }));
-    expect(streamed.result.text).toBe(said);
-    // Anything else it doesn't know is the cassette's transcript.
-    const other = await drain(voice.listen({ audio: new Uint8Array(32_000), format: "pcm16-16k" }, context(fish)));
-    expect(other.result.text).toBe("Hello from the other side.");
-    expect(other.result.duration).toBe(1);
-    await expect(drain(voice.listen({ format: "pcm16-16k" }, context(fish)))).rejects.toThrow("needs the recording");
-  });
-
   test("Clover Voice's listen: the push-to-talk recording whole, written down", async () => {
     const fish = new FakeFish({ key: KEY, ttfaMs: 0, chunkMs: 0, balanceUsd: 1 });
     const said = "What's on my calendar?";
     const spoken = joined((await drain(speakChunks({ text: said, voice: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f", format: "pcm16-24k" }, context(fish)))).values);
     expect(await listen({ audio: spoken, format: "pcm16-16k", language: "en" }, context(fish))).toMatchObject({ text: said, languageCode: "en" });
+    expect(fish.calls.at(-1)).toMatchObject({ path: "/v1/asr", billedModel: "transcribe-1", status: 200 });
+    // Anything else it doesn't know is the cassette's transcript.
+    const other = await listen({ audio: new Uint8Array(32_000), format: "pcm16-16k" }, context(fish));
+    expect(other.text).toBe("Hello from the other side.");
+    expect(other.duration).toBe(1);
     await expect(listen({ format: "pcm16-16k" }, context(fish))).rejects.toThrow("needs the recording");
   });
 });

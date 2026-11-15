@@ -44,7 +44,6 @@ export function contributionLabels(manifests: readonly unknown[]): string[] {
     if (nonEmpty(c.agents)) found.add("Agent");
     if (nonEmpty(c.agentBackends)) found.add("Agent backend");
     if (nonEmpty(c.models)) found.add("Model");
-    if (nonEmpty(c.voices) || nonEmpty(c.voiceModes)) found.add("Voice");
     if (nonEmpty(c.themes)) found.add("Theme");
     if (nonEmpty(c.commands)) found.add("Commands");
     if (nonEmpty(c.hooks)) found.add("Hooks");

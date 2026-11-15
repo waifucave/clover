@@ -167,13 +167,6 @@
     }
   },
   "contributes": {
-    "voiceModes": [
-      {
-        "id": "clover-voice",
-        "name": "Clover Voice",
-        "handler": "voice"
-      }
-    ],
     "clover.voice.modes": [
       {
         "id": "clover-voice",

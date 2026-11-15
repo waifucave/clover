@@ -4,9 +4,8 @@
 // * `speak` fills Clover Voice's own providers point (`clover.voice.providers`, this plugin's clover.json): Clover Voice
 //   calls it through `points.stream` with the text and the bot's voice, and it answers with the audio as Fish sends it,
 //   raw bytes in the format asked (pcm16-24k by default), so the first words play while the rest arrives.
-// * `voice.listen` is the core's `voices` entry, for push-to-talk (the listening half, until it moves to Clover Voice's
-//   own point too): it takes the recording as it is made (`ctx.input`, chunks of audio) or whole (`args.audio`), and
-//   returns what it heard. Fish's `transcribe-1` takes a whole recording, so it yields nothing on the way.
+// * `listen` is the same entry's, for push-to-talk: Clover Voice calls it (`points.call`) with the whole recording
+//   (`args.audio`, 16 kHz PCM, or Ogg Opus), and it answers with what Fish's `transcribe-1` heard.
 //
 // The plugin never holds the user's key. Every request goes through the core's keyed fetch with this plugin's `auth`
 // entry, `fish-api-key`: the core adds the key, reaches only `api.fish.audio`, and fails at once when the user has no
@@ -20,8 +19,6 @@ export const FISH_SECRET = "fish-api-key";
 /** What this handler uses of the plugin API (`HandlerContext` in the plugin SDK). */
 export interface VoiceContext {
   readonly signal: AbortSignal;
-  /** A streamed call's input: the recording's chunks, for `listen`. */
-  readonly input?: AsyncIterable<unknown>;
   readonly api: Pick<HostPluginApi, "net">;
 }
 
@@ -57,8 +54,7 @@ export interface SpeakResult {
 }
 
 export interface ListenArgs {
-  /** What the app recorded while push-to-talk was held: raw 16-bit PCM at 16 kHz, or an Ogg Opus stream. Left out,
-   *  the recording comes as the call's input. */
+  /** What Clover Voice's talk button recorded while it was held: raw 16-bit PCM at 16 kHz, or an Ogg Opus stream. */
   audio?: Uint8Array;
   format: "pcm16-16k" | "opus";
   language?: string;
@@ -84,26 +80,6 @@ function clientFor(ctx: VoiceContext): FishAudioClient {
 
 /** The most a recording may hold: ten minutes of 16 kHz PCM. */
 export const LISTEN_MAX_BYTES = 10 * 60 * 16_000 * 2;
-
-async function recording(args: ListenArgs, ctx: VoiceContext): Promise<Uint8Array> {
-  if (args.audio !== undefined) return args.audio;
-  if (ctx.input === undefined) throw new Error("listen needs the recording, as its audio or as the call's input");
-  const parts: Uint8Array[] = [];
-  let size = 0;
-  for await (const chunk of ctx.input) {
-    if (!(chunk instanceof Uint8Array)) throw new Error("listen's input is audio: chunks of bytes");
-    size += chunk.length;
-    if (size > LISTEN_MAX_BYTES) throw new Error(`a recording holds at most ${LISTEN_MAX_BYTES} bytes`);
-    parts.push(chunk);
-  }
-  const out = new Uint8Array(size);
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-}
 
 /** The audio for `args.text`, as Fish sends it, with what was spoken at the end. */
 export async function* speakChunks(args: SpeakArgs, ctx: VoiceContext): AsyncGenerator<SpeakChunk, SpeakResult, undefined> {
@@ -163,18 +139,3 @@ export async function listen(args: ListenArgs, ctx: VoiceContext): Promise<Liste
   });
   return { text: heard.text, duration: heard.duration, ...(heard.languageCode === undefined ? {} : { languageCode: heard.languageCode }) };
 }
-
-export const voice = {
-  // eslint-disable-next-line require-yield
-  async *listen(args: ListenArgs, ctx: VoiceContext): AsyncGenerator<never, ListenResult, undefined> {
-    const model = (args.model ?? "transcribe-1") as AsrModel;
-    if (!(ASR_MODELS as readonly string[]).includes(model)) throw new Error(`"${String(args.model)}" isn't a Fish Audio listening model`);
-    const audio = await recording(args, ctx);
-    const heard = await clientFor(ctx).transcribe({
-      audio, format: args.format === "opus" ? "ogg" : "pcm16-16k", model,
-      ...(args.language === undefined ? {} : { language: args.language }),
-      signal: ctx.signal,
-    });
-    return { text: heard.text, duration: heard.duration, ...(heard.languageCode === undefined ? {} : { languageCode: heard.languageCode }) };
-  },
-};

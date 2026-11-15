@@ -23,6 +23,8 @@ describe("capabilities", () => {
     for (const c of CAPABILITIES) expect([c.name, typeof c.ok === "string" && c.ok.length > 0 && !/[.]$/.test(c.ok)]).toEqual([c.name, true]);
     const warned = CAPABILITIES.filter((c) => c.warns).map((c) => c.name);
     expect(warned).toEqual(expect.arrayContaining(["computers.control", "approvals", "browser", "terminal", "audio", "microphone", "network:public", "app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
+    expect(names).not.toContain("voices.use");
+    expect(CAPABILITIES.find((c) => c.name === "audio")?.ok).toBe("can play sound at any time, even while no window of it shows");
     expect(CAPABILITIES.find((c) => c.name === "bots.edit")?.ok).toBe("changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network");
   });
 
@@ -131,11 +133,12 @@ describe("the plugin API's gating", () => {
     // checks per source: the calls themselves need no capability.
     // avatar.control.all widens whose figure `avatar.cue` may move (the core checks it per bot) and carries avatar.control
     // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
-    // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call.
+    // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call;
+    // `audio` is the frames' autoplay and the device's speech turn (the turns catalog), not an API call either.
     // approvals.all, user.send, overlay and tray gate a window's fields, a hook and a spot (the app checks them), not a call.
     // F2's eight gate the app's door for its parts (tree-calls.ts and the composer spot's), not a plugin-API call.
     const doorCaps = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
-    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone", ...doorCaps];
+    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone", "audio", ...doorCaps];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });
@@ -185,12 +188,12 @@ describe("hooks", () => {
 describe("points and spots", () => {
   test("the core's points are §5.3's, and every daemon point is a manifest key", () => {
     expect(CORE_POINTS.map((p) => p.name)).toEqual([
-      "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes",
+      "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers",
       "turns", "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "app.background", "bot.tab", "locales",
     ]);
     for (const p of CORE_POINTS) if (p.side === "daemon" || p.name === "themes" || p.name === "locales") expect(CORE_CONTRIBUTION_KEYS).toContain(p.name as never);
     expect(CORE_POINTS.filter((p) => p.uniqueBy).map((p) => `${p.name}.${p.uniqueBy}`)).toEqual([
-      "models.provider", "agentBackends.id", "commands.name", "triggers.type", "voices.id", "voiceModes.id", "computerProviders.id",
+      "models.provider", "agentBackends.id", "commands.name", "triggers.type", "computerProviders.id",
     ]);
   });
 

@@ -110,9 +110,6 @@ export interface DaemonBotsInput {
    *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
   contextWindowOf?: SessionPanelDeps["contextWindowOf"];
   connectorsOf?: SessionPanelDeps["connectorsOf"];
-  /** The plugin host push-to-talk's voices stream from, where the daemon gives no `pluginHost` (whose ingress and
-   *  triggers this leaves off). */
-  voiceHost?: NonNullable<BotSideOptions["voices"]>["host"];
   /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
   relayMailbox?: BotRelayMailbox;
   /** The plugin host that runs `pill.target` entries' handlers (#323's `user.send`). */
@@ -123,7 +120,7 @@ export interface DaemonBotsInput {
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
-export type BotPluginHost = NonNullable<BotSideOptions["voices"]>["host"] & NonNullable<NonNullable<BotSideOptions["routines"]>["ingress"]>["host"] & {
+export type BotPluginHost = NonNullable<NonNullable<BotSideOptions["routines"]>["ingress"]>["host"] & {
   /** The plugin triggers' arm and disarm (lane B's `triggers` point). */
   triggers?: NonNullable<NonNullable<BotSideOptions["routines"]>["pluginTriggers"]>;
 };
@@ -614,7 +611,6 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
   return {
     ...(relay ? { relay } : {}),
     routines,
-    ...((host ?? b.voiceHost) ? { voices: { registry: b.registry, host: (host ?? b.voiceHost)!, } } : {}),
     ...(b.compaction ? { compaction: b.compaction } : {}),
     ...(b.assetUrl ? { assetUrl: b.assetUrl } : {}),
   };

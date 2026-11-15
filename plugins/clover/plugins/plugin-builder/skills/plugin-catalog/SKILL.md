@@ -36,8 +36,6 @@ How to read it:
 | `hooks` | list | code | Calls them in the turn loop; a hook can block or adjust, never replace the runtime or skip approvals. |
 | `commands` | list | code | Runs a plugin's public functions for any client at once, with no model turn (§5.4). |
 | `triggers` | keyed | code | Arms them for routine files (§7). |
-| `voices` | list | code | Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover… |
-| `voiceModes` | list | code | The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listen… |
 | `turns` | list | data | Names of the plugin's own one-at-a-time turns that another plugin may take (`<plugin id>/<name>`, §5.4 "Turns"); its own need no entry. |
 | `computerProviders` | keyed | code | Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2). |
 | `computer` | single | data | A cloud computer, created after the user's OK (§9.2). |
@@ -130,17 +128,8 @@ How to read it:
 | `avatar.control.all` | Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do | moves any of your bots' figures |  |
 | `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see | a warning |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
-| `audio` | Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one… | hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices | a warning |
+| `audio` | Play sound with no press from the user, even from a part kept in the background, and take the device's speech turn (`device/speech`) so it never talks over another plugin | can play sound at any time, even while no window of it shows | a warning |
 | `microphone` | Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission stil… | hears your microphone, also while no window of it shows | a warning |
-| `voices.use` | Ask the voice providers (`voices` entries) to transcribe audio, getting the text back | can ask your voice providers to transcribe, which may use your accounts with them | a warning |
-| `app.settings` | Read Clover's own settings (its look, theme, language, layout lists, and which plugin is active for each one-at-a-time job) and, on the user's own press in its frame, change the l… | reads Clover's settings, and changes its look, language and which plugin does each job when you press its controls | a warning |
-| `bots.edit` | On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar: its name, instructions, model, voice, and whether its browser may reac… | changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network | a warning |
-| `bots.avatar` | On the user's own press in its frame: set a bot's avatar from a model file the user picks in Clover's own file dialog (the path never reaches the plugin), and its avatar and credi… | changes your bots' avatars to files you pick |  |
-| `plugins.read` | Read every plugin's record and manifest, its settings (a secret only as set or not), sign-ins, development folders, granted files, commands and notification mutes, and the plugin… | sees every plugin you have, its settings and what it may do | a warning |
-| `plugins.manage` | On the user's own press in its frame: install (each landing behind its own OK card), remove, update, pin, restart and switch plugins on and off; add and remove indexes and develop… | installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls | a warning |
-| `tools.permissions` | Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block): every installed plugin's tools, Clover's own bundled plugins… | sets any plugin's tools, Clover's own plugins' included, to act without asking you, with no card (not Clover's built-in shell and file tools) | a warning |
-| `account.read` | Read whether Clover is signed in to an account, with which provider, and the account's id, name and email | sees the name and email of your Clover account | a warning |
-| `commands.run` | From the composer it fills: list every running plugin's commands and, on the user's own press, run one as the user, with that plugin's own powers (a carded action still raises its… | runs your plugins' commands as you when you press a key in it | a warning |
 | `call:<plugin-id>` | Run that plugin's commands | runs commands of {plugin} |  |
 | `network:public` | Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, siz… | connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer | a warning |
 | `network:<host>` | Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host | connects to {host} |  |
@@ -170,8 +159,6 @@ How to read it:
 - **avatar.control**: `avatar.cue` (both)
 - **avatar.read**: `avatar.box` (both), `avatar.catalogue` (both), `avatar.watch` (both)
 - **avatar.report**: `avatar.report` (ui)
-- **audio**: `audio.onRecording` (both)
-- **voices.use**: `voices.feed` (host), `voices.listen` (host), `voices.providers` (both)
 
 ## Hook events (`contributes.hooks[].on`) and what a hook may return on each
 

@@ -777,14 +777,14 @@ interface CoreCtx {
 }
 
 const LIST_KEYS = new Set<CoreContributionKey>([
-  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "voiceModes", "computerProviders",
+  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "computerProviders",
   "relays", "notifiers", "companions", "themes", "locales", "ui",
   "turns",
 ]);
 
 /** The field each list point's entries are unique by within one plugin (§5.1 "Entry ids"). */
 const UNIQUE_BY: Partial<Record<CoreContributionKey, string>> = {
-  models: "provider", agentBackends: "id", hooks: "id", commands: "name", triggers: "type", voices: "id", voiceModes: "id",
+  models: "provider", agentBackends: "id", hooks: "id", commands: "name", triggers: "type",
   computerProviders: "id", relays: "id", notifiers: "id", companions: "id", themes: "id", locales: "lang",
   turns: "name",
 };
@@ -1017,9 +1017,6 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
     case "notifiers":
     case "companions":
       return needHost("handler");
-    case "voiceModes":
-      return needHost("handler");
-    case "voices":
     case "computerProviders":
       return needHost("handler") && checkAuthHandlers(f, e.auth, [...at, "auth"], ctx);
     case "ui":
@@ -1255,7 +1252,6 @@ function urlFields(m: Manifest): string[] {
     if (model.endpoint) out.push(model.endpoint.baseUrl);
     auth(model.auth);
   }
-  for (const v of c.voices ?? []) auth(v.auth);
   for (const p of c.computerProviders ?? []) auth(p.auth);
   for (const u of c.ui ?? []) if (u.web?.url) out.push(u.web.url);
   return out;
@@ -1364,9 +1360,6 @@ export function backgroundOkLines(reports: readonly ManifestReport[]): string[] 
   return lines;
 }
 
-/** A voice mode uses the voice providers' listening (`voices.use`, which it holds by being a voice mode). What it is
- *  given as a voice mode, and a provider's line, are the `fills` lines of their core points (`fillsOkLines`). */
-export const VOICE_MODE_PROVIDERS_OK_LINE = "It uses your voice providers: it asks them to transcribe, which may use your accounts with them.";
 
 /** A point's `fills` line as its declarer wrote it, with who declared it and its title (§5.4): the core's points'
  *  from `CORE_POINTS` (declared by Clover), a plugin's from its declaration. `tree`: the declarer's top-level id (its
@@ -1531,7 +1524,6 @@ export function describeOk(
   lines.push(...ownPanelLines(report.manifest));
   if (report.contributions.some((c) => c.point === "island.line")) lines.push(ISLAND_LINE_OK_LINE);
   if ((report.manifest?.contributes?.ui ?? []).some((e) => (e as { spot?: string; hide?: boolean }).spot === "app.background" && (e as { hide?: boolean }).hide !== true)) lines.push(BACKGROUND_OK_LINE);
-  if ((report.manifest?.contributes?.voiceModes?.length ?? 0) > 0 && !report.capabilities.includes("voices.use")) lines.push(VOICE_MODE_PROVIDERS_OK_LINE);
   for (const cap of report.capabilities) {
     if (parseCapability(cap)?.kind === "network") continue;
     const text = capabilityOkText(cap);

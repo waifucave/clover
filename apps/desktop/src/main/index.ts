@@ -62,7 +62,7 @@ import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
 import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
-import { LISTEN_REQUEST_MS, ListenHolds, micHandlers } from "./ui/listen";
+import { micHandlers } from "./ui/microphone";
 import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
@@ -173,8 +173,6 @@ const safeMode = start.safeMode || args.safeMode;
 
 let runtime: UiRuntime;
 let pair: Pair;
-/** The windows' push-to-talk holds (ui/listen.ts), made at ready. */
-let listens: ListenHolds | undefined;
 let browser: BrowserHost | undefined;
 let tray: AppTray | undefined;
 let mainWindow: BrowserWindow | undefined;
@@ -287,28 +285,14 @@ async function ready(): Promise<void> {
   await hardenSession(session.defaultSession, log);
   const ui = session.fromPartition(UI_PARTITION);
   await hardenSession(ui, log);
-  // Push-to-talk (listen.ts): the one place a microphone may open is the main window's `clover` shell, for audio, while the
-  // user's own press has a recording open in that window. `hardenSession` refused every permission to every frame; these two
-  // handlers (the request and the check, Chromium asks both) are the only exception, for this session alone.
-  const holds = listens = new ListenHolds({
-    shell: (windowId, message) => runtime.shellMessage(windowId, message),
-    request: (method, params) => {
-      const client = pair?.client;
-      if (client === undefined) return Promise.reject(new Error("Clover isn't running"));
-      return client.request(method, params, LISTEN_REQUEST_MS);
-    },
-    // The operating system's own question, on the first press of a real app; a test or acceptance build never asks (its shell
-    // records from a generated clip, never the microphone).
-    ...(typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string" ? {} : { ensureMic: microphoneProblem }),
-    log,
-  });
-  // A plugin that holds `microphone` may open it from its own frames (their address names the layer; the runtime says what that plugin
-  // holds). On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build answers the
-  // permission check and request but never opens a real microphone or asks the system (nothing in a test calls getUserMedia).
-  const pluginMic = (layer: string): boolean => runtime?.layerHolds(layer, "microphone") === true;
+  // The microphone (ui/microphone.ts): a frame whose layer holds `microphone` may open it, for audio alone (the clover layer
+  // too, by the same rule: Clover Voice holds it for its hold-to-talk button). `hardenSession` refused every permission to
+  // every frame; these two handlers (the request and the check, Chromium asks both) are the only exception, for this session
+  // alone. On a real build the system's own question comes first (the first time, on a Mac); a test or acceptance build
+  // answers the check and the request but never asks the system (nothing in a test calls getUserMedia).
   const testBuild = typeof __CLOVER_TEST_BUILD__ === "string" || typeof __CLOVER_ACCEPTANCE_BUILD__ === "string";
   const mic = micHandlers({
-    holds, layerScheme: LAYER_SCHEME, plugin: pluginMic, testBuild,
+    layerScheme: LAYER_SCHEME, holds: (layer) => runtime?.layerHolds(layer, "microphone") === true, testBuild,
     windowOf: (wc) => (wc === null ? undefined : BrowserWindow.fromWebContents(wc as Electron.WebContents)?.id),
     systemProblem: microphoneProblem,
   });
@@ -373,7 +357,6 @@ async function ready(): Promise<void> {
   });
   const ipcStats = ipcStatsOn({ env: process.env, flagFile: existsSync(join(home, "ipc-stats")) }) ? new IpcStats() : undefined;
   installIpc(runtime, {
-    listens: holds,
     frameWatches,
     frameMetrics: (id, m) => runtime.setFrameMetrics(id, m),
     shellState: (id, state) => shellStates.set(id, state),
@@ -2367,7 +2350,6 @@ function watchWindow(win: BrowserWindow): void {
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
-    listens?.closeWindow(id);
     windowDrags.forget(id);
     cursors.delete(id);
     pointers.forget(id);

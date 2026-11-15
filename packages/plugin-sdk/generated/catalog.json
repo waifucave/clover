@@ -172,68 +172,14 @@
     },
     {
       "name": "audio",
-      "lets": "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices",
-      "ok": "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
+      "lets": "Play sound with no press from the user, even from a part kept in the background, and take the device's speech turn (`device/speech`) so it never talks over another plugin",
+      "ok": "can play sound at any time, even while no window of it shows",
       "warns": true
     },
     {
       "name": "microphone",
       "lets": "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it",
       "ok": "hears your microphone, also while no window of it shows",
-      "warns": true
-    },
-    {
-      "name": "voices.use",
-      "lets": "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back",
-      "ok": "can ask your voice providers to transcribe, which may use your accounts with them",
-      "warns": true
-    },
-    {
-      "name": "app.settings",
-      "lets": "Read Clover's own settings (its look, theme, language, layout lists, and which plugin is active for each one-at-a-time job) and, on the user's own press in its frame, change the look, the theme, the language and which plugin does each job",
-      "ok": "reads Clover's settings, and changes its look, language and which plugin does each job when you press its controls",
-      "warns": true
-    },
-    {
-      "name": "bots.edit",
-      "lets": "On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar: its name, instructions, model, voice, and whether its browser may reach the home network), its tab's layout switches, and its own plugin's settings for that bot; open Clover's own key dialog for that bot's keys (the key never passes the plugin); read the model list and Clover's layout settings",
-      "ok": "changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network",
-      "warns": true
-    },
-    {
-      "name": "bots.avatar",
-      "lets": "On the user's own press in its frame: set a bot's avatar from a model file the user picks in Clover's own file dialog (the path never reaches the plugin), and its avatar and credit fields",
-      "ok": "changes your bots' avatars to files you pick",
-      "warns": false
-    },
-    {
-      "name": "plugins.read",
-      "lets": "Read every plugin's record and manifest, its settings (a secret only as set or not), sign-ins, development folders, granted files, commands and notification mutes, and the plugin indexes; it can change nothing",
-      "ok": "sees every plugin you have, its settings and what it may do",
-      "warns": true
-    },
-    {
-      "name": "plugins.manage",
-      "lets": "On the user's own press in its frame: install (each landing behind its own OK card), remove, update, pin, restart and switch plugins on and off; add and remove indexes and development folders (a folder only from Clover's own picker); sign plugins in and out (a key only in Clover's own key dialog); change any plugin's settings (never a key); take back picked files; mute a plugin's notifications. A removal, an update, a sign-out and a renewal still ask on Clover's sealed card",
-      "ok": "installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls",
-      "warns": true
-    },
-    {
-      "name": "tools.permissions",
-      "lets": "Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block): every installed plugin's tools, Clover's own bundled plugins' included, so a tool set to always allow then acts with no card; not Clover's built-in shell and file tools. It can also take back the card rules saved for a bot",
-      "ok": "sets any plugin's tools, Clover's own plugins' included, to act without asking you, with no card (not Clover's built-in shell and file tools)",
-      "warns": true
-    },
-    {
-      "name": "account.read",
-      "lets": "Read whether Clover is signed in to an account, with which provider, and the account's id, name and email",
-      "ok": "sees the name and email of your Clover account",
-      "warns": true
-    },
-    {
-      "name": "commands.run",
-      "lets": "From the composer it fills: list every running plugin's commands and, on the user's own press, run one as the user, with that plugin's own powers (a carded action still raises its card)",
-      "ok": "runs your plugins' commands as you when you press a key in it",
       "warns": true
     },
     {
@@ -383,35 +329,6 @@
       "runsOn": "each computer, started at once",
       "doc": "Arms them for routine files (§7).",
       "shipsWith": "schedule, webhook"
-    },
-    {
-      "name": "voices",
-      "side": "daemon",
-      "shape": "list",
-      "uniqueBy": "id",
-      "kind": "code",
-      "runsOn": "the computer the user is talking on",
-      "doc": "Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover Voice's own point (`clover.voice.providers`).",
-      "shipsWith": "Fish Audio",
-      "title": "Voice listening",
-      "fills": {
-        "ok": "plugins you allow can ask it to transcribe, using your account with it"
-      }
-    },
-    {
-      "name": "voiceModes",
-      "side": "daemon",
-      "shape": "list",
-      "uniqueBy": "id",
-      "kind": "code",
-      "runsOn": "the computer the user is talking on",
-      "doc": "The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listening half until it is re-founded); a mode that speaks the replies also offers its `reply` on Clover Voice's own point (`clover.voice.modes`).",
-      "shipsWith": "Clover Voice",
-      "oneAtATime": true,
-      "title": "Voice",
-      "fills": {
-        "ok": "when you choose it in Settings, it hears what you say with push-to-talk"
-      }
     },
     {
       "name": "turns",
@@ -4650,22 +4567,6 @@
     "avatar.report": {
       "capability": "avatar.report",
       "where": "ui"
-    },
-    "audio.onRecording": {
-      "capability": "audio",
-      "where": "both"
-    },
-    "voices.providers": {
-      "capability": "voices.use",
-      "where": "both"
-    },
-    "voices.listen": {
-      "capability": "voices.use",
-      "where": "host"
-    },
-    "voices.feed": {
-      "capability": "voices.use",
-      "where": "host"
     },
     "turns.take": {
       "where": "both"

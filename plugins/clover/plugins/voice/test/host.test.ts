@@ -56,7 +56,6 @@ function fake(o: Fake = {}) {
         return { close: async () => { rec.closed = true; }, getWriter: () => ({ write: async (c: Uint8Array) => { rec.bytes += c.length; }, close: async () => { rec.closed = true; }, abort: async () => undefined }) };
       },
     },
-    voices: { listen: () => () => undefined, feed: async () => undefined, providers: async () => [] },
     ui: { send: (event: string, data: unknown) => void sent.push([event, data]) },
     conversation: {
       get: async (session: string) => ({ id: session, kind: session.startsWith("b_") ? "bot" : "side-thread", bot: "alpha" }),
@@ -188,11 +187,12 @@ describe("Clover Voice's host half", () => {
   });
 
   test("no voice for one bot: none of its replies are spoken or heard, kept as the user's own bot setting", async () => {
-    const f = fake({ settings: VOICED });
+    const f = fake({ settings: { ...VOICED, "providerPlugin@alpha": "acceptance-voice" }, providerListens: true });
+    expect(await host.ui.listens({ bot: "alpha" })).toBe(true);
     expect(await host.ui.setOff({ bot: "alpha", off: true })).toEqual({ ok: true });
     expect(f.settings.get("silent@alpha")).toBe(true);
     expect(await host.ui.voiceOf({ bot: "alpha" })).toEqual({ provider: "acceptance-voice", plugin: "acceptance-voice", voice: "tone", from: "user", off: true });
-    expect(await host.voice.listens({ bot: "alpha" })).toBe(false);
+    expect(await host.ui.listens({ bot: "alpha" })).toBe(false);
     await host.replies(at("message.out", { text: "Hi." }));
     await host.replies(at("turn.end", { outcome: "completed" }));
     await settle();
@@ -246,13 +246,24 @@ describe("Clover Voice's host half", () => {
   });
 
   test("push-to-talk's holds go to the player as the whole set; the player's ready answers the state so far", async () => {
-    const f = fake({ settings: VOICED });
-    await host.voice.listenStart({ bot: "alpha", utterance: "u1", format: "pcm16-16k" });
-    await host.voice.listenStart({ bot: "alpha", utterance: "u2", format: "pcm16-16k" });
+    const f = fake({ settings: { ...VOICED, "providerPlugin@alpha": "acceptance-voice" }, providerListens: true });
+    /** A recording that lasts until `end`. */
+    const held = () => {
+      let end!: () => void;
+      const ended = new Promise<void>((r) => (end = r));
+      const stream = { getReader: () => ({ read: async () => { await ended; return { done: true, value: undefined }; }, cancel: async () => undefined }), cancel: async () => undefined };
+      return { end, stream };
+    };
+    const one = held();
+    const two = held();
+    f.accepted.get("talk")!(one.stream, { bot: "alpha", utterance: "u1" });
+    f.accepted.get("talk")!(two.stream, { bot: "alpha", utterance: "u2" });
     expect(await host.ui.ready()).toEqual({ holds: ["u1", "u2"], stops: {} });
-    await host.voice.listenEnd({ bot: "alpha", utterance: "u1" });
-    await host.voice.listenEnd({ bot: "alpha", utterance: "u9" });
+    one.end();
+    await host.ui.heard({ utterance: "u1" });
     expect(f.sent).toEqual([["holds", { utterances: ["u1"] }], ["holds", { utterances: ["u1", "u2"] }], ["holds", { utterances: ["u2"] }]]);
+    two.end();
+    await host.ui.heard({ utterance: "u2" });
   });
 
   test("a reply before the player's frame accepts speech waits for its ready, then goes to it", async () => {

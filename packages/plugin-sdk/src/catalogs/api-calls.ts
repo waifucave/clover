@@ -3,7 +3,7 @@
 // by this table (B-M2); the UI runtime does the same in layers (lane E). `satisfies` keeps it exactly in step with
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
-  ApprovalsApi, AudioApi, VoicesApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
+  ApprovalsApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, OutsideApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
   TurnsApi, StreamsApi,
@@ -23,7 +23,7 @@ export type ApiCallPath =
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
-  | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}` | `voices.${FnKeys<VoicesApi>}`
+  | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}`
   | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`
   | `turns.${FnKeys<TurnsApi>}` | `streams.${FnKeys<StreamsApi>}`;
 
@@ -149,13 +149,6 @@ export const API_CALLS = {
    *  host half alike. The renderer's side is the stage's: only the bundled `clover` tree reports what it drew. */
   "avatar.cue": both("avatar.control"), "avatar.catalogue": both("avatar.read"), "avatar.box": both("avatar.read"), "avatar.watch": both("avatar.read"),
   "avatar.report": { capability: "avatar.report", where: "ui" },
-  /** Push-to-talk audio reaches the plugin as it comes (a plugin's own sound plays in a part of its own, taking
-   *  `device/speech`). */
-  "audio.onRecording": both("audio"),
-  /** The providers' listening (`voices.*`, §6.6 push-to-talk): `voices.use`, which a voice mode holds by being one (the
-   *  router counts its `voiceModes` entry as the grant). */
-  "voices.providers": both("voices.use"), "voices.listen": { capability: "voices.use", where: "host" },
-  "voices.feed": { capability: "voices.use", where: "host" },
   /** One-at-a-time queues (§5.4 "Turns"), in both halves, with no capability of their own: the name decides. A plugin's
    *  own (`<its id>/<name>`) is open to it; another plugin's only if that plugin's manifest lists the name
    *  (`contributes.turns`); a device turn (`device/speech`) needs the capability the turns catalog names (`audio`). */
