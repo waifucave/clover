@@ -372,10 +372,16 @@ function stopBot(bot: string): void {
  *  parts (`voiceOf`, `forget`): a page reads and changes only its plugin's plain settings, a bot's value is the host
  *  half's. */
 export const ui = {
-  /** Whether push-to-talk for this bot would be heard now (the talk button shows only then). */
+  /** Whether push-to-talk for this bot would be heard now (the talk button shows only then), in its own conversation
+   *  (`session`, when given, a bot's main conversation; not a side thread or an agent's tab). */
   async listens(args: unknown): Promise<boolean> {
-    const bot = (args as { bot?: unknown } | null)?.bot;
-    return typeof bot === "string" ? listensFor(bot).catch(() => false) : false;
+    const p = args as { bot?: unknown; session?: unknown } | null;
+    if (typeof p?.bot !== "string") return false;
+    if (typeof p.session === "string") {
+      const view = await need().conversation?.get?.(p.session).catch(() => undefined);
+      if (view === undefined || view.kind !== "bot") return false;
+    }
+    return listensFor(p.bot).catch(() => false);
   },
   /** What a recording the talk button sent was heard as (it asks once its stream ended): `{ text }` or `{ note }`. */
   async heard(args: unknown): Promise<{ text: string } | { note: string }> {

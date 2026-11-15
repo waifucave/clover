@@ -60,7 +60,6 @@ function Demo(props: Partial<ComposerProps> & { initial?: string }) {
       onStop={noop}
       model={MODELS}
       level={LEVEL}
-      voice={{ listening: false, onPressStart: noop, onPressEnd: noop }}
       {...props}
       attachments={attachments}
     />
@@ -163,15 +162,10 @@ export const stories: Story[] = [
     render: () => <Demo cardPending running initial="" />,
   },
   {
-    id: "composer/listening",
-    title: "Holding to talk",
-    render: () => <Demo voice={{ listening: true, onPressStart: noop, onPressEnd: noop }} />,
-  },
-  {
     id: "composer/minimal",
     title: "With no attach, model, level or voice",
     notes: "A bot with no voice plugin, in a host that offers nothing else.",
-    render: () => <Demo model={undefined} level={undefined} voice={undefined} onAttach={undefined} />,
+    render: () => <Demo model={undefined} level={undefined} onAttach={undefined} />,
   },
   {
     id: "composer/replaced-action",

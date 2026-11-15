@@ -118,7 +118,9 @@
   "capabilities": [
     "audio",
     "avatar.control.all",
-    "conversation.read"
+    "conversation.read",
+    "microphone",
+    "user.send"
   ],
   "settings": {
     "speakReplies": {
@@ -222,6 +224,12 @@
         "icon": "assets/speak.svg",
         "call": "speak",
         "on": "assistant"
+      },
+      {
+        "spot": "composer.action",
+        "key": "voice",
+        "id": "talk",
+        "component": "TalkButton"
       }
     ]
   }

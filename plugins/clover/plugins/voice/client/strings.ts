@@ -14,6 +14,12 @@ export const S = {
   speaksDetail: "Off, this bot stays text-only, whatever its voice.",
   reset: "Reset",
   stopSpeaking: "Stop speaking",
+  holdToTalk: "Hold to talk",
+  talkListening: "Listening… release to send",
+  talkHearing: "Writing it down…",
+  talkNothing: "Nothing was heard. Hold to talk again.",
+  talkRefused: "That didn't go. Hold to talk to try again.",
+  talkNoSend: "This window can't send your words.",
   mute: "Mute spoken replies",
   unmute: "Unmute spoken replies",
 } as const;

@@ -27,8 +27,8 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { IconArrowUp, IconCheck, IconChevronDown, IconCross, IconFile, IconMic, IconMoon, IconPlus, IconShield, IconStop } from "./icons";
-import { canSend, endsTalkKey, isTalkKey, keyAction } from "./keys";
+import { IconArrowUp, IconCheck, IconChevronDown, IconCross, IconFile, IconMoon, IconPlus, IconShield, IconStop } from "./icons";
+import { canSend, keyAction } from "./keys";
 import { armedFor, matchCommands, slashLine, type SlashItem } from "./slash";
 import { S } from "./strings";
 import type { ComposerActionId, ComposerProps } from "./types";
@@ -157,38 +157,6 @@ function Menu({
   );
 }
 
-/** Push-to-talk. The hold ends however the press ends: the button let go, the pointer lost, the
- *  button or the window losing focus, the window hidden (review item 7). Only the primary button
- *  starts a hold. */
-function useHold(voice: ComposerProps["voice"]) {
-  const holding = useRef(false);
-  const latest = useRef(voice);
-  latest.current = voice;
-  const start = useCallback(() => {
-    if (holding.current || !latest.current) return;
-    holding.current = true;
-    latest.current.onPressStart();
-  }, []);
-  const end = useCallback(() => {
-    if (!holding.current) return;
-    holding.current = false;
-    latest.current?.onPressEnd();
-  }, []);
-  useEffect(() => {
-    const hidden = () => {
-      if (document.visibilityState !== "visible") end();
-    };
-    window.addEventListener("blur", end);
-    document.addEventListener("visibilitychange", hidden);
-    return () => {
-      window.removeEventListener("blur", end);
-      document.removeEventListener("visibilitychange", hidden);
-      end();
-    };
-  }, [end]);
-  return { start, end };
-}
-
 export function Composer(props: ComposerProps) {
   const {
     botName,
@@ -205,7 +173,6 @@ export function Composer(props: ComposerProps) {
     asleep,
     model,
     level,
-    voice,
     cardPending = false,
     maxAttachments = MAX_ATTACHMENTS,
     placeholder,
@@ -226,24 +193,16 @@ export function Composer(props: ComposerProps) {
     initialMenu === "model" && model ? "model" : initialMenu === "level" && level ? "level" : null,
   );
   const closeMenu = useCallback(() => setMenu(null), []);
-  const hold = useHold(voice);
   const tooMany = attachments.length > maxAttachments;
   const sendable = canSend(value, attachments.length, maxAttachments, asleep !== undefined);
   const empty = value.trim().length === 0 && attachments.length === 0;
-  const listening = voice?.listening === true;
-  // What was heard lands in the box to edit: the box takes the focus back when the hold ends.
-  const wasListening = useRef(false);
-  useEffect(() => {
-    if (wasListening.current && !listening) field.current?.focus();
-    wasListening.current = listening;
-  }, [listening]);
   const slashId = useId();
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [slashActive, setSlashActive] = useState(0);
   // The row was picked with the arrows (not just the top of the list): Enter runs it whatever is typed.
   const [slashPicked, setSlashPicked] = useState(false);
   const line = slash ? slashLine(value) : undefined;
-  const slashOpen = slash !== undefined && line !== undefined && !slashDismissed && !cardPending && !listening;
+  const slashOpen = slash !== undefined && line !== undefined && !slashDismissed && !cardPending;
   const slashItems: SlashItem[] = slashOpen && slash.commands ? matchCommands(slash.commands, line!.token) : [];
   const active = slashItems.length === 0 ? -1 : Math.min(slashActive, slashItems.length - 1);
   const armed = active >= 0 && (slashPicked || armedFor(slashItems, slashItems[active], line?.token ?? ""));
@@ -298,13 +257,6 @@ export function Composer(props: ComposerProps) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Hold Ctrl+Shift+Space in the box to talk (only where the bot's voice listens): a first press starts, a repeat does nothing, and the
-    // chord never types a space.
-    if (voice !== undefined && isTalkKey({ key: e.key, code: e.code, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, isComposing: e.nativeEvent.isComposing, keyCode: e.keyCode })) {
-      e.preventDefault();
-      if (!e.repeat) hold.start();
-      return;
-    }
     // The slash menu takes the keys while a command line is typed and not set aside with Esc (never mid-composition).
     if (slash && line !== undefined && !slashDismissed && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       if (e.key === "Escape") {
@@ -425,43 +377,9 @@ export function Composer(props: ComposerProps) {
       )
     : null;
 
-  const voiceButton = voice
-    ? action(
-        "voice",
-        <button
-          key="voice"
-          type="button"
-          className="cl-composer__icon-button cl-composer__voice"
-          aria-label={S.holdToTalk}
-          title={S.holdToTalkHint}
-          aria-pressed={listening}
-          onPointerDown={(e) => {
-            if (e.button !== 0) return;
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            hold.start();
-          }}
-          onPointerUp={hold.end}
-          onPointerCancel={hold.end}
-          onLostPointerCapture={hold.end}
-          onBlur={hold.end}
-          onContextMenu={(e) => e.preventDefault()}
-          onKeyDown={(e) => {
-            if ((e.key === " " || e.key === "Enter") && !e.repeat) {
-              e.preventDefault();
-              hold.start();
-            }
-          }}
-          onKeyUp={(e) => {
-            if (e.key === " " || e.key === "Enter") {
-              e.preventDefault();
-              hold.end();
-            }
-          }}
-        >
-          <IconMic />
-        </button>,
-      )
-    : null;
+  // Hold-to-talk is a voice plugin's own button (`composer.action`, key `voice`): the slot is open, with nothing of the
+  // composer's own behind it.
+  const voiceButton = action("voice", null);
 
   // Mid-turn with nothing typed, Stop takes Send's place; with a draft, Send (which interrupts) sits
   // beside Stop. Stop is a square on the control colour, Send an arrow on the accent: never alike.
@@ -614,7 +532,6 @@ export function Composer(props: ComposerProps) {
       className="cl-composer"
       data-running={running || undefined}
       data-asleep={asleep ? true : undefined}
-      data-listening={listening || undefined}
       onDragEnter={(e) => {
         if (onAddFiles && hasFiles(e)) setDragging(true);
       }}
@@ -652,13 +569,6 @@ export function Composer(props: ComposerProps) {
             ))}
           </ul>
         )}
-        {listening && (
-          // The clear recording state, visible with text in the box too (the placeholder shows only in an empty one).
-          <div className="cl-composer__listening" role="status" data-recording="">
-            <span className="cl-composer__listening-dot" aria-hidden="true" />
-            {S.listening}
-          </div>
-        )}
         {notice !== undefined && notice !== "" && (
           <div className="cl-composer__error" role="alert" data-notice="send">
             {notice}
@@ -687,14 +597,10 @@ export function Composer(props: ComposerProps) {
                   ...(active >= 0 ? { "aria-activedescendant": `${slashId}-${active}` } : {}),
                 }
               : {})}
-            placeholder={listening ? S.listening : placeholder ?? S.placeholder(botName)}
-            readOnly={listening}
+            placeholder={placeholder ?? S.placeholder(botName)}
             autoFocus={autoFocus}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
-            onKeyUp={(e) => {
-              if (voice !== undefined && endsTalkKey(e)) hold.end();
-            }}
             onPaste={(e) => {
               const files = [...(e.clipboardData?.files ?? [])];
               if (!onAddFiles || files.length === 0) return;
