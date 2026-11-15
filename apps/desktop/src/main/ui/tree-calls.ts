@@ -67,7 +67,8 @@ export const CHARACTER_PART = "clover/character";
 /** The window's shell: the bundled shell plugin's part, the document that records for push-to-talk. */
 export const SHELL_PART = "clover/shell";
 
-/** Clover Voice's part: its Settings › Voice section. */
+/** Clover Voice's part. Its parts make no call through this door today (they use the plugin API, as any plugin's do);
+ *  its entries below wait for F2's capability-to-calls table to remove or class them. */
 export const VOICE_PART = "clover/voice";
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
@@ -82,8 +83,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // names the bot and the utterance, numbers the pieces and refuses any with no hold open (`ListenHolds.piece`); the hold
   // itself began with the composer's `listenStart`, inside the user's press.
   "voice.listen": { disposition: "held", part: SHELL_PART },
-  // Settings › Voice (Clover Voice's part) reads and writes its own settings too (which voice is active here), the
-  // write by the user's choice in its list.
+  // Clover Voice's part is still named here (see VOICE_PART): its own settings go through the plugin API now.
   "plugin.settings.get": { disposition: READ, part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
   "plugin.settings.set": { disposition: "settings", part: [SETTINGS_PART, PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, VOICE_PART, BOT_EDITOR_PART], anyId: [PLUGINS_PART] },
   // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card). The avatar's two

@@ -37,7 +37,7 @@ How to read it:
 | `commands` | list | code | Runs a plugin's public functions for any client at once, with no model turn (§5.4). |
 | `triggers` | keyed | code | Arms them for routine files (§7). |
 | `voices` | list | code | Speech-to-text for push-to-talk (§6.6, the listening half until it is re-founded), which the active voice mode takes. Speaking is a provider's entry on Clover… |
-| `voiceModes` | list | code | Push-to-talk's voice mode (§6.6, the listening half until it is re-founded): one is active (Settings › Voice, Clover Voice's `active` setting) and hears push-t… |
+| `voiceModes` | list | code | The voice your bots speak and listen with (§6.6): one at a time, the user's pick in Settings (else Clover Voice). The active one hears push-to-talk (the listen… |
 | `turns` | list | data | Names of the plugin's own one-at-a-time turns that another plugin may take (`<plugin id>/<name>`, §5.4 "Turns"); its own need no entry. |
 | `computerProviders` | keyed | code | Creates, resizes and deletes the VMs that cloud computer folders describe (§9.2). |
 | `computer` | single | data | A cloud computer, created after the user's OK (§9.2). |

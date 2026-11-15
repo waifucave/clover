@@ -1,6 +1,6 @@
 // Clover Voice's parts in the window: Settings › Voice ("Speak replies" in its own settings; which voice speaks is the
 // platform's one-at-a-time picker, not this section's), the section of a bot's editor (the bot's voice: the user's, or
-// its bot plugin's default with why it can't speak) and the stage's chip (speaking from the device's speech turn; its
+// the default from the plugin that brings it, with why it can't speak) and the stage's chip (speaking from the device's speech turn; its
 // press stops or mutes).
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -79,7 +79,7 @@ describe("a bot's editor: its voice", () => {
     expect(a.stored.get("provider@alpha")).toBeNull();
   });
 
-  test("a bot plugin's default shows as its own, with no reset, and says why it can't speak when its provider isn't set up", async () => {
+  test("the default from the plugin that brings the bot shows as such, with no reset, and says why it can't speak when its provider isn't set up", async () => {
     const a = api({ byBot: { alpha: { provider: "fish-audio", voice: "hers", from: "bot", why: "Fish Audio isn't set up: add your key" } } });
     mount(a, <BotVoiceSection {...alpha} />);
     await act(() => settle(6));

@@ -81,7 +81,7 @@
             }
           }
         },
-        "doc": "A bot plugin's default voice for its own bot (the bot of its own tree; any other's is ignored): `provider` (an entry of clover.voice.providers), `voice`, `model?`. The user's own choice in the bot's Voice section always wins, and a default speaks only when its provider is set up."
+        "doc": "The default voice a plugin gives the bot it brings (the bot of its own tree; any other bot's is ignored): `provider` (an entry of clover.voice.providers), `voice`, `model?`. The user's own choice in the bot's Voice section always wins, and a default speaks only when its provider is set up."
       }
     }
   },

@@ -1,5 +1,5 @@
 // Clover Voice's section of a bot's editor (`bot.editor.section`): the bot's voice, this plugin's own setting for that
-// bot (`provider`, `voice`, `model`), with a reset back to none; else the default its own bot plugin gives (shown as
+// bot (`provider`, `voice`, `model`), with a reset back to none; else the default the plugin that brings the bot gives (shown as
 // such). Voices come with the voice providers that fill this plugin's providers point (Fish Audio, or another you add);
 // when the provider isn't set up, it says why the voice can't speak.
 import { useEffect, useId, useState } from "react";

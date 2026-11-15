@@ -4,7 +4,7 @@
 //   reply is spoken in the bot's voice, unless its "Speak replies" setting is off (as the core did before: at the turn's
 //   end, the last reply).
 // * A bot's voice is the user's choice, this plugin's own setting for that bot (`provider`, `voice`, `model`, bot
-//   scope); else the default its own bot plugin gives on this plugin's point `clover.voice.defaults` (only for its own
+//   scope); else the default the plugin that brings the bot gives on this plugin's point `clover.voice.defaults` (only for its own
 //   bot; the user's choice always wins). A default voice speaks only when its provider is set up (the provider's
 //   `ready`); the bot's Voice section says why not.
 // * The provider is an entry of its own point, `clover.voice.providers` (Fish Audio fills it from its own folder): its
@@ -24,7 +24,7 @@ import type { HostPluginApi, HookInput, PointEntry } from "@waifucave/clover-plu
 
 export const PROVIDERS = "clover.voice.providers";
 export const MODES = "clover.voice.modes";
-/** A bot plugin's default voice for its own bot. */
+/** The default voice a plugin gives the bot it brings. */
 export const DEFAULTS = "clover.voice.defaults";
 /** The platform's point of voices, one at a time (Clover Voice fills it too). */
 export const VOICE_MODES = "voiceModes";
@@ -33,7 +33,7 @@ export const SPEECH = "speech";
 /** How long a provider's `ready` answer is kept. */
 export const READY_TTL_MS = 60_000;
 
-/** A bot's voice: the user's choice (`user`), or its bot plugin's default (`bot`). */
+/** A bot's voice: the user's choice (`user`), or the default from the plugin that brings it (`bot`). */
 export interface BotVoice { provider: string; voice: string; model?: string; from: "user" | "bot" }
 
 let api: HostPluginApi | undefined;
@@ -72,7 +72,7 @@ export function start(given: HostPluginApi): void {
   playerReady = new Promise<void>((r) => { readied = r; });
 }
 
-/** A bot's voice now, or undefined (text-only): the user's choice, else its own bot plugin's default. */
+/** A bot's voice now, or undefined (text-only): the user's choice, else the default from the plugin that brings it. */
 export async function voiceOf(bot: string): Promise<BotVoice | undefined> {
   const a = need();
   const [provider, voice, model] = await Promise.all([

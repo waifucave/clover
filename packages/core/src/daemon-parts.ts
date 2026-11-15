@@ -106,8 +106,6 @@ export interface DaemonBotsInput {
   routines?: { secrets?: NonNullable<BotSideOptions["routines"]>["secrets"]; userTimeZone?(): string; webhookBase?: string };
   /** Lane B's plugin host (#277): when given, the bots' voices, the webhook ingress and the plugin triggers run on it. */
   pluginHost?: BotPluginHost;
-  /** Push-to-talk (§6.6, the listening half): with `pluginHost` (or `voiceHost`), the voice slot serves it; this is the
-   *  user's choice of voice mode (Clover Voice's `active` setting). */
   /** The session panels' reads (`session.context`, `session.connectors`): a model's context window from the catalog, and
    *  the plugin MCP servers a session gets with their plugins' sign-ins (sessions/panel-reads.ts). */
   contextWindowOf?: SessionPanelDeps["contextWindowOf"];

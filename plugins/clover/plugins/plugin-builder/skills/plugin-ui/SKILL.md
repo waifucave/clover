@@ -100,6 +100,10 @@ change. The component draws nothing the user sees; it listens (a timer, `api.eve
   part); before it sounds, the part takes the device's speech turn (`api.turns.take("device/speech", { note })`), so it
   never talks over another plugin's speech, and lets it go (`turn.done()`) when it has played; it moves a bot's mouth
   with speech cues (`api.avatar.cue({ type: "speech", frames }, { bot })`, `avatar.control.all` for a bot not its own).
+  Its controls (stop a bot, hold for push-to-talk) are `api.ui.send` messages that carry the whole state (the held
+  utterances, each bot's stop count): within one tick a part gets only the newest message of each name. A background
+  part's frame loads after its plugin starts, so the part tells its host half when it is listening
+  (`api.host.call("ready")`) and gets the state so far back.
 
 ## An app a bot can work in
 

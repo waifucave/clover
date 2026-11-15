@@ -1,7 +1,7 @@
 // Clover Voice's host half against a fake plugin API: a bot's main-conversation reply (the message.out observer, then the
 // turn's end) streams its provider's audio to the player part; nothing for a side thread, a failed turn, a bot with no
 // voice or "Speak replies" off; the voice the user picked (the platform's active `voiceModes` filler) is handed the reply
-// instead; a bot plugin's default voice for its own bot (the user's choice wins; it speaks only with a provider set up);
+// instead; the default voice a plugin gives the bot it brings (the user's choice wins; it speaks only with a provider set up);
 // the speak button reads the reply from the log; the player's stops and holds go as whole-state `ui.send` messages.
 import { describe, expect, test } from "bun:test";
 import * as host from "../host/index";
@@ -128,7 +128,7 @@ describe("Clover Voice's host half", () => {
     expect(await host.ui.ready()).toEqual({ holds: [], stops: { alpha: 2, beta: 1 } });
   });
 
-  test("a bot plugin's default voice for its own bot: used until the user chooses one; another plugin's default for it is ignored", async () => {
+  test("the default voice a plugin gives the bot it brings: used until the user chooses one; another plugin's default for it is ignored", async () => {
     const defaults = [
       { pluginId: "beta", entryId: "0", value: { provider: "acceptance-voice", voice: "not-hers" } },
       { pluginId: "alpha/extras", entryId: "0", value: { provider: "acceptance-voice", voice: "hers", model: "m1" } },
