@@ -18,6 +18,7 @@ import { WEB_STEP } from "./web-step";
 import { DRAG_STEP } from "./drag-step";
 import { REVIEW_STEP } from "./review-step";
 import { SURFACE_COPY_STEP } from "./surface-copy-step";
+import { CONVERSATION_COPY_STEP } from "./conversation-copy-step";
 import { API_AREAS_STEP } from "./api-areas-step";
 import { MANIFEST_FIELDS_STEP } from "./manifest-fields-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
@@ -86,6 +87,7 @@ export const FULL_STEPS = [
   DRAG_STEP,
   REVIEW_STEP,
   SURFACE_COPY_STEP,
+  CONVERSATION_COPY_STEP,
   BROWSER_STEP,
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",

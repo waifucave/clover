@@ -107,6 +107,7 @@ import { WEB_STEP, webStep } from "./web-step";
 import { DRAG_STEP, dragStep } from "./drag-step";
 import { REVIEW_STEP, reviewStep } from "./review-step";
 import { SURFACE_COPY_STEP, surfaceCopyStep } from "./surface-copy-step";
+import { CONVERSATION_COPY_STEP, conversationCopyStep } from "./conversation-copy-step";
 import { AGENT_STEP, COLD_START_STEP, FULL_STEPS, IDLE_STEP, OUTSIDE_STEP, REOPEN_STEPS, SHELL_STEP, STAGE_STEP, UPGRADE_STEPS, finishTable, stepNumber, type Row, type Status } from "./steps";
 import { DISTRUST, answerKeyFileFor, keepStateProblem, oldHalfRow, readState, settingsWithFake, socketPathProblem, statePaths, writeState, type KeptState } from "./state";
 import { FAKE_ARTICLE_TEXT, FAKE_HIT_PATH, FAKE_PRIVATE_ADDRESS, FAKE_PRIVATE_SITE, FAKE_PUBLIC_SITE, FAKE_SEARCH_HIT, serveOutsideWorld, type OutsideWorld } from "./fake-exa";
@@ -221,12 +222,13 @@ const webOnly = argv.includes("--only-web");
 const dragOnly = argv.includes("--only-drag");
 const reviewOnly = argv.includes("--only-review");
 const surfaceCopyOnly = argv.includes("--only-surface-copy");
+const conversationCopyOnly = argv.includes("--only-conversation-copy");
 /** The rows a `--only-kids|listen|web|drag|review` run drives (none when none of those flags is given). */
 const appRowsOnly: readonly string[] | undefined = (() => {
-  const picked = [kidsOnly && [CHILD_STEP, NOTIFY_STEP], listenOnly && [LISTEN_STEP], webOnly && [WEB_STEP], dragOnly && [DRAG_STEP], reviewOnly && [REVIEW_STEP], surfaceCopyOnly && [SURFACE_COPY_STEP]].filter((x): x is string[] => x !== false);
+  const picked = [kidsOnly && [CHILD_STEP, NOTIFY_STEP], listenOnly && [LISTEN_STEP], webOnly && [WEB_STEP], dragOnly && [DRAG_STEP], reviewOnly && [REVIEW_STEP], surfaceCopyOnly && [SURFACE_COPY_STEP], conversationCopyOnly && [CONVERSATION_COPY_STEP]].filter((x): x is string[] => x !== false);
   return picked.length === 0 ? undefined : picked.flat();
 })();
-if (appRowsOnly !== undefined && ([kidsOnly, listenOnly, webOnly, dragOnly, reviewOnly, surfaceCopyOnly].filter(Boolean).length > 1 || onlyUi !== undefined || browserOnly || routineOnly || oauthOnly || codeAdapterOnly || thirdPartyOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined || shards > 1 || shardUnits !== undefined)) { console.error("acceptance: --only-kids, --only-listen, --only-web, --only-drag and --only-review each run their row(s) alone; they take no other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units"); process.exit(2); }
+if (appRowsOnly !== undefined && ([kidsOnly, listenOnly, webOnly, dragOnly, reviewOnly, surfaceCopyOnly, conversationCopyOnly].filter(Boolean).length > 1 || onlyUi !== undefined || browserOnly || routineOnly || oauthOnly || codeAdapterOnly || thirdPartyOnly || tabFlashOnly || workshopOnly || stageOnly || coldOnly || upgrade || keepState !== undefined || coldHome !== undefined || shards > 1 || shardUnits !== undefined)) { console.error("acceptance: --only-kids, --only-listen, --only-web, --only-drag and --only-review each run their row(s) alone; they take no other --only-*, --cold-start, --cold-home, --keep-state, --upgrade-from, --shards or --units"); process.exit(2); }
 const stageHistory = Number(flag("--stage-history") ?? 0);
 if (!Number.isInteger(stageHistory) || stageHistory < 0 || stageHistory > 200) { console.error("acceptance: --stage-history takes a number of turns, 0 to 200"); process.exit(2); }
 if (stageHistory > 0 && !stageOnly) { console.error("acceptance: --stage-history goes with --only-stage"); process.exit(2); }
@@ -3361,6 +3363,7 @@ function exampleCtxFor(cdp: Cdp, rpc: CloverClient, log: string, pickFile: strin
     appCli: (words) => appCli(words),
     ...(appearanceFile !== undefined ? { setAppearance: (scheme: "dark" | "light" | "system") => writeFileSync(appearanceFile, scheme) } : {}),
     ...(frontFile !== undefined ? { setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back") } : {}),
+    healFake: (id) => fake?.heal(id),
   };
 }
 
@@ -3401,6 +3404,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [REVIEW_STEP, () => reviewStep(ctx, session)],
     // A copy of the island and of the pill under other ids, behind their OK cards, takes the bundled two's place (F4).
     [SURFACE_COPY_STEP, () => surfaceCopyStep(ctx, session)],
+    // A copy of the conversation under another id, behind its OK card, takes the bundled one's place and passes its rows (F2).
+    [CONVERSATION_COPY_STEP, () => conversationCopyStep(ctx, session)],
   ] as const;
 }
 
