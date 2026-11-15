@@ -25,7 +25,8 @@
         "id": "fish-audio",
         "name": "Fish Audio",
         "speak": "speak",
-        "ready": "ready"
+        "ready": "ready",
+        "listen": "listen"
       }
     ],
     "voices": [

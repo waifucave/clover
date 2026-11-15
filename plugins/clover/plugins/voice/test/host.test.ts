@@ -12,14 +12,17 @@ type Fake = {
   active?: { pluginId: string; entryId: string }; ready?: { ready: boolean; why?: string }; refuseFirstOpen?: boolean;
   /** Extra provider entries, besides the run's tone voice. */
   providers?: { pluginId: string; entryId: string; value: Record<string, unknown> }[];
+  /** The run's tone voice offers `listen`. */
+  providerListens?: boolean;
 };
 function fake(o: Fake = {}) {
   const settings = new Map<string, unknown>(Object.entries(o.settings ?? {}));
   const opened: { name: string; meta: Record<string, unknown>; bytes: number; closed: boolean }[] = [];
   const asked: { point: string; args: unknown; plugin?: string }[] = [];
   const sent: [string, unknown][] = [];
+  const accepted = new Map<string, (stream: unknown, meta: Record<string, unknown>) => void>();
   let refuse = o.refuseFirstOpen === true;
-  const provider = { pluginId: "acceptance-voice", entryId: "acceptance-voice", value: { name: "Tone", ...(o.ready ? { ready: "ready" } : {}) } };
+  const provider = { pluginId: "acceptance-voice", entryId: "acceptance-voice", value: { name: "Tone", ...(o.ready ? { ready: "ready" } : {}), ...(o.providerListens ? { listen: "listen" } : {}) } };
   const api = {
     plugin: { id: "clover/voice" },
     settings: {
@@ -28,7 +31,7 @@ function fake(o: Fake = {}) {
     },
     points: {
       entries: async (point: string) => (point === host.PROVIDERS ? [provider, ...(o.providers ?? [])] : point === host.DEFAULTS ? (o.defaults ?? []) : (o.modes ?? [])),
-      active: async (point: string) => (point === host.VOICE_MODES ? (o.active ?? { pluginId: "clover/voice", entryId: "clover-voice" }) : undefined),
+      active: async (point: string) => (point === host.MODES ? (o.active ?? { pluginId: "clover/voice", entryId: "clover-voice" }) : undefined),
       stream: async (point: string, e: { pluginId: string }, field: string, args: unknown) => {
         asked.push({ point: `${point}#${field}`, args, ...(e.pluginId !== "acceptance-voice" ? { plugin: e.pluginId } : {}) });
         // Plain stand-ins for the Web streams (this suite's document stands in for the browser's globals).
@@ -37,10 +40,12 @@ function fake(o: Fake = {}) {
       },
       call: async (point: string, _e: unknown, field: string, args: unknown) => {
         asked.push({ point: `${point}#${field}`, args });
+        if (field === "listen" || field === "hear") return { text: `heard ${(args as { audio: Uint8Array }).audio.length} bytes by ${field}` };
         return field === "ready" ? o.ready : { ok: true };
       },
     },
     streams: {
+      accept: (name: string, listener: (stream: unknown, meta: Record<string, unknown>) => void) => { accepted.set(name, listener); return () => undefined; },
       open: async (name: string, opts: { meta: Record<string, unknown> }) => {
         if (refuse) {
           refuse = false;
@@ -59,7 +64,7 @@ function fake(o: Fake = {}) {
     },
   };
   host.start(api as never);
-  return { opened, asked, settings, sent };
+  return { opened, asked, settings, sent, accepted };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
@@ -98,7 +103,7 @@ describe("Clover Voice's host half", () => {
   });
 
   test("the voice the user picked (another plugin's active voiceModes entry) is handed the reply; Clover Voice's player gets nothing", async () => {
-    const f = fake({ settings: VOICED, active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme" } }] });
+    const f = fake({ settings: VOICED, active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme", reply: "reply" } }] });
     await host.replies(at("message.out", { text: "Hi." }));
     await host.replies(at("turn.end", { outcome: "completed" }));
     await settle();
@@ -213,6 +218,31 @@ describe("Clover Voice's host half", () => {
     await host.replies(at("turn.end", { outcome: "completed" }));
     await settle();
     expect(g.opened.map((s) => s.name)).toEqual(["speech"]);
+  });
+
+  test("push-to-talk from its own talk button: the recording streamed in is written down by the bot's provider; the player holds meanwhile", async () => {
+    const f = fake({ settings: VOICED, providers: [] });
+    // The run's tone voice listens once its entry offers `listen`.
+    expect(await host.ui.listens({ bot: "alpha" })).toBe(false);
+    const g = fake({ settings: { ...VOICED, "providerPlugin@alpha": "acceptance-voice" }, providerListens: true });
+    expect(await host.ui.listens({ bot: "alpha" })).toBe(true);
+    const chunks = [new Uint8Array(3200), new Uint8Array(3200)];
+    const stream = { getReader: () => ({ read: async () => (chunks.length > 0 ? { done: false, value: chunks.shift()! } : { done: true, value: undefined }), cancel: async () => undefined }), cancel: async () => undefined };
+    g.accepted.get("talk")!(stream, { bot: "alpha", utterance: "u1" });
+    expect(await host.ui.heard({ utterance: "u1" })).toEqual({ text: "heard 6400 bytes by listen" });
+    expect(g.sent).toEqual([["holds", { utterances: ["u1"] }], ["holds", { utterances: [] }]]);
+    expect(g.asked.map((a) => a.point)).toEqual([`${host.PROVIDERS}#listen`]);
+    expect(await host.ui.heard({ utterance: "u1" })).toEqual({ note: "That recording isn't here." });
+    void f;
+  });
+
+  test("another plugin's voice, picked in Settings, hears too (its hear); one with no hear doesn't listen", async () => {
+    const f = fake({ active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme", hear: "hear" } }] });
+    expect(await host.ui.listens({ bot: "alpha" })).toBe(true);
+    expect(await host.transcribe({ bot: "alpha", audio: new Uint8Array(10) })).toEqual({ ok: true, text: "heard 10 bytes by hear" });
+    expect(f.asked.map((a) => [a.point, (a.args as { bot?: string }).bot])).toEqual([[`${host.MODES}#hear`, "alpha"]]);
+    fake({ active: { pluginId: "acme-voice", entryId: "acme" }, modes: [{ pluginId: "acme-voice", entryId: "acme", value: { name: "Acme" } }] });
+    expect(await host.ui.listens({ bot: "alpha" })).toBe(false);
   });
 
   test("push-to-talk's holds go to the player as the whole set; the player's ready answers the state so far", async () => {

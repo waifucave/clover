@@ -49,6 +49,15 @@ describe("the active one", () => {
     expect([activeOne(reg, "voiceModes")?.title, ref(activeOne(reg, "voiceModes")?.active && refOf(activeOne(reg, "voiceModes")!.active!))]).toEqual(["Voice", "ours/ours"]);
   });
 
+  test("a declarer that fills its own point is one of its fillers, and the default when it is bundled (Clover Voice's way)", () => {
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
+    const self: RegistryInput = { ...DECK, source: "bundled", manifest: m({ ...DECK.manifest, contributes: { "deck.mode": [{ id: "own", name: "Its own" }] } as Manifest["contributes"] }) };
+    reg.putAll([filler("one", "First"), self, filler("two", "Second")]);
+    const one = activeOne(reg, "deck.mode");
+    expect(one?.fillers.map((f) => f.pluginId)).toContain("deck");
+    expect(activeRef(reg)).toBe("deck/own");
+  });
+
   test("the default is the first bundled filler, else the first installed; a point that isn't one-at-a-time has none", () => {
     const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
     reg.putAll([DECK, filler("one", "First"), filler("two", "Second")]);

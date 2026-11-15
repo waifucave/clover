@@ -66,6 +66,13 @@ const topOf = (id: string): string => id.split("/")[0]!;
 
 export function start(given: HostPluginApi): void {
   api = given;
+  talks.clear();
+  // The talk button's recordings (its own part's streams).
+  try {
+    void Promise.resolve(given.streams.accept("talk", (stream, meta) => acceptTalk(stream, meta))).catch(() => undefined);
+  } catch {
+    /* no streams here (a test's fake) */
+  }
   lastReply.clear();
   speaking.clear();
   hearing.clear();
@@ -143,14 +150,98 @@ export async function providerReady(entry: PointEntry<{ ready?: unknown }>): Pro
   return got;
 }
 
-/** The voice mode the user picked (the platform's active `voiceModes` filler), when it is another plugin's: its entry
- *  on this plugin's modes point, or undefined (Clover Voice speaks; or that plugin offers no `reply`, and is handed
- *  nothing). */
-async function activeMode(): Promise<{ other: false } | { other: true; mode: PointEntry | undefined }> {
+/** The voice the user picked: the active entry of this plugin's modes point (one at a time, Settings' picker; Clover
+ *  Voice's own entry by default). Another plugin's: its entry (`reply` and `hear` are its own to offer). */
+async function activeMode(): Promise<{ other: false } | { other: true; mode: PointEntry<{ reply?: unknown; hear?: unknown }> | undefined }> {
   const a = need();
-  const active = await a.points.active(VOICE_MODES).catch(() => undefined);
+  const active = await a.points.active(MODES).catch(() => undefined);
   if (active === undefined || active.pluginId === a.plugin.id) return { other: false };
-  return { other: true, mode: (await a.points.entries(MODES).catch(() => [])).find((e) => e.pluginId === active.pluginId) };
+  return { other: true, mode: (await a.points.entries<{ reply?: unknown; hear?: unknown }>(MODES).catch(() => [])).find((e) => e.pluginId === active.pluginId && e.entryId === active.entryId) };
+}
+
+/** The most a push-to-talk recording may hold: 60 s of 16 kHz 16-bit mono. */
+export const TALK_MAX_BYTES = 60 * 16_000 * 2;
+type Hearing = { ok: true; text: string } | { ok: false; note: string };
+
+/** Whether push-to-talk for `bot` would be heard now: the voice picked hears (another plugin's mode offers `hear`), or
+ *  Clover Voice's own: the bot has a voice (not turned off) whose provider listens, and a default's provider is set up. */
+export async function listensFor(bot: string): Promise<boolean> {
+  const picked = await activeMode();
+  if (picked.other) return typeof picked.mode?.value.hear === "string";
+  const v = await voiceOf(bot);
+  if (v === undefined) return false;
+  const found = await providerOf(v);
+  if (found.entry === undefined || typeof (found.entry.value as { listen?: unknown }).listen !== "string") return false;
+  return v.from === "user" || (await providerReady(found.entry)).ready;
+}
+
+/** What the user said with push-to-talk, as words: the voice picked writes it down (another plugin's `hear`, or the bot's
+ *  provider's `listen` for Clover Voice's own). */
+export async function transcribe(o: { bot: string; audio: Uint8Array }): Promise<Hearing> {
+  const a = need();
+  if (o.audio.length === 0) return { ok: false, note: "Nothing was heard." };
+  const picked = await activeMode();
+  if (picked.other) {
+    if (typeof picked.mode?.value.hear !== "string") return { ok: false, note: "The voice picked in Settings doesn't listen." };
+    const r = (await a.points.call(MODES, picked.mode, "hear", { bot: o.bot, audio: o.audio, format: "pcm16-16k" })) as { text?: unknown } | undefined;
+    return typeof r?.text === "string" ? { ok: true, text: r.text } : { ok: false, note: "The voice heard nothing." };
+  }
+  if (!(await listensFor(o.bot))) return { ok: false, note: "This bot's voice doesn't listen." };
+  const v = (await voiceOf(o.bot))!;
+  const entry = (await providerOf(v)).entry!;
+  const r = (await a.points.call(PROVIDERS, entry, "listen", { audio: o.audio, format: "pcm16-16k" })) as { text?: unknown } | undefined;
+  return typeof r?.text === "string" ? { ok: true, text: r.text } : { ok: false, note: "The voice heard nothing." };
+}
+
+/** Push-to-talk's recordings from this plugin's own talk button, by utterance: what each was heard as, once its stream
+ *  ended (the button asks `heard` for it). */
+const talks = new Map<string, Promise<Hearing>>();
+
+/** A recording from the talk button (`streams.accept("talk")`, meta `{ bot, utterance }`): the player holds while it
+ *  lasts; its bytes, at most TALK_MAX_BYTES, are written down when it ends. */
+function acceptTalk(stream: ReadableStream<Uint8Array>, meta: Record<string, unknown>): void {
+  const bot = typeof meta.bot === "string" ? meta.bot : undefined;
+  const utterance = typeof meta.utterance === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(meta.utterance) ? meta.utterance : undefined;
+  if (bot === undefined || utterance === undefined) {
+    void stream.cancel("a recording names its bot and its utterance").catch(() => undefined);
+    return;
+  }
+  hold(utterance, true);
+  const done = (async (): Promise<Hearing> => {
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    const reader = stream.getReader();
+    try {
+      for (;;) {
+        const { done: end, value } = await reader.read();
+        if (end) break;
+        size += value.length;
+        if (size > TALK_MAX_BYTES) {
+          void reader.cancel("too long").catch(() => undefined);
+          return { ok: false, note: "That was longer than a minute; hold to talk for less." };
+        }
+        parts.push(value);
+      }
+    } catch (err) {
+      return { ok: false, note: `The recording stopped: ${reason(err)}` };
+    } finally {
+      hold(utterance, false);
+    }
+    const audio = new Uint8Array(size);
+    let at = 0;
+    for (const p of parts) {
+      audio.set(p, at);
+      at += p.length;
+    }
+    try {
+      return await transcribe({ bot, audio });
+    } catch (err) {
+      return { ok: false, note: `The voice couldn't write it down: ${reason(err)}` };
+    }
+  })();
+  talks.set(utterance, done);
+  // Forgotten a while after it is answered, or if nobody asks.
+  void done.then(() => setTimeout(() => { if (talks.get(utterance) === done) talks.delete(utterance); }, 60_000));
 }
 
 type Said = { speaking: true } | { speaking: false; note: string };
@@ -171,7 +262,7 @@ export async function say(o: { bot: string; session: string; text: string; asked
   const a = need();
   const picked = await activeMode();
   if (picked.other) {
-    if (picked.mode === undefined) return { speaking: false, note: "The voice picked in Settings doesn't speak replies through Clover Voice." };
+    if (typeof picked.mode?.value.reply !== "string") return { speaking: false, note: "The voice picked in Settings doesn't speak replies through Clover Voice." };
     await a.points.call(MODES, picked.mode, "reply", { bot: o.bot, session: o.session, text: o.text, asked: o.asked });
     return { speaking: true };
   }
@@ -281,6 +372,20 @@ function stopBot(bot: string): void {
  *  parts (`voiceOf`, `forget`): a page reads and changes only its plugin's plain settings, a bot's value is the host
  *  half's. */
 export const ui = {
+  /** Whether push-to-talk for this bot would be heard now (the talk button shows only then). */
+  async listens(args: unknown): Promise<boolean> {
+    const bot = (args as { bot?: unknown } | null)?.bot;
+    return typeof bot === "string" ? listensFor(bot).catch(() => false) : false;
+  },
+  /** What a recording the talk button sent was heard as (it asks once its stream ended): `{ text }` or `{ note }`. */
+  async heard(args: unknown): Promise<{ text: string } | { note: string }> {
+    const utterance = (args as { utterance?: unknown } | null)?.utterance;
+    const r = typeof utterance === "string" ? talks.get(utterance) : undefined;
+    if (r === undefined) return { note: "That recording isn't here." };
+    const h = await r;
+    talks.delete(utterance as string);
+    return h.ok ? { text: h.text } : { note: h.note };
+  },
   /** A bot's voice, where it comes from, whether the user turned it off for this bot, and why a default can't speak
    *  when its provider isn't set up (or the provider can't be told apart). */
   async voiceOf(args: unknown): Promise<(Partial<BotVoice> & { why?: string; off?: true }) | null> {

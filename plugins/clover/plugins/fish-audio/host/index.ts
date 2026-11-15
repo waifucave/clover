@@ -149,6 +149,21 @@ export async function ready(_args: unknown, ctx: VoiceContext): Promise<{ ready:
   }
 }
 
+/** The `clover.voice.providers` entry's `listen` (a `points.call` handler): what the user said with push-to-talk,
+ *  `{ audio, format }` (16 kHz PCM bytes, or Ogg Opus), written down. */
+export async function listen(args: ListenArgs, ctx: VoiceContext): Promise<ListenResult> {
+  const model = (args.model ?? "transcribe-1") as AsrModel;
+  if (!(ASR_MODELS as readonly string[]).includes(model)) throw new Error(`"${String(args.model)}" isn't a Fish Audio listening model`);
+  if (!(args.audio instanceof Uint8Array)) throw new Error("listen needs the recording, as its audio");
+  if (args.audio.length > LISTEN_MAX_BYTES) throw new Error(`a recording holds at most ${LISTEN_MAX_BYTES} bytes`);
+  const heard = await clientFor(ctx).transcribe({
+    audio: args.audio, format: args.format === "opus" ? "ogg" : "pcm16-16k", model,
+    ...(args.language === undefined ? {} : { language: args.language }),
+    signal: ctx.signal,
+  });
+  return { text: heard.text, duration: heard.duration, ...(heard.languageCode === undefined ? {} : { languageCode: heard.languageCode }) };
+}
+
 export const voice = {
   // eslint-disable-next-line require-yield
   async *listen(args: ListenArgs, ctx: VoiceContext): AsyncGenerator<never, ListenResult, undefined> {
