@@ -1726,7 +1726,7 @@ export function webToolOkLines(w: { server: string; search: readonly string[]; f
   const names = (t: readonly string[]) => t.join(", ").slice(0, 300);
   if (w.search.length > 0) lines.push(`Its server ${w.server} says ${names(w.search)} search${w.search.length === 1 ? "es" : ""} the web: at the default approval level a search runs without asking, and what a bot searches goes to this plugin.`);
   if (w.fetch.length > 0) lines.push(`Its server ${w.server} says ${names(w.fetch)} read${w.fetch.length === 1 ? "s" : ""} web pages: at the default approval level a page whose link a bot already has is read without asking (a few a turn), any other page asks, site by site, and what is read goes through this plugin.`);
-  if ((w.browser ?? []).length > 0) lines.push(`Its server ${w.server} says ${names(w.browser!)} drive${w.browser!.length === 1 ? "s" : ""} the calling bot's own tab of the Clover Browser: at the default approval level opening, reading and a picture of a page run without asking, clicking and typing ask for the site, and what the tab shows goes through this plugin.`);
+  if ((w.browser ?? []).length > 0) lines.push(`Its server ${w.server} says ${names(w.browser!)} drive${w.browser!.length === 1 ? "s" : ""} the calling bot's own tab of the Clover Browser. Looking and acting are told apart by the plugin's own word (its verbs): at the default approval level what it calls looking runs without asking, what it calls clicking and typing asks for the site, and what the tab shows goes through this plugin.`);
   return lines;
 }
 

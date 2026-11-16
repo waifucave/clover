@@ -1163,6 +1163,22 @@ export class UiRuntime {
     return this.actInThisLayer(frame, mountId).plugin?.id ?? "core";
   }
 
+  /** Whether a part is kept in the background (`app.background`, a hidden window with no user in front of it): it or a
+   *  part it is under sits in that spot. The part must be in the document `frame` (throws otherwise). */
+  inBackground(frame: FrameRef, mountId: string): boolean {
+    return this.#underBackground(this.partIn(frame, mountId));
+  }
+
+  /** Whether a part sits in `app.background`, or under a part that does. */
+  #underBackground(part: Mount): boolean {
+    let m: Mount | undefined = part;
+    for (let depth = 0; m !== undefined && depth < 32; depth++) {
+      if (m.spot === "app.background") return true;
+      m = m.parent === undefined ? undefined : this.mounts.get(m.parent);
+    }
+    return false;
+  }
+
   /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). A layout part in
    *  another plugin's document doesn't act for its plugin, so its capabilities count for nothing (the review's S1). */
   capabilitiesOf(frame: FrameRef, mountId: string): ReadonlySet<string> {
@@ -1566,12 +1582,14 @@ export class UiRuntime {
 
   /** A message to every document that holds a part of this plugin (its connection's events). An inline part whose
    *  document isn't its plugin's layer hears nothing: its own layer's documents do (the review's S1). */
-  pluginMessage(pluginId: string, message: LayerMessage): void {
+  pluginMessage(pluginId: string, message: LayerMessage, o: { visibleOnly?: boolean } = {}): void {
     const docs = new Set<string>();
     for (const m of this.mounts.values()) {
       if (m.plugin?.id !== pluginId) continue;
       if (m.kind === "inline" && m.plugin.layer !== this.docOf(m)?.layer) continue;
       const doc = this.docOf(m);
+      // `visibleOnly` (the Clover Browser's events, browser-calls.ts): never a document kept in the background.
+      if (o.visibleOnly === true && doc !== undefined && this.#underBackground(doc)) continue;
       if (doc?.frame !== undefined && doc.kind === "frame") docs.add(doc.id);
     }
     for (const id of docs) this.post(id, message);

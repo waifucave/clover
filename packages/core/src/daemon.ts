@@ -4320,6 +4320,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           const routed = mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId);
           return routed === undefined ? undefined : pluginWebTool(registry, routed.plugin, routed.server, routed.tool, { built });
         };
+        const toolPlugin = (ctx: BotSessionContext, tool: string): string | undefined => mcp.routedTool(ctx.kind, tool, agentBackendOf(ctx), ctx.botId)?.plugin;
         // Stage 2: what `RequestAccess` granted each conversation's shell commands (a folder, hosts), and R1's class of a
         // folder on this computer, as the broker judges an edit's.
         const userHome = opts.parts?.userHome ?? homedir();
@@ -4371,6 +4372,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
             running: (bot) => agents()?.manager.running(bot) ?? 0,
           }),
           bundledTool,
+          toolPlugin,
           // The site a bot's own browser tab is on, for the one card its acting calls ask per bot and site.
           browserElement: (ctx, ref) => readElements.get(ctx.sessionId, ref),
           browserHost: async (ctx) => {

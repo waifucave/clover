@@ -1118,9 +1118,24 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     s.sent.length = 0;
     s.rt.pluginMessage("clover/voice", { ...message, pluginId: "clover/voice" } as never);
     expect(s.sent.filter((x) => x.to === `${child.processId}:${child.routingId}`)).toEqual([]);
+    // browser-press: the Clover Browser's events (`visibleOnly`) never reach a background document, and the part is known
+    // as one in the background.
+    s.sent.length = 0;
+    s.rt.pluginMessage("fixture-background", { ...message, params: { type: "tab_changed", tab: { id: "t" } } } as never, { visibleOnly: true });
+    expect(s.sent).toEqual([]);
+    expect(s.rt.inBackground(child, item.mount)).toBe(true);
     // The other way: its part's calls (`host.call` to its host half among them) go as its own plugin, with its capabilities.
     expect(s.rt.partOf(child, item.mount)).toBe("fixture-background");
     expect([...s.rt.capabilitiesOf(child, item.mount)]).toContain("audio");
+  });
+
+  test("browser-press: the Clover Browser's events (visibleOnly) reach a visible part's document in the main window", () => {
+    const { s, child, item } = withFixtureFrame();
+    s.sent.length = 0;
+    const m = { type: "api-event", pluginId: "fixture-composer", method: "core.event", params: { type: "tab_changed", tab: { id: "t" } } };
+    s.rt.pluginMessage("fixture-composer", m as never, { visibleOnly: true });
+    expect(s.sent).toEqual([{ to: `${child.processId}:${child.routingId}`, m: m as never }]);
+    expect(s.rt.inBackground(child, item.mount)).toBe(false);
   });
 
   test("the menu broker learns a frame's place from each document above it", () => {

@@ -44,6 +44,7 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
+import { BrowserAreaFrames, isBrowserEvent, ViewBindings } from "./ui/browser-calls";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -322,7 +323,14 @@ async function ready(): Promise<void> {
       views.drop(mount);
       webViews.drop(mount);
       // The watches the frame left open end with it (a turn it took included, §5.4 "Turns").
-      for (const w of frameWatches.gone(mount)) void layerLinks.call(w.pluginId, "plugin.layer.unwatch", { watch: w.watch }).catch(() => undefined);
+      for (const w of frameWatches.gone(mount)) {
+        browserWatches.delete(w.watch);
+        void layerLinks.call(w.pluginId, "plugin.layer.unwatch", { watch: w.watch }).catch(() => undefined);
+      }
+      // The last visible part of a plugin that subscribed to the `browser` area went: its connection stops hearing tabs.
+      viewBindings.gone(mount);
+      const lastBrowser = browserAreaFrames.gone(mount);
+      if (lastBrowser !== undefined) void layerLinks.call(lastBrowser, "events.unsubscribe", { areas: ["browser"] }).catch(() => undefined);
     },
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
     // The acceptance's tab-flash row (a headless test-marked or acceptance build only, compiled out of a release; the
@@ -400,6 +408,13 @@ async function ready(): Promise<void> {
       return ok;
     },
     settleGesture: (windowId) => sends.settle(windowId),
+    browserArea: (pluginId, mount, on) => {
+      if (on) browserAreaFrames.add(pluginId, mount);
+      else browserAreaFrames.gone(mount);
+    },
+    noteBrowserWatch: (watch) => { browserWatches.add(watch); },
+    showsTab: (_windowId, mount, tab) => viewBindings.bound(mount) === tab,
+    noteBrowserResult: (mount, method, params, result) => viewBindings.note(mount, method, params, result),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
@@ -2071,6 +2086,12 @@ const menus = new MenuGate();
 /** Each plugin layer's own connection to the core (its plugin API). */
 /** The watches each frame opened on its plugin's connection: a frame's going ends them (ui/frame-watches.ts). */
 const frameWatches = new FrameWatches();
+/** The watches open on a `browser.*` call (their values are the Clover Browser's events), and the visible parts that
+ *  subscribed to the `browser` area (browser-calls.ts). */
+const browserWatches = new Set<string>();
+const browserAreaFrames = new BrowserAreaFrames();
+/** The tab each part's own browser view is bound to (browser-calls.ts `ViewBindings`). */
+const viewBindings = new ViewBindings();
 const layerLinks = new LayerLinks({
   appClient: () => pair?.client,
   dial: () => dialDaemon(daemonEndpoint(home)),
@@ -2086,7 +2107,8 @@ const layerLinks = new LayerLinks({
       const id = (params as { card?: { id?: unknown } }).card?.id;
       if (typeof id === "string") noteTold(id, pluginId);
     }
-    runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params });
+    // The Clover Browser's events go only to the plugin's documents the user can see (browser-calls.ts).
+    runtime.pluginMessage(pluginId, { type: "api-event", pluginId, method, params }, method === CORE_EVENT_NOTIFICATION && isBrowserEvent(params, browserWatches) ? { visibleOnly: true } : {});
   },
   log,
 });

@@ -94,8 +94,8 @@
     },
     {
       "name": "browser",
-      "lets": "Drive the Clover Browser on this computer: a host half only for the session whose tool call it serves, on that session's own tab (out of sight, the Browser tool's nine DevTools methods); a component for the person, as a live view: every owner's tab here (the bots', the sessions' and the person's own in the Clover Browser, signed in wherever the person signed in there), which it can list, open, navigate, show in a view, picture and hear the page events of. Never the person's other browsers",
-      "ok": "drives the Clover Browser: a bot's own tab as its tool, and in its own page every tab of the Clover Browser on this computer, which it can open, read and act on, signed in wherever you signed in there",
+      "lets": "Drive the Clover Browser on this computer. A host half: only the session whose tool call it serves, while that call is open, on that session's own tab, out of sight. A component the user can see: a live view for the person over every owner's tab here, the person's own signed-in tabs included; it lists them (address and title), shows, hides and hears them, and pictures the one its own view holds (live or paused), freely; it runs DevTools, navigates, opens or closes a tab, or pictures another, only right after the user's own press in it. A background part: nothing, not even the tab events. Never the person's other browsers",
+      "ok": "drives the Clover Browser: a bot's own tab as its tool; its page sees every Clover Browser tab on this computer, its address, title and picture, ones you opened yourself included, with no asking, and opens, closes and acts in tabs when you press its controls, signed in wherever you signed in there",
       "warns": true
     },
     {

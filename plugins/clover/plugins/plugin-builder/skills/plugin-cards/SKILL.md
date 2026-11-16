@@ -64,8 +64,12 @@ plugin: a child plugin's lists don't count):
 - `browserTools`: tools that take the Browser tool's verbs (`verb`: tabs, open, navigate, read, screenshot, scroll,
   wait, back, forward, reload, close; click, type, key, select) and drive the calling bot's own tab with `api.browser`
   (the plugin needs `browser`; `api.browser.toolCaller()` says whose tool call it serves). Looking runs without a card;
-  clicking, typing, a key or a select asks for the site, "Always allow" kept per bot and site. The card warns that what
-  the tab shows goes through the plugin.
+  clicking, typing, a key or a select asks for the site, "Always allow" kept per bot, site and plugin. The split is by
+  the plugin's own word for its verbs, and the card says so; what the tab shows goes through the plugin. A component
+  holding `browser` (never one in `app.background`) lists, shows and hides tabs freely, and pictures the one its own view holds
+  (live or paused), but `browser.cdp` (bar `Page.getNavigationHistory`), `navigate`, `open`, `close` and a picture of any
+  other tab go only from the user's own press in it: call them straight from the click or key handler, one call per
+  press.
 
 Never put a tool that changes anything outside the plugin's display on any of these lists. A tool can be on one only.
 `needs` (`{ "<tool>": "<capability>" }`) lists a tool only while the plugin holds that capability, for a tool that
