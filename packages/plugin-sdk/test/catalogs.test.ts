@@ -228,12 +228,16 @@ describe("points and spots", () => {
   test("a well-known name's declaration is the catalog's, keep and needs included, whoever declares it (review S2)", () => {
     for (const name of WELL_KNOWN_POINT_NAMES) {
       const decl = catalogPointDecl(name);
-      expect(PointDeclSchema.safeParse(decl).success).toBe(true);
+      // A platform point's declaration also says `platform: true` (no plugin declares it); that mark is the catalog's, not a manifest field.
+      const { platform: _platform, ...declared } = decl as typeof decl & { platform?: boolean };
+      expect(PointDeclSchema.safeParse(declared).success).toBe(true);
       expect(decl!.props !== undefined).toBe(SPOTS.some((s) => s.name === name));
     }
     expect(catalogPointDecl("conversation.message")).toMatchObject({ shape: "keyed", keep: ["approval"], needs: ["conversation.read"], context: ["bot"] });
     expect(catalogPointDecl("webhook.ingress")).toMatchObject({ shape: "list", fields: { type: "object" } });
     expect(catalogPointDecl("webhook.ingress")!.props).toBeUndefined();
+    expect(catalogPointDecl("avatar.formats")).toMatchObject({ shape: "list", platform: true });
+    expect(catalogPointDecl("webhook.ingress")).not.toHaveProperty("platform");
     for (const name of ["app.root", "bot.tab", "models", "luna.cards"]) expect(catalogPointDecl(name)).toBeUndefined();
   });
 
