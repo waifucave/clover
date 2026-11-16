@@ -534,6 +534,19 @@ describe("a held key binding's release (§5.4 `hold`): its owner's documents get
     expect(g.takeRelease(1, OWNER)).toBe(false);
   });
 
+  test("a modifier let go first: that release credits the press's frames and the owner's once; the key's own up later gives no second send", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    const h = down(g);
+    g.release(1, { kind: "key", key: "Control", frame: FOCUSED }); // another key's up: not the press's
+    g.creditHeld(1, h, [OWNER]);
+    expect(g.takeRelease(1, OWNER)).toBe(true);
+    now.t += 700;
+    g.release(1, { kind: "key", key: " ", frame: FOCUSED }); // the space let go after the send
+    expect(g.takeRelease(1, FOCUSED)).toBe(false);
+    expect(g.takeRelease(1, OWNER)).toBe(false);
+  });
+
   test("lost when the owner's document navigates, and nothing for a press held past two minutes", () => {
     const now = { t: 0 };
     const g = new SendGate(() => now.t);

@@ -14,4 +14,13 @@ export async function ping(): Promise<{ count: number }> {
   return { count };
 }
 
+// Its held key binding `held` (`hold`: the key's down and its release): the page counts each.
+const holds = { down: 0, up: 0 };
+export async function held(args: unknown): Promise<typeof holds> {
+  const key = (args as { key?: unknown } | null)?.key;
+  if (key === "down" || key === "up") holds[key] += 1;
+  api?.ui?.send("held", { ...holds });
+  return { ...holds };
+}
+
 export async function stop(): Promise<void> {}

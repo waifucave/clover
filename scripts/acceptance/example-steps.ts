@@ -64,6 +64,9 @@ export interface ExampleCtx {
   denyCard(id: string): Promise<void>;
   /** Sets the app's dark or light for a render (the run's appearance file); only a run that renders gives one. */
   setAppearance?(scheme: "dark" | "light" | "system"): void;
+  /** Main presses a key chord in the window (`webContents.sendInputEvent`, from a file the build watches): down and up, or
+   *  with `type` one event of a held key (its down, an auto-repeat, its up); only the runs that set the file give one. */
+  pressKey?(key: string, modifiers: string[], type?: "down" | "repeat" | "up"): void;
   /** Says whether Clover's window is in front (the app's test seam: a headless window is never the focused one). */
   setMainFront?(front: boolean): void;
   /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (Try again, on the conversation copy). */

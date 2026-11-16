@@ -3,7 +3,8 @@
 // picked writes it down and the words go to the bot as the user's message (`user.send`, one send after the press and
 // release main saw). The run's fixture voice (`acceptance-voice`: no key, no network) is installed the user's way and set
 // as Alpha's voice (Clover Voice's own setting for her); the button appears with no window focus, and the row holds it
-// with real mouse events, as a person does.
+// with real mouse events, as a person does, then with Ctrl+Shift+Space (Clover Voice's held key binding, §5.4 `hold`) through
+// main's own key events.
 //
 // No real microphone: the test build's recorder takes a generated 1.2 s tone clip in place of getUserMedia (Clover
 // Voice's `clipSource`), so no run opens a device or raises a system prompt; the row proves the real door was never
@@ -14,7 +15,7 @@ import { resolve } from "node:path";
 import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 import { VOICE_MODE_CLAUSE, voiceModeClause, type Talk } from "./voice-mode-step";
 
-export const LISTEN_STEP = `push-to-talk: Clover Voice's talk button shows only where the bot's voice listens, with no window focus needed; held, it records a generated clip (never the microphone) and the recording reaches the voice whole, and its words are sent as the user's message, not put in the box; ${VOICE_MODE_CLAUSE}`;
+export const LISTEN_STEP = `push-to-talk: Clover Voice's talk button shows only where the bot's voice listens, with no window focus needed; held, it records a generated clip (never the microphone) and the recording reaches the voice whole, and its words are sent as the user's message, not put in the box; Ctrl+Shift+Space held with real key events (Clover Voice's held key binding) holds it the same way, the words sent once, and the chord never types; ${VOICE_MODE_CLAUSE}`;
 
 const VOICE_DIR = resolve(import.meta.dir, "fixtures", "acceptance-voice");
 const VOICE_ID = "acceptance-voice";
@@ -139,6 +140,7 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
       others.push(v.href.slice(0, 30));
     }
     done.push(`the recording document's Permissions-Policy allows the microphone for it (browser state ${String(mine.browser)}, page ${mine.page})${others.length > 0 ? `, and blocks it in ${others.length} other layer document(s)` : ""} (no prompt was raised)`);
+    done.push(...(await keyHoldClause(ctx, sentWith, inTree, counters!.session)));
     // The second voice's clause, with Alpha's voice still the run's tone voice; it holds the button again while that voice is picked.
     done.push(...(await voiceModeClause(ctx, talk)));
     return done.join("; ");
@@ -149,4 +151,47 @@ export async function listenStep(ctx: ExampleCtx, session: string): Promise<stri
       if (rm?.card !== undefined) await ctx.approveCard(rm.card).catch(() => undefined);
     }
   }
+}
+
+/** Ctrl+Shift+Space held with real key events (Clover Voice's held key binding `clover.push-to-talk`, §5.4 `hold`): main's own
+ *  `sendInputEvent` sends the chord's down with the composer's box focused, two auto-repeats while the clip plays, then the
+ *  shift let go first (which ends the hold) and the space's up, one event each. The talk button holds as when it is held,
+ *  the voice's words go to Alpha once as the user's message, and the box never gets a space. */
+async function keyHoldClause(ctx: ExampleCtx, sentWith: (words: string) => Promise<number>, inTree: <T>(expr: string) => Promise<{ session: string; value: T } | undefined>, doc: string): Promise<string[]> {
+  const { cdp } = ctx;
+  if (ctx.pressKey === undefined) fail("this run can't press a key in the window (no CLOVER_TEST_KEY_FILE)");
+  const send = async (key: string, modifiers: string[], type: "down" | "repeat" | "up") => {
+    ctx.pressKey!(key, modifiers, type);
+    await sleep(600); // main polls the key file every 250 ms: one event per write
+  };
+  const starts = async () => Number((await inTree<string>("document.documentElement.dataset.voiceTalkStarts ?? null"))?.value ?? 0);
+  const keyLines = () => ctx.appLog().split("\n").filter((l) => l.includes("keys: clover.push-to-talk "));
+  const before = await sentWith(HEARD);
+  const startsBefore = await starts();
+  const linesBefore = keyLines().length;
+  // The composer's box has the focus, as when the user types: a chord that reached it would type a space there.
+  const boxBefore = String(await cdp.evaluate(doc, `(() => { const b = document.querySelector('${BOX}'); if (!b) return null; b.focus(); return b.value; })()`).catch(() => null));
+  await send("Space", ["control", "shift"], "down");
+  await until("the talk button listening while Ctrl+Shift+Space is held", 15_000, async () => ((await cdp.evaluate(doc, "!!document.querySelector('.cl-voice-talk[data-voice-talk=listening]')")) === true ? true : undefined),
+    async () => `the app's log: ${ctx.appLog().split("\n").filter((l) => l.includes("keys:")).slice(-5).join(" | ")}`);
+  await send("Space", ["control", "shift"], "repeat");
+  await send("Space", ["control", "shift"], "repeat");
+  await sleep(500);
+  await send("Shift", ["control"], "up");
+  await send("Space", ["control"], "up");
+  await until(`the user's message "${HEARD}" in Alpha's conversation after the key's release`, 40_000, async () => ((await sentWith(HEARD)) > before ? true : undefined),
+    async () => `the button says "${String(await cdp.evaluate(doc, "document.querySelector('.cl-voice-talk')?.innerText ?? ''").catch(() => "?")).slice(0, 160)}"; app: ${ctx.appLog().split("\n").filter((l) => /send:|keys:/.test(l)).slice(-5).join(" | ").slice(-900)}`);
+  await sleep(1_500);
+  const sent = (await sentWith(HEARD)) - before;
+  if (sent !== 1) fail(`the held key sent the words ${sent} time(s), not once`);
+  const started = (await starts()) - startsBefore;
+  if (started !== 1) fail(`the held key started ${started} recording(s), not one (its repeats are no new press)`);
+  const lines = keyLines().slice(linesBefore);
+  const downs = lines.filter((l) => l.includes("clover.push-to-talk down from its key")).length;
+  const ups = lines.filter((l) => l.includes("clover.push-to-talk up from its key")).length;
+  if (downs !== 1 || ups !== 1) fail(`main delivered ${downs} down(s) and ${ups} up(s) of the held key, not one each: ${lines.join(" | ")}`);
+  const boxAfter = String(await cdp.evaluate(doc, `document.querySelector('${BOX}') ? document.querySelector('${BOX}').value : null`).catch(() => null));
+  if (boxAfter !== boxBefore) fail(`the composer's box changed while the chord was held: ${JSON.stringify(boxBefore)} became ${JSON.stringify(boxAfter)}`);
+  if ((await cdp.evaluate(doc, "!!document.querySelector('.cl-voice-talk[data-voice-talk=listening]')")) === true) fail("the talk button still says it is listening after the key's release");
+  return [`Ctrl+Shift+Space held with real key events (its down with the box focused, 2 auto-repeats, the shift let go first, then the space): main delivered Clover Voice's held binding one down and one up, the button recorded once (1 start), the words "${HEARD}" were sent to Alpha once as the user's message, and the box stayed ${JSON.stringify(boxBefore)} (the chord never typed)`];
 }

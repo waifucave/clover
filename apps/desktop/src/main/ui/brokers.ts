@@ -463,6 +463,9 @@ export class SendGate {
   creditHeld(windowId: number, hold: Hold, frames: readonly string[]): void {
     if (this.lastPress.get(windowId) !== hold || hold.spent || this.now() - hold.at > SEND_HOLD_MAX_MS) return;
     hold.releasedAt ??= this.now();
+    // The binding's release is the press's release: a modifier let go first credits the press's own frames now too, and the
+    // key's own up, later, credits nothing again (one press, one send).
+    if (this.holds.get(windowId) === hold) this.credit(windowId, hold);
     for (const f of frames) this.releases.set(f, { windowId, at: hold.releasedAt, hold });
   }
 
