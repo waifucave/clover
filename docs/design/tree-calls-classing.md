@@ -131,3 +131,7 @@ What the build changed against the table above:
   any other is refused, naming the capability.
 - Opening a place in the main window (`clover:open`) is `shell.control`'s; the window's shell (`shell-report`, the drag,
   `active-session`) is the part the core mounted in `app.root`.
+- After the re-founded Voice (F1's speaking half) landed: `voice.stop`, `voice.speak`, `voice.played` and the speak-replies
+  shape of `ui.set` are gone from the door; the Voice plugin reads and writes its own settings through the plugin API and
+  holds no door capability; the character and conversation parts no longer hold `audio`, the shell no `app.settings`.
+  `voice.listen` stays behind `audio` until the listening half.

@@ -18,7 +18,6 @@
     "computers.read",
     "conversation.read",
     "account.read",
-    "app.settings",
     "audio"
   ],
   "contributes": {

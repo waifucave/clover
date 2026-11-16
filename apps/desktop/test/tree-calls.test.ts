@@ -267,70 +267,12 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
   });
 });
 
-describe("the voice controls: the character stage's, and the conversation view's speak button", () => {
-  const stage = { windowId: 1, pluginId: "clover/character" };
-  const go = (method: string, params: unknown, gesture = true, part = stage.pluginId) => {
-    const got: [string, unknown][] = [];
-    const { r } = route({ tree: { ...stage, pluginId: part }, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
-    return { run: routeCall(r), got };
-  };
-  test("ui.set takes voice.speakReplies as a boolean and nothing else, with the user's click", async () => {
-    const ok = go("ui.set", { patch: { voice: { speakReplies: false } } });
-    expect(await ok.run).toBe("app");
-    expect(ok.got).toEqual([["ui.set", { patch: { voice: { speakReplies: false } } }]]);
-    for (const patch of [{ voice: { speakReplies: "no" } }, { voice: { speakReplies: true, other: 1 } }, { appearance: "dark" }, { voice: { speakReplies: true }, language: "de" }, {}]) {
-      // Refused, or (a look's shape, which takes app.settings the stage lacks) the layer door: never the app's connection.
-      const bad = go("ui.set", { patch });
-      expect(["refused", "layer"]).toContain(String(await bad.run.then((v) => v, () => "refused")));
-      expect(bad.got).toEqual([]);
-    }
-    const none = go("ui.set", { patch: { voice: { speakReplies: true } } }, false);
-    await expect(none.run).rejects.toThrow("only right after the user's own");
-  });
-  test("Settings › Voice's Speak replies switch (Clover Voice's part) writes voice.speakReplies alone, with the user's click", async () => {
-    const ok = go("ui.set", { patch: { voice: { speakReplies: true } } }, true, "clover/voice");
-    expect(await ok.run).toBe("app");
-    expect(ok.got).toEqual([["ui.set", { patch: { voice: { speakReplies: true } } }]]);
-    const bad = go("ui.set", { patch: { voice: { speakReplies: 1 } } }, true, "clover/voice");
-    await expect(bad.run).rejects.toThrow();
-    expect(bad.got).toEqual([]);
-    await expect(go("ui.set", { patch: { voice: { speakReplies: false } } }, false, "clover/voice").run).rejects.toThrow("only right after the user's own");
-    // The switch is `audio`'s: a part without it goes the layer door.
-    expect(verdict("clover/sidebar", "ui.set", { patch: { voice: { speakReplies: true } } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the audio capability" });
-  });
-  test("Settings › Voice's own settings are not this door's (the plugin API's settings.get/set): naming any plugin here takes plugins.read or plugins.manage, which it lacks", async () => {
-    await expect(go("plugin.settings.get", { id: "clover/voice" }, false, "clover/voice").run).rejects.toThrow("needs the plugins.read capability");
-    const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/voice" }, method: "plugin.settings.set", params: { id: "fish-audio", key: "k", value: "v" }, gesture: true });
-    expect(await routeCall(r)).toBe("layer");
-    expect(calls).toEqual(["layer"]);
-  });
-  test("voice.played: the shell's player names a bot and an utterance, nothing else, with no gesture; from the shell only", async () => {
-    const ok = go("voice.played", { bot: "luna", utterance: "clover/voice:cv_1", audio: "AAAA" }, false, SHELL_PART);
-    await ok.run;
-    expect(ok.got).toEqual([["voice.played", { bot: "luna", utterance: "clover/voice:cv_1" }]]);
-    await expect(go("voice.played", { bot: "luna" }, false, SHELL_PART).run).rejects.toThrow("which utterance");
-    await expect(go("voice.played", { utterance: "u" }, false, SHELL_PART).run).rejects.toThrow("which bot");
-    await expect(go("voice.played", { bot: "luna", utterance: "u" }, true, "clover/sidebar").run).rejects.toThrow("voice.played needs the audio capability");
-  });
-  test("voice.stop names a bot, with the user's click, from the stage only", async () => {
-    const ok = go("voice.stop", { bot: "luna", extra: 1 });
-    await ok.run;
-    expect(ok.got).toEqual([["voice.stop", { bot: "luna" }]]);
-    await expect(go("voice.stop", {}).run).rejects.toThrow("which bot");
-    await expect(go("voice.stop", { bot: "luna" }, false).run).rejects.toThrow("only right after the user's own");
-    const { r } = route({ tree: { windowId: 1, pluginId: "clover/sidebar" }, method: "voice.stop", params: { bot: "luna" }, gesture: true });
-    await expect(routeCall(r)).rejects.toThrow("voice.stop needs the audio capability");
-  });
-  test("voice.speak names a session and a reply's seq, with the user's click, from the conversation view only", async () => {
-    const ok = go("voice.speak", { session: "b_alpha", seq: 7, text: "say this" }, true, CONVERSATION_PART);
-    await ok.run;
-    expect(ok.got).toEqual([["voice.speak", { session: "b_alpha", seq: 7 }]]);
-    for (const bad of [{}, { session: "b_alpha" }, { session: "b_alpha", seq: -1 }, { session: "b_alpha", seq: 1.5 }, { session: "", seq: 1 }, { session: 3, seq: 1 }]) {
-      await expect(go("voice.speak", bad, true, CONVERSATION_PART).run).rejects.toThrow("which reply");
-    }
-    await expect(go("voice.speak", { session: "b_alpha", seq: 7 }, false, CONVERSATION_PART).run).rejects.toThrow("only right after the user's own");
-    const { r } = route({ tree: { windowId: 1, pluginId: "clover/sidebar" }, method: "voice.speak", params: { session: "b_alpha", seq: 7 }, gesture: true });
-    await expect(routeCall(r)).rejects.toThrow("voice.speak needs the audio capability");
+describe("the re-founded Voice makes no call through this door (F1): its own settings are the plugin API's", () => {
+  test("voice.stop, voice.speak and voice.played are gone from the door, and its speak-replies switch is its own setting", () => {
+    for (const m of ["voice.stop", "voice.speak", "voice.played"]) expect(Object.hasOwn(TREE_CALLS, m)).toBe(false);
+    // A patch of `voice` is no shape of ui.set's own: it is the look's, which takes app.settings, and drops what isn't a look key.
+    expect(verdict("clover/voice", "ui.set", { patch: { voice: { speakReplies: true } } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the app.settings capability" });
+    expect(verdict("clover/voice", "plugin.settings.get", { id: "clover/voice" })).toMatchObject({ ok: false, owned: true });
   });
 });
 
@@ -418,12 +360,8 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "session.context": { needs: ["conversation.read"], gesture: false },
   "session.connectors": { needs: ["conversation.read"], gesture: false },
   "ui.set": { needs: ["app.settings"], gesture: true },
-  "voice.stop": { needs: ["audio"], gesture: true },
-  "voice.speak": { needs: ["audio"], gesture: true },
   // The pieces of a recording the user holds: no press of its own (the composer's `listenStart` took it; the hold carries the pieces).
   "voice.listen": { needs: ["audio"], gesture: false },
-  // The player saying an utterance ended: a report with no press (it lets the voice mode go on, never starts a sound).
-  "voice.played": { needs: ["audio"], gesture: false },
   "ui.secret": { needs: ["plugins.manage", "bots.edit"], gesture: true },
   "plugin.settings.get": { needs: ["plugins.read"], gesture: false },
   "plugin.settings.set": { needs: ["plugins.manage"], gesture: true },
@@ -466,10 +404,7 @@ async function appConnection(method: string): Promise<unknown> {
  *  dialog main owns, a read, or a harmless change. The test below fails on an entry with none. */
 type Worst = "sealed card" | "main-owned dialog" | "read" | "harmless change" | "starts a model turn" | "held recording" | "user's permission press";
 const WORST: Record<string, Worst> = {
-  "voice.stop": "harmless change", // ends one bot's own speech; the next reply speaks again
-  "voice.played": "harmless change", // says an utterance the core sent this app ended: the voice mode's next sound may start sooner; one the core isn't waiting on is ignored; nothing sounds from it
   "voice.listen": "held recording", // audio to the bot's own listening voice, only while a hold the user's own press opened is live in that window (listen.ts): main names the bot and numbers the pieces, refuses any with no hold, and the core still asks its provider check; no hold, no call
-  "voice.speak": "harmless change", // speaks one of the bot's own replies, read from its log, with its voice; nothing else moves
   "ui.settings": "read", // the app's settings as the parts show them
   "session.diff": "read", // a session's changes in its folder: git read only (no optional locks, no fsmonitor, no external diff or textconv), bounded
   "session.outputs": "read", // the names of the files in a session's outputs folder
@@ -535,14 +470,8 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
     case "plugin.settings.get":
     case "plugin.settings.set":
       return { id: "tarot", key: "k", value: "v" };
-    case "voice.speak":
-      return { session: "b_alpha", seq: 3 };
-    case "voice.stop":
-      return { bot: "alpha" };
     case "voice.listen":
       return { audio: "AAAA", final: false };
-    case "voice.played":
-      return { bot: "alpha", utterance: "clover/voice:cv_1" };
     case "bot.setUserLayer":
       return { id: "alpha", patch: cap === "bots.avatar" ? { avatar: null } : { theme: null } };
     case "plugin.install":
@@ -627,9 +556,9 @@ describe("the door, table by table: what each entry needs, with what press", () 
       "clover/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "point.active.list", "point.active.set", "computer.list"],
       [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
-      [CHARACTER_PART]: ["bot.importAvatar", "plugin.list", "voice.stop"],
-      [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction", "voice.speak"],
-      [SHELL_PART]: ["account.status", "voice.played", "voice.listen", "computer.list", "ui.settings"],
+      [CHARACTER_PART]: ["bot.importAvatar", "plugin.list"],
+      [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
+      [SHELL_PART]: ["account.status", "voice.listen", "computer.list"],
       "clover/sidebar": ["account.status", "computer.list"],
       "clover/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
       "clover/panel-diff": ["session.diff"],

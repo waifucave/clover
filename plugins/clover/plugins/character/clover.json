@@ -15,8 +15,7 @@
     "bots.read",
     "avatar.report",
     "bots.avatar",
-    "plugins.read",
-    "audio"
+    "plugins.read"
   ],
   "contributes": {
     "ui": [

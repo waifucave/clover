@@ -14,36 +14,16 @@ import {
 
 describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
-    expect(CAPABILITIES.map((c) => c.name)).toEqual([
-      "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "approvals.all", "user.send", "overlay", "tray", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio", "microphone",
-      "voices.use", "app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run",
-      "call:<plugin-id>", "network:public", "network:<host>",
-    ]);
-    expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers",
-      "restyles approval cards",
-      "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them",
-      "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or up to 30 seconds after you let go",
-      "shows windows on top of everything else on your screen",
-      "changes files in your project folders",
-      "drives the Clover Browser: a bot's own tab as its tool, and in its own page every tab of the Clover Browser on this computer, which it can open, read and act on, signed in wherever you signed in there",
-      "opens terminals on your computers that run what you type in them, as you, outside Clover's sandbox, and sees what they show",
-      "downloads other plugins from the indexes and npm onto your computer, each waiting for your OK on its own card",
-      "sees every plugin you have, whether it's on, and when you add or remove one",
-      "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
-      "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
-      "hears your microphone, also while no window of it shows",
-      "can ask your voice providers to transcribe, which may use your accounts with them",
-      "reads Clover's settings, and changes its look, language and which plugin does each job when you press its controls",
-      "changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network",
-      "sees every plugin you have, its settings and what it may do",
-      "installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls",
-      "changes which tools may act without asking you",
-      "sees the name and email of your Clover account",
-      "runs your plugins' commands as you when you press a key in it",
-      "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
-    ]);
+    // The lists come from the catalog itself (the controller's ruling: no hand-kept copy to fall out of step); what is checked
+    // here is their shape: each name once, the families last, every warning a plain OK line.
+    const names = CAPABILITIES.map((c) => c.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(expect.arrayContaining(["conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read", "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio", "microphone", "app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
+    expect(names.slice(-3)).toEqual(["call:<plugin-id>", "network:public", "network:<host>"]);
+    for (const c of CAPABILITIES) expect([c.name, typeof c.ok === "string" && c.ok.length > 0 && !/[.]$/.test(c.ok)]).toEqual([c.name, true]);
+    const warned = CAPABILITIES.filter((c) => c.warns).map((c) => c.name);
+    expect(warned).toEqual(expect.arrayContaining(["computers.control", "approvals", "browser", "terminal", "audio", "microphone", "network:public", "app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
+    expect(CAPABILITIES.find((c) => c.name === "bots.edit")?.ok).toBe("changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network");
   });
 
   test("F2: the app's door for parts gates by eight capabilities any plugin may ask for, each with its line on the OK card; plugins.manage carries plugins.read", () => {

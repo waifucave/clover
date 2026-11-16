@@ -57,13 +57,11 @@ const press = (needs: TreeCall["needs"]): TreeCall => ({ disposition: GESTURE, n
 
 const obj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
-/** Which of `ui.set`'s shapes a call is: a bot's tab lists (`editorListParams`), the stage's speak-replies switch
- *  (`voiceMuteParams`), or the look (`settingsParams`). Decided from the params alone; each shape is checked again whole. */
-export function uiSetShape(params: unknown): "lists" | "voice" | "look" {
+/** Which of `ui.set`'s shapes a call is: a bot's tab lists (`editorListParams`) or the look (`settingsParams`). Decided
+ *  from the params alone; each shape is checked again whole. */
+export function uiSetShape(params: unknown): "lists" | "look" {
   const keys = Object.keys(obj(obj(params).patch));
-  if (keys.length === 1 && keys[0] === "lists") return "lists";
-  if (keys.length === 1 && keys[0] === "voice") return "voice";
-  return "look";
+  return keys.length === 1 && keys[0] === "lists" ? "lists" : "look";
 }
 
 /** The user-layer fields only an avatar section writes. */
@@ -101,19 +99,14 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // lists are merged into them); which filler of each one-at-a-time point is active (§5.4: only the user's press in a
   // picker changes it).
   "ui.settings": read([APP_SETTINGS, BOTS_EDIT]),
-  // Three shapes, each by its own capability and each the user's press: the look's keys (`settingsParams`, `app.settings`),
-  // one bot's tab lists (`editorListParams`, `bots.edit`), the speak-replies switch (`voiceMuteParams`, `audio`, until
-  // the voice is re-founded).
-  "ui.set": press((p) => (uiSetShape(p) === "lists" ? BOTS_EDIT : uiSetShape(p) === "voice" ? "audio" : APP_SETTINGS)),
+  // Two shapes, each by its own capability and each the user's press: the look's keys (`settingsParams`, `app.settings`),
+  // one bot's tab lists (`editorListParams`, `bots.edit`).
+  "ui.set": press((p) => (uiSetShape(p) === "lists" ? BOTS_EDIT : APP_SETTINGS)),
   "point.active.list": read(APP_SETTINGS),
   "point.active.set": press(APP_SETTINGS),
-  // The voice's door to the core's voice slot, behind `audio` (the OK says it hears push-to-talk and plays the bots'
-  // voices) until the Voice plugin's re-founding deletes them: the stop button, the speak button, the player's "ended".
-  "voice.stop": press("audio"),
-  "voice.speak": press("audio"),
-  "voice.played": read("audio"),
-  // The pieces of a recording the user is holding (push-to-talk): main names the bot and the utterance and refuses any
-  // with no hold open (`ListenHolds.piece`); the hold itself began on the user's press.
+  // The pieces of a recording the user is holding (push-to-talk, `audio`: the OK says it hears push-to-talk): main names
+  // the bot and the utterance and refuses any with no hold open (`ListenHolds.piece`); the hold itself began on the user's
+  // press. Until the Voice plugin's listening half replaces it.
   "voice.listen": { disposition: "held", needs: "audio" },
   // Another plugin's settings (Settings › Plugins: `plugins.read` reads, `plugins.manage` writes; a secret never through
   // a page), or the edited bot's own plugin's at bot scope (`bots.edit`: main checks the id is a bot's).
@@ -273,23 +266,6 @@ export function settingsParams(params: unknown): { params: { patch: Record<strin
     out[k] = v;
   }
   return Object.keys(out).length > 0 ? { params: { patch: out } } : { why: "nothing here is a choice the Settings page makes" };
-}
-
-/** The shell's `voice.played`: a bot and an utterance, short strings, nothing else. */
-export function voicePlayedParams(params: unknown): { params: { bot: string; utterance: string } } | { why: string } {
-  const p = (params ?? {}) as { bot?: unknown; utterance?: unknown };
-  if (typeof p.bot !== "string" || p.bot === "" || p.bot.length > 128) return { why: "which bot?" };
-  if (typeof p.utterance !== "string" || p.utterance === "" || p.utterance.length > 128) return { why: "which utterance?" };
-  return { params: { bot: p.bot, utterance: p.utterance } };
-}
-
-/** The stage's `ui.set`: `voice.speakReplies` as a boolean and nothing else. */
-export function voiceMuteParams(params: unknown): { params: { patch: { voice: { speakReplies: boolean } } } } | { why: string } {
-  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
-  const voice = patch !== null && typeof patch === "object" ? (patch as { voice?: unknown }).voice : undefined;
-  const on = voice !== null && typeof voice === "object" ? (voice as { speakReplies?: unknown }).speakReplies : undefined;
-  if (typeof on !== "boolean" || Object.keys(patch as object).length !== 1 || Object.keys(voice as object).length !== 1) return { why: "the stage sets only whether replies are spoken" };
-  return { params: { patch: { voice: { speakReplies: on } } } };
 }
 
 const BOT_ID = /^[a-z][a-z0-9-]{0,80}$/;
@@ -559,35 +535,12 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${part}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
-  if (r.method === "voice.played") {
-    const shaped = voicePlayedParams(r.params);
-    if ("why" in shaped) throw r.refuse(shaped.why);
-    return r.request("voice.played", shaped.params);
-  }
   if (r.method === "voice.listen") {
     if (r.listens === undefined) throw r.refuse("this app can't record");
     return r.listens.piece(c.windowId, r.params);
   }
-  if (r.method === "voice.stop") {
-    const bot = (r.params as { bot?: unknown } | null | undefined)?.bot;
-    if (typeof bot !== "string" || bot === "" || bot.length > 128) throw r.refuse("which bot?");
-    return r.request("voice.stop", { bot });
-  }
-  if (r.method === "voice.speak") {
-    const p = r.params as { session?: unknown; seq?: unknown } | null | undefined;
-    if (typeof p?.session !== "string" || p.session === "" || p.session.length > 128 || !Number.isSafeInteger(p.seq) || (p.seq as number) < 0) throw r.refuse("which reply?");
-    return r.request("voice.speak", { session: p.session, seq: p.seq });
-  }
   if (r.method === "ui.set") {
     const shape = uiSetShape(r.params);
-    if (shape === "voice") {
-      const shaped = voiceMuteParams(r.params);
-      if ("why" in shaped) {
-        r.log(`tree: ${part}: ui.set refused (${shaped.why})`);
-        throw r.refuse(shaped.why);
-      }
-      return r.request("ui.set", shaped.params);
-    }
     if (shape === "lists") {
       const shaped = editorListParams(r.params);
       if ("why" in shaped) {
