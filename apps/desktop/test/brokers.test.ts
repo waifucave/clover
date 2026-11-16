@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SEND_HOLD_MAX_MS, SEND_RELEASE_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, openRefusal, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SEND_HOLD_MAX_MS, SEND_RELEASE_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, openRefusal, PRESS_REPORT_MS, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -551,12 +551,37 @@ describe("a part's gestured call spends only a press in its own frame (F2, read 
     expect(g.takeIn(W, "part", arrived)).toBe(false); // once
   });
 
-  test("a press whose walk couldn't see where it landed (an unresolved last hop) is no frame's, not the outer document's", () => {
+  test("the frame's own report names where a mouse press landed: first report wins, none without a recent press, fresh per press", () => {
+    let t = 1_000;
+    const g = new SendGate(() => t);
+    expect(g.seen(W, ["doc", "x"])).toBe(false); // no press: dropped
+    g.press(W, { kind: "mouse", key: "left" });
+    expect(g.seen(W, ["doc", "x"])).toBe(true); // a report from frame x credits x
+    expect(g.seen(W, ["doc", "y"])).toBe(false); // a second report is ignored
+    expect(g.takeIn(W, "y")).toBe(false);
+    expect(g.takeIn(W, "doc")).toBe(false); // the outer document is not x
+    expect(g.takeIn(W, "x")).toBe(true);
+    t += 100;
+    g.press(W, { kind: "mouse", key: "left" }); // a new press starts fresh
+    expect(g.takeIn(W, "x")).toBe(false); // no report yet: no frame takes it
+    expect(g.seen(W, ["doc", "y"])).toBe(true);
+    expect(g.takeIn(W, "y")).toBe(true);
+    t += 100;
+    g.press(W, { kind: "mouse", key: "left" });
+    t += PRESS_REPORT_MS + 1;
+    expect(g.seen(W, ["doc", "x"])).toBe(false); // too late
+    t = 50_000;
+    g.press(W, { kind: "key", key: "a", frames: ["doc"] });
+    expect(g.seen(W, ["doc", "x"])).toBe(false); // a key press keeps its focused frame
+  });
+
+  test("a frame that navigated loses the press it reported, and its outer frames don't inherit it", () => {
     const g = new SendGate(() => 7);
-    const h = g.press(W, { kind: "mouse", key: "left" });
-    g.holdFrames(W, h, ["clover-doc", "?"]);
-    expect(g.takeIn(W, "clover-doc")).toBe(false);
-    expect(g.takeIn(W, "?")).toBe(false);
+    g.press(W, { kind: "mouse", key: "left" });
+    g.seen(W, ["doc", "x"]);
+    g.forgetFrame("x");
+    expect(g.takeIn(W, "x")).toBe(false);
+    expect(g.takeIn(W, "doc")).toBe(false);
   });
 
   test("another window's press is never this window's", () => {

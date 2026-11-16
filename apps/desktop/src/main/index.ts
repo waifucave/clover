@@ -19,7 +19,7 @@ import { openWindow, OPEN_TARGETS } from "./open";
 import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, type RenderHandle } from "./render";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
-import { app, BrowserWindow, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
@@ -44,7 +44,6 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
-import { frameChainAt, hitScript, type HitFrame } from "./frame-hit";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -1892,20 +1891,6 @@ function frameChainOf(f: Electron.WebFrameMain | null): string[] {
   return out;
 }
 
-/** A frame as the pointer walk sees it: each hop is asked inside that frame, for at most a moment. */
-function hitRoot(f: Electron.WebFrameMain): HitFrame {
-  return {
-    id: `${f.processId}:${f.routingId}`,
-    url: f.url,
-    get children() { return f.frames.map(hitRoot); },
-    ask: (x, y) => Promise.race([
-      f.executeJavaScript(hitScript(x, y)) as Promise<{ src: string; x: number; y: number } | null>,
-      // A frame that doesn't answer in time is no answer (the walk marks where it couldn't see, F2), not "no iframe here".
-      new Promise<null>((_r, no) => setTimeout(() => no(new Error("no answer")), 400)),
-    ]),
-  };
-}
-
 /** A background part's window has no input of its own: it never earns a send's allowance. */
 function isBackgroundWindow(id: number): boolean {
   for (const b of backgrounds.values()) if (!b.win.isDestroyed() && b.win.id === id) return true;
@@ -2148,6 +2133,14 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
+// A frame's own document received a trusted pointerdown (the preload, every frame): it names where the window's latest mouse
+// press landed, bound to the frame the report came from (never a payload). First report wins; one with no recent press is dropped.
+ipcMain.on("clover:press-seen", (event) => {
+  const f = event.senderFrame;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (f === null || f.detached || win === null) return;
+  sends.seen(win.id, frameChainOf(f));
+});
 const windowDrags = new TitleDrag();
 /** Where the main process last saw the cursor over a window, on the screen (from its own mouse events). */
 const cursors = new Map<number, { x: number; y: number }>();
@@ -2348,9 +2341,9 @@ function watchWindow(win: BrowserWindow): void {
     menus.input(id);
     if (isBackgroundWindow(id)) sends.input(id);
     else {
-      // The frame under the pointer is found a moment later (it asks the frames); the release waits for it if it comes first.
-      const hold = sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
-      void frameChainAt(hitRoot(win.webContents.mainFrame), mouse.x, mouse.y, { markUnresolved: true }).then((frames) => sends.holdFrames(id, hold, frames), () => undefined);
+      // Which frame it landed in is that frame's own report a moment later (the preload's trusted pointerdown, `clover:press-seen`);
+      // the release waits for it if it comes first.
+      sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
     }
     pointers.down(id, mouse.x, mouse.y);
   });

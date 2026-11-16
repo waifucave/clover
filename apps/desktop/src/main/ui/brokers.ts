@@ -300,8 +300,8 @@ export class MenuGate {
 /** How soon after the user's key press or click a send it started must reach the main process. */
 export const SEND_INPUT_WINDOW_MS = 1_000;
 
-/** frame-hit.ts's `UNRESOLVED_FRAME`: a walk that couldn't see where a press landed ends in this, no frame's id. */
-const UNRESOLVED = "?";
+/** How long after a mouse press its frame's report (`seen`: the preload's trusted pointerdown) may still name where it landed. */
+export const PRESS_REPORT_MS = 1_000;
 
 /** How long after a press's release the frame may send once (hold-to-talk: the release, then the transcription). */
 export const SEND_RELEASE_WINDOW_MS = 30_000;
@@ -354,7 +354,7 @@ export class SendGate {
     const p = this.lastPress.get(windowId);
     const at = this.lastInput.get(windowId);
     if (p === undefined || at === undefined || arrived - at > SEND_INPUT_WINDOW_MS || arrived < at) return false;
-    if (p.frames === undefined || frameId === UNRESOLVED || [...p.frames].at(-1) !== frameId) return false;
+    if (p.frames === undefined || [...p.frames].at(-1) !== frameId) return false;
     return this.take(windowId, arrived);
   }
 
@@ -366,7 +366,7 @@ export class SendGate {
 
   /** Waits (at most `ms`) until the window's latest press knows its frames (a mouse press asks the frames under the pointer a
    *  moment after it): resolves at once when there is none or it is known. */
-  settle(windowId: number, ms = 2_500): Promise<void> {
+  settle(windowId: number, ms = PRESS_REPORT_MS): Promise<void> {
     const p = this.lastPress.get(windowId);
     if (p === undefined || p.frames !== undefined) return Promise.resolve();
     return new Promise<void>((resolve) => {
@@ -405,6 +405,17 @@ export class SendGate {
     if (was !== undefined) this.framesKnown(was);
     this.lastPress.set(windowId, h);
     return h;
+  }
+
+  /** A frame's report that its own document received a trusted pointerdown (the preload's `clover:press-seen`): `frames` is
+   *  that frame and the frames it sits in. It names where the window's latest mouse press landed, only while that press has no
+   *  frames yet (the first report wins) and is recent; anything else is dropped. A press nobody reports (a drag region, no
+   *  document) keeps no frames, and no frame takes it. True when it was taken. */
+  seen(windowId: number, frames: readonly string[]): boolean {
+    const p = this.lastPress.get(windowId);
+    if (p === undefined || p.kind !== "mouse" || p.frames !== undefined || this.now() - p.at > PRESS_REPORT_MS || frames.length === 0) return false;
+    this.holdFrames(windowId, p, frames);
+    return true;
   }
 
   /** The frames a mouse press happened in, once found (the release may already have come: it is credited now). */
@@ -454,7 +465,8 @@ export class SendGate {
   /** A frame that navigated, reloaded or went away is a document of its own from now on. */
   forgetFrame(frameId: string): void {
     this.releases.delete(frameId);
-    for (const h of this.holds.values()) h.frames?.delete(frameId);
+    // A press that landed in (or inside) that frame is no frame's now: its outer frames don't inherit it.
+    for (const h of [...this.holds.values(), ...this.lastPress.values()]) if (h.frames?.has(frameId) === true) h.frames = new Set();
   }
 }
 

@@ -183,7 +183,8 @@ Every entry above may also carry `declares` (below).
   switch on and off, sign in, any plugin's settings), `bots.edit` (a bot's settings, model and keys), `bots.avatar` (a bot's
   avatar from a file the user picks), `tools.permissions` (the Tools tab), `account.read` (the account's name and email),
   `commands.run` (a composer's slash menu); `conversation.read` reads the archive and a session's panels. Every change there is
-  the user's own press in the part, and each capability warns on the OK card.
+  the user's own press in the part (a click or key the app saw land in the part's own document: a real pointerdown there, which
+  your script cannot make, or the part focused at the key down), and each capability warns on the OK card.
 
 ### Your own points and spots (`declares`)
 
