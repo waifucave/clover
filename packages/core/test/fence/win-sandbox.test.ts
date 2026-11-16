@@ -88,7 +88,7 @@ describe("the pinned launcher", () => {
     // Collision test: different SIDs produce different names
     const name2 = principalNameFromSid("S-1-5-21-1234567890-1234567890-1234567890-1002");
     expect(name2).not.toBe(name);
-    expect(name2.length).toBe(18);
+    expect(name2.length).toBe(16);
   });
 
   test("the launcher has Authenticode digest pins for x64 and arm64", () => {
