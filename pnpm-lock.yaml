@@ -55,9 +55,72 @@ importers:
       '@types/react-dom':
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
+      '@waifucave/moss-plugin-archive':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/archive
+      '@waifucave/moss-plugin-bot-editor':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/bot-editor
+      '@waifucave/moss-plugin-browser-view':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/browser-view
+      '@waifucave/moss-plugin-character':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/character
+      '@waifucave/moss-plugin-composer':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/composer
+      '@waifucave/moss-plugin-conversation':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/conversation
+      '@waifucave/moss-plugin-devices':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/devices
+      '@waifucave/moss-plugin-island':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/island
+      '@waifucave/moss-plugin-live2d':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/live2d
+      '@waifucave/moss-plugin-panel':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/panel
+      '@waifucave/moss-plugin-panel-diff':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/panel-diff
+      '@waifucave/moss-plugin-panel-files':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/panel-files
+      '@waifucave/moss-plugin-panel-terminal':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/panel-terminal
+      '@waifucave/moss-plugin-pill':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/pill
+      '@waifucave/moss-plugin-plugin-index':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/plugin-index
       '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@waifucave/moss-plugin-settings':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/settings
+      '@waifucave/moss-plugin-shell':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/shell
+      '@waifucave/moss-plugin-sidebar':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/sidebar
+      '@waifucave/moss-plugin-usage':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/usage
+      '@waifucave/moss-plugin-voice':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/voice
+      '@waifucave/moss-plugin-vrm':
+        specifier: workspace:*
+        version: link:../../plugins/moss/plugins/vrm
       '@waifucave/moss-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -148,18 +211,18 @@ importers:
       '@waifucave/clover-agent-sdk':
         specifier: 0.0.80
         version: 0.0.80
-      '@waifucave/moss-plugin-sdk':
-        specifier: workspace:*
-        version: link:../plugin-sdk
-      '@waifucave/moss-protocol':
-        specifier: workspace:*
-        version: link:../protocol
       '@waifucave/clover-provider-catalog':
         specifier: 0.0.80
         version: 0.0.80
       '@waifucave/clover-provider-runtime':
         specifier: 0.0.80
         version: 0.0.80
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      '@waifucave/moss-protocol':
+        specifier: workspace:*
+        version: link:../protocol
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2
@@ -227,6 +290,9 @@ importers:
 
   plugins/moss/plugins/archive:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -260,6 +326,10 @@ importers:
         version: 5.9.3
 
   plugins/moss/plugins/base-theme:
+    dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -353,6 +423,9 @@ importers:
 
   plugins/moss/plugins/browser-view:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -458,6 +531,9 @@ importers:
 
   plugins/moss/plugins/composer:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -492,6 +568,9 @@ importers:
 
   plugins/moss/plugins/conversation:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -532,9 +611,9 @@ importers:
 
   plugins/moss/plugins/devices:
     dependencies:
-      '@waifucave/moss-plugin-island':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
-        version: link:../island
+        version: link:../../../../packages/plugin-sdk
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -621,12 +700,12 @@ importers:
 
   plugins/moss/plugins/live2d:
     dependencies:
-      '@waifucave/moss-plugin-vrm':
-        specifier: workspace:*
-        version: link:../vrm
       '@waifucave/mochi2d':
         specifier: 0.13.0
         version: 0.13.0(pixi.js@8.22.0)(playwright@1.64.1)
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -775,6 +854,9 @@ importers:
 
   plugins/moss/plugins/panel:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -809,6 +891,9 @@ importers:
 
   plugins/moss/plugins/panel-diff:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -843,6 +928,9 @@ importers:
 
   plugins/moss/plugins/panel-files:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -877,6 +965,9 @@ importers:
 
   plugins/moss/plugins/panel-terminal:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -911,9 +1002,9 @@ importers:
 
   plugins/moss/plugins/pill:
     dependencies:
-      '@waifucave/moss-plugin-island':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
-        version: link:../island
+        version: link:../../../../packages/plugin-sdk
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -960,6 +1051,9 @@ importers:
 
   plugins/moss/plugins/plugin-index:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -1039,6 +1133,9 @@ importers:
 
   plugins/moss/plugins/settings:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -1076,9 +1173,6 @@ importers:
       '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
-      '@waifucave/moss-protocol':
-        specifier: workspace:*
-        version: link:../../../../packages/protocol
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -1116,6 +1210,9 @@ importers:
 
   plugins/moss/plugins/sidebar:
     dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       lucide-react:
         specifier: 1.61.0
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -1168,9 +1265,9 @@ importers:
 
   plugins/moss/plugins/usage:
     dependencies:
-      '@waifucave/moss-plugin-island':
+      '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
-        version: link:../island
+        version: link:../../../../packages/plugin-sdk
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -1239,6 +1336,9 @@ importers:
       '@pixiv/three-vrm':
         specifier: 3.5.5
         version: 3.5.5(three@0.186.1)
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       three:
         specifier: 0.186.1
         version: 0.186.1
@@ -1286,6 +1386,58 @@ importers:
       '@waifucave/moss-plugin-sdk':
         specifier: workspace:*
         version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/usage-antigravity:
+    dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/usage-claude-code:
+    dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/usage-codex:
+    dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/usage-opencode:
+    dependencies:
+      '@waifucave/moss-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
       typescript:
         specifier: 5.9.3
         version: 5.9.3
