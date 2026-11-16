@@ -1,26 +1,55 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { LAYER_METHODS } from "../src/main/layer-links";
-import { NEVER, SEND_ONLY, TREE_CALLS, treeVerdict } from "../src/main/ui/tree-calls";
+import { NEVER, SEND_ONLY, TREE_CALLS, needsOf, treeVerdict, type TreeCaller } from "../src/main/ui/tree-calls";
 
-const verdict = (part: string, method: string) => treeVerdict(part, method);
+// F2: the door asks for capabilities, never for an id. A bundled part's are what its manifest lists (the build grants
+// them), read here from its folder; any other plugin's are what a test gives it.
+const BUNDLED = join(import.meta.dir, "../../../plugins/clover/plugins");
+const capsCache = new Map<string, ReadonlySet<string>>();
+function capsOf(pluginId: string): ReadonlySet<string> {
+  const hit = capsCache.get(pluginId);
+  if (hit !== undefined) return hit;
+  let caps: ReadonlySet<string> = new Set();
+  if (pluginId.startsWith("clover/")) {
+    try {
+      caps = new Set((JSON.parse(readFileSync(join(BUNDLED, pluginId.slice("clover/".length), "clover.json"), "utf8")) as { capabilities?: string[] }).capabilities ?? []);
+    } catch { /* no such bundled part */ }
+  }
+  capsCache.set(pluginId, caps);
+  return caps;
+}
+const verdict = (part: string, method: string, params?: unknown) => treeVerdict(capsOf(part), method, params);
 
-describe("the bundled tree's calls on the app's connection", () => {
-  test("a read is allowed to any part; a method the table doesn't name isn't its business", () => {
-    for (const m of ["account.status", "archive.history", "archive.list", "plugin.list", "plugin.get", "plugin.ui", "ui.settings"]) {
-      expect(verdict("clover/conversation", m)).toMatchObject({ ok: true });
-    }
-    expect(verdict("clover/bot-editor", "models.list")).toMatchObject({ ok: true });
-    expect(verdict("clover/composer", "models.list")).toMatchObject({ ok: false, owned: true });
-    expect(verdict("clover/composer", "plugin.logs")).toMatchObject({ ok: false, owned: true });
+describe("the door for parts: by capability, never by id (F2)", () => {
+  test("a read passes for a part whose plugin holds its capability, whichever plugin; a method the table doesn't name isn't its business", () => {
+    for (const m of ["archive.history", "archive.list"]) expect(verdict("clover/conversation", m)).toMatchObject({ ok: true, by: "conversation.read" });
+    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("clover/bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
+    expect(verdict("clover/settings", "ui.settings")).toMatchObject({ ok: true, by: "app.settings" });
+    expect(verdict("clover/bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
+    expect(verdict("clover/shell", "account.status")).toMatchObject({ ok: true, by: "account.read" });
+    expect(verdict("clover/bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
+    // Without the capability: not a door of this table's (models.list, account.status and ui.settings aren't the layer role's).
+    expect(verdict("clover/archive", "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the bots.read capability" });
+    expect(verdict("clover/conversation", "account.status")).toMatchObject({ ok: false, owned: true, why: "account.status needs the account.read capability" });
+    expect(verdict("clover/conversation", "ui.settings")).toMatchObject({ ok: false, owned: true });
     expect(verdict("clover/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
+    // A third party's part with the capability passes as the bundled one does; the same id with none doesn't.
+    expect(treeVerdict(["account.read"], "account.status")).toMatchObject({ ok: true });
+    expect(treeVerdict(["plugins.manage"], "plugin.get")).toMatchObject({ ok: true, by: "plugins.read" });
+    expect(treeVerdict([], "plugin.get")).toMatchObject({ ok: false, owned: true });
   });
 
-  test("settings writes (and a plugin's own settings reads) only from the settings part (and the Plugins page, below)", () => {
-    for (const m of ["ui.set", "plugin.setEnabled", "plugin.settings.set", "plugin.settings.get"]) {
-      expect(verdict("clover/settings", m)).toMatchObject({ ok: true });
-      for (const part of ["clover/conversation", "clover/composer", "clover/shell", "clover/sidebar"]) {
-        expect(verdict(part, m)).toMatchObject({ ok: false, owned: true });
-      }
+  test("a write without its capability: the layer door for a method the layer role has (the core's own rules and cards), refused for any other", () => {
+    for (const m of ["plugin.setEnabled", "plugin.settings.set", "ui.set", "bot.setUserLayer", "plugin.install"]) {
+      expect(LAYER_METHODS.has(m)).toBe(true);
+      for (const part of ["clover/conversation", "clover/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
+    }
+    for (const m of ["tool.setPermission", "point.active.set", "plugin.remove", "ui.secret", "ui.pick", "bot.importAvatar"]) {
+      expect(LAYER_METHODS.has(m)).toBe(false);
+      expect(verdict("clover/conversation", m)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("clover/conversation", m).ok === false && (verdict("clover/conversation", m) as { why: string }).why).toContain("capability");
     }
   });
 
@@ -43,12 +72,12 @@ describe("the bundled tree's calls on the app's connection", () => {
     }
   });
 
-  test("the session panels' reads: each from the part that draws it, no gesture", () => {
-    expect(verdict("clover/panel-diff", "session.diff")).toMatchObject({ ok: true });
-    expect(verdict("clover/panel", "session.diff")).toMatchObject({ ok: false, owned: true });
-    for (const m of ["session.outputs", "session.context", "session.connectors"]) {
+  test("the session panels' reads: conversation.read, no gesture; without it the layer door (the layer role's own)", () => {
+    for (const m of ["session.diff", "session.outputs", "session.context", "session.connectors"]) {
+      expect(TREE_CALLS[m]).toEqual({ disposition: "read", needs: "conversation.read" });
       expect(verdict("clover/panel", m)).toMatchObject({ ok: true });
-      expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
+      expect(treeVerdict(["conversation.read"], m)).toMatchObject({ ok: true });
+      expect(treeVerdict([], m)).toMatchObject({ ok: false, owned: false });
     }
   });
 
@@ -65,13 +94,25 @@ describe("the bundled tree's calls on the app's connection", () => {
   });
 });
 
-import { BOT_EDITOR_PART, CHARACTER_PART, CONVERSATION_PART, PART_LOG_LINES_MAX, SHELL_PART, PICK_TOKEN_MS, PickTokens, PLUGINS_PART, pageParams, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
+import { PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, pageParams, routeCall, type KeyTarget, type TreeRoute } from "../src/main/ui/tree-calls";
 
-function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
+// The bundled parts this file names (their ids only NAME them here; what each may do is its manifest's capabilities).
+const PLUGINS_PART = "clover/plugin-index";
+const BOT_EDITOR_PART = "clover/bot-editor";
+const CONVERSATION_PART = "clover/conversation";
+const CHARACTER_PART = "clover/character";
+const SHELL_PART = "clover/shell";
+
+/** A test's route: `tree` names the calling part (its capabilities its manifest's, or `caps` for a third party's). */
+type Over = Partial<Omit<TreeRoute, "caller">> & { gesture?: boolean; tree?: { windowId: number; pluginId: string } | undefined; caps?: readonly string[] };
+function route(over: Over) {
   const calls: string[] = [];
   const logs: string[] = [];
+  const { tree, caps, ...rest } = over;
+  const who = "tree" in over ? tree : { windowId: 1, pluginId: "clover/composer" };
+  const caller: TreeCaller | undefined = who === undefined ? undefined : { ...who, capabilities: caps !== undefined ? new Set(caps) : capsOf(who.pluginId) };
   const r: TreeRoute = {
-    tree: { windowId: 1, pluginId: "clover/composer" },
+    caller,
     method: "session.setModel",
     params: {},
     takeGesture: () => over.gesture ?? false,
@@ -80,7 +121,7 @@ function route(over: Partial<TreeRoute> & { gesture?: boolean }) {
     log: (l) => logs.push(l),
     refuse: (why) => new Error(why),
     listens: { piece: async () => ({}) },
-    ...over,
+    ...rest,
   };
   return { r, calls, logs };
 }
@@ -94,14 +135,18 @@ describe("routing a part's call", () => {
     }
   });
 
-  test("a conversation or composer frame is refused every settings write and nothing reaches the core", async () => {
+  test("a conversation or composer frame has no settings capability: its settings writes go the layer door (the core's own rules), never the app's connection", async () => {
     for (const part of ["clover/conversation", "clover/composer"]) {
       for (const method of ["ui.set", "plugin.setEnabled", "plugin.settings.set"]) {
-        const { r, calls, logs } = route({ tree: { windowId: 1, pluginId: part }, method, gesture: true });
-        await expect(routeCall(r)).rejects.toThrow("only from clover/settings");
-        expect(calls).toEqual([]);
-        expect(logs[0]).toContain("refused");
+        const { r, calls } = route({ tree: { windowId: 1, pluginId: part }, method, params: { patch: { appearance: "dark" } }, gesture: true });
+        expect(await routeCall(r)).toBe("layer");
+        expect(calls).toEqual(["layer"]);
       }
+      // A write the layer role doesn't have is refused, with the capability it needs.
+      const { r, calls, logs } = route({ tree: { windowId: 1, pluginId: part }, method: "tool.setPermission", gesture: true });
+      await expect(routeCall(r)).rejects.toThrow("tool.setPermission needs the tools.permissions capability");
+      expect(calls).toEqual([]);
+      expect(logs[0]).toContain("refused");
     }
     const { r, calls } = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.set", params: { patch: { appearance: "dark" } }, gesture: true });
     expect(await routeCall(r)).toBe("app");
@@ -115,7 +160,11 @@ describe("routing a part's call", () => {
     expect(none.calls).toEqual([]);
     expect(await routeCall(route({ tree: t, method: "plugin.setEnabled", gesture: true }).r)).toBe("app");
     const other = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "plugin.setEnabled", gesture: true });
-    await expect(routeCall(other.r)).rejects.toThrow("only from clover/settings");
+    expect(await routeCall(other.r)).toBe("layer");
+    // A third party's part with plugins.manage passes as Settings does, on the user's press.
+    const third = { windowId: 1, pluginId: "my-settings" };
+    expect(await routeCall(route({ tree: third, caps: ["plugins.manage"], method: "plugin.setEnabled", gesture: true }).r)).toBe("app");
+    await expect(routeCall(route({ tree: third, caps: ["plugins.manage"], method: "plugin.setEnabled", gesture: false }).r)).rejects.toThrow("only right after");
   });
 
   test("a bare session.send, a card answer and a trust-changing call never reach the core from the tree", async () => {
@@ -139,22 +188,28 @@ describe("routing a part's call", () => {
     const none = route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
     expect(none.calls).toEqual([]);
-    for (const part of ["clover/composer", "clover/settings"]) {
+    // Without bots.edit: the layer door, where the core raises its card for a user-layer change.
+    // (The composer holds bots.edit for its model picker on a bot's main conversation.)
+    for (const part of ["clover/conversation", "clover/settings"]) {
       const other = route({ tree: { windowId: 1, pluginId: part }, method: "bot.setUserLayer", params: patch, gesture: true });
-      await expect(routeCall(other.r)).rejects.toThrow("only from");
+      expect(await routeCall(other.r)).toBe("layer");
+      expect(other.calls).toEqual(["layer"]);
     }
+    // A third party's bot editor with bots.edit passes.
+    expect(await routeCall(route({ tree: { windowId: 1, pluginId: "my-editor" }, caps: ["bots.edit"], method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
   });
 
-  test("a part's plugin settings are its own: the id on the call must be the calling part's (provider endpoints live in others')", async () => {
-    const t = { windowId: 1, pluginId: "clover/settings" };
-    for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
-      expect(await routeCall(route({ tree: t, method, params: { id: "clover/settings", key: "notifications.sounds", value: true } }).r)).toBe("app");
-      for (const id of ["clover/provider-gcp", "clover/model-azure-ai", "clover/relay-cloudflare", undefined]) {
-        const other = route({ tree: t, method, params: { id, key: "project", value: "x" } });
-        await expect(routeCall(other.r)).rejects.toThrow("its own plugin's settings only");
-        expect(other.calls).toEqual([]);
-      }
-    }
+  test("another plugin's settings take plugins.read (a read) and plugins.manage (a write, on a press); a part's own go through the plugin API, not this door", async () => {
+    // The composer holds neither: a read is refused (not the layer role's), a write goes the layer door.
+    const composer = { windowId: 1, pluginId: "clover/composer" };
+    const read = route({ tree: composer, method: "plugin.settings.get", params: { id: "clover/provider-gcp" } });
+    await expect(routeCall(read.r)).rejects.toThrow("plugin.settings.get needs the plugins.read capability");
+    expect(read.calls).toEqual([]);
+    expect(await routeCall(route({ tree: composer, method: "plugin.settings.set", params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true }).r)).toBe("layer");
+    // A third party with plugins.read reads any plugin's settings view (a secret only as set or not, the core's own).
+    const reader = route({ tree: { windowId: 1, pluginId: "my-plugins" }, caps: ["plugins.read"], method: "plugin.settings.get", params: { id: "clover/provider-gcp" } });
+    expect(await routeCall(reader.r)).toBe("app");
+    expect(reader.calls).toEqual(["app:plugin.settings.get"]);
   });
 });
 
@@ -184,8 +239,9 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
       { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }, { spot: "bot.tab", bot: "alpha", order: [], hidden: [] }] },
       { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }], language: "de" },
     ]) {
+      // Refused, or (a look's shape, which takes app.settings the editor lacks) the layer door: never the app's connection.
       const bad = go({ patch });
-      await expect(bad.run).rejects.toThrow();
+      expect(["refused", "layer"]).toContain(String(await bad.run.then((v) => v, () => "refused")));
       expect(bad.got).toEqual([]);
     }
     // A plugin's hide switched off in one spot: only that list's `shown`, the user's order and hidden kept.
@@ -204,42 +260,35 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
     }
     const none = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } }, false);
     await expect(none.run).rejects.toThrow("only right after the user's own");
-    expect(verdict("clover/conversation", "ui.set")).toMatchObject({ ok: false, owned: true });
+    expect(verdict("clover/conversation", "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the bots.edit capability" });
+    expect(treeVerdict(["bots.edit"], "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: true, by: "bots.edit" });
+    // bots.edit sets lists, never the look.
+    expect(treeVerdict(["bots.edit"], "ui.set", { patch: { appearance: "dark" } })).toMatchObject({ ok: false, why: "ui.set needs the app.settings capability" });
   });
 });
 
-describe("Clover Voice's own settings (its parts in the clover layer)", () => {
-  const stage = { windowId: 1, pluginId: "clover/character" };
-  const go = (method: string, params: unknown, gesture = true, part = stage.pluginId) => {
-    const got: [string, unknown][] = [];
-    const { r } = route({ tree: { ...stage, pluginId: part }, method, params, gesture, request: async (m, p) => { got.push([m, p]); return "app"; } });
-    return { run: routeCall(r), got };
-  };
-  test("Settings › Voice reads and writes Clover Voice's own settings only, the write with the user's click", async () => {
-    const ok = go("plugin.settings.set", { id: "clover/voice", key: "active", value: "acme-voice" }, true, "clover/voice");
-    await ok.run;
-    expect(ok.got.map(([m]) => m)).toContain("plugin.settings.set");
-    await expect(go("plugin.settings.set", { id: "fish-audio", key: "k", value: "v" }, true, "clover/voice").run).rejects.toThrow("its own plugin's settings only");
-    await expect(go("plugin.settings.set", { id: "clover/voice", key: "active", value: "x" }, false, "clover/voice").run).rejects.toThrow("only right after the user's own");
-    const read = go("plugin.settings.get", { id: "clover/voice" }, false, "clover/voice");
-    await read.run;
-    expect(read.got.map(([m]) => m)).toContain("plugin.settings.get");
+describe("the re-founded Voice makes no call through this door (F1): its own settings are the plugin API's", () => {
+  test("voice.stop, voice.speak and voice.played are gone from the door, and its speak-replies switch is its own setting", () => {
+    for (const m of ["voice.stop", "voice.speak", "voice.played"]) expect(Object.hasOwn(TREE_CALLS, m)).toBe(false);
+    // A patch of `voice` is no shape of ui.set's own: it is the look's, which takes app.settings, and drops what isn't a look key.
+    expect(verdict("clover/voice", "ui.set", { patch: { voice: { speakReplies: true } } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the app.settings capability" });
+    expect(verdict("clover/voice", "plugin.settings.get", { id: "clover/voice" })).toMatchObject({ ok: false, owned: true });
   });
 });
 
 describe("push-to-talk's voice.listen: the shell's pieces, on a hold the user's press opened", () => {
   const shell = { windowId: 7, pluginId: SHELL_PART };
-  test("only the shell may make it, it needs no gesture of its own, and the piece goes to the window's hold with nothing else of the page's", async () => {
+  test("only a part with audio may make it, it needs no gesture of its own, and the piece goes to the window's hold with nothing else of the page's", async () => {
     const got: [number, unknown][] = [];
     const listens = { piece: async (w: number, p: unknown) => { got.push([w, p]); return { text: "hi" }; } };
     const { r, calls } = route({ tree: shell, method: "voice.listen", params: { audio: "AAAA", final: true, bot: "luna", utterance: "u1", seq: 9 }, gesture: false, listens });
     expect(await routeCall(r)).toEqual({ text: "hi" });
-    // The window is main's (treePart), the params are the page's and are checked by the hold, which names the bot, the utterance and the number itself.
+    // The window is main's (partCaller), the params are the page's and are checked by the hold, which names the bot, the utterance and the number itself.
     expect(got).toEqual([[7, { audio: "AAAA", final: true, bot: "luna", utterance: "u1", seq: 9 }]]);
     expect(calls).toEqual([]);
-    for (const part of ["clover/composer", "clover/conversation", CHARACTER_PART, "clover/settings", PLUGINS_PART]) {
+    for (const part of ["clover/sidebar", "clover/settings", PLUGINS_PART]) {
       const other = route({ tree: { windowId: 7, pluginId: part }, method: "voice.listen", params: { audio: "AAAA", final: true }, gesture: true, listens });
-      await expect(routeCall(other.r)).rejects.toThrow("only from clover/shell");
+      await expect(routeCall(other.r)).rejects.toThrow("voice.listen needs the audio capability");
     }
     expect(got.length).toBe(1);
   });
@@ -301,52 +350,44 @@ describe("the Settings page's ui.set", () => {
 
 // ---- the Plugins page (class 3, the controller's ruling of 2026-11-11) ----
 
-/** What each table entry allows: the parts that may call it, whether it needs the user's gesture (per part), and
- *  whether the id is held to the calling part's own. */
-const EXPECTED: Record<string, { parts: string[] | "any"; gesture: string[]; ownId?: string[] }> = {
-  "ui.settings": { parts: "any", gesture: [] },
-  "session.diff": { parts: ["clover/panel-diff"], gesture: [] },
-  "session.outputs": { parts: ["clover/panel"], gesture: [] },
-  "session.context": { parts: ["clover/panel"], gesture: [] },
-  "session.connectors": { parts: ["clover/panel"], gesture: [] },
-  "ui.set": { parts: ["clover/settings"], gesture: ["clover/settings"] },
-  // The shell's pieces of a recording the user holds: no gesture of its own (the composer's `listenStart` took it; the hold carries the pieces).
-  "voice.listen": { parts: [SHELL_PART], gesture: [] },
-  "ui.secret": { parts: [PLUGINS_PART, BOT_EDITOR_PART], gesture: [PLUGINS_PART, BOT_EDITOR_PART] },
-  "plugin.settings.get": { parts: ["clover/settings", PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], gesture: [], ownId: ["clover/settings", "clover/voice"] },
-  "plugin.settings.set": { parts: ["clover/settings", PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], gesture: [PLUGINS_PART, "clover/voice", BOT_EDITOR_PART], ownId: ["clover/settings", "clover/voice"] },
-  "bot.setUserLayer": { parts: ["clover/bot-editor", "clover/character"], gesture: ["clover/bot-editor", "clover/character"] },
-  "bot.importAvatar": { parts: [CHARACTER_PART], gesture: [CHARACTER_PART] },
-  "session.resend": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
-  "conversation.messageAction": { parts: [CONVERSATION_PART], gesture: [CONVERSATION_PART] },
-  "ui.pick": { parts: [PLUGINS_PART, CHARACTER_PART], gesture: [PLUGINS_PART, CHARACTER_PART] },
-  "account.status": { parts: "any", gesture: [] },
-  "archive.history": { parts: "any", gesture: [] },
-  "archive.list": { parts: "any", gesture: [] },
-  "plugin.list": { parts: "any", gesture: [] },
-  "plugin.get": { parts: "any", gesture: [] },
-  "plugin.ui": { parts: "any", gesture: [] },
-  "plugin.index.list": { parts: "any", gesture: [] },
-  "plugin.index.search": { parts: "any", gesture: [] },
-  "models.list": { parts: ["clover/bot-editor"], gesture: [] },
-  "plugin.setEnabled": { parts: ["clover/settings", PLUGINS_PART], gesture: ["clover/settings", PLUGINS_PART] },
-  "plugin.logs": { parts: ["clover/settings", PLUGINS_PART], gesture: [] },
-  "tool.permissions": { parts: ["clover/settings"], gesture: [] },
-  "tool.setPermission": { parts: ["clover/settings"], gesture: ["clover/settings"] },
-  "tool.takeBackRule": { parts: ["clover/settings"], gesture: ["clover/settings"] },
-  "point.active.list": { parts: ["clover/settings"], gesture: [] },
-  "point.active.set": { parts: ["clover/settings"], gesture: ["clover/settings"] },
-  "plugin.auth.list": { parts: [PLUGINS_PART], gesture: [] },
-  "plugin.dev.list": { parts: [PLUGINS_PART], gesture: [] },
-  "plugin.grant.list": { parts: [PLUGINS_PART], gesture: [] },
-  "computer.list": { parts: [PLUGINS_PART, "clover/settings", "clover/shell", "clover/sidebar", "clover/composer", "clover/panel"], gesture: [] },
-  "command.list": { parts: [PLUGINS_PART], gesture: [] },
-  "notify.mutes": { parts: [PLUGINS_PART], gesture: [] },
-  ...Object.fromEntries(["plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted"].map((m) => [m, { parts: [PLUGINS_PART], gesture: [PLUGINS_PART] }])),
+/** What each table entry needs (F2): the capabilities of which any one lets a part through (none: no capability; the
+ *  call holds its own rule), and whether it needs the user's press. Shape-dependent entries are listed with the shape
+ *  `paramsFor` sends; their other shapes are tested on their own. */
+const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
+  "ui.settings": { needs: ["app.settings", "bots.edit"], gesture: false },
+  "session.diff": { needs: ["conversation.read"], gesture: false },
+  "session.outputs": { needs: ["conversation.read"], gesture: false },
+  "session.context": { needs: ["conversation.read"], gesture: false },
+  "session.connectors": { needs: ["conversation.read"], gesture: false },
+  "ui.set": { needs: ["app.settings"], gesture: true },
+  // The pieces of a recording the user holds: no press of its own (the composer's `listenStart` took it; the hold carries the pieces).
+  "voice.listen": { needs: ["audio"], gesture: false },
+  "ui.secret": { needs: ["plugins.manage", "bots.edit"], gesture: true },
+  "plugin.settings.get": { needs: ["plugins.read"], gesture: false },
+  "plugin.settings.set": { needs: ["plugins.manage"], gesture: true },
+  "bot.setUserLayer": { needs: ["bots.edit"], gesture: true },
+  "bot.importAvatar": { needs: ["bots.avatar"], gesture: true },
+  "session.resend": { needs: ["user.send"], gesture: true },
+  "conversation.messageAction": { needs: [], gesture: true },
+  "ui.pick": { needs: ["plugins.manage"], gesture: true },
+  "account.status": { needs: ["account.read"], gesture: false },
+  "archive.history": { needs: ["conversation.read"], gesture: false },
+  "archive.list": { needs: ["conversation.read"], gesture: false },
+  "models.list": { needs: ["bots.read"], gesture: false },
+  "plugin.logs": { needs: ["logs.read"], gesture: false },
+  "tool.permissions": { needs: ["tools.permissions"], gesture: false },
+  "tool.setPermission": { needs: ["tools.permissions"], gesture: true },
+  "tool.takeBackRule": { needs: ["tools.permissions"], gesture: true },
+  "point.active.list": { needs: ["app.settings"], gesture: false },
+  "point.active.set": { needs: ["app.settings"], gesture: true },
+  "computer.list": { needs: ["computers.read"], gesture: false },
+  ...Object.fromEntries(["plugin.list", "plugin.get", "plugin.ui", "plugin.index.list", "plugin.index.search", "plugin.auth.list", "plugin.dev.list", "plugin.grant.list", "command.list", "notify.mutes"].map((m) => [m, { needs: ["plugins.read"], gesture: false }])),
+  ...Object.fromEntries(["plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted", "plugin.setEnabled"].map((m) => [m, { needs: ["plugins.manage"], gesture: true }])),
 };
 /** One active message action, as the part's own spot resolves it. */
 const PIN_ENTRY = [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "pinReply" } }];
-const PARTS = ["clover/settings", PLUGINS_PART, "clover/bot-editor", "clover/composer", "clover/conversation", "clover/sidebar", SHELL_PART];
+/** A third party's part: its id names nothing the door knows. */
+const THIRD = "acme-panel";
 
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
  *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
@@ -415,22 +456,24 @@ const WORST: Record<string, Worst> = {
   "plugin.grant.remove": "harmless change", // takes a picked file or folder back: the plugin no longer reaches it
   "plugin.setScope": "harmless change", // the user's own choice of where a plugin works (bots, agents, both); the manifest's stays the default
   "plugin.setComputers": "harmless change", // ticks the computers a plugin's server runs on; code already OK'd, the core cards anything that moves a host
-  "plugin.confirmAdult": "harmless change", // the user's own statement that they are 18 or older
+  "plugin.confirmAdult": "sealed card", // the user's own statement that they are 18 or older, only on the sealed card (main sets card)
   "plugin.dev.renew": "sealed card", // main sets card: another 24 hours of code that reloads asks on the development-folder card
 };
 
-/** Params each method can be routed with from the part (the Plugins page's shaped ones included). */
-function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
+/** Params each method can be routed with from a part holding `cap` (the Plugins page's shaped ones included). */
+function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): unknown {
   switch (method) {
     case "ui.set":
       return { patch: { appearance: "dark" } };
+    case "ui.settings":
+      return {};
     case "plugin.settings.get":
     case "plugin.settings.set":
-      return part === BOT_EDITOR_PART ? { id: "alpha", bot: "alpha", key: "k", value: "v" } : { id: part, key: "k", value: "v" };
+      return { id: "tarot", key: "k", value: "v" };
     case "voice.listen":
       return { audio: "AAAA", final: false };
     case "bot.setUserLayer":
-      return { id: "alpha", patch: part === CHARACTER_PART ? { avatar: null } : { theme: null } };
+      return { id: "alpha", patch: cap === "bots.avatar" ? { avatar: null } : { theme: null } };
     case "plugin.install":
       return { source: { from: "folder", path: tokens.issue(part, "/picked/tarot", "plugin.install") } };
     case "plugin.dev.add":
@@ -450,11 +493,11 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
     case "notify.setMuted":
       return { pluginId: "tarot", muted: true };
     case "ui.pick":
-      return { kind: "folder", use: part === CHARACTER_PART ? "bot.importAvatar" : "plugin.install" };
+      return { kind: "folder", use: cap === "bots.avatar" ? "bot.importAvatar" : "plugin.install" };
     case "bot.importAvatar":
       return { id: "alpha", path: tokens.issue(part, "/picked/avatar", "bot.importAvatar") };
     case "ui.secret":
-      return { id: part === BOT_EDITOR_PART ? "alpha" : "tarot", key: "token" };
+      return { id: cap === "bots.edit" ? "alpha" : "tarot", key: "token" };
     case "session.resend":
       return { session: "b_alpha" };
     case "conversation.messageAction":
@@ -464,7 +507,7 @@ function paramsFor(method: string, part: string, tokens: PickTokens): unknown {
   }
 }
 
-describe("the door, table by table: who may call each entry, with what gesture, and whose id", () => {
+describe("the door, table by table: what each entry needs, with what press", () => {
   test("every live entry is in the expectation table, and the table matches the door", () => {
     const live = Object.entries(TREE_CALLS).filter(([, c]) => c.disposition !== "card" && c.disposition !== "unserved").map(([m]) => m).sort();
     expect(live).toEqual(Object.keys(EXPECTED).sort());
@@ -475,37 +518,79 @@ describe("the door, table by table: who may call each entry, with what gesture, 
     for (const m of live) expect([m, WORST[m]]).toEqual([m, expect.stringMatching(/^(sealed card|main-owned dialog|read|harmless change|starts a model turn|held recording|user's permission press)$/)]);
     expect(Object.keys(WORST).sort()).toEqual([...live].sort());
     // A read needs no gesture and a change from the Plugins page does; a read is never one that changes a thing.
-    for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, []]);
+    for (const [m, w] of Object.entries(WORST)) if (w === "read") expect([m, EXPECTED[m]!.gesture]).toEqual([m, false]);
   });
 
-  test("each entry: its parts with the gesture it needs pass; without the gesture, another part, and a non-bundled layer are refused", async () => {
+  test("each entry: a third party's part holding the capability passes (with the press where one is needed); without the press, or with none of the capabilities, nothing reaches the app's connection", async () => {
     for (const [method, want] of Object.entries(EXPECTED)) {
-      for (const part of PARTS) {
-        const allowed = want.parts === "any" || want.parts.includes(part);
-        const needs = want.gesture.includes(part);
+      expect([method, needsOf(TREE_CALLS[method]!, paramsFor(method, THIRD, new PickTokens())).slice().sort()]).toEqual([method, want.needs.slice().sort()]);
+      expect([method, TREE_CALLS[method]!.disposition === "gesture"]).toEqual([method, want.gesture]);
+      // plugins.manage carries plugins.read (IMPLIED_CAPABILITIES): its holder passes each read too.
+      const holders = want.needs.length === 0 ? [""] : want.needs.includes("plugins.read") ? [...want.needs, "plugins.manage"] : want.needs;
+      for (const cap of holders) {
         for (const gesture of [true, false]) {
           const tokens = new PickTokens();
           const calls: string[] = [];
-          const { r } = route({ tree: { windowId: 1, pluginId: part }, method, params: paramsFor(method, part, tokens), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m) => { calls.push(m); return appConnection(m); } });
-          const ok = allowed && (gesture || !needs);
+          const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: cap === "" ? [] : [cap], method, params: paramsFor(method, THIRD, tokens, cap), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m) => { calls.push(m); return appConnection(m); } });
+          const ok = gesture || !want.gesture;
           const got = await routeCall(r).then(() => "ok", (e: Error) => e.message);
-          expect([method, part, gesture, got]).toEqual([method, part, gesture, ok ? "ok" : expect.any(String)]);
-          if (!ok) expect([method, part, calls]).toEqual([method, part, []]);
+          expect([method, cap, gesture, got]).toEqual([method, cap, gesture, ok ? "ok" : expect.stringContaining("only right after the user's own")]);
+          if (!ok) expect([method, cap, calls]).toEqual([method, cap, []]);
         }
       }
-      // A non-bundled plugin's layer never gets the table: the layer door decides.
-      const { r, calls } = route({ tree: undefined, method, params: {}, gesture: true });
-      expect(await routeCall(r)).toBe("layer");
-      expect(calls).toEqual(["layer"]);
+      if (want.needs.length === 0) continue;
+      // With none: refused with the capability it needs, or (a method the `layer` role has) the layer door's own rules.
+      const { r, calls } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: ["files", "notify"], method, params: paramsFor(method, THIRD, new PickTokens()), gesture: true });
+      const got = await routeCall(r).then((v) => v, (e: Error) => e.message);
+      if (LAYER_METHODS.has(method)) expect([method, got, calls]).toEqual([method, "layer", ["layer"]]);
+      else expect([method, got, calls]).toEqual([method, expect.stringContaining("capability"), []]);
+      // A mount that acts in no plugin's name never gets the table: the layer door decides.
+      const none = route({ tree: undefined, method, params: {}, gesture: true });
+      expect(await routeCall(none.r)).toBe("layer");
     }
   });
 
-  test("ids: the settings part is held to its own plugin's settings; the Plugins page may name any plugin's", async () => {
+  test("no test or table names a bundled id to allow a call: the bundled parts pass by the capabilities their manifests list", async () => {
+    // Every call each bundled part makes today, from its own manifest's capabilities.
+    const makes: Record<string, string[]> = {
+      "clover/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "point.active.list", "point.active.set", "computer.list"],
+      [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
+      [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
+      [CHARACTER_PART]: ["bot.importAvatar", "plugin.list"],
+      [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
+      [SHELL_PART]: ["account.status", "voice.listen", "computer.list"],
+      "clover/sidebar": ["account.status", "computer.list"],
+      "clover/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
+      "clover/panel-diff": ["session.diff"],
+      "clover/archive": ["archive.list", "archive.history"],
+    };
+    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === CHARACTER_PART ? "bots.avatar" : part === BOT_EDITOR_PART ? "bots.edit" : "")).ok]).toEqual([part, m, true]);
+    const src = readFileSync(join(import.meta.dir, "../src/main/ui/tree-calls.ts"), "utf8");
+    expect(src).not.toMatch(/"clover\/[a-z-]+"/);
+  });
+
+  test("every bundled part that opens a place in the main window (useOpen) holds shell.control, as any plugin must (mayOpen)", () => {
+    const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+    const files = (dir: string): string[] => readdirSync(dir).flatMap((n) => { const f = join(dir, n); return statSync(f).isDirectory() ? files(f) : /\.tsx?$/.test(n) ? [f] : []; });
+    const openers: string[] = [];
+    for (const name of readdirSync(BUNDLED)) {
+      let client: string[] = [];
+      try { client = files(join(BUNDLED, name, "client")); } catch { continue; }
+      if (client.some((f) => !/\/sdk\.tsx?$/.test(f) && /\buseOpen\(\)/.test(readFileSync(f, "utf8")))) openers.push(`clover/${name}`);
+    }
+    expect(openers.length).toBeGreaterThan(0);
+    for (const id of openers) expect([id, capsOf(id).has("shell.control")]).toEqual([id, true]);
+  });
+
+  test("plugin.settings: a call naming a bot is its Edit page's (bots.edit, the bot's own plugin); any other plugin's settings are plugins.read's and plugins.manage's", async () => {
+    expect(verdict(BOT_EDITOR_PART, "plugin.settings.get", { id: "alpha", bot: "alpha" })).toMatchObject({ ok: true, by: "bots.edit" });
+    expect(verdict(BOT_EDITOR_PART, "plugin.settings.set", { id: "tarot", key: "k", value: "v" })).toMatchObject({ ok: false, owned: false });
+    // The Plugins page holds plugins.manage, not bots.edit: a bot it names is dropped (pageParams), any plugin's account value.
+    expect(verdict(PLUGINS_PART, "plugin.settings.set", { id: "alpha", bot: "alpha", key: "k", value: "v" })).toMatchObject({ ok: true, by: "plugins.manage" });
+    expect(treeVerdict(["files"], "plugin.settings.get", { id: "alpha", bot: "alpha" })).toMatchObject({ ok: false, why: "plugin.settings.get needs the bots.edit or plugins.read capability" });
     for (const method of ["plugin.settings.get", "plugin.settings.set"]) {
-      const own = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true });
-      await expect(routeCall(own.r)).rejects.toThrow("its own plugin's settings only");
       const page = route({
-        tree: { windowId: 1, pluginId: PLUGINS_PART }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true,
+        tree: { windowId: 1, pluginId: "clover/settings" }, method, params: { id: "clover/provider-gcp", key: "project", value: "x" }, gesture: true,
         request: async (m) => (m === "plugin.get" ? { plugin: { id: "clover/provider-gcp", manifest: { settings: { project: { type: "string" } } } } } : "app"),
       });
       expect(await routeCall(page.r)).toBe("app");
@@ -648,15 +733,15 @@ describe("the Plugins page's calls as main sends them", () => {
     // No gesture, no dialog; another part, no dialog.
     const none = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: false, openKey, request: async (m) => appConnection(m) });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
-    const other = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: true, openKey, request: async (m) => appConnection(m) });
-    await expect(routeCall(other.r)).rejects.toThrow("only from");
+    const other = route({ tree: { windowId: 1, pluginId: "clover/sidebar" }, method: "ui.secret", params: { id: "tarot", key: "token" }, gesture: true, openKey, request: async (m) => appConnection(m) });
+    await expect(routeCall(other.r)).rejects.toThrow("ui.secret needs the plugins.manage or bots.edit capability");
     expect(opened.length).toBe(2);
     // While a key dialog is open, another is refused: the user closes it first.
     const busy = page("ui.secret", { id: "tarot", key: "token" }, { openKey: async () => false });
     await expect(routeCall(busy.r)).rejects.toThrow("key dialog is open already");
   });
 
-  test("a removal, a sign-out, an index's removal and an update always go with card; listing is a read", async () => {
+  test("a removal, a sign-out, an index's removal, an update and the user's age always go with card; listing is a read", async () => {
     const removal = page("plugin.remove", { id: "tarot", card: false, extra: 1 });
     await routeCall(removal.r);
     expect(removal.sent).toEqual([{ id: "tarot", card: true }]);
@@ -674,12 +759,18 @@ describe("the Plugins page's calls as main sends them", () => {
     const index = page("plugin.index.remove", { url: "https://plugins.example.com/index.json" });
     await routeCall(index.r);
     expect(index.sent).toEqual([{ url: "https://plugins.example.com/index.json", card: true }]);
+    // The user's age: a sealed card for every holder (one press in a plugin's frame never declares it).
+    const adult = page("plugin.confirmAdult", { card: false, extra: 1 });
+    await routeCall(adult.r);
+    expect(adult.sent).toEqual([{ card: true }]);
+    const third = route({ tree: { windowId: 1, pluginId: "acme-plugins" }, caps: ["plugins.manage"], method: "plugin.confirmAdult", params: {}, gesture: true, request: async (_m, p) => p });
+    expect(await routeCall(third.r)).toEqual({ card: true });
     const listing = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "plugin.update", params: { list: true }, gesture: false });
     expect(await routeCall(listing.r)).toBe("app");
   });
 
   test("plugin.iconSource (a plugin's folder path) is main's alone: the door never makes it for a part, and a layer's own connection can't call it", () => {
-    for (const part of [PLUGINS_PART, "clover/settings", "clover/composer"]) expect(treeVerdict(part, "plugin.iconSource").ok).toBe(false);
+    for (const part of [PLUGINS_PART, "clover/settings", "clover/composer"]) expect(verdict(part, "plugin.iconSource").ok).toBe(false);
     expect(LAYER_METHODS.has("plugin.iconSource")).toBe(false);
   });
 
@@ -723,11 +814,11 @@ describe("the Plugins page's calls as main sends them", () => {
       for (const k of Object.keys(forged)) expect([method, k, Object.hasOwn(c.sent[0] as object, k)]).toEqual([method, k, false]);
       expect(JSON.stringify(c.sent[0])).not.toContain("cli");
     }
-    // The settings part's own calls the same.
+    // Any other part's forwarded call the same (a read: the computers).
     const sent: unknown[] = [];
-    const own = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "plugin.settings.set", params: { id: "clover/settings", key: "k", value: 1, ...forged }, request: async (_m, p) => { sent.push(p); return "app"; } });
+    const own = route({ tree: { windowId: 1, pluginId: "clover/sidebar" }, method: "computer.list", params: { ...forged }, request: async (_m, p) => { sent.push(p); return "app"; } });
     await routeCall(own.r);
-    expect(sent).toEqual([{ id: "clover/settings", key: "k", value: 1 }]);
+    expect(sent).toEqual([{}]);
   });
 
   test("a development folder's renewal from the page asks on a card; a log read is capped at PART_LOG_LINES_MAX lines", async () => {
@@ -799,7 +890,7 @@ describe("the character plugin's avatar section: a pick of main's, then one impo
     for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [CHARACTER_PART, undefined], [PLUGINS_PART, "bot.importAvatar"], [PLUGINS_PART, undefined]] as const) {
       let opened = 0;
       const { r } = route({ tree: { windowId: 1, pluginId: part }, method: "ui.pick", params: { kind: "folder", use }, gesture: true, tokens, pick: async () => { opened++; return "/x"; } });
-      await expect(routeCall(r)).rejects.toThrow("and says which");
+      await expect(routeCall(r)).rejects.toThrow(/and says which|capability/);
       expect(opened).toBe(0);
     }
   });
@@ -846,7 +937,7 @@ describe("the character plugin's avatar section: a pick of main's, then one impo
     expect(still.sent.length).toBe(1);
     // Another part, no click: the table refuses before anything else.
     const other = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "bot.importAvatar", params: { id: "alpha", path: held }, gesture: true, tokens });
-    await expect(routeCall(other.r)).rejects.toThrow("only from");
+    await expect(routeCall(other.r)).rejects.toThrow("bot.importAvatar needs the bots.avatar capability");
     const none = editor("bot.importAvatar", { id: "alpha", path: held }, { tokens, takeGesture: () => false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
   });
@@ -889,11 +980,11 @@ describe("the character plugin's avatar section: a pick of main's, then one impo
     let opened = 0;
     const asEditor = (method: string, params: unknown) =>
       route({ tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method, params, gesture: true, tokens, pick: async () => { opened++; return "/x"; } });
-    await expect(routeCall(asEditor("ui.pick", { kind: "file", use: "bot.importAvatar" }).r)).rejects.toThrow("only from");
+    await expect(routeCall(asEditor("ui.pick", { kind: "file", use: "bot.importAvatar" }).r)).rejects.toThrow("capability");
     expect(opened).toBe(0);
     const held = tokens.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
     const imp = asEditor("bot.importAvatar", { id: "alpha", path: held });
-    await expect(routeCall(imp.r)).rejects.toThrow("only from");
+    await expect(routeCall(imp.r)).rejects.toThrow("capability");
     expect(imp.calls).toEqual([]);
     const mine = editor("bot.importAvatar", { id: "alpha", path: held }, { tokens });
     await routeCall(mine.r);
@@ -911,14 +1002,18 @@ describe("the character plugin's avatar section: a pick of main's, then one impo
     const as = (part: string, patch: unknown) => route({ tree: { windowId: 1, pluginId: part }, method: "bot.setUserLayer", params: { id: "alpha", patch }, gesture: true });
     for (const patch of [{ avatar: { file: "assets/a.vrm", format: "vrm" } }, { avatar: null }, { avatarCredit: "Free for personal use" }, { avatar: null, avatarCredit: null }]) {
       expect(await routeCall(as(CHARACTER_PART, patch).r)).toBe("app");
+      // The editor lacks bots.avatar: the layer door (the core's card for a user-layer change), never the app's connection.
       const refused = as(BOT_EDITOR_PART, patch);
-      await expect(routeCall(refused.r)).rejects.toThrow("from the avatar section");
-      expect(refused.calls).toEqual([]);
+      expect(await routeCall(refused.r)).toBe("layer");
+      expect(refused.calls).toEqual(["layer"]);
     }
     for (const patch of [{ model: "x/y" }, { avatar: null, lan: true }, { name: "n" }, {}, undefined, []]) {
+      // Never the app's connection: refused (a mixture, nothing), or, for other fields than the avatar's (bots.edit, which
+      // the stage lacks), the layer door and its card.
       const wide = as(CHARACTER_PART, patch);
-      await expect(routeCall(wide.r)).rejects.toThrow();
-      expect(wide.calls).toEqual([]);
+      const got = await routeCall(wide.r).then((v) => v, () => "refused");
+      expect([patch, got, wide.calls]).toEqual([patch, got === "layer" ? "layer" : "refused", got === "layer" ? ["layer"] : []]);
+      expect(wide.calls).not.toContain("app:bot.setUserLayer");
     }
     expect(await routeCall(as(BOT_EDITOR_PART, { model: "x/y", theme: null }).r)).toBe("app");
     const none = route({ tree: { windowId: 1, pluginId: CHARACTER_PART }, method: "bot.setUserLayer", params: { id: "alpha", patch: { avatar: null } }, gesture: false });
@@ -959,7 +1054,7 @@ describe("Try again on the conversation: main forwards the session to the daemon
   test("another part, or no gesture, is refused before anything is sent", async () => {
     for (const part of ["clover/composer", "clover/bot-editor", PLUGINS_PART, "clover/settings", "clover/sidebar"]) {
       const t = resendFrom({ part });
-      await expect(routeCall(t.r)).rejects.toThrow("made only from");
+      await expect(routeCall(t.r)).rejects.toThrow("session.resend needs the user.send capability");
       expect(t.sent).toEqual([]);
     }
     const spent = resendFrom({ gesture: false });
@@ -995,7 +1090,7 @@ describe("Try again on the conversation: main forwards the session to the daemon
 });
 
 describe("a message action (`conversation.messageAction`): main finds the entry and runs its own handler", () => {
-  const press = (params: unknown, extra: Partial<TreeRoute> & { gesture?: boolean } = {}) => {
+  const press = (params: unknown, extra: Over = {}) => {
     const sent: { method: string; params: unknown }[] = [];
     const { r, logs } = route({
       tree: { windowId: 1, pluginId: CONVERSATION_PART }, method: "conversation.messageAction", params, gesture: true, entries: () => PIN_ENTRY,
@@ -1024,7 +1119,7 @@ describe("a message action (`conversation.messageAction`): main finds the entry 
   });
 
   test("refused: an entry that isn't active now, a bad ref, session or seq, no gesture, another part; nothing is sent", async () => {
-    const cases: [unknown, Partial<TreeRoute> & { gesture?: boolean }][] = [
+    const cases: [unknown, Over][] = [
       [{ entry: "alpha#gone", session: "b_alpha", seq: 7 }, {}],
       [{ entry: "notes#pin", session: "b_alpha", seq: 7 }, {}],
       [{ entry: "../x", session: "b_alpha", seq: 7 }, {}],
@@ -1032,7 +1127,8 @@ describe("a message action (`conversation.messageAction`): main finds the entry 
       [{ entry: "alpha#pin", session: "b_alpha", seq: -1 }, {}],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 1.5 }, {}],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { gesture: false }],
-      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { tree: { windowId: 1, pluginId: "clover/composer" } }],
+      // A part that doesn't declare the spot finds no entry in it (the runtime's `entries` is the declarer's own).
+      [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { tree: { windowId: 1, pluginId: "clover/composer" }, entries: () => [] }],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { entries: () => [{ ref: "alpha#pin", pluginId: "alpha", fields: { title: "Pin", call: "not a name" } }] }],
       [{ entry: "alpha#pin", session: "b_alpha", seq: 7 }, { entries: undefined }],
     ];
@@ -1050,10 +1146,10 @@ describe("a message action (`conversation.messageAction`): main finds the entry 
 });
 
 describe("a setting from the bot's Edit page", () => {
-  test("names the bot only when it is the plugin's own bot, and only from the bot editor", () => {
-    const set = (part: string, p: Record<string, unknown>) => pageParams("plugin.settings.set", p, part, new PickTokens());
-    expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" })).toEqual({ params: { id: "juniper", key: "loud", value: true, bot: "juniper", noSecret: true } });
-    expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "alpha" })).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
+  test("names the bot only when it is the plugin's own bot, and only on the bot editor's path (bots.edit)", () => {
+    const set = (part: string, p: Record<string, unknown>, forBot = false) => pageParams("plugin.settings.set", p, part, new PickTokens(), forBot);
+    expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" }, true)).toEqual({ params: { id: "juniper", key: "loud", value: true, bot: "juniper", noSecret: true } });
+    expect(set(BOT_EDITOR_PART, { id: "juniper", key: "loud", value: true, bot: "alpha" }, true)).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
     expect(set(PLUGINS_PART, { id: "juniper", key: "loud", value: true, bot: "juniper" })).toEqual({ params: { id: "juniper", key: "loud", value: true, noSecret: true } });
   });
 });
@@ -1093,12 +1189,18 @@ describe("a setting from the bot's Edit page goes through the door", () => {
         { id: "clover/provider-gcp", bot: "alpha", key: "k", value: "x" },
         { id: "luna", bot: "alpha", key: "k", value: "x" },
         { id: "alpha", bot: "nobody", key: "k", value: "x" },
-        { id: "alpha", key: "k", value: "x" },
-        { id: BOT_EDITOR_PART, key: "k", value: "x" },
       ]) {
         const t = edit(method, params);
         await expect(routeCall(t.r)).rejects.toThrow("its own bot's settings only");
         expect(t.sent).toEqual([]);
+      }
+      // Naming no bot is another plugin's settings: the editor's plugins.read reads their view (a key only as set or
+      // not); a write takes plugins.manage, which it lacks: the layer door.
+      for (const params of [{ id: "alpha", key: "k", value: "x" }, { id: BOT_EDITOR_PART, key: "k", value: "x" }]) {
+        const t = edit(method, params);
+        const got = await routeCall(t.r).then((v) => v, () => "refused");
+        if (method === "plugin.settings.get") expect(t.sent.map((x) => x.method)).toEqual(["plugin.settings.get"]);
+        else expect([got, t.sent]).toEqual(["layer", []]);
       }
     }
   });
@@ -1117,11 +1219,11 @@ describe("a setting from the bot's Edit page goes through the door", () => {
     }
   });
 
-  test("a read goes with the bot named, and the editor can no longer name any plugin through anyId", async () => {
+  test("a read goes with the bot named, and the editor changes no other plugin's settings (no plugins.manage)", async () => {
     const t = edit("plugin.settings.get", { id: "alpha", bot: "alpha" });
     await routeCall(t.r);
     expect(t.sent).toEqual([{ method: "plugin.settings.get", params: { id: "alpha", bot: "alpha" } }]);
-    expect(treeVerdict(BOT_EDITOR_PART, "plugin.settings.get")).toMatchObject({ ok: true, call: { anyId: [PLUGINS_PART] } });
+    expect(verdict(BOT_EDITOR_PART, "plugin.settings.set", { id: "tarot", key: "k", value: 1 })).toMatchObject({ ok: false, owned: false, why: "plugin.settings.set needs the plugins.manage capability" });
   });
 });
 

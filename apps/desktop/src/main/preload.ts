@@ -9,6 +9,15 @@ const where = location.protocol;
 const isRoot = where === "clover-core:" && location.host === "app" && window.top === window;
 const isLayer = where === "clover-plugin:";
 
+// Where a press landed (§5.5): in EVERY frame, sealed cards and a plugin's own about:blank or srcdoc frames too, a trusted
+// pointerdown in this frame's own document is reported to the main process, which saw the press itself in the window and binds
+// the report to the frame it came from. No payload, nothing on the bridge: a page's script can neither call it nor make the
+// event trusted. Capture phase, on the window, so no page stops it first.
+window.addEventListener("pointerdown", (event) => {
+  if (!event.isTrusted) return;
+  ipcRenderer.send("clover:press-seen");
+}, { capture: true });
+
 if (isRoot || isLayer) {
   const activated = (): boolean => (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive === true;
   const token = isLayer ? new URLSearchParams(location.search).get("mount") ?? undefined : undefined;
@@ -40,7 +49,7 @@ if (isRoot || isLayer) {
     menu: (mount, items, x, y) => ipcRenderer.invoke("clover:menu", { mount, items, x, y }),
     surface: (request) => ipcRenderer.send("clover:surface", request),
     surfaceEnvironment: () => ipcRenderer.invoke("clover:surface-environment", {}),
-    open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target }),
+    open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target, active: activated() }),
     viewFrame: (mount, name, rect, used) => ipcRenderer.send("clover:view-frame", { mount, name, rect, used: used === true }),
     webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
     activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),

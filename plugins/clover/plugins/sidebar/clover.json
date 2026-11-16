@@ -14,7 +14,8 @@
   "capabilities": [
     "bots.read",
     "computers.read",
-    "conversation.read"
+    "conversation.read",
+    "account.read"
   ],
   "contributes": {
     "ui": [

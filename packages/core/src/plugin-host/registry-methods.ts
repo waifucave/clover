@@ -250,10 +250,30 @@ export function pluginRegistryMethods(o: {
       // shown with it cut out ("…"), for every client.
       return { lines: pluginLogTail(o.home, id, lines ?? 200).map((l) => redactReadText(l).split(REDACTED).join("…")) };
     }),
-    [M.pluginConfirmAdult.name]: handler(M.pluginConfirmAdult, (_p, ctx) => {
+    [M.pluginConfirmAdult.name]: handler(M.pluginConfirmAdult, async ({ card }, ctx) => {
       requireUser(ctx, "confirm their age");
-      registry.confirmAdult();
-      return { ok: true as const };
+      // From a part (main sets `card`, F2): a sealed card asks; only the user's yes there declares their age.
+      if (card !== true || registry.adultConfirmed) {
+        registry.confirmAdult();
+        return { ok: true as const };
+      }
+      if (o.openCard === undefined) throw new ContractError("refused", "confirming your age from this page needs a sealed card, and this computer's approval broker isn't running");
+      const opened = await o.openCard({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "plugin-confirm-adult",
+        fields: {
+          title: { type: "text", text: "Are you 18 or older?" },
+          detail: { type: "list", items: ["Yes lets plugins marked for adults be switched on, on this computer."] },
+        },
+      });
+      onYes(opened.card, "plugin-confirm-adult", opened.allowed, () => {
+        registry.confirmAdult();
+        return undefined;
+      });
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", "your age wasn't confirmed");
+        return { ok: true as const };
+      }
+      return { applied: false as const, card: opened.card };
     }),
     // Removing deletes a plugin's folder from the plugins directory; a bundled or development plugin isn't removed here.
     [M.pluginRemove.name]: handler(M.pluginRemove, async ({ id, card, deleteData }, ctx) => {

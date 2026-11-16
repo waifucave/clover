@@ -6,7 +6,7 @@ import {
   HOOK_RETURNS, MESSAGE_KINDS, PointDeclSchema, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson,
   AVATAR_FORMATS, avatarFileProblem, catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
-  networkAllows, pluginTokenName,
+  networkAllows, pluginTokenName, withImplied,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
   reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer, describeOk,
@@ -14,28 +14,27 @@ import {
 
 describe("capabilities", () => {
   test("the catalog holds §5.4's sixteen, devices.read for the Devices tab (review S16), terminal for the terminal panel, plugins.install and plugins.watch for the index browser and project.write for the fence", () => {
-    expect(CAPABILITIES.map((c) => c.name)).toEqual([
-      "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
-      "computers.control", "devices.read", "approvals", "approvals.all", "user.send", "overlay", "tray", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "avatar.read", "avatar.control", "avatar.control.all", "avatar.report", "notify", "audio", "microphone",
-      "voices.use", "call:<plugin-id>", "network:public", "network:<host>",
-    ]);
-    expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
-      "controls the screen and input of your computers",
-      "restyles approval cards",
-      "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them",
-      "sends messages to your bots and sessions as you, with text it chooses, when you click or press a key in its window, or up to 30 seconds after you let go",
-      "shows windows on top of everything else on your screen",
-      "changes files in your project folders",
-      "drives the Clover Browser: a bot's own tab as its tool, and in its own page every tab of the Clover Browser on this computer, which it can open, read and act on, signed in wherever you signed in there",
-      "opens terminals on your computers that run what you type in them, as you, outside Clover's sandbox, and sees what they show",
-      "downloads other plugins from the indexes and npm onto your computer, each waiting for your OK on its own card",
-      "sees every plugin you have, whether it's on, and when you add or remove one",
-      "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see",
-      "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices",
-      "hears your microphone, also while no window of it shows",
-      "can ask your voice providers to transcribe, which may use your accounts with them",
-      "connects to any public website, through Clover's web safeguards, so what you or your bots give it can leave your computer",
-    ]);
+    // The lists come from the catalog itself (the controller's ruling: no hand-kept copy to fall out of step); what is checked
+    // here is their shape: each name once, the families last, every warning a plain OK line.
+    const names = CAPABILITIES.map((c) => c.name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(expect.arrayContaining(["conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read", "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio", "microphone", "app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
+    expect(names.slice(-3)).toEqual(["call:<plugin-id>", "network:public", "network:<host>"]);
+    for (const c of CAPABILITIES) expect([c.name, typeof c.ok === "string" && c.ok.length > 0 && !/[.]$/.test(c.ok)]).toEqual([c.name, true]);
+    const warned = CAPABILITIES.filter((c) => c.warns).map((c) => c.name);
+    expect(warned).toEqual(expect.arrayContaining(["computers.control", "approvals", "browser", "terminal", "audio", "microphone", "network:public", "app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
+    expect(CAPABILITIES.find((c) => c.name === "bots.edit")?.ok).toBe("changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network");
+  });
+
+  test("F2: the app's door for parts gates by eight capabilities any plugin may ask for, each with its line on the OK card; plugins.manage carries plugins.read", () => {
+    const eight = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+    const asks = validateManifest({ manifest: 1, id: "my-settings", name: "My Settings", engines: { clover: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: eight }, { folderName: "my-settings" });
+    expect(asks.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const ok = describeOk(asks);
+    for (const name of eight) expect(ok).toContain(`It ${CAPABILITIES.find((c) => c.name === name)!.ok}.`);
+    expect(CAPABILITIES.filter((c) => eight.includes(c.name) && !c.warns).map((c) => c.name)).toEqual(["bots.avatar"]);
+    expect(withImplied(["plugins.manage"])).toEqual(["plugins.manage", "plugins.read"]);
+    expect(withImplied(["plugins.read"])).toEqual(["plugins.read"]);
   });
 
   test("no capability is Clover's own: any plugin may ask for the six that were (the owner, 2026-11-15), each a warning on its card", () => {
@@ -134,7 +133,9 @@ describe("the plugin API's gating", () => {
     // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
     // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call.
     // approvals.all, user.send, overlay and tray gate a window's fields, a hook and a spot (the app checks them), not a call.
-    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone"];
+    // F2's eight gate the app's door for its parts (tree-calls.ts and the composer spot's), not a plugin-API call.
+    const doorCaps = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone", ...doorCaps];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });
@@ -517,7 +518,7 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(34);
+    expect(c.capabilities.map((x: { name: string }) => x.name)).toEqual(CAPABILITIES.map((x) => x.name));
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);

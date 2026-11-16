@@ -300,6 +300,9 @@ export class MenuGate {
 /** How soon after the user's key press or click a send it started must reach the main process. */
 export const SEND_INPUT_WINDOW_MS = 1_000;
 
+/** How long after a mouse press its frame's report (`seen`: the preload's trusted pointerdown) may still name where it landed. */
+export const PRESS_REPORT_MS = 1_000;
+
 /** How long after a press's release the frame may send once (hold-to-talk: the release, then the transcription). */
 export const SEND_RELEASE_WINDOW_MS = 30_000;
 
@@ -314,10 +317,10 @@ export class SendGate {
     this.lastInput.set(windowId, this.now());
   }
 
-  take(windowId: number): boolean {
+  take(windowId: number, arrived: number = this.now()): boolean {
     const at = this.lastInput.get(windowId);
     this.lastInput.delete(windowId);
-    const ok = at !== undefined && this.now() - at <= SEND_INPUT_WINDOW_MS;
+    const ok = at !== undefined && arrived - at <= SEND_INPUT_WINDOW_MS;
     if (ok) {
       // One press, one send, whichever rule spends it: this press's hold is spent (a key's send comes on its key down, a click's on
       // its release), and an allowance its release already gave is gone.
@@ -331,7 +334,53 @@ export class SendGate {
   forget(windowId: number): void {
     this.lastInput.delete(windowId);
     this.holds.delete(windowId);
+    this.lastPress.delete(windowId);
     this.dropAllowances(windowId);
+  }
+
+  // F2 (read 52): the press is the caller's frame's, not the window's. A gestured call from a part (the door for parts, the
+  // composer spot, the pickers, the shell API, an open) spends only the window's latest press, within the second, and only when
+  // that press landed IN THE CALLER'S OWN FRAME: the innermost frame of the press's record (`press`: the focused frame at a key
+  // down; `holdFrames`: the frame under the pointer at a mouse down). A press in another plugin's frame, on a sealed card's
+  // button or on the window's own root is not the caller's, and is left unspent for the frame it came to. The bundled tree's
+  // parts share one document (the `clover` layer's): a press anywhere in that document is that document's, as before.
+  private readonly lastPress = new Map<number, Hold>();
+  private readonly waiting = new Map<Hold, (() => void)[]>();
+
+  /** Spends the window's press for a call from `frameId`: true once, within SEND_INPUT_WINDOW_MS, when the press landed in that
+   *  frame (its innermost frame); false (and nothing spent) otherwise. `arrived` is when the call came (before any wait for
+   *  the walk, `settle`): the window is measured to it, so a slow walk never makes a timely call late. */
+  takeIn(windowId: number, frameId: string, arrived: number = this.now()): boolean {
+    const p = this.lastPress.get(windowId);
+    const at = this.lastInput.get(windowId);
+    if (p === undefined || at === undefined || arrived - at > SEND_INPUT_WINDOW_MS || arrived < at) return false;
+    if (p.frames === undefined || [...p.frames].at(-1) !== frameId) return false;
+    return this.take(windowId, arrived);
+  }
+
+  /** The frames the window's latest press landed in (outermost first), for the log line a refused call writes. */
+  pressFrames(windowId: number): readonly string[] | undefined {
+    const f = this.lastPress.get(windowId)?.frames;
+    return f === undefined ? undefined : [...f];
+  }
+
+  /** Waits (at most `ms`) until the window's latest press knows its frames (a mouse press asks the frames under the pointer a
+   *  moment after it): resolves at once when there is none or it is known. */
+  settle(windowId: number, ms = PRESS_REPORT_MS): Promise<void> {
+    const p = this.lastPress.get(windowId);
+    if (p === undefined || p.frames !== undefined) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      const list = this.waiting.get(p) ?? [];
+      list.push(() => { clearTimeout(timer); resolve(); });
+      this.waiting.set(p, list);
+    });
+  }
+
+  private framesKnown(hold: Hold): void {
+    const list = this.waiting.get(hold);
+    this.waiting.delete(hold);
+    for (const done of list ?? []) done();
   }
 
   // After a hold (hold-to-talk): the words come only after the release and the transcription, past the second and past the
@@ -352,11 +401,30 @@ export class SendGate {
     this.dropAllowances(windowId);
     const h: Hold = { kind: press.kind, key: press.key, at: this.now(), spent: false, ...(press.frames !== undefined ? { frames: new Set(press.frames) } : {}) };
     this.holds.set(windowId, h);
+    const was = this.lastPress.get(windowId);
+    if (was !== undefined) this.framesKnown(was);
+    this.lastPress.set(windowId, h);
     return h;
+  }
+
+  /** A frame's report that its own document received a trusted pointerdown (the preload's `clover:press-seen`): `frames` is
+   *  that frame and the frames it sits in. It names where the window's latest mouse press landed, only while that press has no
+   *  frames yet (the first report wins) and is recent; anything else is dropped. A press nobody reports (a drag region, no
+   *  document) keeps no frames, and no frame takes it. True when it was taken. */
+  seen(windowId: number, frames: readonly string[]): boolean {
+    const p = this.lastPress.get(windowId);
+    if (p === undefined || p.kind !== "mouse" || p.frames !== undefined || this.now() - p.at > PRESS_REPORT_MS || frames.length === 0) return false;
+    this.holdFrames(windowId, p, frames);
+    return true;
   }
 
   /** The frames a mouse press happened in, once found (the release may already have come: it is credited now). */
   holdFrames(windowId: number, hold: Hold, frames: readonly string[]): void {
+    // The press's own record knows where it landed (a gestured call reads it, `takeIn`), whether or not its hold is still open.
+    if (this.lastPress.get(windowId) === hold) {
+      if (hold.frames === undefined) hold.frames = new Set(frames);
+      this.framesKnown(hold);
+    }
     if (this.holds.get(windowId) !== hold) return;
     hold.frames = new Set(frames);
     if (hold.releasedAt !== undefined) this.credit(windowId, hold);
@@ -397,7 +465,8 @@ export class SendGate {
   /** A frame that navigated, reloaded or went away is a document of its own from now on. */
   forgetFrame(frameId: string): void {
     this.releases.delete(frameId);
-    for (const h of this.holds.values()) h.frames?.delete(frameId);
+    // A press that landed in (or inside) that frame is no frame's now: its outer frames don't inherit it.
+    for (const h of [...this.holds.values(), ...this.lastPress.values()]) if (h.frames?.has(frameId) === true) h.frames = new Set();
   }
 }
 
@@ -471,10 +540,19 @@ export function openTarget(v: unknown): OpenTarget | undefined {
 }
 
 
-/** Who may ask the app to open a place: in 1.111.1, the `clover` tree's parts only (the island's Usage and Devices
- *  tabs); a third party's would bring the main window up over whatever the person is doing. */
-export function mayOpen(pluginId: string): boolean {
-  return pluginId.split("/")[0] === "clover";
+/** Who may ask the app to open a place (Settings at a section, a bot's editor) in the main window: a part whose plugin
+ *  holds `shell.control` (its OK card says it moves Clover's window's own parts), whichever plugin it is (F2: no door
+ *  checks an id), and only on the user's own press in that frame (electron.ts takes it). */
+export function mayOpen(capabilities: ReadonlySet<string>): boolean {
+  return capabilities.has("shell.control");
+}
+
+/** Why a part's open of a place in the main window is refused, or undefined: the capability first, then one press of the
+ *  user's in that frame (`pressed` spends it, only once the capability holds). */
+export function openRefusal(capabilities: ReadonlySet<string>, pressed: () => boolean): string | undefined {
+  if (!mayOpen(capabilities)) return "opening a place in Clover's window takes the shell.control capability";
+  if (!pressed()) return "opening a place in Clover's window goes only right after your own key press or click";
+  return undefined;
 }
 
 /** Where a surface asked to be, kept on its display: inside the display's bounds for the `clover` tree, inside the work

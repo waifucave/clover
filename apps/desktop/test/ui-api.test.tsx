@@ -489,7 +489,7 @@ describe("the UI API in a layer", () => {
     expect(fake.calls).toContainEqual({ op: "api", args: [mount, "events.subscribe", { areas: ["plugins"] }] });
   });
 
-  test("settings.get and .set: a third-party page reaches its own settings on its own connection (plugin.layer.call, no id, no bot); the bundled tree's parts as before", async () => {
+  test("settings.get and .set: every part reaches its own settings on its own connection (plugin.layer.call, no id), the bundled tree's too, and a bot's value for the bot it names (F2)", async () => {
     render(h(ui.LayerRoot, { info: { mount: "m9", pluginId: "vn", entryId: "page", component: "VnPage", spot: "main", props: {}, tokens: {}, context: CTX, css: [] } }));
     await tick();
     const vn = vnApi!;
@@ -499,17 +499,20 @@ describe("the UI API in a layer", () => {
     await vn.settings.set("order", undefined);
     await hooks.api!.settings.get("deck").catch(() => undefined); // the fake core answers no settings list
     await hooks.api!.settings.set("deck", "tarot").catch(() => undefined);
+    await vn.settings.get("nick", { bot: "alpha" }).catch(() => undefined);
+    await vn.settings.set("nick", "Lu", { bot: "alpha" }).catch(() => undefined);
     const got = fake.calls.filter((c) => c.op === "api").map((c) => c.args.slice(1));
     expect(got).toEqual([
       ["plugin.layer.call", { call: "settings.get", args: ["order"] }],
       ["plugin.layer.call", { call: "settings.set", args: ["order", "oldest"] }],
       ["plugin.layer.call", { call: "settings.set", args: ["order", null] }],
-      ["plugin.settings.get", { id: "clover/sidebar" }],
-      ["plugin.settings.set", { id: "clover/sidebar", key: "deck", value: "tarot" }],
+      // The bundled tree's part the same way: its own plugin's, never through the app's door by its id.
+      ["plugin.layer.call", { call: "settings.get", args: ["deck"] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["deck", "tarot"] }],
+      // A bot's value names its bot, as the host half's does.
+      ["plugin.layer.call", { call: "settings.get", args: ["nick", { bot: "alpha" }] }],
+      ["plugin.layer.call", { call: "settings.set", args: ["nick", "Lu", { bot: "alpha" }] }],
     ]);
-    // A page names no bot: a bot's value is its host half's to read or change.
-    await expect(vn.settings.get("nick", { bot: "alpha" })).rejects.toThrow("with no bot");
-    await expect(vn.settings.set("nick", "Lu", { bot: "alpha" })).rejects.toThrow("with no bot");
   });
 
   test("settings.watch hears its own plugin's settings changes (the key, never a value); never another plugin's, nor a plugin_changed", async () => {

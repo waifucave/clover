@@ -663,7 +663,8 @@
                           "plugin-setting-host",
                           "plugin-sign-out",
                           "plugin-index-remove",
-                          "plugin-update"
+                          "plugin-update",
+                          "plugin-confirm-adult"
                         ]
                       },
                       "binds": {
@@ -1135,7 +1136,8 @@
                         "plugin-setting-host",
                         "plugin-sign-out",
                         "plugin-index-remove",
-                        "plugin-update"
+                        "plugin-update",
+                        "plugin-confirm-adult"
                       ]
                     },
                     "binds": {
@@ -1873,7 +1875,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -2424,7 +2427,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -2973,7 +2977,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -3520,7 +3525,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -4064,7 +4070,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -4571,7 +4578,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -5082,7 +5090,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -5606,7 +5615,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -6157,7 +6167,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -6661,7 +6672,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -7165,7 +7177,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -7675,7 +7688,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -8232,7 +8246,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -8889,7 +8904,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -9784,7 +9800,8 @@
                       "plugin-setting-host",
                       "plugin-sign-out",
                       "plugin-index-remove",
-                      "plugin-update"
+                      "plugin-update",
+                      "plugin-confirm-adult"
                     ]
                   },
                   "binds": {
@@ -10316,7 +10333,8 @@
                           "plugin-setting-host",
                           "plugin-sign-out",
                           "plugin-index-remove",
-                          "plugin-update"
+                          "plugin-update",
+                          "plugin-confirm-adult"
                         ]
                       },
                       "binds": {

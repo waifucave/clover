@@ -66,6 +66,8 @@ export interface ExampleCtx {
   setAppearance?(scheme: "dark" | "light" | "system"): void;
   /** Says whether Clover's window is in front (the app's test seam: a headless window is never the focused one). */
   setMainFront?(front: boolean): void;
+  /** Lets the fake provider's turns `ACCEPTANCE-FAIL-<id>` succeed from now on (Try again, on the conversation copy). */
+  healFake?(id: string): void;
   /** Sends a message in a session and waits for the turn; its events and the cards it raised (answered yes over RPC). */
   turn(session: string, text: string, ms?: number): Promise<{ events: Ev[]; cards: string[]; changes: string[] }>;
   history(session: string): Promise<Ev[]>;

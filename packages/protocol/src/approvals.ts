@@ -73,6 +73,8 @@ export const ChangeSubject = z.enum([
   "plugin-index-remove",
   /** Applying an update from an index or npm from the Plugins page: its new code runs on the OK given before. */
   "plugin-update",
+  /** The user's statement that they are 18 or older, asked from a part (F2): only their yes on the card makes it. */
+  "plugin-confirm-adult",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

@@ -67,7 +67,9 @@ written with `/`, and must stay inside it. `Text` (a name, a description, a titl
 - `required: true`: the plugin waits until the user sets it. Avoid it unless the plugin can't work at all without it.
 
 Clover draws the settings form itself. Code reads a value with `api.settings.get("<key>")` and hears changes with
-`api.settings.watch`. A changed `default` asks the OK again (plugin-cards).
+`api.settings.watch`, in the host half and in a component alike; a `bot` field names its bot,
+`api.settings.get("<key>", { bot })` and `api.settings.set("<key>", value, { bot })`, from either half. A changed `default`
+asks the OK again (plugin-cards).
 
 ### `auth`
 
@@ -175,6 +177,14 @@ Every entry above may also carry `declares` (below).
   Clover's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
   `approvals.all`); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an
   `app.tray` entry add a line to the menu-bar menu, with the `tray` capability. The pill's send is `useUserSend` with `user.send`: text the part chooses goes to any bot, session or `pill.target` as the user on any real click or key press in its window, and the OK card says so. A send comes inside the press (within a second, in the frame's own activation) or, for hold-to-talk, once within 30 s after a press the app saw held and released in the frame it happened in (no activation needed then; one press covers one send; a new press anywhere in the window, a reload, focus a page moved, or a page's own events give none).
+- a part that does what Clover's own Settings, Plugins page, bot editor or avatar section does: `useCore().call(method, params)`
+  reaches the app's door for parts, where each call needs a capability (no plugin's id passes it): `app.settings` (Clover's
+  look, language, the one-at-a-time pickers), `plugins.read` / `plugins.manage` (the Plugins page: list, install, remove,
+  switch on and off, sign in, any plugin's settings), `bots.edit` (a bot's settings, model and keys), `bots.avatar` (a bot's
+  avatar from a file the user picks), `tools.permissions` (the Tools tab), `account.read` (the account's name and email),
+  `commands.run` (a composer's slash menu); `conversation.read` reads the archive and a session's panels. Every change there is
+  the user's own press in the part (a click or key the app saw land in the part's own document: a real pointerdown there, which
+  your script cannot make, or the part focused at the key down), and each capability warns on the OK card.
 
 ### Your own points and spots (`declares`)
 

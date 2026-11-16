@@ -608,8 +608,13 @@ export const PLUGINS_METHODS = {
   }),
   pluginConfirmAdult: defineMethod({
     name: "plugin.confirmAdult", owner: "B", roles: ["app", "cli"], userOnly: true,
-    params: Empty, result: Ok,
-    doc: "The user confirms they are 18 or older, so adult plugins may be switched on (§5.7).",
+    params: z.object({
+      /** Ask on a sealed card first (the app sets it for every part's call, F2: one press in a plugin's frame never
+       *  declares the user's age). */
+      card: z.literal(true).optional(),
+    }),
+    result: z.union([Ok, z.object({ applied: z.literal(false), card: CardId })]),
+    doc: "The user confirms they are 18 or older, so adult plugins may be switched on (§5.7). With `card`, only their yes on a sealed card confirms it.",
   }),
   pluginDevList: defineMethod({
     name: "plugin.dev.list", owner: "B", roles: ["app", "cli"],

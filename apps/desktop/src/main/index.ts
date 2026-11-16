@@ -19,7 +19,7 @@ import { openWindow, OPEN_TARGETS } from "./open";
 import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, type RenderHandle } from "./render";
 import type { ShellState } from "@waifucave/clover-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
-import { app, BrowserWindow, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
 import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
@@ -44,7 +44,6 @@ import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { placeWindow, TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
-import { frameChainAt, hitScript, type HitFrame } from "./frame-hit";
 import { FRESH_LIMIT_MS, ownCardPage, pinVisible } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
@@ -57,7 +56,7 @@ import { DEFAULT_PREFS, readPrefs, withLegacyHidden, writePrefs, type AppPrefs }
 import { FourFingerTap, loadTouches, type TouchAddon } from "./touch-tap";
 import type { TrayState } from "./tray-menu";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
-import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
+import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, surfaceBounds, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
 import type { OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { IpcStats, cpuMeter, ipcStatsOn, startIpcStats } from "./ui/ipc-stats";
 import { guardContents, hardenSession, installIpc, installUiSession, registerSchemes, startCensus } from "./ui/electron";
@@ -394,7 +393,13 @@ async function ready(): Promise<void> {
       if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message.replace(/[^\w. -]/g, "").slice(0, 80)}`);
       throw err;
     }),
-    takeGesture: (windowId) => sends.take(windowId),
+    // A part's gestured call spends only a press that landed in its own frame (F2, read 52).
+    takeGesture: (windowId, frameId, arrived) => {
+      const ok = sends.takeIn(windowId, frameId, arrived);
+      if (!ok) log(`press: a call from frame ${frameId} found no press of its own (the latest press: ${JSON.stringify(sends.pressFrames(windowId) ?? null)})`);
+      return ok;
+    },
+    settleGesture: (windowId) => sends.settle(windowId),
     treeRequest: async (method, params) => {
       if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
       const client = pair.client;
@@ -608,7 +613,10 @@ async function ready(): Promise<void> {
       // send is the one second after a press, in the frame's own activation. A refused call spends nobody's allowance or gesture.
       if (!sends.takeRelease(windowId, frameId)) {
         if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
-        if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+        // The press must have landed in THIS frame (F2, read 52): a press in another frame of the window is not this sender's.
+        const arrived = Date.now();
+        await sends.settle(windowId);
+        if (!sends.takeIn(windowId, frameId, arrived)) return refuse("the main process saw no key press or click land in this frame just before", "the user's words go only right after their own key press or click");
       }
       try {
         return await client.request<{ seq?: number }>("user.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
@@ -1435,7 +1443,6 @@ async function show(what: { kind: string; url?: string; section?: string; item?:
 
 /** A part asks to open a place in the main window (the island's Usage and Devices tabs open Settings there). */
 async function openFor(pluginId: string, target: OpenTarget): Promise<void> {
-  if (!mayOpen(pluginId)) throw new LayerError("only the app's own parts open places in its window");
   log(`open: ${target.kind}${target.kind === "settings" && target.section !== undefined ? ` ${target.section}` : ""} for ${pluginId}`);
   await show(target);
 }
@@ -1884,19 +1891,6 @@ function frameChainOf(f: Electron.WebFrameMain | null): string[] {
   return out;
 }
 
-/** A frame as the pointer walk sees it: each hop is asked inside that frame, for at most a moment. */
-function hitRoot(f: Electron.WebFrameMain): HitFrame {
-  return {
-    id: `${f.processId}:${f.routingId}`,
-    url: f.url,
-    get children() { return f.frames.map(hitRoot); },
-    ask: (x, y) => Promise.race([
-      f.executeJavaScript(hitScript(x, y)) as Promise<{ src: string; x: number; y: number } | null>,
-      new Promise<null>((r) => setTimeout(() => r(null), 400)),
-    ]),
-  };
-}
-
 /** A background part's window has no input of its own: it never earns a send's allowance. */
 function isBackgroundWindow(id: number): boolean {
   for (const b of backgrounds.values()) if (!b.win.isDestroyed() && b.win.id === id) return true;
@@ -2139,6 +2133,14 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
+// A frame's own document received a trusted pointerdown (the preload, every frame): it names where the window's latest mouse
+// press landed, bound to the frame the report came from (never a payload). First report wins; one with no recent press is dropped.
+ipcMain.on("clover:press-seen", (event) => {
+  const f = event.senderFrame;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (f === null || f.detached || win === null) return;
+  sends.seen(win.id, frameChainOf(f));
+});
 const windowDrags = new TitleDrag();
 /** Where the main process last saw the cursor over a window, on the screen (from its own mouse events). */
 const cursors = new Map<number, { x: number; y: number }>();
@@ -2339,9 +2341,9 @@ function watchWindow(win: BrowserWindow): void {
     menus.input(id);
     if (isBackgroundWindow(id)) sends.input(id);
     else {
-      // The frame under the pointer is found a moment later (it asks the frames); the release waits for it if it comes first.
-      const hold = sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
-      void frameChainAt(hitRoot(win.webContents.mainFrame), mouse.x, mouse.y).then((frames) => sends.holdFrames(id, hold, frames), () => undefined);
+      // Which frame it landed in is that frame's own report a moment later (the preload's trusted pointerdown, `clover:press-seen`);
+      // the release waits for it if it comes first.
+      sends.press(id, { kind: "mouse", key: mouse.button ?? "left" });
     }
     pointers.down(id, mouse.x, mouse.y);
   });

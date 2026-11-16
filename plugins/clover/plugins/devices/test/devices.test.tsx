@@ -14,7 +14,8 @@ const DEVICE = { id: "d1", name: "Studio", kind: "computer", runsCore: true, onl
 
 describe("the Devices plugin", () => {
   test("is a plugin of its own that fills the island's tab slot and holds devices.read; the island holds neither", () => {
-    expect(manifest.capabilities).toEqual(["devices.read"]);
+    // shell.control: its "open in Settings" (useOpen) brings the main window up, which is that capability's (F2), never its id's.
+    expect(manifest.capabilities).toEqual(["devices.read", "shell.control"]);
     expect(manifest.contributes.ui).toEqual([{ spot: "island.tab", id: "devices", component: "DevicesTabEntry", title: "Devices", order: 900, attention: "never" }]);
     expect(typeof (client as Record<string, unknown>).DevicesTabEntry).toBe("function");
   });
