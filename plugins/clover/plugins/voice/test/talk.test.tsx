@@ -67,7 +67,7 @@ function world(o: { listens?: boolean; heard?: { text?: string; note?: string };
     </UiRuntimeProvider>,
   );
   /** Its host half passing on the held key binding's down or up. */
-  const key = (phase: "down" | "up") => { for (const fn of heard.get(`talk-${phase}`) ?? []) fn({}); };
+  const key = (phase: "down" | "up" | "cancel") => { for (const fn of heard.get(`talk-${phase}`) ?? []) fn({}); };
   return { calls, turns, done, written, streams, sent, key };
 }
 
@@ -134,6 +134,24 @@ describe("Clover Voice's hold-to-talk button", () => {
     await act(async () => { w.key("up"); await settle(4); });
     expect(w.sent).toHaveLength(1);
     expect(button.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("a cancel from its held key binding (the window let go, not the user) drops the recording: nothing heard, nothing sent", async () => {
+    twoChunks();
+    const w = world();
+    await act(() => settle(6));
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    await act(async () => { w.key("down"); await settle(6); });
+    expect(w.streams).toHaveLength(1);
+    await act(async () => { w.key("cancel"); await settle(10); });
+    expect(w.calls.some((c) => c.name === "heard")).toBe(false);
+    expect(w.sent).toEqual([]);
+    expect(w.done).toEqual(["device/microphone"]);
+    expect(w.streams[0]!.closed).toBe(false); // aborted, never closed for the voice to write down
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    // A later up is nobody's: still nothing.
+    await act(async () => { w.key("up"); await settle(6); });
+    expect(w.sent).toEqual([]);
   });
 
   test("the key's up doesn't end a hold the mouse started; its down doesn't start a second one", async () => {

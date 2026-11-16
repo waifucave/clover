@@ -251,9 +251,11 @@ describe("Clover Voice's host half", () => {
     const f = fake();
     expect(host.pushToTalk({ key: "down" })).toEqual({ ok: true });
     expect(host.pushToTalk({ key: "up" })).toEqual({ ok: true });
+    expect(host.pushToTalk({ key: "cancel" })).toEqual({ ok: true });
     expect(host.pushToTalk({})).toEqual({ ok: false });
+    expect(host.pushToTalk({ key: "sideways" })).toEqual({ ok: false });
     expect(host.pushToTalk(null)).toEqual({ ok: false });
-    expect(f.sent).toEqual([["talk-down", {}], ["talk-up", {}]]);
+    expect(f.sent).toEqual([["talk-down", {}], ["talk-up", {}], ["talk-cancel", {}]]);
   });
 
   test("each of its points' fills lines warns: a filler is sent what the user says, and what it writes down goes as the user's message unseen", () => {

@@ -365,14 +365,15 @@ function stopBot(bot: string): void {
   }
 }
 
-/** Its command `push-to-talk`, Ctrl+Shift+Space held anywhere in the window (a held key binding: `{ key: "down" }` on the
- *  press, `{ key: "up" }` on the release): passed on to its talk buttons (`talk-down`, `talk-up`), which hold to talk
- *  exactly as when the button is held. Run another way (no `key`), it does nothing. */
+/** Its command `push-to-talk`, Ctrl+Shift+Space held anywhere in the window (a held key binding, run only from its key:
+ *  `{ key: "down" }` on the press, `{ key: "up" }` on the user's release, `{ key: "cancel" }` for a hold that ended with
+ *  none): passed on to its talk buttons (`talk-down`, `talk-up`, `talk-cancel`), which hold to talk exactly as when the
+ *  button is held, and drop the recording on a cancel as on a lost pointer. */
 export function pushToTalk(args: unknown): { ok: boolean } {
   const key = (args as { key?: unknown } | null)?.key;
-  if (key !== "down" && key !== "up") return { ok: false };
+  if (key !== "down" && key !== "up" && key !== "cancel") return { ok: false };
   try {
-    api?.ui.send(key === "down" ? "talk-down" : "talk-up", {});
+    api?.ui.send(`talk-${key}`, {});
   } catch {
     /* no part to tell */
   }

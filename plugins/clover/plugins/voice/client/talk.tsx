@@ -13,8 +13,9 @@
 // `plainLine` does) and cut to TALK_TEXT_MAX characters, never refused for its length (a hold is at most a minute).
 //
 // From the keyboard: Ctrl+Shift+Space anywhere in the window (this plugin's held key binding, `push-to-talk`, which its
-// host half passes on as `talk-down` and `talk-up`) holds it the same way: the key's down starts (a repeat does nothing),
-// its release ends it and the words go once; the chord never types. The release main saw counts as the user's for this
+// host half passes on as `talk-down`, `talk-up` and `talk-cancel`) holds it the same way: the key's down starts (a repeat
+// does nothing), its release ends it and the words go once, and a cancel (the window let go of the hold, never the user)
+// drops it as a lost pointer does; the chord never types. The release main saw counts as the user's for this
 // plugin's documents, as the button's own press and release do. Of several talk buttons it is the one nearest the focus
 // (in the composer being typed in), else the first.
 //
@@ -280,11 +281,18 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
       byKey.current = false;
       end();
     });
+    // No release of the user's: the hold is dropped (nothing heard, nothing sent).
+    const offCancel = api.host.on("talk-cancel", () => {
+      if (!byKey.current) return;
+      byKey.current = false;
+      cancel();
+    });
     return () => {
       offDown();
       offUp();
+      offCancel();
     };
-  }, [api, start, end]);
+  }, [api, start, end, cancel]);
 
   const place = useCallback((el: HTMLSpanElement | null) => {
     if (self.current !== null) shown.delete(self.current);
