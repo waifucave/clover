@@ -70,9 +70,14 @@ function frameFor(item: { mount: string; url: string; ref: string; layer: string
   // Only a plugin whose manifest asks (`client.isolated`) gets a cross-origin isolated frame. A plugin's page is placed inside
   // the `clover` layer's frames (the shell, the main spot), and a frame is isolated only when every frame above it passes the
   // permission down: so the `clover` layer's frames carry it too (the delegation only; they isolate no plugin).
-  // The `clover` layer's frame alone may record (push-to-talk: the app's shell records, never a plugin; main's permission handler
-  // answers only while the user's press has a recording open).
-  frame.setAttribute("allow", [item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "", item.layer === "clover" || item.microphone === true ? "microphone" : "", item.autoplay === true ? "autoplay" : ""].filter((a) => a !== "").join("; "));
+  // A frame may open the microphone when a plugin of its own layer holds `microphone` (the runtime's `microphone` flag; main's
+  // permission handler answers by the same layer).
+  const allow = [
+    item.isolated === true || item.layer === "clover" ? "cross-origin-isolated" : "",
+    item.microphone === true ? "microphone" : "",
+    item.autoplay === true ? "autoplay" : "",
+  ];
+  frame.setAttribute("allow", allow.filter((a) => a !== "").join("; "));
   frame.referrerPolicy = "no-referrer";
   return frame;
 }
@@ -86,7 +91,7 @@ const rendered = new Map<string, () => void>();
  *  sends after its first render), so the window never shows an empty stage or a first page that isn't the user's (the
  *  parts keep their place with `useKept`). The old one is inert meanwhile: main let it go already. After 5 s the new
  *  one takes the place anyway, but never before it has loaded (a document that hasn't is the blank one). */
-function reloadIn(item: { mount: string; url: string; ref: string; layer: string }): void {
+function reloadIn(item: { mount: string; url: string; ref: string; layer: string; isolated?: true; autoplay?: true; microphone?: true }): void {
   const frames = Array.from(stage.querySelectorAll("iframe")).filter((f) => f.dataset.cloverMount === item.mount);
   // A load still pending from an earlier reload is for a token main has spent: it goes, and the frame showing stays.
   for (const f of frames) if (f.dataset.cloverPending !== undefined) f.remove();
@@ -122,7 +127,7 @@ function reloadIn(item: { mount: string; url: string; ref: string; layer: string
   shown = { mount: item.mount, url: item.url };
 }
 
-function mount(item: { mount: string; url: string; ref: string; layer: string }): void {
+function mount(item: { mount: string; url: string; ref: string; layer: string; isolated?: true; autoplay?: true; microphone?: true }): void {
   if (shown?.mount === item.mount && shown.url === item.url && stage.querySelector("iframe") !== null) return;
   stage.replaceChildren(frameFor(item));
   shown = { mount: item.mount, url: item.url };
@@ -190,7 +195,8 @@ function onMessage(m: LayerMessage): void {
   if (m.type === "child-size") rendered.get(m.child)?.();
   if (m.type === "child-reload" && m.child === shown?.mount) {
     const frame = stage.querySelector("iframe");
-    reloadIn({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "" });
+    // The new frame gets the flags main sends with the reload: its `allow` as main has it now, as a first load's item gives it.
+    reloadIn({ mount: m.child, url: m.url, ref: frame?.dataset.cloverEntry ?? "", layer: frame?.dataset.cloverLayer ?? "", ...(m.isolated === true ? { isolated: true as const } : {}), ...(m.autoplay === true ? { autoplay: true as const } : {}), ...(m.microphone === true ? { microphone: true as const } : {}) });
   }
   if (m.type === "child-gone" && m.child === shown?.mount) {
     const child = m.child;

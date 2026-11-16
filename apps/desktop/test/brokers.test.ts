@@ -615,3 +615,68 @@ describe("SendGate.takeIn is timed by the press itself (browser-press, read 53 i
     expect(g.takeIn(1, "panel:A")).toBe(false);
   });
 });
+
+describe("Clover Voice's talk button on the press record (F1 on F2): a hold in its own frame gives that frame the one send after the release", () => {
+  // The button is drawn in the clover layer's document (CLOVER), a frame in the window's core root (ROOT); another plugin's frame
+  // in the same window (OTHER) never takes its press. What happens in between: the button's own plugin-API calls (the microphone
+  // turn, the stream to its host half) are no gestured call and spend nothing; the words come back seconds after the release.
+  const W = 3;
+  const ROOT = "1:1";
+  const CLOVER = "1:2";
+  const OTHER = "1:3";
+
+  test("a real mouse hold: main sees the press, the clover document's own trusted pointerdown (clover:press-seen) names its frame, the release credits it", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    g.press(W, { kind: "mouse", key: "left" });
+    now.t += 20;
+    // The preload in the clover document reports; main binds it to that frame and the frames it sits in (frameChainOf).
+    expect(g.seen(W, [ROOT, CLOVER])).toBe(true);
+    expect(g.pressFrames(W)).toEqual([ROOT, CLOVER]);
+    now.t += 4_000; // held while recording
+    g.release(W, { kind: "mouse", key: "left" });
+    now.t += 6_000; // the host half writes it down
+    expect(g.takeRelease(W, OTHER)).toBe(false);
+    expect(g.takeRelease(W, CLOVER)).toBe(true);
+    // One hold, one send.
+    expect(g.takeRelease(W, CLOVER)).toBe(false);
+    expect(g.takeIn(W, CLOVER)).toBe(false);
+  });
+
+  test("the report may come after the release (a busy renderer): the release is credited when it does", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    g.press(W, { kind: "mouse", key: "left" });
+    now.t += 300;
+    g.release(W, { kind: "mouse", key: "left" });
+    expect(g.takeRelease(W, CLOVER)).toBe(false);
+    now.t += 100;
+    expect(g.seen(W, [ROOT, CLOVER])).toBe(true);
+    now.t += 5_000;
+    expect(g.takeRelease(W, CLOVER)).toBe(true);
+  });
+
+  for (const key of [" ", "Enter"]) {
+    test(`${key === " " ? "Space" : "Enter"} held on the focused button: the key's frames are the focused frame's (the clover document), the key-up there credits it`, () => {
+      const now = { t: 0 };
+      const g = new SendGate(() => now.t);
+      // before-input-event: the first key down (auto-repeats are no new press), frames from the focused frame (frameChainOf).
+      g.press(W, { kind: "key", key, frames: [ROOT, CLOVER] });
+      now.t += 3_000;
+      g.release(W, { kind: "key", key, frame: CLOVER });
+      now.t += 8_000;
+      expect(g.takeRelease(W, OTHER)).toBe(false);
+      expect(g.takeRelease(W, CLOVER)).toBe(true);
+      expect(g.takeRelease(W, CLOVER)).toBe(false);
+    });
+  }
+
+  test("a key released in another frame (the focus moved) credits nothing; the button drops such a hold itself (its blur)", () => {
+    const now = { t: 0 };
+    const g = new SendGate(() => now.t);
+    g.press(W, { kind: "key", key: " ", frames: [ROOT, CLOVER] });
+    g.release(W, { kind: "key", key: " ", frame: OTHER });
+    expect(g.takeRelease(W, CLOVER)).toBe(false);
+  });
+});
+

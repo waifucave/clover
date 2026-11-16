@@ -5,11 +5,8 @@
 // (the computer's level shows as a label: a change is a sealed card, which the core can't raise for the app yet).
 // Each button draws through `composer.action`, keyed by action id, falling back to its own.
 //
-// Push-to-talk (spec §6.6): the hold-to-talk control shows only while the bot's voice listens (`host.listenStatus`). A press
-// (the button, or Ctrl+Shift+Space in the box) asks the app to record, inside that press (`host.listenStart`); the app records and
-// hands the audio to the voice plugin, never this plugin, and the release (`host.listenStop`) answers with the words heard,
-// which land in the box after what is there, to edit and send (§6.6 has the app hand audio over; nothing says the words go
-// straight to the bot). A refusal or an empty hearing says why in a few words by the box.
+// A plugin's own button (a `composer.action` entry under a key that isn't one of the composer's, hold-to-talk among them) is
+// drawn among the buttons plugins add, before stop and send, in the spot's order: the composer looks for no key of theirs.
 //
 // The model list comes from the core's `models.list` (the models a session can switch to).
 //
@@ -18,14 +15,13 @@
 // goes to that plugin alone, as the command's args (`argsFor`); the line never goes to the bot. The result, or why it
 // didn't run, shows as a row above the box, here only: it isn't added to the conversation, so neither the bot nor any
 // other plugin reads it.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
-import { appendHeard } from "./keys";
 import { S } from "./strings";
-import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useTokens, useUserSend } from "./sdk";
-import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash, ComposerVoice } from "./types";
+import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useSpotEntries, useTokens, useUserSend } from "./sdk";
+import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
 
@@ -74,12 +70,14 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const host = useComposerHost();
   const send = useUserSend();
   const { cards } = useApprovals();
+  // The buttons plugins add under keys of their own (the spot's `*`), in its order.
+  const added = useSpotEntries("composer.action", "*", { bot: props.bot }).entries.filter((e) => e.key !== undefined);
   // A pick changes the model the daemon holds (a bot's user layer, or the session's own): the bot and the session are read again
   // after it, so the label says what the next turn runs on.
   const [rev, setRev] = useState(0);
   const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session, rev]);
   const kind = session?.kind ?? props.sessionKind;
-  // The bot's own changes (its voice set or cleared in its settings, the user's layer) reload it, so the talk control follows them.
+  // The bot's own changes (the user's layer) reload it.
   const [botRev, setBotRev] = useState(0);
   useEffect(() => {
     if (kind !== "bot") return;
@@ -158,64 +156,6 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
         }
       : undefined;
 
-  // Does the bot's voice listen now? Read again when the bot changes and when the window comes back (the user may have
-  // changed its voice: that is Clover Voice's own setting).
-  const [listens, setListens] = useState(false);
-  useEffect(() => {
-    if (host?.listenStatus === undefined || kind !== "bot") {
-      setListens(false);
-      return;
-    }
-    let live = true;
-    const read = () => host.listenStatus!().then((r) => live && setListens(r?.listens === true), () => live && setListens(false));
-    void read();
-    window.addEventListener("focus", read);
-    return () => {
-      live = false;
-      window.removeEventListener("focus", read);
-    };
-  }, [host, props.bot.id, kind, botRev]);
-  const [listening, setListening] = useState(false);
-  // A release that answers after a newer press began must not undo it.
-  const hold = useRef(0);
-  const voice: ComposerVoice | undefined =
-    listens && host?.listenStart && host.listenStop
-      ? {
-          listening,
-          onPressStart: () => {
-            const mine = ++hold.current;
-            setListening(true);
-            setNotice(undefined);
-            // Called inside the press: the host counts it as the user's only then.
-            host.listenStart!().then(
-              (r) => {
-                if (r?.note !== undefined && hold.current === mine) {
-                  setListening(false);
-                  setNotice(r.note);
-                }
-              },
-              () => {
-                if (hold.current === mine) {
-                  setListening(false);
-                  setNotice(S.listenRefused);
-                }
-              },
-            );
-          },
-          onPressEnd: () => {
-            const mine = hold.current;
-            setListening(false);
-            host.listenStop!().then(
-              (r) => {
-                if (typeof r?.text === "string" && r.text !== "") setDraft((d) => appendHeard(d, r.text!));
-                else if (r?.note !== undefined && hold.current === mine) setNotice(r.note);
-              },
-              () => undefined,
-            );
-          },
-        }
-      : undefined;
-
   // The theme can set the row under the text inside the box (`composer.controls.inside`).
   const tokens = useTokens();
   const controlsInside = Number(tokens["composer.controls.inside"] ?? 0) === 1;
@@ -242,7 +182,6 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       cardPending={cardPending}
       {...(slash ? { slash } : {})}
       {...(model ? { model } : {})}
-      {...(voice ? { voice } : {})}
       {...(computer
         ? {
             level: {
@@ -257,6 +196,9 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       renderAction={(id: ComposerActionId, standard: ReactNode) => (
         <Spot name="composer.action" spotKey={id} props={{ bot: props.bot, session: props.session }} fallback={standard} />
       )}
+      added={added.map((e) => (
+        <Spot key={`${e.pluginId}#${e.id}`} name="composer.action" spotKey={e.key} entry={`${e.pluginId}#${e.id}`} props={{ bot: props.bot, session: props.session }} />
+      ))}
     />
   );
 }

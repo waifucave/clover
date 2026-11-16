@@ -8,7 +8,7 @@ describe("the labels a plugin shows for what it brings", () => {
     expect(contributionLabels([m({ bot: { name: "Luna" }, mcpServers: { s: { type: "host" } }, skills: ["skills/*"], themes: [{ id: "t", file: "t.json" }] })])).toEqual(["Bot", "Tools", "Skills", "Theme"]);
     expect(contributionLabels([m({ ui: [{ spot: "island.tab", id: "a", component: "A" }, { spot: "sidebar.app", id: "b", component: "B" }, { spot: "avatar", key: "vrm", component: "V" }, { spot: "settings.section", id: "s", component: "S" }] })]))
       .toEqual(["Island tab", "App page", "Settings section", "Avatar renderer"]);
-    expect(contributionLabels([m({ models: [{ id: "m" }], voices: [{ id: "v" }], agents: ["agents/a.md"], triggers: [{ type: "x" }], hooks: [{ id: "h" }] })])).toEqual(["Agent", "Model", "Voice", "Hooks", "Trigger"]);
+    expect(contributionLabels([m({ models: [{ id: "m" }], agents: ["agents/a.md"], triggers: [{ type: "x" }], hooks: [{ id: "h" }] })])).toEqual(["Agent", "Model", "Hooks", "Trigger"]);
   });
   test("a panel with a key that isn't a stock panel's is a Panel; replacing a stock one is not", () => {
     expect(contributionLabels([m({ ui: [{ spot: "panel", key: "sheets", component: "S", title: "Sheets" }] })])).toEqual(["Panel"]);

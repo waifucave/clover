@@ -12,10 +12,10 @@
 import { randomBytes } from "node:crypto";
 import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/clover-plugin-sdk";
-import { spotInfo } from "@waifucave/clover-plugin-sdk";
+import { STOCK_KEYS, spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, botScope, entryRef, ownPanelCandidates, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
+import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, addedCandidates, botScope, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
 import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
@@ -613,7 +613,8 @@ export class UiRuntime {
     if (parentDoc === undefined) return;
     const url = this.reissue(doc);
     this.log(`layers: ${doc.id} loads again ${why === "to frame a layer installed after it was served" ? why : `(${why})`}`);
-    this.post(parentDoc.id, { type: "child-reload", child: doc.id, url });
+    // The frame's flags go with it: a parent that builds the frame again (the core root) gives the new one the same `allow`.
+    this.post(parentDoc.id, { type: "child-reload", child: doc.id, url, ...this.frameFlags(doc) });
   }
 
   /** A document asks what it is: the root of its window, or the frame its token was issued for. */
@@ -763,9 +764,10 @@ export class UiRuntime {
     const part = this.partIn(frame, mountId);
     if (!this.declares(part, spot)) return [];
     const { cellKey, ctx } = this.cellOf(doc, part, spot, key, { ...(bot !== undefined ? { bot } : {}), ...(session !== undefined ? { session } : {}) });
-    // Every panel a plugin adds, as the shell's toggles list them (the panel spot's `*`).
-    if (spot === "panel" && key === OWN_PANELS_KEY) {
-      return ownPanelCandidates({ plugins: this.plugins, ctx }).map((c) => ({
+    // Every entry a plugin adds under a key of its own (the spot's `*`): the panels the shell's toggles list, the buttons the
+    // composer adds to its row.
+    if (key === OWN_PANELS_KEY && STOCK_KEYS[spot] !== undefined) {
+      return addedCandidates({ plugins: this.plugins, ctx }, spot).map((c) => ({
         ref: entryRef(c.entry),
         id: c.entry.id,
         pluginId: c.plugin.id,
@@ -880,18 +882,24 @@ export class UiRuntime {
     return m;
   }
 
+  /** What a frame's `allow` carries, from main's own record of it: the same for its first load and every load again. */
+  private frameFlags(m: Mount): { isolated?: true; autoplay?: true; microphone?: true } {
+    return {
+      ...(m.plugin?.isolated === true ? { isolated: true as const } : {}),
+      // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
+      ...(m.spot === "app.background" && m.plugin?.capabilities.has("audio") === true ? { autoplay: true as const } : {}),
+      // A frame whose own layer holds `microphone` (any plugin of it: a plugin and its children share one) may open it; main's
+      // permission handlers say yes for that layer's origin only.
+      ...(this.layerHolds(m.layer, "microphone") ? { microphone: true as const } : {}),
+    };
+  }
+
   private item(m: Mount, parent: Mount): SpotItem {
     const ref = `${m.plugin!.id}#${m.entryId}`;
     const layout = this.entryOf(m)?.layout;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
     if (m.kind === "frame") {
-      const isolated = {
-        ...(m.plugin!.isolated === true ? { isolated: true as const } : {}),
-        // A background part's frame may play sound with no press from the user when its plugin holds `audio`.
-        ...(m.spot === "app.background" && m.plugin!.capabilities.has("audio") ? { autoplay: true as const } : {}),
-        // A plugin holding `microphone` has its frames allowed to open it (main's permission handlers say yes for its origin only).
-        ...(m.plugin!.capabilities.has("microphone") ? { microphone: true as const } : {}),
-      };
+      const isolated = this.frameFlags(m);
       if (m.tokenState === "asleep") return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: "", asleep: true, ...isolated };
       return { kind: "frame", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId, layer: m.layer, url: this.frameUrl(m), ...isolated };
     }

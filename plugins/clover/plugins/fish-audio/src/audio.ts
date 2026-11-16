@@ -1,5 +1,5 @@
-// Audio containers the voice path needs. The app records push-to-talk as raw 16-bit PCM at 16 kHz (protocol
-// `voice.listen`'s `pcm16-16k`), and Fish Audio's speech-to-text refuses raw, headerless PCM (docs: "Not supported
+// Audio containers the voice path needs. Clover Voice's talk button records push-to-talk as raw 16-bit PCM at 16 kHz
+// (`pcm16-16k`), and Fish Audio's speech-to-text refuses raw, headerless PCM (docs: "Not supported
 // (400): … raw headerless PCM"), so PCM is wrapped in a WAV header first. Fish's text-to-speech answers `pcm` as raw
 // 16-bit mono samples, which is what `voice.play`'s `pcm16-24k` takes at 24 kHz.
 

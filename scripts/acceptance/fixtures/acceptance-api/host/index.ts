@@ -57,11 +57,6 @@ async function probe(a: Api): Promise<string> {
     await t.done();
     return "taken";
   });
-  await at("audio-listen", async () => {
-    const off = a.audio.onRecording(() => {});
-    off();
-    return "watched";
-  });
   await at("keys", async () => `made:${(await a.keys.publicKey("x")).length}`);
   // The rest of each area's members (try 15's gate).
   await at("commands-list", async () => {

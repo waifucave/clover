@@ -1,6 +1,6 @@
 // The Voice section of Settings (`settings.section`), filled by Clover Voice: whether replies are spoken at all ("Speak
 // replies", this plugin's own `speakReplies`; the stage's chip is the quick mute of the same setting). Which voice speaks
-// isn't this plugin's to keep: `voiceModes` takes one filler at a time, and Settings draws its picker (titled "Voice")
+// isn't kept here: its own point `clover.voice.modes` takes one filler at a time (P4), and Settings draws its picker (titled "Voice")
 // and tells the user when the one they picked stops.
 import { useCallback, useEffect, useId, useState } from "react";
 import { usePluginApi } from "./sdk";

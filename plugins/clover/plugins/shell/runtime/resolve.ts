@@ -60,6 +60,9 @@ export interface Resolved {
 
 /** The stock right panels: a `panel` entry with any other key adds a panel (the same list as the plugin SDK's `STOCK_PANEL_KEYS`). */
 const STOCK_PANELS: readonly string[] = ["session", "terminal", "diff", "browser", "files", "agent"];
+/** The keyed spots whose declarer draws the entries plugins add under keys of their own, with their stock keys (the SDK's
+ *  `STOCK_KEYS`; the app's runtime lists the same). */
+const STOCK_KEYS: Readonly<Record<string, readonly string[]>> = { panel: STOCK_PANELS, "composer.action": ["attach", "model", "level", "send", "stop"] };
 
 export const entryRef = (e: Pick<UiEntry, "pluginId" | "id">) => `${e.pluginId}#${e.id}`;
 
@@ -115,9 +118,11 @@ export function resolveSpot(
     return { entries: shown, conflict: false };
   }
 
-  // The panels plugins add (the panel spot's `*`): every entry whose key isn't a stock panel's, in order (the app's runtime lists the same).
-  if (spot === "panel" && key === "*") {
-    const added = here.filter((e) => !e.hide && e.key !== undefined && !STOCK_PANELS.includes(e.key) && !e.key.endsWith("*"));
+  // What plugins add (the spot's `*`: the panels, the composer's buttons): every entry whose key isn't a stock one, in order
+  // (the app's runtime lists the same).
+  const stock = STOCK_KEYS[spot];
+  if (stock !== undefined && key === "*") {
+    const added = here.filter((e) => !e.hide && e.key !== undefined && !stock.includes(e.key) && !e.key.endsWith("*"));
     added.sort((a, b) => (a.order ?? 500) - (b.order ?? 500) || a.pluginId.localeCompare(b.pluginId) || a.id.localeCompare(b.id));
     return { entries: added, conflict: false };
   }

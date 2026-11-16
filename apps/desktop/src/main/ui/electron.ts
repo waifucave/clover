@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent, type Session, type WebContents, type WebFrameMain } from "electron";
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
+import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, layerMicrophone, withMicrophone } from "./documents";
 import { checkMenu, frameGesture, openRefusal, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
@@ -144,8 +144,10 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       const mount = runtime.serveDocument(layer, url.searchParams.get("mount"));
       if (mount === undefined) return forbidden();
       const doc = runtime.mountForDocument(mount);
-      // The clover layer's document alone may open the microphone (push-to-talk's shell, listen.ts); the policy still needs the frame's `allow`.
-      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", doc.layer === "clover" ? "*" : runtime.layerHolds(doc.layer, "microphone"));
+      // The microphone policy by one rule for every layer (`layerMicrophone`): open while its own layer holds `microphone`. The
+      // permission itself is main's (microphone.ts), by the requesting frame's own layer.
+      const microphone = layerMicrophone(doc.layer, (l) => runtime.layerHolds(l, "microphone"));
+      const headers = layerHeaders("text/html; charset=utf-8", [], doc.layers, doc.layer !== "clover", microphone);
       // The DNS probe's positive control (the UI test, unpackaged runs only): the same document without its allowlist.
       if (options.unguardedLayers?.has(doc.layer) === true) delete headers["Connection-Allowlist"];
       return new Response(layerDocument({ css: doc.assets.css, title: doc.pluginId }), { headers });
@@ -401,8 +403,6 @@ export interface IpcHooks {
   showsTab?(windowId: number, mount: string, tab: string): boolean;
   /** A part's Browser call answered (its view's binding follows its show, open-and-show, hide and close). */
   noteBrowserResult?(mount: string, method: string, params: unknown, result: unknown): void;
-  /** The windows' push-to-talk holds (listen.ts): the composer's start and stop, and the shell's pieces. */
-  listens?: import("./listen").ListenHolds;
   /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
   treeRequest(method: string, params: unknown): Promise<unknown>;
   /** Main's native folder or file dialog over a window, for the Plugins page's `ui.pick`: the path, or undefined. */
@@ -720,7 +720,6 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       method,
       params: a.params,
       tokens: pickTokens,
-      ...(hooks.listens ? { listens: hooks.listens } : {}),
       ...(hooks.pick ? { pick: (w: number, kind: "folder" | "file", filters: readonly { name: string; extensions: string[] }[] | undefined, use: PickUse) => hooks.pick!(w, kind, filters, use) } : {}),
       ...(hooks.openKey ? { openKey: (target: KeyTarget) => hooks.openKey!(target) } : {}),
       // The key press or click must have come to THIS frame: its own transient activation (read in the preload) AND a press the
@@ -836,7 +835,6 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const press = await pressIn(s, a.active);
     return routeComposer({
       composer: runtime.composerOf(s.frame, mount),
-      ...(hooks.listens ? { listens: hooks.listens } : {}),
       op: a.op,
       args: a.args,
       takeGesture: press,

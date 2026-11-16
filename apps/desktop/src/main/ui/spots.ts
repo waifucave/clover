@@ -18,7 +18,7 @@
 // "The smaller part": the part a plugin dresses is the smallest spot holding all its entries in that tab, a child
 // counting as its own plugin (a send-button plugin dresses the button, a bot's tab look the whole tab, a shell the
 // app). The spots form a tree: the catalog's declarations, and each plugin's `declares` under the spot its entry fills.
-import { SAME_ON_EVERY_TAB, SPOTS, isOwnPanelKey, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
+import { ADDED_KEY, SAME_ON_EVERY_TAB, SPOTS, isAddedKey, keyMatches, spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type PointDeclaration, type UiEntry, type UiPlugin } from "./model";
 
 export type Os = "macos" | "windows" | "linux";
@@ -347,20 +347,27 @@ function userPick(choices: UiChoices, spot: string, key: string | undefined, bot
   return choices.picks.find((p) => matches(p) && p.bot === undefined);
 }
 
-/** The key a part asks the `panel` spot's entries with to get every panel a plugin ADDS (an entry whose key isn't a stock
- *  panel's, §5.5), instead of one key's: the shell lists them for its toggles. */
-export const OWN_PANELS_KEY = "*";
+/** The key a part asks a keyed spot with stock keys (`STOCK_KEYS`: the `panel` spot, `composer.action`) with to get every
+ *  entry a plugin ADDS (an entry whose key isn't a stock one, §5.5), instead of one key's: the shell lists the added panels
+ *  for its toggles, the composer the added buttons. */
+export const OWN_PANELS_KEY = ADDED_KEY;
 
-/** The panels plugins add that apply in this context (the tab's bot and kind of session), in their order: by `order`, then
- *  plugin and id. Each is its own cell's candidate: the shell places an entry by its ref (`<Spot entry>`). Two entries of one
- *  plugin with one key (one per kind of tab) are one panel here: the first that applies. */
+/** The panels plugins add that apply in this context (`addedCandidates` of the `panel` spot). */
 export function ownPanelCandidates(input: Pick<ResolveInput, "plugins" | "ctx">): Candidate[] {
+  return addedCandidates(input, "panel");
+}
+
+/** The entries plugins add to `spot` under keys of their own that apply in this context (the tab's bot and kind of
+ *  session), in their order: by `order`, then plugin and id. Each is its own cell's candidate: the declarer places an entry
+ *  by its ref (`<Spot entry>`). Two entries of one plugin with one key (one per kind of tab) are one here: the first that
+ *  applies. */
+export function addedCandidates(input: Pick<ResolveInput, "plugins" | "ctx">, spot: string): Candidate[] {
   const found: Candidate[] = [];
   const seen = new Set<string>();
   for (const plugin of input.plugins) {
     if (!runs(plugin, input.ctx)) continue;
     for (const entry of plugin.entries) {
-      if (entry.spot !== "panel" || entry.key === undefined || !isOwnPanelKey(entry.key)) continue;
+      if (entry.spot !== spot || entry.key === undefined || !isAddedKey(spot, entry.key)) continue;
       if (entry.kind !== "component" && entry.kind !== "web") continue;
       if (!applies(plugin, entry, input.ctx)) continue;
       const id = `${plugin.id}#${entry.key}`;

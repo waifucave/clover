@@ -170,9 +170,6 @@ export const LAYER_WATCHES_PER_PLUGIN = 64;
 /** A watch's value as sent, at most; a larger one is sent as `{ $tooLarge: <bytes> }` in its place, so the page knows
  *  it missed one. */
 export const LAYER_WATCH_VALUE_MAX_BYTES = 256 * 1024;
-/** A push-to-talk piece is bigger: `voice.listen` takes up to 2,000,000 characters of base64 a piece, and the page gets
- *  it whole (as `{ $bytes }`, the same base64), so `audio.onRecording`'s values may take that and their envelope. */
-export const LAYER_RECORDING_VALUE_MAX_BYTES = 2_100_000;
 /** What a whole-file read (`files.readText` or `files.readBytes` with no `length`) may be, so its answer fits
  *  LAYER_RESULT_MAX_BYTES: checked from the file's size before it is read, never after reading it all. */
 const WHOLE_READ_MAX: Readonly<Record<string, number>> = {
@@ -382,7 +379,7 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
       if (!open) return;
       let wire = toLayerWire(value);
       const size = jsonBytes(wire);
-      if (size === undefined || size > (call === "audio.onRecording" ? LAYER_RECORDING_VALUE_MAX_BYTES : LAYER_WATCH_VALUE_MAX_BYTES)) wire = { $tooLarge: size ?? -1 };
+      if (size === undefined || size > LAYER_WATCH_VALUE_MAX_BYTES) wire = { $tooLarge: size ?? -1 };
       emitTo(follows, { type: PLUGINS_EVENTS.pluginApiEvent.type, pluginId, watch: id, ...(wire === undefined ? {} : { value: wire }) });
     };
     const input = fromLayerWire(args, { responses: false }) as unknown[];

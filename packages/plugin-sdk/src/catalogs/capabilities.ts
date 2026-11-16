@@ -66,14 +66,13 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   /** The stage's: it tells the core which renderer drew a bot's figure, its names and its box. */
   { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "tells Clover how your bots' figures look and where they stand, which other plugins and your bots then see", warns: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
-  { name: "audio", lets: "Hear the user's push-to-talk audio to their bots, and play sound through the app (at any time, with no press from the user, even from a part kept in the background; the app's one mute covers it), including as the bots' voices", ok: "hears what you say to your bots with push-to-talk, and can play sound at any time, including as your bots' voices", warns: true },
+  /** Sound with no press from the user: its background part may start sound by itself, and it may take the device's speech
+   *  turn (`device/speech`, one voice at a time). */
+  { name: "audio", lets: "Play sound with no press from the user, even from a part kept in the background, and take the device's speech turn (`device/speech`) so it never talks over another plugin", ok: "can play sound at any time, even while no window of it shows", warns: true },
   /** The user's microphone for a plugin's own frames: `getUserMedia({ audio: true })` works in a frame of a plugin that holds it,
-   *  and in no other plugin's. The system's own question still applies (the first time, on a Mac). Push-to-talk to the bots is
-   *  `audio`'s, not this. */
+   *  and in no other plugin's. The system's own question still applies (the first time, on a Mac). Hold-to-talk is a plugin's
+   *  own use of it (Clover Voice's talk button), taking the device's microphone turn (`device/microphone`). */
   { name: "microphone", lets: "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it", ok: "hears your microphone, also while no window of it shows", warns: true },
-  /** The voice providers' listening (`voices.*`, §6.6): their text back as the plugin's own data (a transcript). A voice
-   *  mode has it by being one. */
-  { name: "voices.use", lets: "Ask the voice providers (`voices` entries) to transcribe audio, getting the text back", ok: "can ask your voice providers to transcribe, which may use your accounts with them", warns: true },
   /** F2 (the app's door for its parts, by capability; the controller's rulings of 2026-11-15): what the bundled Settings,
    *  Plugins page, bot editor, avatar section, shell and composer do, any plugin may do behind its OK card. Each write is
    *  the user's own press in the holder's frame; what is on a sealed card today stays on one for every holder. */

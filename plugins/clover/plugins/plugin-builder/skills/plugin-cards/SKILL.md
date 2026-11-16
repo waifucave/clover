@@ -16,7 +16,7 @@ builder, and one line for each thing it may do:
 
 - each capability, in the words plugin-catalog's "the OK card says" column gives (some with a warning:
   `computers.control`, `approvals`, `project.write`, `browser`, `terminal`, `plugins.install`, `plugins.watch`,
-  `avatar.report`, `audio`, `voices.use`, `network:public`). Any plugin may ask for any capability: none is kept for
+  `avatar.report`, `audio`, `microphone`, `network:public`). Any plugin may ask for any capability: none is kept for
   Clover's own plugins, and the card is the gate;
 - each network host (`network:<host>`, and the hosts of its model endpoints, `web` entries and `auth` URLs);
 - that it runs code (a host half, a client half, a `stdio` server, a hook command), its hook events, its add-ons;

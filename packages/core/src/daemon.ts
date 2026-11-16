@@ -4241,8 +4241,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       // #323: `user.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
-      // §6.6, push-to-talk (the listening half): the providers' listening runs on the plugin host.
-      ...(pluginHost !== undefined ? { voiceHost: pluginHost.host } : {}),
       // §7: a routine file that names a plugin's trigger type is armed through that plugin (read at each call: the plugin
       // host may have started again since).
       pluginTriggers: {

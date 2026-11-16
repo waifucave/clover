@@ -15,6 +15,8 @@ export interface DeviceTurnInfo {
 export const DEVICE_TURNS: readonly DeviceTurnInfo[] = [
   { name: "device/speech", capability: "audio",
     doc: "One voice at a time on this device: a plugin takes it before its sound starts and says done when the sound has ended." },
+  { name: "device/microphone", capability: "microphone",
+    doc: "One recording at a time on this device: a plugin takes it before it opens the microphone and says done when it has closed it." },
 ];
 
 /** A turn's limit when the taker names none. */

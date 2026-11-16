@@ -44,16 +44,8 @@ export interface ComposerModelChoice {
   onChange: (choice: { model: string; effort?: string }) => void;
 }
 
-/** Push-to-talk (spec §6.6): the app records while the button is held and hands the audio to the
- *  bot's voice plugin. The composer only says when the hold starts and ends. */
-export interface ComposerVoice {
-  listening: boolean;
-  onPressStart: () => void;
-  onPressEnd: () => void;
-}
-
 /** The composer's buttons, keyed like the `composer.action` spot (spec §5.5). */
-export type ComposerActionId = "attach" | "model" | "level" | "voice" | "send" | "stop";
+export type ComposerActionId = "attach" | "model" | "level" | "send" | "stop";
 
 /** One of the computer's approval levels (spec §9.1). */
 export interface ComposerLevelOption {
@@ -115,7 +107,6 @@ export interface ComposerProps {
   model?: ComposerModelChoice;
   /** The approval-level pill. */
   level?: ComposerLevel;
-  voice?: ComposerVoice;
   /** A sealed approval card waits in the conversation: menus close and the pills wait, so nothing of
    *  the composer's competes with the card (review item 1). */
   cardPending?: boolean;
@@ -125,6 +116,8 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** The `composer.action` spot: draw one button another way, or not at all (null). */
   renderAction?: (id: ComposerActionId, standard: ReactNode) => ReactNode;
+  /** The buttons plugins add (`composer.action` entries under keys of their own), in the spot's order, before stop and send. */
+  added?: ReactNode;
   /** The slash menu of plugin commands; without it a `/` is just text. */
   slash?: ComposerSlash;
   /** Open a menu at first (the gallery's still frame of it). */

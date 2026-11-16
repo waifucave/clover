@@ -136,7 +136,7 @@ export type SpotItem =
     isolated?: true;
     /** The part is a background part (`app.background`) of a plugin holding `audio`: its frame may play sound with no press (`allow="autoplay"`). */
     autoplay?: true;
-    /** The plugin holds `microphone`: its frame may open the microphone (`allow="microphone"`). */
+    /** A plugin of the frame's own layer holds `microphone`: the frame may open the microphone (`allow="microphone"`). */
     microphone?: true;
   }
   /** A web page entry (§5.5 "Web pages"): an isolated view with its own session, which the core draws over the
@@ -208,7 +208,7 @@ export type LayerMessage =
   | { type: "child-gone"; child: string; reason: string }
   /** A child frame's document loads again, from this fresh single-use URL (it must frame a layer installed after it
    *  was served). */
-  | { type: "child-reload"; child: string; url: string }
+  | { type: "child-reload"; child: string; url: string; /** The frame's `allow` flags as main has them now (its item's). */ isolated?: true; autoplay?: true; microphone?: true }
   /** The window's width class changed (`MountContext.window`), to every frame of the window. */
   | { type: "window"; narrow: boolean }
   /** A child frame's content height, for the parent to size it (§5.5: the core sizes the frame). */
@@ -219,11 +219,6 @@ export type LayerMessage =
   | { type: "avatar"; mount: string; message: AvatarDown }
   /** What an avatar frame says about its model and figure, to its parent only (`cleanAvatarUp`). */
   | { type: "avatar-up"; child: string; message: AvatarUp }
-  /** Push-to-talk, to the main window's `clover` shell only, which records (a plugin never gets the microphone): `start` is sent
-   *  only after the user's own press reached main (the composer's `listenStart`) and carries the utterance main minted; `stop`
-   *  after their release (or the cap). The shell sends the audio back as `voice.listen` pieces, which main numbers and checks. */
-  | { type: "listen"; op: "start"; bot: string; utterance: string; maxMs: number }
-  | { type: "listen"; op: "stop"; utterance: string }
   /** An act of the window a bot's own frame asked for through `shell.*` (main checked the capability, the user's press and whose tab shows), to the main
    *  window's `clover` shell only. */
   | { type: "shell-act"; act: ShellAct }
@@ -377,10 +372,8 @@ export interface LayerBridge {
   windowDrag(mount: string): void;
   /** The `composer` spot's host callbacks (spec §5.5), for the entry the core mounted there: `models` and `commands`,
    *  and the acting `setModel`, `interrupt`, `stop` and `runCommand`, each of which counts only inside the user's own key
-   *  press or click. `commands` and `runCommand` are the bundled composer's only, and so are the push-to-talk three:
-   *  `listenStatus` (a read: does the bot's voice listen), `listenStart` (the user's press: the app records) and
-   *  `listenStop` (the release: what was heard, as text). */
-  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand" | "listenStatus" | "listenStart" | "listenStop", args?: unknown): Promise<unknown>;
+   *  press or click. `commands` and `runCommand` are the bundled composer's only. */
+  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop" | "commands" | "runCommand", args?: unknown): Promise<unknown>;
   /** `PluginApi.shell` from a component: the window's state and apps, or an act of the window's own. Main checks the plugin's capability, that a bot of
    *  the plugin shows its tab, and for an act the user's own key press or click in this frame. */
   shell(mount: string, method: ShellMethod, args?: unknown): Promise<unknown>;
