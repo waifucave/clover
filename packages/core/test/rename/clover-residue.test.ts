@@ -353,7 +353,7 @@ describe("Winter→Clover rename residue (C0)", () => {
     for (const path of ["native/sandbox/src/main.rs", "spikes/s9/README.md", ".github/workflows/spike-s1.yml", "infra/relay/main.go", "extensions/winter-for-chrome/src/native.ts", "packages/core/src/cowork/native/launcher.ts"]) {
       expect([path, isExempt(path), isNeverScanExempt(path)]).toEqual([path, true, false]);
     }
-    for (const path of ["docs/clover-spec.md", "releases/winter/appcast.xml", "apple/WinterKit/Sources/X.swift", "CLAUDE.md", "scripts/rename/clover.ts", "packages/core/test/rename/residue.test.ts"]) {
+    for (const path of ["docs/moss-spec.md", "releases/winter/appcast.xml", "apple/WinterKit/Sources/X.swift", "CLAUDE.md", "scripts/rename/clover.ts", "packages/core/test/rename/residue.test.ts"]) {
       expect([path, isNeverScanExempt(path)]).toEqual([path, true]);
     }
     expect(analyzeNever("native/mounts/main.go", "// mounts ~/.winter/sdk").never.map((n) => n.id)).toEqual(["winter-home"]);
