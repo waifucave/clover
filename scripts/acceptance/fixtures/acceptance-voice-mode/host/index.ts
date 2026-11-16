@@ -29,7 +29,9 @@ const partReady = new Promise<void>((r) => { readied = r; });
 async function say(what: string, seconds: number): Promise<void> {
   await Promise.race([partReady, new Promise((r) => setTimeout(r, 20_000))]);
   const w = await need().streams.open("say", { meta: { what, seconds } });
-  await w.close();
+  // The part cancels the stream the moment it has the meta (client/index.tsx), and the meta is all it carries: on a slow
+  // machine (a hosted CI runner) the part's cancel arrives before this close, which then says the reader cancelled.
+  await w.close().catch((e: unknown) => { if (!/the reader cancelled/.test(e instanceof Error ? e.message : String(e))) throw e; });
 }
 
 /** Its entry on MOSS Voice's voice modes: a reply to say, its own way (a 0.6 s tone). */

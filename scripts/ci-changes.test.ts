@@ -263,7 +263,7 @@ describe("CI for the lanes", () => {
     jobs: Record<string, Job>;
   };
   const needsOf = (id: string): string[] => { const n = ci.jobs[id]!.needs; return Array.isArray(n) ? n : n === undefined ? [] : [n]; };
-  const runnersOf = (j: Job): string[] => [...(j["runs-on"] !== undefined && !j["runs-on"].includes("${{") ? [j["runs-on"]] : []), ...(j.strategy?.matrix?.include ?? []).map((r) => r.runner), ...(j.strategy?.matrix?.runner ?? [])];
+  const runnersOf = (j: Job): string[] => [...(j["runs-on"] !== undefined && !j["runs-on"].includes("${{") ? [j["runs-on"]] : []), ...(j.strategy?.matrix?.include ?? []).map((r) => r.runner), ...(j.strategy?.matrix?.runner ?? [])].filter((r): r is string => typeof r === "string");
 
   test("a push to an integration branch runs CI, a newer push or manual run on a ref cancels the one it supersedes, a merge group never does", () => {
     expect(ci.on.push?.branches).toEqual(["lane-int/**"]);
@@ -293,5 +293,13 @@ describe("CI for the lanes", () => {
     expect(acceptance.strategy?.matrix?.unit).toEqual(["main", "workshop", "plugin-app", "browser"]);
     const known = units().map((u) => u.id as string);
     for (const u of acceptance.strategy!.matrix!.unit!) expect(known).toContain(u);
+  });
+
+  test("the macOS job's legs deal the core's tests in thirds and between them run every part the one job ran", () => {
+    const legs = (ci.jobs.macos as unknown as { strategy: { matrix: { include: Array<{ shard: number; parts: string }> } } }).strategy.matrix.include;
+    expect(legs.map((l) => l.shard)).toEqual([1, 2, 3]);
+    expect(legs.flatMap((l) => l.parts.split(" ").filter(Boolean)).sort()).toEqual(["cli", "link", "scripts", "verify"]);
+    const run = JSON.stringify(ci.jobs.macos);
+    expect(run).toContain("--darwin --shard ${{ matrix.shard }}/3");
   });
 });

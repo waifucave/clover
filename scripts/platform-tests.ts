@@ -11,7 +11,7 @@
 //
 //   --root    where the test files are (relative to the repo root)
 //   --cwd     where bun runs (default: the repo root; the core runs in packages/core, for its bunfig and its paths)
-//   --shard   Linux's K-th of N even parts of the list (by file, in path order)
+//   --shard   the K-th of N even parts of the list (by file, in path order), on either side: Linux's shards and macOS's
 //   --config  the root's reviewed lists (packages/core/test/platform-ci.json), paths relative to --root:
 //               linuxKnownFailures   file → { owner, cause }: Linux product bugs, skipped by the Linux shards until fixed
 //               linuxSkips           file → reason: a Linux file whose tests may skip (an opt-in fixture, another OS…)
@@ -209,7 +209,6 @@ export function parseArgs(argv: readonly string[]): Args {
     const m = /^(\d+)\/(\d+)$/.exec(s);
     const k = Number(m?.[1]), n = Number(m?.[2]);
     if (!m || n < 1 || k < 1 || k > n) throw new Error(`--shard takes K/N with 1 <= K <= N, not ${s}`);
-    if (darwin) throw new Error("--shard is Linux's (--not-darwin)");
     shard = { k, n };
   }
   const count = (flag: string): number | undefined => {
@@ -284,7 +283,7 @@ async function main(): Promise<number> {
     }
   }
 
-  const side = args.darwin ? "macOS" : `Linux${args.shard ? ` shard ${args.shard.k}/${args.shard.n}` : ""}`;
+  const side = `${args.darwin ? "macOS" : "Linux"}${args.shard ? ` shard ${args.shard.k}/${args.shard.n}` : ""}`;
   console.log(`platform-tests: ${files.length} test file(s) under ${args.root} for ${side}`);
   const tmp = mkdtempSync(join(tmpdir(), "platform-tests-"));
   try {

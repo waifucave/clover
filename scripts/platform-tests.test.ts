@@ -62,7 +62,8 @@ describe("platform-tests", () => {
     expect(() => parseArgs(["--root", "scripts"])).toThrow(/exactly one/);
     expect(() => parseArgs(["--root", "scripts", "--darwin", "--not-darwin"])).toThrow(/exactly one/);
     expect(() => parseArgs(["--root", "x", "--not-darwin", "--shard", "4/3"])).toThrow(/K\/N/);
-    expect(() => parseArgs(["--root", "x", "--darwin", "--shard", "1/3"])).toThrow(/Linux/);
+    // macOS's tests shard too (the macOS job runs the core's in parts).
+    expect(parseArgs(["--root", "x", "--darwin", "--shard", "1/3"])).toMatchObject({ darwin: true, shard: { k: 1, n: 3 } });
   });
 
   test("Linux's shards deal every file once, in path order", () => {
