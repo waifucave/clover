@@ -1611,6 +1611,21 @@
                       "isNew": {
                         "type": "boolean"
                       },
+                      "availability": {
+                        "type": "string",
+                        "enum": [
+                          "off",
+                          "on-demand",
+                          "always"
+                        ]
+                      },
+                      "declared": {
+                        "type": "string",
+                        "enum": [
+                          "preload",
+                          "on-demand"
+                        ]
+                      },
                       "cardRules": {
                         "maxItems": 256,
                         "type": "array",
@@ -1701,6 +1716,58 @@
         "required": [
           "server",
           "permission"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "tool.setAvailability": {
+      "doc": "Off, on demand (behind Glossary, or an ACP agent's own tool search) or always on, for every bot and agent on this computer; the next turn uses it. Only the user sets it.",
+      "owner": "TS",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "off",
+              "on-demand",
+              "always"
+            ]
+          }
+        },
+        "required": [
+          "server",
+          "availability"
         ]
       },
       "result": {
@@ -5637,6 +5704,63 @@
     }
   },
   "events": {
+    "tool_settings_changed": {
+      "doc": "A plugin tool's permission or availability changed on this computer.",
+      "owner": "TS",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer"
+      ],
+      "capability": "tools.permissions",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "tool_settings_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "server": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "ask",
+              "deny"
+            ]
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "off",
+              "on-demand",
+              "always"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "server"
+        ]
+      }
+    },
     "plugin_changed": {
       "doc": "A plugin's state, switch or reason changed.",
       "owner": "B",

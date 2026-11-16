@@ -1,0 +1,15 @@
+{
+  "type": "bot_record_changed",
+  "ts": 1781270000000,
+  "bot": {
+    "id": "alpha",
+    "name": "Alpha",
+    "model": "anthropic/claude-sonnet",
+    "madeBy": {
+      "kind": "default"
+    },
+    "createdAt": 1781270000000,
+    "mainSession": "s_alpha",
+    "instructionsBytes": 1200
+  }
+}

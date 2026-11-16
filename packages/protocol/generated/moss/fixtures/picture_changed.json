@@ -1,0 +1,17 @@
+{
+  "type": "picture_changed",
+  "ts": 1781270000000,
+  "picture": {
+    "id": "pic_abcdef",
+    "kind": "bots",
+    "session": "s_alpha",
+    "bot": "alpha",
+    "publisher": "moss/browser",
+    "tool": "mcp__moss__Browser",
+    "format": "jpeg",
+    "width": 1280,
+    "height": 800,
+    "screen": false,
+    "startedAt": 1781270000000
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "host_changed",
+  "ts": 1781270000000,
+  "state": "running",
+  "crashes": 0,
+  "release": "1.111.1",
+  "bundlePath": "/Applications/MOSS.app",
+  "since": 1781270000000
+}

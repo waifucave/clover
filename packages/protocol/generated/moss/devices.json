@@ -160,6 +160,48 @@
                     "held"
                   ],
                   "additionalProperties": false
+                },
+                "answersBy": {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "program": {
+                        "type": "string",
+                        "enum": [
+                          "moss",
+                          "code",
+                          "host"
+                        ]
+                      },
+                      "held": {
+                        "type": "string",
+                        "enum": [
+                          "secure-enclave",
+                          "keystore",
+                          "keychain",
+                          "app-keychain",
+                          "tpm",
+                          "dpapi",
+                          "secret-service",
+                          "none"
+                        ]
+                      },
+                      "alg": {
+                        "type": "string",
+                        "enum": [
+                          "ed25519",
+                          "p256"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "program",
+                      "held"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -1852,6 +1894,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -2647,6 +2697,47 @@
                 "required": [
                   "held"
                 ]
+              },
+              "answersBy": {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "program": {
+                      "type": "string",
+                      "enum": [
+                        "moss",
+                        "code",
+                        "host"
+                      ]
+                    },
+                    "held": {
+                      "type": "string",
+                      "enum": [
+                        "secure-enclave",
+                        "keystore",
+                        "keychain",
+                        "app-keychain",
+                        "tpm",
+                        "dpapi",
+                        "secret-service",
+                        "none"
+                      ]
+                    },
+                    "alg": {
+                      "type": "string",
+                      "enum": [
+                        "ed25519",
+                        "p256"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "program",
+                    "held"
+                  ]
+                }
               }
             },
             "required": [

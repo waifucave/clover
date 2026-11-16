@@ -103,6 +103,9 @@ export const DeviceView = z.object({
   lastSeenAt: Timestamp.optional(),
   /** How its app's answer key is held, for a device that may answer cards; absent for one that can't. */
   answers: z.object({ held: AnswerKeyHolder, alg: AnswerKeyAlg.optional() }).optional(),
+  /** A desktop's answer keys per program (spec revision 19, ruling C: MOSS, MOSS Code and the host each hold their own);
+   *  absent from an engine that keeps one key per device. */
+  answersBy: z.array(z.object({ program: z.enum(["moss", "code", "host"]), held: AnswerKeyHolder, alg: AnswerKeyAlg.optional() })).max(3).optional(),
 });
 export type DeviceView = z.infer<typeof DeviceView>;
 

@@ -1,0 +1,15 @@
+{
+  "type": "bots_moved",
+  "ts": 1781270000000,
+  "journal": {
+    "move": 1,
+    "at": 1781270000000,
+    "bots": [
+      {
+        "outcome": "moved",
+        "id": "alpha",
+        "plugin": "alpha"
+      }
+    ]
+  }
+}

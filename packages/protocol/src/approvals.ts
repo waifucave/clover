@@ -258,8 +258,11 @@ export const SignedCardAnswer = z.object({
   children: z.array(OkCheckboxId).max(MAX_CHILD_PLUGINS + 1).optional(),
   device: DeviceId,
   at: Timestamp,
-  /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
+  /** Ed25519 over `cardAnswerSigningInput(...)`, base64; with `program`, over `programCardAnswerSigningInput(...)`
+   *  (surfaces.ts) with that program's key (spec revision 19, ruling C). */
   signature: utf16(256, 1),
+  /** The desktop program whose key signed it (`moss`, `code`, `host`); absent: the device's single answer key. */
+  program: z.enum(["moss", "code", "host"]).optional(),
 });
 export type SignedCardAnswer = z.infer<typeof SignedCardAnswer>;
 

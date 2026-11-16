@@ -1,0 +1,14 @@
+{
+  "type": "activity_changed",
+  "ts": 1781270000000,
+  "activity": {
+    "subject": {
+      "kind": "bots",
+      "id": "alpha"
+    },
+    "state": "working",
+    "name": "Alpha",
+    "tool": "Bash",
+    "since": 1781270000000
+  }
+}

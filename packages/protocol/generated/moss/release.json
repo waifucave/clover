@@ -1,0 +1,322 @@
+{
+  "area": "release",
+  "owner": "RL",
+  "methods": {
+    "release.status": {
+      "doc": "The engine's release, the apps recorded under the home and whether a newer engine waits to come in (§3.1).",
+      "owner": "RL",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "object",
+            "properties": {
+              "release": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+              },
+              "build": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "release",
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "apps": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "record": {
+                  "type": "number",
+                  "const": 1
+                },
+                "program": {
+                  "type": "string",
+                  "enum": [
+                    "moss",
+                    "code",
+                    "host"
+                  ]
+                },
+                "bundlePath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "release": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                },
+                "build": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "carries": {
+                  "type": "object",
+                  "properties": {
+                    "engine": {
+                      "type": "boolean"
+                    },
+                    "host": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "engine",
+                    "host"
+                  ],
+                  "additionalProperties": false
+                },
+                "seenAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "record",
+                "program",
+                "bundlePath",
+                "release",
+                "carries",
+                "seenAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "current",
+              "waiting",
+              "switching"
+            ]
+          },
+          "incoming": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+          }
+        },
+        "required": [
+          "engine",
+          "apps",
+          "state"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "release.bring": {
+      "doc": "A newer app brings its engine: the engine waits for work to finish (or switches now) and swaps itself, its tree and the host.",
+      "owner": "RL",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+          },
+          "bundlePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "now": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "release",
+          "bundlePath"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "switching"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "release.record": {
+      "doc": "Records the calling app's bundle path and release under the home (§3.1 \"Where the copies are found\").",
+      "owner": "RL",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "program": {
+            "type": "string",
+            "enum": [
+              "moss",
+              "code",
+              "host"
+            ]
+          },
+          "bundlePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+          },
+          "build": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "carries": {
+            "type": "object",
+            "properties": {
+              "engine": {
+                "type": "boolean"
+              },
+              "host": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "engine",
+              "host"
+            ]
+          }
+        },
+        "required": [
+          "program",
+          "bundlePath",
+          "release",
+          "carries"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "release_changed": {
+      "doc": "The engine's release state: current, waiting for work to finish before a newer engine comes in, or switching.",
+      "owner": "RL",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "release_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "current",
+              "waiting",
+              "switching"
+            ]
+          },
+          "engine": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+          },
+          "incoming": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+          },
+          "waitingFor": {
+            "type": "object",
+            "properties": {
+              "turns": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "agents": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "turns",
+              "agents"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "state",
+          "engine"
+        ]
+      }
+    }
+  }
+}

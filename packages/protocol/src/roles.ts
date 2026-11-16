@@ -7,6 +7,8 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import { AnyPluginId, MOSS_PROTOCOL_MIN_VERSION, Caller, DeviceId, HostProcess, SessionId } from "./common";
+import { HelloRelease, Release } from "./release";
+import { MountList, Surface } from "./surfaces";
 
 export const MOSS_ROLES = [
   /** The MOSS app's main process (Electron). Its `moss` layer changes the core's settings directly (§5.5). */
@@ -67,6 +69,13 @@ export const MossHelloParams = z.object({
   device: DeviceId.optional(),
   /** Client features the daemon may rely on, by name; unknown names are ignored. */
   features: z.array(utf16(64, 1)).max(32).optional(),
+  /** `app` only (spec revision 19, G1): which surface this client is, MOSS's window (`moss`), MOSS Code's (`code`) or
+   *  the background host (`host`); absent is `code`, today's app. It picks the mount list and grants no method; the
+   *  daemon refuses it on another role and refuses a second live `host` (`MOSS_ERR.SURFACE_REFUSED`). */
+  surface: Surface.optional(),
+  /** The client's release (§3.1 "One release for everything"): an older one than the engine's is refused
+   *  (`MOSS_ERR.RELEASE_REFUSED`), a newer one gets the release door only. Absent: not judged. */
+  release: Release.optional(),
 });
 export type MossHelloParams = z.infer<typeof MossHelloParams>;
 
@@ -80,5 +89,11 @@ export const MossHelloResult = z.object({
   device: DeviceId,
   /** Daemon features, by name; a client asks before relying on one. */
   features: z.array(z.string()),
+  /** An `app` hello's surface, as the daemon took it (absent `surface` is `code`), and what it mounts there (§3.4). */
+  surface: Surface.optional(),
+  mount: MountList.optional(),
+  /** When the hello named a release: the engine's, and whether this connection is served (`same`) or has the release door
+   *  only (`ahead`). */
+  release: HelloRelease.optional(),
 });
 export type MossHelloResult = z.infer<typeof MossHelloResult>;

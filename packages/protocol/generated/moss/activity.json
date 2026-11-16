@@ -1,0 +1,617 @@
+{
+  "area": "activity",
+  "owner": "AF",
+  "methods": {
+    "activity.list": {
+      "doc": "The activity feed of one kind (code sessions or bots): states and names only, never words.",
+      "owner": "AF",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "remote"
+      ],
+      "capability": "activity.read.*",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sessions",
+              "bots"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "activity": {
+            "maxItems": 4096,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "subject": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "sessions"
+                        },
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9._:-]+$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "bots"
+                        },
+                        "id": {
+                          "type": "string",
+                          "maxLength": 81,
+                          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "listening",
+                    "thinking",
+                    "working",
+                    "asking",
+                    "stuck",
+                    "done",
+                    "asleep"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "tool": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_.-]+$"
+                },
+                "since": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "subject",
+                "state",
+                "since"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "activity"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "picture.list": {
+      "doc": "The live pictures tools are publishing now, of one kind, for one session or bot or all.",
+      "owner": "AF",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "picture.read.*",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sessions",
+              "bots"
+            ]
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pictures": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^pic_[A-Za-z0-9_-]{6,58}$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "sessions",
+                    "bots"
+                  ]
+                },
+                "session": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "bot": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "publisher": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "tool": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "jpeg",
+                    "png",
+                    "webp"
+                  ]
+                },
+                "width": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 3840
+                },
+                "height": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 2400
+                },
+                "screen": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "session",
+                "publisher",
+                "format",
+                "width",
+                "height",
+                "screen",
+                "startedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "pictures"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "picture.open": {
+      "doc": "Follows one live picture: its frames come to this connection, latest wins, until it ends or is closed.",
+      "owner": "AF",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^pic_[A-Za-z0-9_-]{6,58}$"
+          },
+          "maxFps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stream": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "stream"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "picture.close": {
+      "doc": "Stops following a live picture.",
+      "owner": "AF",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stream": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "stream"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "events": {
+    "activity_changed": {
+      "doc": "A code session's or a bot's new state; a plugin hears only the kinds it reads.",
+      "owner": "AF",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli",
+        "layer",
+        "remote"
+      ],
+      "capability": "activity.read.*",
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "activity_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "activity": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "sessions"
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9._:-]+$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "bots"
+                      },
+                      "id": {
+                        "type": "string",
+                        "maxLength": 81,
+                        "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  }
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "listening",
+                  "thinking",
+                  "working",
+                  "asking",
+                  "stuck",
+                  "done",
+                  "asleep"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "tool": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_.-]+$"
+              },
+              "since": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "subject",
+              "state",
+              "since"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "activity"
+        ]
+      }
+    },
+    "picture_changed": {
+      "doc": "A live picture started or changed size or format.",
+      "owner": "AF",
+      "scope": "core",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "picture.read.*",
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "picture_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "picture": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^pic_[A-Za-z0-9_-]{6,58}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "sessions",
+                  "bots"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "publisher": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "tool": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "jpeg",
+                  "png",
+                  "webp"
+                ]
+              },
+              "width": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 3840
+              },
+              "height": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 2400
+              },
+              "screen": {
+                "type": "boolean"
+              },
+              "startedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "session",
+              "publisher",
+              "format",
+              "width",
+              "height",
+              "screen",
+              "startedAt"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "picture"
+        ]
+      }
+    },
+    "picture_ended": {
+      "doc": "A live picture ended: its publisher closed it, its session ended, its plugin stopped, or a frame was too large.",
+      "owner": "AF",
+      "scope": "core",
+      "roles": [
+        "app",
+        "layer"
+      ],
+      "capability": "picture.read.*",
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "picture_ended"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^pic_[A-Za-z0-9_-]{6,58}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sessions",
+              "bots"
+            ]
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "why": {
+            "type": "string",
+            "enum": [
+              "publisher",
+              "session",
+              "plugin-stopped",
+              "too-large"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "id",
+          "kind",
+          "session",
+          "why"
+        ]
+      }
+    }
+  }
+}
