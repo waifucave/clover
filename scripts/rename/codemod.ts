@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
-// The rename codemod. Two rule sets, chosen with `--rules`:
-//   * `clover` (the default) — Clover C0, Winter→Clover (`clover.ts`; spec §2, plan §7).
+// The rename codemod. Three rule sets, chosen with `--rules`:
+//   * `moss` (the default) — Clover→MOSS (`moss.ts`; the rename of 2026-11-16, stage 1).
+//   * `clover` — Clover C0, Winter→Clover (`clover.ts`; spec §2, plan §7), kept as the record of that rename.
 //   * `winter` — Winter Phase 9b, Norma→Winter (`allowlist.ts`, P9b-1), kept as the record of that
 //     rename and for its tests.
 // The ONLY tool that performs a mechanical mass rename; semantic work comes after it.
 //
-//   bun scripts/rename/codemod.ts [--rules clover|winter] [--root <repo>] [--apply]
+//   bun scripts/rename/codemod.ts [--rules moss|clover|winter] [--root <repo>] [--apply]
 //                                  [--content-only|--paths-only] [--report <md>] [--json <json>]
 //
 // Universe: `git ls-files -z` of the root (tracked files only; symlinks skipped). Binaries (by
@@ -37,6 +38,17 @@ import {
   type AllowlistEntry,
 } from "./allowlist";
 import { CLOVER_ALLOWLIST, CLOVER_EXEMPT_PATHS, CLOVER_EXPLICIT_TOKEN_MAP, CLOVER_KEEP_PATHS, DOUBLE_CLOVER } from "./clover";
+import {
+  DOUBLE_MOSS,
+  MOSS_ALLOWLIST,
+  MOSS_COMPONENT_MAP,
+  MOSS_EXEMPT_PATHS,
+  MOSS_EXPLICIT_TOKEN_MAP,
+  MOSS_KEEP_PATHS,
+  MOSS_REGEX_MAP,
+  mossGeneric,
+  type RegexRule,
+} from "./moss";
 
 // ---------------------------------------------------------------------------------------------
 // Rules
@@ -44,7 +56,7 @@ import { CLOVER_ALLOWLIST, CLOVER_EXEMPT_PATHS, CLOVER_EXPLICIT_TOKEN_MAP, CLOVE
 
 /** One rename: its generic rule, its data, and how its path pass behaves. */
 export interface RenameRules {
-  id: "winter" | "clover";
+  id: "winter" | "clover" | "moss";
   /** The old name, as the report and the residue scan spell it. */
   from: string;
   to: string;
@@ -64,6 +76,14 @@ export interface RenameRules {
   doubleName: RegExp;
   /** Phase 9b's refusal while the top-level `norma/` scaffold is tracked. */
   checkScaffold: boolean;
+  /** MOSS: how one generic match is replaced when the new name depends on its shape (an identifier part or a word
+   *  of prose). Receives the match, its offset and the whole text; absent, `caseMap` decides. */
+  replaceGeneric?: (match: string, index: number, text: string) => string;
+  /** MOSS: ordered regex renames, applied after the explicit map and before the generic pass. */
+  regexMap?: readonly RegexRule[];
+  /** MOSS: whole path components the generic pass would name wrongly (`clover.rb.tmpl` → `moss-code.rb.tmpl`): a regex over the
+   *  component's full repo path and the component it becomes. */
+  componentMap?: readonly (readonly [RegExp, string])[];
 }
 
 /** Winter Phase 9b: Norma→Winter. */
@@ -104,6 +124,27 @@ export const CLOVER_RULES: RenameRules = {
 
 const PH_OPEN = "";
 const PH_CLOSE = "";
+
+/** MOSS: Clover→MOSS (`moss.ts`). */
+export const MOSS_RULES: RenameRules = {
+  id: "moss",
+  from: "clover",
+  to: "moss",
+  generic: /(clover|Clover|CLOVER)/g,
+  caseMap: { clover: "moss", Clover: "Moss", CLOVER: "MOSS" },
+  survivors: /clover/gi,
+  isTrap: () => false,
+  allowlist: MOSS_ALLOWLIST,
+  explicit: MOSS_EXPLICIT_TOKEN_MAP,
+  exempt: MOSS_EXEMPT_PATHS,
+  exemptPathsMove: false,
+  keepPaths: MOSS_KEEP_PATHS,
+  doubleName: DOUBLE_MOSS,
+  checkScaffold: false,
+  replaceGeneric: mossGeneric,
+  regexMap: MOSS_REGEX_MAP,
+  componentMap: MOSS_COMPONENT_MAP,
+};
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -214,9 +255,18 @@ export function rewriteText(text: string, relPath: string, rules: RenameRules = 
         return to;
       });
     }
+    // 2b. regex renames (MOSS: the app's own names, the bundle ids), in order
+    for (const rule of rules.regexMap ?? []) {
+      if (rule.files && !rule.files.some((g) => globToRegex(g).test(relPath))) continue;
+      out = out.replace(rule.regex, (...args: unknown[]) => {
+        explicit++;
+        return typeof rule.to === "string" ? rule.to : rule.to(...(args as string[]));
+      });
+    }
     // 3. generic
-    out = out.replace(new RegExp(rules.generic.source, "g"), (m) => {
+    out = out.replace(new RegExp(rules.generic.source, "g"), (m: string, ...rest: unknown[]) => {
       generic++;
+      if (rules.replaceGeneric) return rules.replaceGeneric(m, rest[rest.length - 2] as number, rest[rest.length - 1] as string);
       return rules.caseMap[m] ?? m;
     });
     // 4. restore
@@ -262,12 +312,18 @@ export function rewriteText(text: string, relPath: string, rules: RenameRules = 
 }
 
 /** One path component by the generic rule (explicit-map tokens are never path components). */
-export function renameComponent(component: string, rules: RenameRules = WINTER_RULES): string {
-  return component.replace(new RegExp(rules.generic.source, "g"), (m) => rules.caseMap[m] ?? m);
+export function renameComponent(component: string, rules: RenameRules = WINTER_RULES, fullPath?: string): string {
+  if (fullPath !== undefined) {
+    for (const [re, to] of rules.componentMap ?? []) if (re.test(fullPath)) return to;
+  }
+  return component.replace(new RegExp(rules.generic.source, "g"), (m, ...rest: unknown[]) =>
+    rules.replaceGeneric ? rules.replaceGeneric(m, rest[rest.length - 2] as number, rest[rest.length - 1] as string) : (rules.caseMap[m] ?? m),
+  );
 }
 
 export function renamePath(relPath: string, rules: RenameRules = WINTER_RULES): string {
-  return relPath.split("/").map((c) => renameComponent(c, rules)).join("/");
+  const parts = relPath.split("/");
+  return parts.map((c, i) => renameComponent(c, rules, parts.slice(0, i + 1).join("/"))).join("/");
 }
 
 /** A tracked path the path pass leaves where it is: exempt under rules whose exempt paths stay put,
@@ -300,19 +356,19 @@ export function planMoves(paths: string[], rules: RenameRules = WINTER_RULES): {
     const candidates = [...dirs]
       .filter((d) => {
         const last = d.slice(d.lastIndexOf("/") + 1);
-        return renameComponent(last, rules) !== last;
+        return renameComponent(last, rules, d) !== last;
       })
       .sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
     if (candidates.length === 0) break;
     const from = candidates[0]!;
-    const to = `${from.slice(0, from.lastIndexOf("/") + 1)}${renameComponent(from.slice(from.lastIndexOf("/") + 1), rules)}`;
+    const to = `${from.slice(0, from.lastIndexOf("/") + 1)}${renameComponent(from.slice(from.lastIndexOf("/") + 1), rules, from)}`;
     moves.push({ from, to, kind: "dir" });
     current = current.map((p) => (p === from || p.startsWith(from + "/") ? to + p.slice(from.length) : p));
   }
   // files
   for (const p of current.sort()) {
     const base = p.slice(p.lastIndexOf("/") + 1);
-    const nb = renameComponent(base, rules);
+    const nb = renameComponent(base, rules, p);
     if (nb !== base) moves.push({ from: p, to: `${p.slice(0, p.lastIndexOf("/") + 1)}${nb}`, kind: "file" });
   }
   return moves;
@@ -364,9 +420,9 @@ if (import.meta.main) {
   const reportPath = opt("--report");
   const jsonPath = opt("--json");
   if (contentOnly && pathsOnly) throw new Error("--content-only and --paths-only are exclusive");
-  const rulesName = opt("--rules") ?? "clover";
-  if (rulesName !== "clover" && rulesName !== "winter") throw new Error(`--rules must be clover or winter, not ${rulesName}`);
-  const rules = rulesName === "clover" ? CLOVER_RULES : WINTER_RULES;
+  const rulesName = opt("--rules") ?? "moss";
+  if (rulesName !== "moss" && rulesName !== "clover" && rulesName !== "winter") throw new Error(`--rules must be moss, clover or winter, not ${rulesName}`);
+  const rules = rulesName === "moss" ? MOSS_RULES : rulesName === "clover" ? CLOVER_RULES : WINTER_RULES;
 
   const files = trackedFiles(root);
   const stats: FileStat[] = [];
