@@ -433,12 +433,12 @@ jobs:
           test "$(readlink -f /usr/bin/moss)" = /opt/moss-code/resources/daemon/moss-core
           MOSS_HOME="$(mktemp -d)" moss --version
           test -x /opt/moss-code/resources/daemon/moss-link
-          test -f /etc/apparmor.d/moss
+          test -f /etc/apparmor.d/moss-code
           test "$(cat /opt/moss-code/resources/daemon/install.json)" = '{"kind":"package"}'
           sudo apt-get remove -y -qq "$name"
           test ! -e /opt/moss-code/resources/daemon/install.json
           test ! -e /usr/bin/moss
-          test ! -e /etc/apparmor.d/moss
+          test ! -e /etc/apparmor.d/moss-code
 
   # The macOS and Windows installers (plan §4 M-M2): the release build itself, unsigned (scripts/release/build.ts), so
   # each PR that touches them shows they still build: the dmg and its update zip on Apple silicon, the NSIS installer
