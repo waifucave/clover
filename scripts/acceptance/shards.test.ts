@@ -9,12 +9,12 @@ import { UI_STEPS } from "./ui-steps";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
-import { mergeShards, planShards, serialUnits, slowest, unitOf, units, type TimedRow } from "./shards";
+import { MAIN_PARTS, expandUnitIds, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
 
 const row = (name: string, status: TimedRow["status"] = "PASS", seconds = 1): TimedRow => ({ n: stepNumber(FULL_STEPS, name), name, status, detail: status === "PASS" ? "ok" : "red", seconds });
 
 describe("the split", () => {
-  test("every row of the table is in exactly one unit; main has the rest", () => {
+  test("every row of the table is in exactly one unit; the chain has the rest", () => {
     const all = units();
     const named = all.flatMap((u) => u.rows);
     expect(new Set(named).size).toBe(named.length);
@@ -23,15 +23,24 @@ describe("the split", () => {
   });
 
   test("the rows that share a home and an order stay together: main's chain, the reopen steps in order, the examples in order", () => {
-    const main = units().find((u) => u.id === "main")!.rows;
-    // The first start, the key, the turns, the restart and every window step (the pill counts the composer's replies;
-    // the reopened app presses the plugin's card) are main's, in the table's order.
-    for (const s of [FULL_STEPS[0], FULL_STEPS[1], FULL_STEPS[2], FULL_STEPS[3], FULL_STEPS[4], FULL_STEPS[5], FULL_STEPS[6], ...UI_STEPS.map((u) => `window: ${u}`)]) expect(main).toContain(s);
+    const main = units().find((u) => u.id === "chain")!.rows;
+    // The first start, the key, the turns and the restart are the chain's, in the table's order; the window's steps are not.
+    for (const s of [FULL_STEPS[0], FULL_STEPS[1], FULL_STEPS[2], FULL_STEPS[3], FULL_STEPS[4], FULL_STEPS[5], FULL_STEPS[6]]) expect(main).toContain(s);
+    for (const u of UI_STEPS) expect(main).not.toContain(`window: ${u}`);
     expect(main).toEqual(FULL_STEPS.filter((s) => main.includes(s)));
     expect(units().find((u) => u.id === "reopen")!.rows).toEqual(REOPEN_STEPS.map((s) => s.name));
     // The reopen shard installs step 4's plugin first (its mid-tool-call step calls the Echo tool).
     expect(readFileSync(join(import.meta.dir, "run.ts"), "utf8")).toContain("try { await installEcho(c); }");
     expect(units().find((u) => u.id === "examples")!.rows).toEqual([EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP]);
+  });
+
+  test("`main` names the chain and the window's three units; the window's steps are dealt out once each, in order", () => {
+    expect(MAIN_PARTS).toEqual(["chain", "window-1", "window-2", "window-3"]);
+    expect(expandUnitIds(["main"])).toEqual(["chain", "window-1", "window-2", "window-3"]);
+    expect(expandUnitIds(["cards", "main", "chain"])).toEqual(["cards", "chain", "window-1", "window-2", "window-3"]);
+    expect(MAIN_PARTS.flatMap((id) => windowIndexes(id) ?? [])).toEqual(UI_STEPS.map((_, i) => i));
+    expect(windowIndexes("chain")).toBeUndefined();
+    for (const id of ["window-1", "window-2", "window-3"] as const) expect(units().find((u) => u.id === id)!.rows).toEqual(windowIndexes(id)!.map((i) => `window: ${UI_STEPS[i]}`));
   });
 
   test("the rows that measure run alone after the parallel phase: the stage (card timing, stream cost), the tab flash, the cold start, idle", () => {
@@ -40,17 +49,17 @@ describe("the split", () => {
     for (const n of [1, 2, 3, 4]) expect(planShards(n).flat()).not.toEqual(expect.arrayContaining(["stage"]));
   });
 
-  test("N shards: each parallel unit in one shard, main's chain first in its own, the load spread", () => {
-    expect(planShards(1)).toEqual([["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "plugin-app", "browser", "models"]]);
+  test("N shards: each parallel unit in one shard, the chain first in its own, the load spread", () => {
+    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "plugin-app", "browser", "models"]]);
     for (const n of [2, 3, 4, 8]) {
       const plan = planShards(n);
       expect(plan.length).toBeLessThanOrEqual(n);
-      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "examples", "main", "models", "plugin-app", "reopen", "workshop", "workshop-points"]);
-      // Main, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
-      expect(plan[0]).toEqual(["main"]);
+      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "plugin-app", "reopen", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
+      // The chain, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
+      expect(plan[0]).toEqual(["chain"]);
     }
-    // With 2 shards main runs alone and the rest share the other (measured: main ~270-290 s, the rest ~230 s).
-    expect(planShards(2)).toEqual([["main"], ["examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "plugin-app", "browser", "models"]]);
+    // With 2 shards the chain runs alone and the rest share the other.
+    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "plugin-app", "browser", "models"]]);
     expect(() => planShards(0)).toThrow();
   });
 
@@ -76,7 +85,7 @@ describe("the split", () => {
 describe("the merge", () => {
   test("one table in row order, each row with its shard and seconds, whatever order the shards finished in", () => {
     const s2 = { shard: "s2", rows: [row(WORKSHOP_STEP, "PASS", 140), row(EXAMPLE_NOTES_STEP, "PASS", 60)] };
-    const s1 = { shard: "s1", rows: FULL_STEPS.filter((s) => unitOf(s) === "main").map((s) => row(s)) };
+    const s1 = { shard: "s1", rows: FULL_STEPS.filter((s) => unitOf(s) === "chain").map((s) => row(s)) };
     const alone = { shard: "serial", rows: [row(IDLE_STEP, "PASS", 30)] };
     const merged = mergeShards([s2, alone, s1]);
     expect(merged.map((r) => r.n)).toEqual(FULL_STEPS.map((_, i) => i + 1));

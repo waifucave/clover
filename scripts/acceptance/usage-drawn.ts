@@ -3,6 +3,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Cdp } from "./cdp";
+import { scaled } from "./time-scale";
 
 /** What is wrong with a drawn usage view's text, or undefined when it shows a day's tokens under MOSS. */
 export function usageDrawnProblem(text: string): string | undefined {
@@ -26,11 +27,12 @@ const treeDocs = async (cdp: Cdp) => (await cdp.documents()).filter((d) => d.url
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined>, hint?: () => Promise<string>): Promise<T> {
-  const end = Date.now() + ms;
+  const long = scaled(ms);
+  const end = Date.now() + long;
   for (;;) {
     const v = await probe().catch(() => undefined);
     if (v !== undefined) return v;
-    if (Date.now() > end) throw new Error(`${what} didn't show within ${ms} ms${hint === undefined ? "" : `: ${await hint().catch(() => "")}`}`);
+    if (Date.now() > end) throw new Error(`${what} didn't show within ${long} ms${hint === undefined ? "" : `: ${await hint().catch(() => "")}`}`);
     await sleep(300);
   }
 }

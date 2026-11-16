@@ -1076,8 +1076,9 @@ jobs:
           fi
 
   # The acceptance run (scripts/acceptance/run.ts): the real app driven from source, headless, over the fake model provider,
-  # on a macOS runner, one job per unit (scripts/acceptance/shards.ts: `main` is the chain that shares one home, the others
-  # are rows that need only a keyed daemon and an app). It is what a lane's integration branch has to pass besides the
+  # on a macOS runner, one job per unit (scripts/acceptance/shards.ts: `chain` is what shares step 4's plugin and the first
+  # daemon's state, `window-1` to `window-3` the window's steps, each from a fresh home; the others are rows that need only a
+  # keyed daemon and an app; `--units main` locally runs the chain and the three windows in one home). It is what a lane's integration branch has to pass besides the
   # suites, so it runs on a push to an integration branch and on a manual run, never on a pull request or in the merge
   # queue (the `gate` does not wait for it). scripts/ci/acceptance-unit.ts runs a unit and fails it on any row that is not
   # PASS, on any "shown while headless" line and on a nonzero "sealed presses refused as covered or unchecked"; the table,
@@ -1092,12 +1093,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        unit: [main, workshop, plugin-app, browser]
+        unit: [chain, window-1, window-2, window-3, workshop, plugin-app, browser]
     env:
       MOSS_PINNED_BUN: "0"
       # Row 37 counts a hidden page's 100 ms ticks over 3 s (30 on a free machine, about 3 when throttled; the bar is 20): a shared runner
       # can starve the page, so the bar here is 10, still well above a throttled page.
       MOSS_ACCEPT_TICK_MIN: "10"
+      # Every "not within N s" wait of the run takes three times as long (scripts/acceptance/time-scale.ts; a Mac keeps 1): a
+      # shared runner is several times slower than the machine the waits were set on, and its speed moves from run to run.
+      MOSS_ACCEPT_TIME_SCALE: "3"
+      # The rows whose bar is a measured CPU share or message rate say "MEASURED ON THE MAC ONLY" instead (scripts/acceptance/measured.ts):
+      # a runner's load decides those numbers, so the Mac's merge check measures them.
+      MOSS_ACCEPT_MEASURE: "mac-only"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

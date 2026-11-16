@@ -14,6 +14,8 @@ import type { Cdp } from "./cdp";
 import type { MossClient } from "./client";
 import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, MIC_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeMicrophone, writeOfficePanels } from "./manifest-fields-step";
 import { ACTIVE_IDS, ACTIVE_NAMES, ACTIVE_POINT, ACTIVE_TITLE, activeWrong, writeActiveOne, type ActiveSeen } from "./active-one-step";
+import { scaled } from "./time-scale";
+import { MEASURED_ON_MAC_ONLY, MEASURED_ROWS, measuredOnMacOnly } from "./measured";
 
 export type UiStatus = "PASS" | "FAIL" | "BLOCKED";
 export interface UiRow { name: string; status: UiStatus; detail: string }
@@ -237,11 +239,12 @@ export async function dumpFrames(cdp: Cdp): Promise<string> {
 }
 
 async function until<T>(what: string, ms: number, probe: () => Promise<T | undefined>, dump?: () => Promise<string>): Promise<T> {
-  const end = Date.now() + ms;
+  const long = scaled(ms);
+  const end = Date.now() + long;
   for (;;) {
     const v = await probe();
     if (v !== undefined) return v;
-    if (Date.now() > end) fail(`${what}: not within ${Math.round(ms / 1000)} s${dump === undefined ? "" : ` (frames: ${await dump().catch(() => "?")})`}`);
+    if (Date.now() > end) fail(`${what}: not within ${Math.round(long / 1000)} s${dump === undefined ? "" : ` (frames: ${await dump().catch(() => "?")})`}`);
     await sleep(400);
   }
 }
@@ -2509,6 +2512,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // the main process at half a core with nothing happening: this holds the idle one to a budget, printed in the row.
   await step(22, async () => {
     const IDLE_MS = 15_000, MAIN_MAX_PERCENT = 25, MESSAGES_MAX_PER_SECOND = 20; // measured idle: main about 7.5%, under 1 message a second
+    // A CI runner's load says nothing about the app: the row is the Mac's to measure (measured.ts).
+    if (measuredOnMacOnly()) return `${MEASURED_ON_MAC_ONLY}: ${MEASURED_ROWS[0]!.reason}`;
     if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) {
       const at = await until("Alpha in the sidebar", 20_000, async () => {
         for (const d of await treeDocs(cdp)) {

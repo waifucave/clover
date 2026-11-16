@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { callTurn, SIDEBAR_ITEMS, sleep, until, type ExampleCtx } from "./example-steps";
 import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
+import { scaled } from "./time-scale";
 
 export const BROWSER_STEP = "the bot's Browser tool opens a fixture page in its own tab (drawn offscreen), reads its text and elements, takes a picture, navigates it (one tab), is refused a loopback address, and its first click on a site raises one card (Always allow kept for that bot and site), its next click there raises none, and a click on another site asks again; the bundled panel's layer lists that tab, shows it, hears the change as an event and hides it; the diff panel's layer reads a coding session's changed and new file and the column's layer its outputs, context and connectors; and the usage plugin's layer reads the bot's counted tokens, which its Settings section and island tab draw; F5: a folder plugin's own Browser tool drives the bot's tab, a folder live view lists, shows and hides it with no press and navigates only on a real press, a folder background part is refused the browser, and a folder terminal opens and speaks, its own write refused";
 
@@ -149,14 +150,14 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       const id = listed.tabs[0]!.id;
       const shown = (await panel.request("browser.show", { id, view: "browser", viewport: { width: 800, height: 600 } })) as { tab: { place: string } };
       if (shown.tab.place !== "shown") fail(`browser.show left the tab ${shown.tab.place}`);
-      const deadline = Date.now() + 10_000;
+      const deadline = Date.now() + scaled(10_000);
       while (!panel.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
       if (!panel.heard("tab_changed").some((e) => e.tab?.id === id && e.tab.place === "shown")) fail("the panel heard no tab_changed for the tab it showed");
       // `browser.onCdpEvent` (2.32): the panel's component watches the tab's page events through the core's layer route, and a
       // navigation the person makes in the panel reaches it as Page.* events; only the page's own domain comes through.
       const watch = (await panel.request("plugin.layer.watch", { call: "browser.onCdpEvent", args: [id, null] })) as { watch: string };
       await panel.request("browser.navigate", { id, url: fixture.otherUrl });
-      const cdpDeadline = Date.now() + 15_000;
+      const cdpDeadline = Date.now() + scaled(15_000);
       const cdpHeard = () => panel.heard("plugin_api_event").filter((e) => e.watch === watch.watch && typeof e.value?.method === "string");
       while (!cdpHeard().some((e) => /^Page\.(frameNavigated|loadEventFired|domContentEventFired)$/.test(e.value!.method!)) && Date.now() < cdpDeadline) await new Promise((r) => setTimeout(r, 100));
       const methods = [...new Set(cdpHeard().map((e) => e.value!.method!))];
@@ -177,7 +178,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   else {
     const usage = await openLayer("moss/usage");
     try {
-      const deadline = Date.now() + 20_000;
+      const deadline = Date.now() + scaled(20_000);
       let alpha: { key: string; inputTokens: number; outputTokens: number } | undefined;
       while (alpha === undefined && Date.now() < deadline) {
         const r = (await usage.request("usage.summary", { from: Date.now() - 24 * 3_600_000, to: Date.now() + 3_600_000, groupBy: "bot" })) as { groups: { key: string; inputTokens: number; outputTokens: number }[] };
@@ -221,7 +222,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
           const open = (await term.request("terminal.open", { computer, cwd: root, session, cols: 80, rows: 24 })) as { terminalId: string };
           await term.request("terminal.resize", { terminalId: open.terminalId, cols: 100, rows: 30 });
           await term.request("terminal.write", { terminalId: open.terminalId, data: "echo moss-panel-$((20+22))\r" });
-          const until2 = Date.now() + 15_000;
+          const until2 = Date.now() + scaled(15_000);
           const out = () => term.heard("terminal_output").map((e) => (e as unknown as { terminalId: string; data: string })).filter((e) => e.terminalId === open.terminalId).map((e) => e.data).join("");
           while (!/moss-panel-42/.test(out()) && Date.now() < until2) await new Promise((r) => setTimeout(r, 100));
           if (!/moss-panel-42/.test(out())) fail(`the terminal panel's shell never answered the typed line (heard ${JSON.stringify(out().slice(-200))})`);

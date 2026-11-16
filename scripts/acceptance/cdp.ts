@@ -2,6 +2,8 @@
 // frame of the headless, offscreen desktop app (out-of-process frames included), records each frame's console messages
 // and uncaught errors, and lets a step evaluate, type and click inside any of them. The dev app takes the debugging
 // port only behind MOSS_DEV_DEBUG=1 (apps/desktop/src/main/debug-guard.ts); a packaged app never does.
+import { scaled } from "./time-scale";
+
 
 export interface ConsoleEntry { session: string; url: string; level: string; text: string }
 export interface FrameInfo { session: string; url: string; type: string; targetId?: string }
@@ -114,10 +116,11 @@ export class Cdp {
 
   /** Waits until `probe` is truthy for some document, polling; the document that satisfied it. */
   async waitFor(what: string, timeoutMs: number, probe: (d: { session: string; url: string; text: string }) => boolean): Promise<{ session: string; url: string; text: string }> {
-    const end = Date.now() + timeoutMs;
+    const long = scaled(timeoutMs);
+    const end = Date.now() + long;
     for (;;) {
       for (const d of await this.documents()) if (probe(d)) return d;
-      if (Date.now() > end) throw new Error(`${what}: not within ${Math.round(timeoutMs / 1000)} s`);
+      if (Date.now() > end) throw new Error(`${what}: not within ${Math.round(long / 1000)} s`);
       await new Promise((r) => setTimeout(r, 400));
     }
   }

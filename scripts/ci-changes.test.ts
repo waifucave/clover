@@ -287,10 +287,10 @@ describe("CI for the lanes", () => {
     expect(ci.jobs.gate!.if).toBe("always()");
   });
 
-  test("the acceptance run is one macOS job per unit of the four a lane's check runs, and they exist in shards.ts", () => {
+  test("the acceptance run is one macOS job per unit of the seven a lane's check runs, and they exist in shards.ts", () => {
     const acceptance = ci.jobs.acceptance!;
     expect(acceptance["runs-on"]).toBe("macos-latest");
-    expect(acceptance.strategy?.matrix?.unit).toEqual(["main", "workshop", "plugin-app", "browser"]);
+    expect(acceptance.strategy?.matrix?.unit).toEqual(["chain", "window-1", "window-2", "window-3", "workshop", "plugin-app", "browser"]);
     const known = units().map((u) => u.id as string);
     for (const u of acceptance.strategy!.matrix!.unit!) expect(known).toContain(u);
   });

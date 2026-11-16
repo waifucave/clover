@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { units } from "../acceptance/shards";
-import { judge, parseRows } from "./acceptance-unit";
+import { MEASURED_ON_MAC_ONLY } from "../acceptance/measured";
+import { judge, parseRows, retryNote } from "./acceptance-unit";
 
 const TABLE = `
 MOSS acceptance (source)
@@ -24,7 +25,7 @@ describe("the acceptance unit's verdict", () => {
   });
 
   test("a clean run passes", () => {
-    expect(judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [] })).toEqual({ ok: true, problems: [], rows: 2, passed: 2 });
+    expect(judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [] })).toEqual({ ok: true, problems: [], rows: 2, passed: 2, macOnly: [], failed: [] });
   });
 
   test("a row that is not PASS fails it, whatever the exit code says", () => {
@@ -58,9 +59,26 @@ describe("the acceptance unit's verdict", () => {
     expect(v.problems).toEqual([`a window was shown while headless (app.log): ${line}`]);
   });
 
-  test("the four units a lane's check runs own their rows between them, once each, 65 of them", () => {
-    const four = units().filter((u) => ["main", "workshop", "plugin-app", "browser"].includes(u.id));
-    const names = four.flatMap((u) => u.rows);
+  test("a row left to the Mac is listed, not counted as a pass, and only the rows measured.ts names may be", () => {
+    const idle = TABLE.replace("| 2 | a model key           | PASS    |      1.0 s | -      | added", `| 2 | window: an idle app with Alpha's tab open stays cheap | PASS | 1.0 s | - | ${MEASURED_ON_MAC_ONLY}: a runner's load moves it`);
+    const v = judge({ exit: 0, table: idle, progress: OK_PROGRESS, logs: [] });
+    expect(v.ok).toBe(true);
+    expect({ rows: v.rows, passed: v.passed, macOnly: v.macOnly.map((m) => m.n) }).toEqual({ rows: 2, passed: 1, macOnly: [2] });
+    const other = TABLE.replace("| added", `| ${MEASURED_ON_MAC_ONLY}: no reason`);
+    expect(judge({ exit: 0, table: other, progress: OK_PROGRESS, logs: [] }).problems[0]).toContain("is not one of the rows allowed to");
+  });
+
+  test("a retry says which rows the first attempt failed on, and a second failure says so", () => {
+    const red = judge({ exit: 1, table: TABLE.replace("| 2 | a model key           | PASS   ", "| 2 | a model key           | FAIL   "), progress: OK_PROGRESS, logs: [] });
+    const green = judge({ exit: 0, table: TABLE, progress: OK_PROGRESS, logs: [] });
+    expect(retryNote(red, green)).toStartWith("### passed on retry: row 2 a model key");
+    expect(retryNote(red, red)).toStartWith("### failed twice");
+  });
+
+  test("the units a lane's check runs own their rows between them, once each, 65 of them; `main` is the chain and the window's three", () => {
+    const seven = units().filter((u) => ["chain", "window-1", "window-2", "window-3", "workshop", "plugin-app", "browser"].includes(u.id));
+    expect(seven.length).toBe(7);
+    const names = seven.flatMap((u) => u.rows);
     expect(new Set(names).size).toBe(names.length);
     expect(names.length).toBe(65);
   });
