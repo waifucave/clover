@@ -18,6 +18,22 @@ window.addEventListener("pointerdown", (event) => {
   ipcRenderer.send("clover:press-seen");
 }, { capture: true });
 
+// A held key binding's down and repeats (plugin-keys.ts `hold`): main doesn't handle them in `before-input-event` (Chromium
+// would then drop the key's release), so in EVERY frame the key-down that main says is the held binding's is kept from the
+// page here: capture phase on the window, before any page listener, so it never types or reaches a page's handler. Asked
+// only for a chord with ctrl, meta or alt or a function key, and, after one was kept, for every key-down until main says
+// no (a modifier let go first leaves the key repeating alone). A page's own made-up events are never asked about.
+let heldHere = false;
+const keepHeld = (event: KeyboardEvent): void => {
+  if (!event.isTrusted || !(heldHere || event.ctrlKey || event.metaKey || event.altKey || /^F([1-9]|1[0-2])$/.test(event.key))) return;
+  heldHere = ipcRenderer.sendSync("clover:held-key", { key: event.key, code: event.code }) === true;
+  if (!heldHere) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+};
+window.addEventListener("keydown", keepHeld, { capture: true });
+window.addEventListener("keypress", keepHeld, { capture: true });
+
 if (isRoot || isLayer) {
   const activated = (): boolean => (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive === true;
   const token = isLayer ? new URLSearchParams(location.search).get("mount") ?? undefined : undefined;

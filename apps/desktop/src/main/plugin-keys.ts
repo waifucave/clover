@@ -5,6 +5,9 @@
 //
 // A held binding (`commands[].hold`) asks for the key's release too (`hold`, below): per window, the chord's down (never a
 // repeat) starts it, and the first up of its key or of one of its modifiers ends it, once; another key's up is not it.
+// Its down and repeats are NOT handled in `before-input-event`: Chromium drops every key-up after a key-down the browser
+// handled (until the next key-down), so a binding consumed there could never hear its release. They go on to the focused
+// frame, where the app's preload keeps them from the page (`swallows`: a synchronous ask from its capture-phase keydown).
 import { canonicalChord, chordOfPress, type HoldPhase, type KeyPress, type KeyPlatform } from "@waifucave/clover-plugin-sdk";
 import { liveCommands } from "./ui/composer-calls";
 
@@ -25,8 +28,8 @@ export interface BoundKey {
   chord: string;
 }
 
-/** What a held binding's key event comes to: deliver `phase` to its command (none: only consumed), and whether the event
- *  is consumed (kept from the page). `released`: an up the user made (the window losing the focus ends a hold with none). */
+/** What a held binding's key event comes to: deliver `phase` to its command (none: nothing to deliver), and whether main
+ *  consumes the event (only its key's up: a down or repeat goes on, for the preload to keep from the page). `released`: an up the user made (the window losing the focus ends a hold with none). */
 export interface HoldStep {
   binding: BoundKey;
   phase?: HoldPhase;
@@ -94,16 +97,16 @@ export class PluginKeys {
   /** A key event in window `windowId`, for the held bindings, before anything else reads it: undefined when it is none of
    *  theirs (the press goes on as any other). `mayRun` is `keysMayRun` for the focus now: a hold starts only where a
    *  command's key may run, and once started its release is always heard.
-   *  * The chord's down (not a repeat) starts the hold: `down`, consumed.
-   *  * While held, the chord's key going down again (a repeat) is nothing new: consumed, nothing delivered.
+   *  * The chord's down (not a repeat) starts the hold: `down` (not consumed here: the preload keeps it from the page).
+   *  * While held, the chord's key going down again (a repeat) is nothing new: nothing delivered (the preload keeps it too).
    *  * The up of its key ends it (`up`, consumed); so does the up of one of its modifiers, or any up whose modifier state has
    *    lost one of them (`up`, not consumed, so the page sees the modifier let go); its key's later repeats and up are still
-   *    consumed. Another key's up, its modifiers still down, is not it. */
+   *    kept from the page. Another key's up, its modifiers still down, is not it. */
   hold(windowId: number, input: KeyPress & { type: string; isAutoRepeat?: boolean }, mayRun: boolean): HoldStep | undefined {
     const h = this.#held.get(windowId);
     const down = input.type === "keyDown" || input.type === "rawKeyDown";
     if (down) {
-      if (h !== undefined && keyPart(input) === h.key && (input.isAutoRepeat === true || !h.ended)) return { binding: h.binding, consume: true };
+      if (h !== undefined && keyPart(input) === h.key && (input.isAutoRepeat === true || !h.ended)) return { binding: h.binding, consume: false };
       // Any other press: what was left of an ended hold goes (the press goes on as any other).
       if (h?.ended === true) this.#held.delete(windowId);
       if (h !== undefined && !h.ended) return undefined;
@@ -111,7 +114,7 @@ export class PluginKeys {
       if (b === undefined || !b.hold) return undefined;
       const parts = b.chord.split("+");
       this.#held.set(windowId, { binding: b, key: parts.pop()!, mods: new Set(parts), ended: false });
-      return { binding: b, phase: "down", consume: true };
+      return { binding: b, phase: "down", consume: false };
     }
     if (input.type !== "keyUp" || h === undefined) return undefined;
     if (keyPart(input) === h.key) {
@@ -127,6 +130,13 @@ export class PluginKeys {
       return { binding: h.binding, phase: "up", released: true, consume: false };
     }
     return undefined;
+  }
+
+  /** Whether the preload keeps a key-down from the page: one of the held binding's key (its down, a repeat, or a repeat
+   *  after a modifier ended it) in that window. Asked after main's `before-input-event` ran for the same event. */
+  swallows(windowId: number, down: { key: string; code?: string }): boolean {
+    const h = this.#held.get(windowId);
+    return h !== undefined && keyPart({ key: down.key, ...(down.code !== undefined ? { code: down.code } : {}), control: false, meta: false, alt: false, shift: false }) === h.key;
   }
 
   /** The held binding of a window, if one is held now. */

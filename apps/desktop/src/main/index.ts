@@ -2149,6 +2149,12 @@ ipcMain.on("clover:press-seen", (event) => {
   if (f === null || f.detached || win === null) return;
   sends.seen(win.id, frameChainOf(f));
 });
+// The preload's synchronous ask, from a frame's capture-phase keydown: whether that key-down is the window's held key binding's
+// (its down or a repeat), which the page must not get. Main's `before-input-event` already ran for that same event.
+ipcMain.on("clover:held-key", (event, a: { key?: unknown; code?: unknown }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  event.returnValue = win !== null && typeof a?.key === "string" && pluginKeys.swallows(win.id, { key: a.key, ...(typeof a.code === "string" ? { code: a.code } : {}) });
+});
 const windowDrags = new TitleDrag();
 /** Where the main process last saw the cursor over a window, on the screen (from its own mouse events). */
 const cursors = new Map<number, { x: number; y: number }>();

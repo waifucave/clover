@@ -55,12 +55,16 @@ describe("a held key binding (`commands[].hold`): its down and its release", () 
     return k;
   };
 
-  test("the down is delivered once and consumed; repeats are no new press and are consumed too; the key's up delivers the up once", () => {
+  test("the down is delivered once; repeats are no new press; neither is handled in main (Chromium would drop the release), the preload keeps both from the page; the key's up delivers the up once and is consumed", () => {
     const k = make();
-    expect(k.hold(1, press(chord), true)).toMatchObject({ binding: { name: "v.talk", pluginId: "v", hold: true }, phase: "down", consume: true });
-    for (let i = 0; i < 3; i++) expect(k.hold(1, press({ ...chord, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
+    expect(k.hold(1, press(chord), true)).toMatchObject({ binding: { name: "v.talk", pluginId: "v", hold: true }, phase: "down", consume: false });
+    expect(k.swallows(1, chord)).toBe(true);
+    expect(k.swallows(2, chord)).toBe(false);
+    expect(k.swallows(1, { key: "a", code: "KeyA" })).toBe(false);
+    for (let i = 0; i < 3; i++) expect(k.hold(1, press({ ...chord, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: false });
     expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up", released: true, consume: true });
     expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toBeUndefined();
+    expect(k.swallows(1, chord)).toBe(false);
   });
 
   test("another key's up is not its up; another key's down passes by and the hold goes on", () => {
@@ -72,12 +76,13 @@ describe("a held key binding (`commands[].hold`): its down and its release", () 
     expect(k.hold(1, press({ ...chord, type: "keyUp" }), true)).toMatchObject({ phase: "up", released: true });
   });
 
-  test("a modifier let go first ends it once (not consumed: the page sees the modifier go); its key's repeats and up are still kept from the page", () => {
+  test("a modifier let go first ends it once (not consumed: the page sees the modifier go); its key's repeats are still kept from the page (the preload) and its up consumed", () => {
     const k = make();
     k.hold(1, press(chord), true);
     expect(k.hold(1, press({ key: "Shift", code: "ShiftLeft", type: "keyUp", control: true }), true)).toMatchObject({ phase: "up", released: true, consume: false });
     expect(k.hold(1, press({ key: "Control", code: "ControlLeft", type: "keyUp" }), true)).toBeUndefined();
-    expect(k.hold(1, press({ key: " ", code: "Space", control: true, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
+    expect(k.hold(1, press({ key: " ", code: "Space", control: true, isAutoRepeat: true }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: false });
+    expect(k.swallows(1, { key: " ", code: "Space" })).toBe(true);
     expect(k.hold(1, press({ key: " ", code: "Space", type: "keyUp" }), true)).toEqual({ binding: expect.objectContaining({ name: "v.talk" }), consume: true });
     // Pressed again, it is a new hold.
     expect(k.hold(1, press(chord), true)).toMatchObject({ phase: "down" });
