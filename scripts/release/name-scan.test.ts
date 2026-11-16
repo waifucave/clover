@@ -124,7 +124,7 @@ describe("the release's identity scan", () => {
       try {
         writeFileSync(join(src, "readme.txt"), planted ? PLANTED : "app bytes");
         symlinkSync("/Applications", join(src, "Applications"));
-        const made = Bun.spawnSync(["hdiutil", "create", "-quiet", "-srcfolder", src, "-format", "UDZO", "-volname", "MOSS", join(out, "MOSS-Code-1.0.0.dmg")]);
+        const made = Bun.spawnSync(["hdiutil", "create", "-quiet", "-srcfolder", src, "-format", "UDZO", "-volname", "MOSS Code", join(out, "MOSS-Code-1.0.0.dmg")]);
         if (made.exitCode !== 0) throw new Error(`hdiutil create: ${made.stderr.toString()}`);
         if (planted) expect(() => runNameScan(out, { required: true, guard, quiet: true })).toThrow("the identity scan found a hit");
         else expect(runNameScan(out, { required: true, guard, quiet: true }).ran).toBe(true);

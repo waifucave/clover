@@ -1305,7 +1305,7 @@ for (const op of dmgStagePlan(app)) {
 const dmgPath = join(OUT, `MOSS-Code-${version}.dmg`);
 rmSync(dmgPath, { force: true });
 console.log("Creating DMG (hdiutil)...");
-sh(`hdiutil create -volname "MOSS" -srcfolder "${dmgStage}" -ov -format UDZO "${dmgPath}"`);
+sh(`hdiutil create -volname "MOSS Code" -srcfolder "${dmgStage}" -ov -format UDZO "${dmgPath}"`);
 
 console.log("Signing DMG...");
 sh(`codesign --sign "${SIGN_IDENTITY}" --timestamp "${dmgPath}"`);
