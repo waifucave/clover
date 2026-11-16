@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTurn, sleep, until, type ExampleCtx } from "./example-steps";
+import { callTurn, SIDEBAR_ITEMS, sleep, until, type ExampleCtx } from "./example-steps";
 import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 
@@ -410,7 +410,24 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
       }
       return undefined;
     };
-    const viewSession = await until("acc-view's surface drawn", 60_000, viewDoc, async () => `documents: ${(await ctx.cdp.documents()).map((d) => d.url.slice(0, 50)).join(" | ")}`);
+    // Alpha's conversation in front, so her composer (and the part in it) is drawn.
+    const treeDocs = async () => (await ctx.cdp.documents()).filter((d) => d.url.startsWith("clover-plugin://clover/"));
+    const composerShown = async () => {
+      for (const d of await treeDocs()) if ((await ctx.cdp.evaluate(d.session, "!!document.querySelector('.cl-composer textarea')").catch(() => false)) === true) return true;
+      return undefined;
+    };
+    if ((await composerShown()) === undefined) {
+      const alpha = await until("Alpha in the sidebar", 20_000, async () => {
+        for (const d of await treeDocs()) {
+          const c = await ctx.cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          if (c !== undefined) return { session: d.session, c };
+        }
+        return undefined;
+      });
+      await ctx.cdp.click(alpha.session, alpha.c.x, alpha.c.y);
+      await until("Alpha's composer drawn", 20_000, composerShown);
+    }
+    const viewSession = await until("acc-view's part drawn in Alpha's composer", 60_000, viewDoc, async () => `documents: ${(await ctx.cdp.documents()).map((d) => d.url.slice(0, 50)).join(" | ")}`);
     const inView = async (expr: string) => String(await ctx.cdp.evaluate(viewSession, expr).catch((e: unknown) => `refused ${(e as Error).message}`));
     const list = await inView("window.__accView.list()");
     const tabId = /"id":"(tab_[^"]+)"/.exec(list)?.[1] ?? fail(`F5: acc-view listed no tab of Alpha's (${list.slice(0, 200)})`);
@@ -418,9 +435,8 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
     const hide = await inView(`window.__accView.hide(${JSON.stringify(tabId)})`);
     const navNoPress = await inView(`window.__accView.navigate(${JSON.stringify(tabId)}, ${JSON.stringify(fixture.otherUrl)})`);
     await inView(`(window.__accView.target = { id: ${JSON.stringify(tabId)}, url: ${JSON.stringify(fixture.otherUrl)} }, "set")`);
-    // Pressed with a real click in the part's frame (a trusted mouse event the main process sees; the frame fills its window).
-    await ctx.cdp.send("Emulation.setDeviceMetricsOverride", { width: 720, height: 160, deviceScaleFactor: 1, mobile: false }, viewSession).catch(() => undefined);
-    await sleep(600);
+    // Pressed with a real click on the part's own frame (its document reports the trusted pointerdown; the main process credits
+    // the press to that frame).
     const at = await until("acc-view's button on the screen", 20_000, async () => ctx.cdp.centerOf(viewSession, '[data-acc-view="go"]').catch(() => undefined));
     await ctx.cdp.click(viewSession, at.x, at.y);
     const navPressed = await until("acc-view's pressed navigate answered", 20_000, async () => {

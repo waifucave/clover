@@ -2,7 +2,7 @@
 // `browser.*` and the terminal are served by capability. Three folder plugins, none of Clover's own:
 // * `acc-surf`, holding `browser`, with a host MCP server whose `Surf` tool its manifest lists in `browserTools`: Alpha's
 //   call drives her own tab (open, read with no card; a click asks for the site, as the Browser tool's does).
-// * `acc-view`, holding `browser` (and `overlay`), a live view in a window of its own (`app.surface`): from its own frame, with no press,
+// * `acc-view`, holding `browser`, a live view nested in the main window (Alpha's composer, `composer.action` keyed `model`): from its own frame, with no press,
 //   it lists Alpha's tab, shows and hides it, and its navigate is refused; its button, pressed for real, navigates.
 // * `acc-bg`, holding `browser`, a part kept in the background (`app.background`): its `browser.tabs` is refused.
 //   (browser-press, the coordinator's narrowing of F5: the app main process's gesture rule, browser-calls.ts.)
@@ -79,7 +79,7 @@ const VIEW_CLIENT = [
   "    if (!api || !t) { setSaid(\"no target\"); return; }",
   `    api.browser.navigate(t.id, t.url).then((x) => setSaid("ok " + x.url), (e) => setSaid((${REFUSED})(e)));`,
   "  };",
-  "  return jsx(\"button\", { type: \"button\", \"data-acc-view\": \"go\", \"data-said\": said, onClick, style: { display: \"block\", width: \"100%\", height: 120, fontSize: 20 }, children: \"Acceptance view go\" });",
+  "  return jsx(\"button\", { type: \"button\", \"data-acc-view\": \"go\", \"data-said\": said, onClick, children: \"Acceptance view go\" });",
   "}",
   "",
 ].join("\n");
@@ -126,11 +126,11 @@ export function writeF5(root: string): { surf: string; view: string; term: strin
     contributes: { ui: [{ spot: "panel", key: id, title: name, component: "Part" }] },
   }, { "client/index.tsx": CLIENT });
   const view = write(join(root, F5_IDS.view), {
-    manifest: 1, id: F5_IDS.view, name: "Acceptance view", version: "1.0.0", engines, capabilities: ["browser", "overlay"],
+    manifest: 1, id: F5_IDS.view, name: "Acceptance view", version: "1.0.0", engines, capabilities: ["browser"],
     client: { entry: "client/index.js" },
-    // A visible part of its own window (an overlay surface, as lane G's hold fixture): its frame fills the window, so a
-    // click the run sends into it reaches the main process's pointer walk at the window's own point.
-    contributes: { ui: [{ spot: "app.surface", id: "go", component: "Go", title: "Acceptance view", window: { type: "overlay", alwaysOnTop: true, placement: { macos: "bottom-center", windows: "bottom-center", linux: "bottom-center" } } }] },
+    // A part nested in the main window, as a third party's panel is: its frame inside the shell's, which the press is credited
+    // to by its own document's report (lane E's `clover:press-seen`).
+    contributes: { ui: [{ spot: "composer.action", key: "model", id: "go", component: "Go", title: "Acceptance view" }] },
   }, { "client/index.js": VIEW_CLIENT });
   const bg = write(join(root, F5_IDS.bg), {
     manifest: 1, id: F5_IDS.bg, name: "Acceptance background browser", version: "1.0.0", engines, capabilities: ["browser"],
