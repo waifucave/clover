@@ -221,14 +221,8 @@ jobs:
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
 
-      # The compiled core runs only its own code (scripts/verify-sealed-core.ts): the binary just built, sealed by
-      # build-daemon (scripts/seal-bun-doors.ts), is run with every door Bun has — BUN_BE_BUN, BUN_OPTIONS' preloads,
-      # BUN_INSPECT and its connect-out, NODE_PATH and a planted node_modules on the runtime ladder, the working
-      # folder's bunfig/.env/tsconfig/package.json, argv — and no payload may run and no debugger may open. On macOS
-      # it is signed first as a release signs it (hardened runtime, ad hoc here) and DYLD_INSERT_LIBRARIES is tried.
-      - name: Daemon · verify:sealed-core
-        if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
-        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/moss-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
+      # verify:sealed-core (the compiled core runs only its own code) runs as the `sealed-core` job, beside this one: its door loop
+      # is seven or eight minutes of the machine's fifteen, and it needs only the daemon binary.
 
       # The built daemon and app are kept only from a manual run (a push to an integration branch skips them too): nothing in a pull request, a
       # merge group or a lane's run downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
@@ -338,6 +332,57 @@ jobs:
           - { target: windows-x64, runner: windows-latest }
     env: *machine-env
     steps: *machine-steps
+
+  # The compiled core runs only its own code (scripts/verify-sealed-core.ts): the daemon binary built for the machine's own
+  # target, sealed by build-daemon (scripts/seal-bun-doors.ts), is run with every door Bun has (BUN_BE_BUN, BUN_OPTIONS' preloads,
+  # BUN_INSPECT and its connect-out, NODE_PATH and a planted node_modules on the runtime ladder, the working folder's
+  # bunfig/.env/tsconfig/package.json, argv) and no payload may run and no debugger may open. On macOS it is signed first as a
+  # release signs it (hardened runtime, ad hoc here) and DYLD_INSERT_LIBRARIES is tried. A sequential door loop, left whole: it is a
+  # security gate, so it is not parallelised, only run beside the machine job instead of after the daemon's other steps (it
+  # built the daemon there and ran seven or eight minutes of its fifteen). Windows is its own job again, for the lane gate.
+  sealed-core:
+    name: sealed core · ${{ matrix.target }}
+    needs: changes
+    if: &sealed-if github.event_name != 'pull_request' && needs.changes.outputs.daemon == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-latest }
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+    steps: &sealed-steps
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Daemon · build moss-core for ${{ matrix.target }}
+        run: bun scripts/build-daemon.ts --target ${{ matrix.target }}
+
+      - name: Daemon · verify:sealed-core
+        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/moss-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
+
+  sealed-core-windows:
+    name: sealed core · ${{ matrix.target }}
+    needs: changes
+    if: *sealed-if
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: windows-x64, runner: windows-latest }
+    steps: *sealed-steps
 
   # A pull request's workspace tests: every workspace package's `test`, as the machine job's step runs it, on linux-x64
   # alone and on a private Secret Service. About two minutes; the other machines, the daemon and the app run in the
@@ -1150,7 +1195,7 @@ jobs:
   lane-gate:
     name: lane gate
     if: ${{ always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
-    needs: [changes, names, machine, workspaces-pr, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift, acceptance]
+    needs: [changes, names, machine, sealed-core, workspaces-pr, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift, acceptance]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -1265,7 +1310,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, machine-windows, workspaces-pr, packages, installers, installers-windows, tree, tree-windows, link, link-windows, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, machine-windows, sealed-core, sealed-core-windows, workspaces-pr, packages, installers, installers-windows, tree, tree-windows, link, link-windows, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
