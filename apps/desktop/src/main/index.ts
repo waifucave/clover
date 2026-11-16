@@ -2623,9 +2623,9 @@ async function smoke(): Promise<void> {
       if (spec !== undefined) {
         try {
           const {
-            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead,
+            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead, pulse,
           } = JSON.parse(spec) as {
-            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number;
+            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
@@ -2784,20 +2784,26 @@ async function smoke(): Promise<void> {
               log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
+              if (typeof pulse === "number") {
+                // The "press again" pulse of an earlier refused press is running (its animation started `pulse` ms ago): the press must still land.
+                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (b) b.dataset.again = 'yes'; return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true)))); })()`, true).catch(() => undefined);
+                await new Promise((r) => setTimeout(r, Math.max(0, Math.min(1500, pulse))));
+                log(`sealed-click: press ${Math.round(pulse)} ms into the pulse`);
+              }
               if (typeof parentCoverLead === "number") {
                 // The cover an embedder would draw: a click-through, see-through element in the window's own (root) document over the sealed
                 // iframe, `parentCoverLead` ms before the press. The page's own document holds nothing of it.
                 const left = Math.round(offsetX + buttonRect.x);
                 const top = Math.round(offsetY + buttonRect.y);
                 // Lead 0: the cover is sent and the press follows at once, without waiting for the cover's own call to come back.
-                const putCover = win.webContents.mainFrame.executeJavaScript(`(() => { const c = document.createElement('div'); c.id = '__parentCover'; c.style.cssText = 'position:fixed;left:${left}px;top:${top}px;width:${Math.round(buttonRect.width)}px;height:${Math.round(buttonRect.height)}px;z-index:2147483647;pointer-events:none;background:rgba(255,0,0,0.25)'; document.body.appendChild(c); })()`, true).catch(() => undefined);
+                const putCover = win.webContents.mainFrame.executeJavaScript(`(() => { const c = document.createElement('div'); c.id = '__parentCover'; c.style.cssText = 'position:fixed;left:${left}px;top:${top}px;width:${Math.round(buttonRect.width)}px;height:${Math.round(buttonRect.height)}px;z-index:2147483647;pointer-events:none;background:rgba(255,0,0,0.25)'; document.body.appendChild(c); return new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r(true))); setTimeout(() => r(false), 1500); }); })()`, true).catch(() => undefined);
                 if (parentCoverLead > 0) await putCover;
                 if (parentCoverLead > 0) await new Promise((r) => setTimeout(r, Math.min(2000, parentCoverLead)));
                 log(`sealed-click: press ${Math.round(parentCoverLead)} ms after the parent cover`);
               }
               if (typeof coverLead === "number") {
-                // A cover drawn `coverLead` ms before the press, on a button the page has long reported ready: the press must not land.
-                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return; const c = document.createElement('div'); c.style.position = 'absolute'; c.style.inset = '0'; c.style.zIndex = '9999'; c.style.pointerEvents = 'none'; b.parentElement?.insertBefore(c, b); })()`, true).catch(() => undefined);
+                // The lead counts from the frame that drew the cover (two animation frames after it went in), never from when the call returned, so a loaded machine does not shorten it. A cover drawn `coverLead` ms before the press, on a button the page has long reported ready: the press must not land.
+                await frame.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return; const c = document.createElement('div'); c.style.position = 'absolute'; c.style.inset = '0'; c.style.zIndex = '9999'; c.style.pointerEvents = 'none'; b.parentElement?.insertBefore(c, b); return new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(() => r(true))); setTimeout(() => r(false), 1500); }); })()`, true).catch(() => undefined);
                 await new Promise((r) => setTimeout(r, Math.max(0, Math.min(2000, coverLead))));
                 log(`sealed-click: press ${Math.round(coverLead)} ms after the cover`);
               }

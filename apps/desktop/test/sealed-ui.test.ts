@@ -121,7 +121,7 @@ function cardRegistry(path: string, withFixture = true, alpha = false): string {
 
 /** Start the app against the fake daemon, click via the smoke run, and return the run's output. */
 async function runApp(opts: {
-  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number };
+  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number };
   acting?: boolean;
   dropFresh?: boolean;
   pinVisible?: boolean;
@@ -275,6 +275,16 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
       const line = /sealed: press on [^\n]*: (not-visible|fresh report [^\n]*)/.exec(r.output)?.[1] ?? "(none)";
       console.log(`parent cover ${lead} ms (unpinned): ${line}, ${answerCallsOf(r.home).length} answer(s) taken`);
       if (lead >= 2) expect(answerCallsOf(r.home), r.output).toHaveLength(0); // at 0 the cover and the press are sent together: reported, not asserted
+    }, 120_000);
+  }
+
+  // What else changes the page right before a person's press must not refuse it: the "press again" pulse of an earlier refused press.
+  for (const pulse of [20, 150, 400]) {
+    onCi(`a press ${pulse} ms into the "press again" pulse lands (the pulse is no cover)`, async () => {
+      const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", pulse } });
+      expect(r.output).toContain(`press ${pulse} ms into the pulse`);
+      expect(r.output, r.output).toMatch(/fresh report uncovered after \d+ ms/);
+      expect(answerCallsOf(r.home), r.output).toHaveLength(1);
     }, 120_000);
   }
 
