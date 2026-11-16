@@ -1,9 +1,10 @@
 // Clover Voice's chip on a bot's stage (`bot.stage.action`, the stage's own spot for small controls): for a bot that
 // has a voice, pressing while it speaks stops it; otherwise it switches spoken replies off or on (this plugin's
 // "Speak replies"). Whether the bot speaks is the device's speech turn: held by this plugin for this bot.
+import type { BotRef } from "./local";
+import type { EntryProps } from "@waifucave/clover-plugin-sdk";
+import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useState } from "react";
-import type { BotRef, EntryProps } from "../../shell/runtime/types";
-import { usePluginApi } from "./sdk";
 import { S } from "./strings";
 import { DEVICE_SPEECH } from "./player";
 

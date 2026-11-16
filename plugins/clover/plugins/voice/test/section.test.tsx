@@ -2,14 +2,13 @@
 // platform's one-at-a-time picker, not this section's), the section of a bot's editor (the bot's voice: the user's, or
 // the default from the plugin that brings it, with why it can't speak) and the stage's chip (speaking from the device's speech turn; its
 // press stops or mutes).
+import { fakeApi, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotRef } from "../client/local";
+import type { EntryProps } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { UiRuntimeProvider } from "../../shell/client/sdk";
 import { BotVoiceSection, VoiceChip, VoiceSection } from "../client";
 import type { PluginApi, PointEntry, TurnState } from "@waifucave/clover-plugin-sdk";
-import type { BotRef, EntryProps } from "../../shell/runtime/types";
 
 afterEach(cleanup);
 
@@ -17,7 +16,7 @@ afterEach(cleanup);
 const alpha = { props: { bot: { id: "alpha", name: "Alpha" } } } as unknown as EntryProps<{ bot: BotRef }>;
 
 function mount(api: PluginApi, node: React.ReactNode) {
-  render(<UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>{node}</UiRuntimeProvider>);
+  render(<TestLayer runtime={runtimeWith({ api: () => api })}>{node}</TestLayer>);
 }
 
 /** A fake API whose settings know bots (`key@bot`). */

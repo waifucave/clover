@@ -17,13 +17,13 @@
 // from the core's `archive.history` (the `clover` layer's call), follows nothing and answers nothing. That history runs
 // forward from the session's start, a page at a time by its `cursor`, so an old session opens at its start and the
 // next page comes as the reader nears the end (the view's `onLoadLater`), until the whole session is shown.
+import { plain } from "./local";
+import { Spot, useApprovals, useCore, usePluginApi, useSpotEntries, useTokens } from "@waifucave/clover-plugin-sdk/ui";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { AgentStatus } from "./agents";
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
-import { plain } from "../../shell/runtime/views";
-import { Spot, useApprovals, useCore, usePluginApi, useSpotEntries, useTokens } from "./sdk";
 import type { ActionOutcome, ConversationItem, MessageAction, QuestionAnswer, SharedTime } from "./types";
 
 export interface ConversationEntryProps {

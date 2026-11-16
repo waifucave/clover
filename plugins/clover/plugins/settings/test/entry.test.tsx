@@ -1,12 +1,16 @@
 // Settings on the runtime: Clover's own settings from the core and the plugin API, every change through them.
+import { computerView, deviceView, fakeApi, fakeCore, pluginDetail, pluginSummary, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { EntryComponent } from "../client/local";
+import type { PluginDetail, PluginSummary } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { computerView, deviceView, fakeApi, fakeCore, pluginDetail, pluginSummary, settle, uiPluginView } from "../../shell/runtime/testkit";
-import type { EntryComponent, PluginDetail, PluginSummary } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "../../../../../packages/protocol/src/plugins";
+import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "@waifucave/clover-plugin-sdk";
 import { NOT_AVAILABLE_YET, okWords, SettingsEntry } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
+
+/** A running plugin's UI as `plugin.ui` lists it: its themes and string tables, the rest left plain. */
+const uiPluginView = (pluginId: string, themes: { id: string; file: string }[] = [], locales: { lang: string; file: string }[] = []) =>
+  ({ pluginId, name: pluginId, treeHash: "sha256-test", layer: pluginId.split("/")[0]!, assetBase: `clover-asset://${pluginId}/`, ui: [] as Record<string, unknown>[], themes, locales, bots: "all" as const });
+
 
 afterEach(cleanup);
 
@@ -57,9 +61,9 @@ async function mount(params: { section?: string; item?: string } = {}, extra: { 
     component: () => extra.component,
   });
   const tree = (at: typeof params) => (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <SettingsEntry props={{ route: "settings", params: at, navigate: (r) => routes.push(r), close: () => closed++ }} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
   const { rerender } = render(tree(params));
   await act(() => settle());
@@ -203,6 +207,7 @@ describe("settings on the runtime", () => {
     const Section: EntryComponent = () => <p>Tarot settings</p>;
     await mount({}, { component: Section });
     fireEvent.click(screen.getByRole("button", { name: "Tarot" }));
+    await act(() => settle()); // the section's spot resolves through the layer, as in the app
     expect(screen.getByText("Tarot settings")).toBeTruthy();
   });
 

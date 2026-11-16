@@ -7,10 +7,17 @@
 // island's does: the app's composed line and preview (`summary`, `preview`) and what "Always allow" would
 // store, never the call's raw input (`detail`, the owner's rule: no card shows raw JSON); the other kinds
 // place their own fields.
+import type { CardFieldProps } from "@waifucave/clover-plugin-sdk";
+import { Card as CardRoot, CardApprove, CardDeny, CardField } from "@waifucave/clover-plugin-sdk/ui";
+
+/** The sealed card and its frames (the SDK's). */
+const Card = Object.assign(CardRoot, { Field: CardField, Approve: CardApprove, Deny: CardDeny });
+
+/** A sealed field's name. */
+type SealedField = CardFieldProps["name"];
 import type { ReactElement } from "react";
 import type { MessageContext } from "../context";
 import { IconCheck, IconClock, IconCross, IconDash, IconShield } from "../icons";
-import { Card, type SealedField } from "../sdk";
 import { S } from "../strings";
 import type { ApprovalItem, ApprovalOption } from "../types";
 
@@ -77,17 +84,19 @@ export function ApprovalMessage({ item }: { item: ApprovalItem; ctx: MessageCont
     const { text, icon } = outcome(item);
     return (
       <section className="cl-conv-approval" data-kind="approval" data-state={item.state}>
-        <Card id={item.cardId}>
-          <div className="cl-conv-approval__resolved">
-            <span className="cl-conv-approval__outcome">
-              {icon}
-              {text}
-            </span>
+        {/* The outcome is the conversation's own words, so it stands outside the sealed card: an answered card is no
+            longer pending, and the app draws no frame for it (its title shows only while the core still knows it). */}
+        <div className="cl-conv-approval__resolved">
+          <span className="cl-conv-approval__outcome">
+            {icon}
+            {text}
+          </span>
+          <Card id={item.cardId}>
             <div className="cl-conv-approval__resolved-title">
               <Card.Field name="title" lines={1} />
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </section>
     );
   }

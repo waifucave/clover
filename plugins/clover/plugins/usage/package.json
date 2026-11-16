@@ -6,14 +6,15 @@
   "type": "module",
   "exports": {
     ".": "./client/index.tsx",
-    "./gallery": "./src/gallery.tsx"
+    "./gallery": "./src/gallery.tsx",
+    "./client": "./client/index.tsx"
   },
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-plugin-island": "workspace:*"
+    "@waifucave/clover-plugin-sdk": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.3.0",

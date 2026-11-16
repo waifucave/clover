@@ -25,8 +25,9 @@
 //
 // A test or acceptance build marks its counters on the document's root (`data-voice-talk-*`).
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BotRef, EntryProps } from "../../shell/runtime/types";
-import { usePluginApi, useUserSend } from "./sdk";
+import type { EntryProps } from "@waifucave/clover-plugin-sdk";
+import { usePluginApi, useUserSend } from "@waifucave/clover-plugin-sdk/ui";
+import type { BotRef } from "./local";
 import { S } from "./strings";
 import { defaultSource, testBuild, type PcmHandle, type PcmSource } from "../src/recorder";
 

@@ -3,8 +3,8 @@
 // gives way to the stock panel the shell places in its stead (`<Spot entry="stock">`), and the panel's header says so and
 // offers to try the bot's again. The replacement is given the stock panel's props without `header` (it draws its own
 // head in its body, the host's title stays above it).
+import { Spot } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useRef } from "react";
-import { Spot } from "./sdk";
 import type { ReactNode } from "react";
 
 /** How long a replacement has to report its first size (the frame drew) before the stock panel takes its place. */

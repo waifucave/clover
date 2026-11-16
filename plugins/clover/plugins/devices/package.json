@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-plugin-island": "workspace:*"
+    "@waifucave/clover-plugin-sdk": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.3.0",
@@ -27,7 +27,8 @@
     "typescript": "5.9.3"
   },
   "exports": {
-    ".": "./client/index.tsx"
+    ".": "./client/index.tsx",
+    "./client": "./client/index.tsx"
   },
   "description": "the Devices tab of the island"
 }

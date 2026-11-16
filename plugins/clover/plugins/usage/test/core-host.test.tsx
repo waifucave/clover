@@ -1,12 +1,10 @@
 // The usage entries on the app's own route: no host given, the clover tree's core client (`usage.*` over the layer's
 // connection) feeds them. The layer bundle binds `clover/usage` (apps/desktop/src/layer/clover), or neither draws.
+import { fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, render } from "@testing-library/react";
-import { fakeCore, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { coreUsageApi } from "../src/ui/host";
 import { UsageSection, UsageTabEntry } from "../client/entries";
-import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
@@ -29,11 +27,11 @@ describe("the usage entries over the core's usage methods", () => {
   test("with no host given, the Settings section and the island tab draw the counted tokens from the core", async () => {
     const core = fakeCore(handlers() as never);
     const runtime = runtimeWith({ core: () => core, api: () => { throw new Error("no api"); }, t: (_id, key) => key });
-    const { container } = render(<UiRuntimeProvider runtime={runtime}><UsageTabEntry props={{ expanded: true }} /></UiRuntimeProvider>);
+    const { container } = render(<TestLayer runtime={runtime}><UsageTabEntry props={{ expanded: true }} /></TestLayer>);
     await act(() => settle());
     expect(container.textContent ?? "").toMatch(/1\.2k tokens/);
     cleanup();
-    const section = render(<UiRuntimeProvider runtime={runtime}><UsageSection props={{}} /></UiRuntimeProvider>);
+    const section = render(<TestLayer runtime={runtime}><UsageSection props={{}} /></TestLayer>);
     await act(() => settle());
     expect(section.container.textContent ?? "").toMatch(/900 in · 300 out/);
     expect(core.calls.some((c) => c.method === "usage.summary")).toBe(true);

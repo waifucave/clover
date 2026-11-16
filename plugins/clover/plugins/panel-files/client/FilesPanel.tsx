@@ -8,11 +8,11 @@
 // Right opens a folder (or steps into it), Left closes it (or steps out to its folder), Home and End
 // go to the ends. A listing that loops back on itself (a link to a folder above) draws each folder
 // once. Names and the file's lines show hidden characters (bidi controls, zero-width ones) as marks.
+import { Spot, useSpotEntries } from "@waifucave/clover-plugin-sdk/ui";
 import { ChevronDown, ChevronRight, File, Folder, Search } from "lucide-react";
 import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { visiblePaths } from "./filter";
 import { hasHidden, ShowHidden } from "./hidden";
-import { Spot, useSpotEntries } from "./sdk";
 import { S } from "./strings";
 import type { FileEntry, FilesPanelProps, FilesTitleProps } from "./types";
 

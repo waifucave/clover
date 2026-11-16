@@ -2,7 +2,7 @@
 // that can't be used, nothing to set, sign in to or read; their parent names them.
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "../../../../../packages/protocol/src/plugins";
+import { NOT_AVAILABLE_YET as PROTOCOL_REASON } from "@waifucave/clover-plugin-sdk";
 import { NOT_AVAILABLE_YET, toInstalled } from "../client/entry";
 import { Detail, Installed } from "../client/Installed";
 import { S } from "../client/strings";

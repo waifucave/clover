@@ -1,13 +1,9 @@
-// The usage plugin in every state, for lane G's gallery (rendered to PNGs in CI, never on a desk): the island's Usage
-// tab in the open island, and the Usage section of Settings in light and dark. Sample data at a fixed "now".
+// The usage plugin in every state, for lane G's gallery (rendered to PNGs in CI, never on a desk): the Usage section of
+// Settings in light and dark (its Usage tab inside the open island is the look gallery's, which draws parts together). Sample data at a fixed "now".
 
 import type { ReactElement, ReactNode } from "react";
-import { IslandDesktop, ISLAND_TABS } from "@waifucave/clover-plugin-island/gallery";
-import { NOTCH, NO_NOTCH } from "@waifucave/clover-plugin-island/fixtures";
-import { OpenIsland, Strip, tabState } from "@waifucave/clover-plugin-island";
 import { memoryUsage } from "./fake";
 import { NOW, SAMPLE_PLANS, sampleRows } from "./fixtures";
-import { UsageTab } from "./ui/UsageTab";
 import { UsageView } from "./ui/UsageView";
 
 export interface UsageStory {
@@ -24,7 +20,6 @@ const ROWS = sampleRows();
 const now = () => NOW;
 /** The reads are promises: a few frames for them to answer and the view to draw. */
 const loaded = () => new Promise<void>((resolve) => setTimeout(resolve, 150));
-const USAGE_INDEX = ISLAND_TABS.findIndex((tab) => tab.id === "usage");
 
 function SettingsPage({ children }: { children: ReactNode }): ReactElement {
   return (
@@ -36,49 +31,6 @@ function SettingsPage({ children }: { children: ReactNode }): ReactElement {
 }
 
 export const USAGE_STORIES: UsageStory[] = [
-  {
-    id: "usage/island-tab",
-    title: "Island: Usage, the plans the fullest first, then today by source; one plan under the pointer",
-    width: 640,
-    height: 220,
-    ready: loaded,
-    render: () => (
-      <IslandDesktop shape={NOTCH} width={640} height={220}>
-        <Strip shape={NOTCH} counts={{ waiting: 0, working: 1 }} />
-        <OpenIsland shape={NOTCH} tabs={tabState(ISLAND_TABS, USAGE_INDEX)}>
-          <UsageTab api={memoryUsage(ROWS, SAMPLE_PLANS)} now={now} hovered="Studio:codex:Pro:5h" />
-        </OpenIsland>
-      </IslandDesktop>
-    ),
-  },
-  {
-    id: "usage/island-tab-no-plans",
-    title: "Island: Usage with no plan read yet, on a screen with no housing",
-    width: 640,
-    height: 220,
-    ready: loaded,
-    render: () => (
-      <IslandDesktop shape={NO_NOTCH} width={640} height={220}>
-        <OpenIsland shape={NO_NOTCH} tabs={tabState(ISLAND_TABS, USAGE_INDEX)}>
-          <UsageTab api={memoryUsage(ROWS, [])} now={now} />
-        </OpenIsland>
-      </IslandDesktop>
-    ),
-  },
-  {
-    id: "usage/island-tab-empty",
-    title: "Island: Usage before anything was used",
-    width: 640,
-    height: 220,
-    ready: loaded,
-    render: () => (
-      <IslandDesktop shape={NOTCH} width={640} height={220}>
-        <OpenIsland shape={NOTCH} tabs={tabState(ISLAND_TABS, USAGE_INDEX)}>
-          <UsageTab api={memoryUsage()} now={now} />
-        </OpenIsland>
-      </IslandDesktop>
-    ),
-  },
   {
     id: "usage/settings-week-light",
     title: "Settings → Usage: 7 days by source, cost, light; a day under the pointer",

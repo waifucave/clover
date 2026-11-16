@@ -2,7 +2,8 @@
 // expressions, motions and outfit changes on the loaded model, and the names the model answers to go back out, plain
 // names only, never its files. Nothing here talks to a frame or a window: the app carries the cues, from the bot
 // plugin's own calls, to this one hook.
-import type { FigureControl, FigureCue, FigureNames } from "@waifucave/clover-plugin-vrm/control";
+import type { AvatarControl as FigureControl } from "@waifucave/clover-plugin-sdk/ui";
+import type { AvatarCatalogueNames as FigureNames, AvatarCue as FigureCue } from "@waifucave/clover-plugin-sdk";
 import { catalogOf, switchNamed, switchesOf, SwitchDriver, type Switch } from "../cues";
 
 /** What the figure can be asked to do, as Mochi2D offers it. */

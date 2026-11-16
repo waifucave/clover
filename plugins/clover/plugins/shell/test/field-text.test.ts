@@ -1,9 +1,9 @@
 // A spot entry's title, as the shell's own places show it (the sidebar's app rows, the title bar, Settings' sections):
 // `fieldText` is their one door, and it hands back what the SDK's plain-text cleaner leaves.
+import { FIELD_TEXT_MAX, fieldText } from "../client/local";
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { FIELD_TEXT_MAX, fieldText } from "../runtime/views";
 
 describe("fieldText", () => {
   test("a string or words by language, cleaned to one plain line, bounded; anything else is no title", () => {

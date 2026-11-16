@@ -1,34 +1,32 @@
 // The `clover` layer's bundle (served as `/_clover/clover.js` in the `clover` layer only): one client module per child
 // plugin of `clover`, by plugin id, as each child's client entry exports it (lane F's, G's and L's parts are entries of
-// the UI API's shape). Everything we ship under `clover` shares this one layer (spec §5.5). The shell is wrapped for
-// the app's commands (bindings.tsx).
-import * as b from "./bindings";
-import * as archive from "@clover-child/archive";
-import * as botEditor from "@clover-child/bot-editor";
-import * as character from "@clover-child/character";
-import * as browserView from "@clover-child/browser-view";
-import * as composer from "@clover-child/composer";
-import * as conversation from "@clover-child/conversation";
-import * as island from "@clover-child/island";
-import * as live2d from "@clover-child/live2d";
-import * as panel from "@clover-child/panel";
-import * as panelDiff from "@clover-child/panel-diff";
-import * as panelFiles from "@clover-child/panel-files";
-import * as panelTerminal from "@clover-child/panel-terminal";
-import * as pill from "@clover-child/pill";
-import * as pluginIndex from "@clover-child/plugin-index";
-import * as settings from "@clover-child/settings";
-import * as shell from "@clover-child/shell";
-import * as sidebar from "@clover-child/sidebar";
-import * as usage from "@clover-child/usage";
-import * as voice from "@clover-child/voice";
-import * as devices from "@clover-child/devices";
-import * as vrm from "@clover-child/vrm";
-import { Live2dAvatarHosted, VrmAvatarHosted } from "./hosts";
+// the UI API's shape). Everything we ship under `clover` shares this one layer (spec §5.5). Each is bound as it is: the
+// shell's own `Shell` hears the app's commands itself.
+import * as archive from "@waifucave/clover-plugin-archive/client";
+import * as botEditor from "@waifucave/clover-plugin-bot-editor/client";
+import * as character from "@waifucave/clover-plugin-character/client";
+import * as browserView from "@waifucave/clover-plugin-browser-view/client";
+import * as composer from "@waifucave/clover-plugin-composer/client";
+import * as conversation from "@waifucave/clover-plugin-conversation/client";
+import * as island from "@waifucave/clover-plugin-island/client";
+import * as live2d from "@waifucave/clover-plugin-live2d/client";
+import * as panel from "@waifucave/clover-plugin-panel/client";
+import * as panelDiff from "@waifucave/clover-plugin-panel-diff/client";
+import * as panelFiles from "@waifucave/clover-plugin-panel-files/client";
+import * as panelTerminal from "@waifucave/clover-plugin-panel-terminal/client";
+import * as pill from "@waifucave/clover-plugin-pill/client";
+import * as pluginIndex from "@waifucave/clover-plugin-plugin-index/client";
+import * as settings from "@waifucave/clover-plugin-settings/client";
+import * as shell from "@waifucave/clover-plugin-shell/client";
+import * as sidebar from "@waifucave/clover-plugin-sidebar/client";
+import * as usage from "@waifucave/clover-plugin-usage/client";
+import * as voice from "@waifucave/clover-plugin-voice/client";
+import * as devices from "@waifucave/clover-plugin-devices/client";
+import * as vrm from "@waifucave/clover-plugin-vrm/client";
 import type { CloverChildId } from "./ids";
 
 export const modules: Record<CloverChildId, Record<string, unknown>> = {
-  "clover/shell": { ...shell, Shell: b.Shell },
+  "clover/shell": shell,
   "clover/character": character,
   "clover/sidebar": sidebar,
   "clover/conversation": conversation,
@@ -48,7 +46,6 @@ export const modules: Record<CloverChildId, Record<string, unknown>> = {
   // Clover Voice's parts: its player (a background part), Settings › Voice, a bot's editor section and the stage's chip.
   "clover/voice": voice,
   "clover/devices": devices,
-  // The avatars hear the app's language only through their installed translator (lane G's ask).
-  "clover/vrm": { ...vrm, VrmAvatar: VrmAvatarHosted },
-  "clover/live2d": { ...live2d, Live2dAvatarEntry: Live2dAvatarHosted },
+  "clover/vrm": vrm,
+  "clover/live2d": live2d,
 };

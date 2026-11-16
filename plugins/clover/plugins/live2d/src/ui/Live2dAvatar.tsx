@@ -10,13 +10,13 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { MochiView, type ViewOptions } from "@waifucave/mochi2d";
 import { drawnBounds, frameFor, readCrop, type Box, type Crop, type DrawnRuntime } from "./framing";
 import { parseMotionSync, type MotionSyncSetting } from "@waifucave/mochi2d/headless";
-import { LipSync, SHUT, SpeechRing, frameSource, type SpeechFeed, type VisemeWeights } from "@waifucave/clover-plugin-vrm/lipsync";
+import { LipSync, SHUT, SpeechRing, frameSource, type SpeechFeed, type VisemeWeights } from "@waifucave/clover-plugin-sdk/ui";
 import { mouthPlan, type MouthPlan } from "../mouth";
 import { urlSource, zipSource, readCapped } from "../sources";
 import { t } from "../strings";
 import { LIVE2D_BUDGETS, Live2dRefusal, insideFolder, validateLive2d, type Live2dModel } from "../validate";
 import { useLive2dStyles } from "./styles";
-import { boxFromRect, type FigureControl } from "@waifucave/clover-plugin-vrm/control";
+import { avatarBoxFromRect as boxFromRect, type AvatarControl as FigureControl } from "@waifucave/clover-plugin-sdk/ui";
 import { startFigureCues, type CueModel, type FigureCues } from "./figure-cues";
 import { Gaze, paramNames, readTable, type StageTable } from "../cues";
 

@@ -2,8 +2,8 @@
 // replies", this plugin's own `speakReplies`; the stage's chip is the quick mute of the same setting). Which voice speaks
 // isn't kept here: its own point `clover.voice.modes` takes one filler at a time (P4), and Settings draws its picker (titled "Voice")
 // and tells the user when the one they picked stops.
+import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useCallback, useEffect, useId, useState } from "react";
-import { usePluginApi } from "./sdk";
 import { S } from "./strings";
 
 const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 300);

@@ -2,7 +2,9 @@
 // every spot it declares; `DefaultBotTab` fills `bot.tab` for every bot without a tab of its own; `AgentTab` fills
 // `main` keyed `agent` and `panel` keyed `agent`. The frame, the panel host and its toggles are exported too. It
 // imports no CSS: `client.css` lists the stylesheet (lane B).
-export { Shell, type ShellProps, type ShellRoute, type ShellStart } from "./Shell";
+// `Shell` is the `app.root` entry (the window's shell, with what main tells that part); `ShellView` the shell itself.
+export { WindowShell as Shell } from "./WindowShell";
+export { Shell as ShellView, type ShellProps, type ShellRoute, type ShellStart } from "./Shell";
 export { AgentTab, BotHeader, DefaultBotTab } from "./Tabs";
 export { BotTab, Window, type WindowProps } from "./Window";
 export { PanelEmpty, PanelHost } from "./PanelHost";

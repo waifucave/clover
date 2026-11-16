@@ -3,14 +3,15 @@
 // (`plugin.install`, user-only: the `clover` layer's call is the user's, §5.5). An install starts with the plugin's
 // OK, a sealed card the core raises; the page says the plugin waits on it. Opened from a placeholder, `params.spot`
 // and `params.key` say what the user is looking for, and the first search is for the key.
+import { useCore, useKept } from "@waifucave/clover-plugin-sdk/ui";
+import { type TypedCore, typedCore } from "./core-answers";
+import type { IndexEntryView, IndexView, PluginDetail, PluginSummary } from "@waifucave/clover-plugin-sdk";
+import { plain } from "./local";
 import { useCallback, useEffect, useState } from "react";
-import type { CoreClient, IndexEntryView, IndexView, PluginDetail, PluginSummary } from "../../shell/runtime/types";
-import { plain } from "../../shell/runtime/views";
 import { Add } from "./Add";
 import { Detail, Installed } from "./Installed";
 import { Indexes, Updates } from "./Manage";
 import { PluginIndex } from "./PluginIndex";
-import { useCore, useKept } from "./sdk";
 import { S } from "./strings";
 import type { AddSource, DetailSetting, DevRow, GrantRow, DetailStatus, IndexResult, IndexRow, InstalledPlugin, InstallState, PickKind, PluginDetailView, PluginsTab, SettingControl, UpdateRow } from "./types";
 
@@ -45,7 +46,7 @@ export function toResults(entries: IndexEntryView[], indexes: IndexView[]): Inde
   });
 }
 
-async function search(core: CoreClient, query: string) {
+async function search(core: TypedCore, query: string) {
   const [list, found] = await Promise.all([core.call("plugin.index.list", {}), core.call("plugin.index.search", { ...(query ? { query } : {}), limit: LIMIT })]);
   return { indexes: list.indexes, results: toResults(found.entries, list.indexes) };
 }
@@ -267,7 +268,7 @@ function mutedIn(mutes: { muted: string[] } | undefined, id: string): boolean {
 const why = (err: unknown) => (err instanceof Error ? err.message.replace(/^[a-z_]+: /, "") : String(err));
 
 export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
-  const core = useCore();
+  const core = typedCore(useCore());
   const TABS: PluginsTab[] = ["installed", "add", "updates", "find", "indexes"];
   // The tab and the open plugin are the user's place: kept across a reload of the window's document (installing,
   // turning on or updating a plugin with its own layer loads it again). Kept per route, so a link that names its own

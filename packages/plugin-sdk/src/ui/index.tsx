@@ -29,7 +29,9 @@ import { AvatarControlHub, cleanAvatarDown, cleanAvatarUp, type AvatarState } fr
 import type { AvatarBox, AvatarCatalogueNames, AvatarCue } from "../catalogs/avatar-cues";
 
 export * from "./bridge";
-export { AvatarControlHub, cleanAvatarCue, type AvatarState } from "./avatar-control";
+export { AvatarControlHub, avatarBoxFromRect, cleanAvatarCue, type AvatarState } from "./avatar-control";
+// Mouth levels from speech, for any avatar renderer (./mouth): the five vowel weights from the `avatar` spot's speech feed.
+export { LipSync, SpeechRing, frameSource, ringSource, analyserSource, bufferSource, speechFrames, PushedSpeech, MAX_FRAME_SECONDS, visemeWeights, MouthSmoother, VISEMES, SHUT, SILENCE_RMS, FULL_RMS, DARK_HZ, BRIGHT_HZ, clamp01, rmsOf, spectralCentroidOf, FFT_SIZE, type LipSyncSource, type SpeechFeatureSource, type SpeechFeatures, type AnalyserLike, type VisemeWeights } from "./mouth";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
 // React of its own (`clover plugin new`'s UI and point templates do).
 export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -48,6 +50,14 @@ interface Runtime {
   modules: Map<string, ClientModule>;
   /** Loads a plugin's module on demand (a third-party layer's own). */
   load?: (pluginId: string) => Promise<ClientModule | undefined>;
+  /** A test layer's plugin API (`ui/testing`): `usePluginApi` hands a part this object as it is. Never set in the app. */
+  testApi?: (pluginId: string, mount?: string) => PluginApi | undefined;
+  /** A test layer's own room in the window's session storage (`useKept`), so several layers in one document (a gallery)
+   *  keep apart. Never set in the app. */
+  testKeptScope?: (mount: string) => string;
+  /** Whether a pending card is a test layer's own, for a part of it (several layers in one document hold their own
+   *  cards). Never set in the app. */
+  testOwnsCard?: (mount: string, cardId: string) => boolean;
   listeners: Set<(m: LayerMessage) => void>;
   /** The callbacks each child frame was handed, by child mount. */
   callbacks: Map<string, Map<string, (...args: unknown[]) => unknown>>;
@@ -71,11 +81,15 @@ function rt(): Runtime {
 }
 
 /** Sets the layer up (the app's layer boot calls it once, before rendering). Not for plugins. */
-export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number }): void {
+export function configureLayer(input: { bridge: LayerBridge; modules?: Record<string, ClientModule> | Map<string, ClientModule>; load?: Runtime["load"]; sleepAfterMs?: number; testApi?: Runtime["testApi"]; testKeptScope?: Runtime["testKeptScope"]; testOwnsCard?: Runtime["testOwnsCard"] }): void {
   const r: Runtime = {
     bridge: input.bridge,
-    modules: new Map(Object.entries(input.modules ?? {})),
+    // A map is kept as given (a test layer adds the modules of the layers it sets up later).
+    modules: input.modules instanceof Map ? input.modules : new Map(Object.entries(input.modules ?? {})),
     ...(input.load ? { load: input.load } : {}),
+    ...(input.testApi ? { testApi: input.testApi } : {}),
+    ...(input.testKeptScope ? { testKeptScope: input.testKeptScope } : {}),
+    ...(input.testOwnsCard ? { testOwnsCard: input.testOwnsCard } : {}),
     listeners: new Set(),
     callbacks: new Map(),
     tokens: new Map(),
@@ -1169,7 +1183,9 @@ function layerStreams(mount: string, pluginId: string): StreamsTransport {
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
+  const fake = rt().testApi?.(part.entry.pluginId, part.mount);
   return useMemo(() => {
+    if (fake !== undefined) return fake;
     const call = <T,>(method: string, params: unknown) => rt().bridge.api(part.mount, method, params) as Promise<T>;
     return layOver(catalogMembers(part.mount, part.entry.pluginId), {
       turns: {
@@ -1402,7 +1418,7 @@ export function usePluginApi(): PluginApi {
       } as unknown as PluginApi["plugins"],
       t,
     }) as unknown as PluginApi;
-  }, [part.entry.pluginId, part.mount, t]);
+  }, [part.entry.pluginId, part.mount, t, fake]);
 }
 
 /** A menu the core shows for this part (it crosses the frame's edge, so the core draws it, natively): data only,
@@ -1503,15 +1519,19 @@ export function useSpotEntries(name: string, spotKey?: string, forProps?: string
   const forBot = typeof b === "string" ? b : typeof (b as { id?: unknown } | undefined)?.id === "string" ? (b as { id: string }).id : undefined;
   const kind = typeof forProps === "object" && typeof forProps?.forSessionKind === "string" ? forProps.forSessionKind : undefined;
   const [entries, setEntries] = useState<readonly SpotEntryView[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  // Which question the last answer was to: an answer for other params (another bot, another session kind) is not this
+  // one's, so the list reads as not loaded in the very render the params change, until its own answer comes.
+  const asked = JSON.stringify([part.mount, name, spotKey ?? null, forBot ?? null, kind ?? null]);
+  const [answered, setAnswered] = useState<string | undefined>(undefined);
+  const loaded = answered === asked;
   const listeners = useRef(new Set<() => void>());
   useEffect(() => {
     let live = true;
     const load = () => void rt().bridge.entries(part.mount, name, spotKey, forBot, kind).then((e) => {
       if (!live) return;
       setEntries((old) => (JSON.stringify(old) === JSON.stringify(e) ? old : e));
-      setLoaded(true);
-    }, () => { if (live) setLoaded(true); });
+      setAnswered(asked);
+    }, () => { if (live) setAnswered(asked); });
     load();
     const off = onLayerMessage((m) => {
       if (m.type === "respot") load();
@@ -1520,7 +1540,7 @@ export function useSpotEntries(name: string, spotKey?: string, forProps?: string
       live = false;
       off();
     };
-  }, [part.mount, name, spotKey, forBot, kind]);
+  }, [part.mount, name, spotKey, forBot, kind, asked]);
   useEffect(() => {
     for (const l of listeners.current) l();
   }, [entries]);
@@ -1702,8 +1722,10 @@ export function useCore(): CoreClient | undefined {
  *  A draft there (the composer's, keyed by its conversation's id only) may hold something pasted, a secret even: it is
  *  no more exposed than the text field it is typed in, which the same document already holds. */
 export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
-  const pluginId = useContext(PartContext)?.entry.pluginId ?? "clover";
-  const storeKey = `clover.kept:${pluginId}:${key}`;
+  const part = useContext(PartContext);
+  const pluginId = part?.entry.pluginId ?? "clover";
+  const scope = part !== null && runtime !== undefined ? runtime.testKeptScope?.(part.mount) ?? "" : "";
+  const storeKey = `clover.kept:${scope}${pluginId}:${key}`;
   const read = (k: string): T => {
     try {
       const raw = globalThis.sessionStorage?.getItem(k);
@@ -1798,16 +1820,19 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
       if (!live || !Array.isArray(now)) return;
       const known = new Set(rt().cards.map((c) => c.id));
       const added = (now as CardMeta[]).filter((c) => typeof c?.id === "string" && !known.has(c.id) && !resolvedCards.has(c.id));
-      if (added.length === 0) return;
-      rt().cards = [...rt().cards, ...added];
-      setCards([...rt().cards]);
+      if (added.length > 0) rt().cards = [...rt().cards, ...added];
+      // Every part's list is the layer's now: one that mounted beside another (whose read added the cards first) heard
+      // nothing of them otherwise, and drew a pending card as answered.
+      setCards((old) => (old.length === rt().cards.length && old.every((c, i) => c === rt().cards[i]) ? old : [...rt().cards]));
     }, () => undefined);
     return () => { live = false; };
   }, [mount]);
   const listeners = useRef(new Set<() => void>());
   useEffect(() => onLayerMessage(() => setCards([...rt().cards])), []);
   useEffect(() => { for (const l of listeners.current) l(); }, [cards]);
-  return useMemo(() => ({ cards, subscribe: (listener: () => void) => { listeners.current.add(listener); return () => listeners.current.delete(listener); } }), [cards]);
+  const owns = rt().testOwnsCard;
+  const own = useMemo(() => (owns === undefined ? cards : cards.filter((c) => owns(mount, c.id))), [cards, owns, mount]);
+  return useMemo(() => ({ cards: own, subscribe: (listener: () => void) => { listeners.current.add(listener); return () => listeners.current.delete(listener); } }), [own]);
 }
 
 // Sealed cards (E-M3, §5.5): a part with the `approvals` capability places each card's sealed frames — its fields'

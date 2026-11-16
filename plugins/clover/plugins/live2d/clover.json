@@ -20,7 +20,7 @@
         "spot": "avatar",
         "id": "live2d",
         "key": "live2d",
-        "component": "Live2dAvatarEntry"
+        "component": "Live2dAvatarSpot"
       }
     ],
     "avatar.formats": [

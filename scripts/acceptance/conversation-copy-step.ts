@@ -37,18 +37,9 @@ export function copyManifest(): Record<string, unknown> {
   return { ...src, id: COPY_ID, name: COPY_NAME, client: { ...src.client, entry: "client/index.js" }, contributes };
 }
 
-/** The part's `./sdk` as a third party's folder ships it: the public SDK (`@waifucave/clover-plugin-sdk/ui`), bound the way
- *  the app's own build binds the bundled part (`apps/desktop/src/layer/clover/sdk.ts`), and no voice player (a quiet bot). */
-const SDK_SHIM = `import * as Ui from "@waifucave/clover-plugin-sdk/ui";
-export { SEALED_FIELDS } from ${JSON.stringify(join(PLUGINS, "shell", "runtime", "ui.ts"))};
-export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries } = Ui;
-export function UiRuntimeProvider(props) { return props.children ?? null; }
-export function useBotSpeech(_bot) { return { speaking: false }; }
-`;
-
-/** Writes the copy's folder under `root` and returns its path: the bundled conversation's own source, built to one module as
- *  the registry builds a client entry (everything bundled in but the layers' bare imports), its `./sdk` the public SDK, and
- *  its stylesheets. */
+/** Writes the copy's folder under `root` and returns its path: the bundled conversation's own source, unchanged (F2b: it
+ *  imports the public UI SDK and nothing outside its folder, so nothing is substituted), built to one module as the
+ *  registry builds a client entry (everything bundled in but the layers' bare imports), and its stylesheets. */
 export async function buildCopy(root: string): Promise<string> {
   const dir = join(root, COPY_ID);
   rmSync(dir, { recursive: true, force: true });
@@ -56,16 +47,12 @@ export async function buildCopy(root: string): Promise<string> {
   const manifest = copyManifest() as { client: { css?: string[] } };
   writeFileSync(join(dir, "clover.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   for (const css of manifest.client.css ?? []) copyFileSync(join(PLUGINS, "conversation", css), join(dir, css));
-  const shim = join(root, `${COPY_ID}-sdk.js`);
-  writeFileSync(shim, SDK_SHIM);
   const from = join(PLUGINS, "conversation", "client");
   const result = await Bun.build({
     entrypoints: [join(from, "index.tsx")], outdir: join(dir, "client"), target: "browser", format: "esm", splitting: false, minify: false,
     naming: { entry: "index.[ext]" }, external: [...CLIENT_BARE_IMPORTS], define: { "process.env.NODE_ENV": JSON.stringify("production") }, throw: false,
-    plugins: [{ name: "copy-sdk", setup(b) { b.onResolve({ filter: /^\.\.?\/sdk(\.tsx?)?$/ }, (args) => (args.importer.startsWith(from) ? { path: shim } : undefined)); } }],
     ...{ macros: false },
   });
-  rmSync(shim, { force: true });
   if (!result.success || !existsSync(join(dir, "client", "index.js"))) throw new Error(`the conversation copy's client wasn't built: ${result.logs.map((l) => String(l)).join("; ").slice(0, 400)}`);
   return dir;
 }

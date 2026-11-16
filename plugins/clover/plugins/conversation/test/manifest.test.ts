@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { manifestFindings } from "../../shell/runtime/manifest-check";
+import { validateManifest } from "@waifucave/clover-plugin-sdk";
+import { readFileSync as readManifestFile } from "node:fs";
+import { basename, join as joinPath } from "node:path";
+
+/** The findings the core's validator reports for this bundled part's manifest (a child of the bundled `clover` plugin). */
+function manifestFindings(root: string): string[] {
+  const report = validateManifest(readManifestFile(joinPath(root, "clover.json"), "utf8"), { folderName: basename(root), parent: { id: "clover", namespace: "clover" }, bundled: true, file: "clover.json" });
+  return report.issues.map((i) => `${i.severity} ${i.code} ${i.path}: ${i.message}`);
+}
+
 
 const root = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(root, "clover.json"), "utf8"));

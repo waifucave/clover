@@ -1,16 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { EntryComponent } from "../../shell/runtime/types";
-import { fakeCore, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
+import type { EntryProps, UiComponent } from "@waifucave/clover-plugin-sdk";
+import { fakeCore, runtimeWith, settle, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { ArchiveEntry, OLD_APP } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import { ARCHIVED, NOW } from "../gallery/fixtures";
 
 afterEach(cleanup);
 
 /** Stands in for the conversation part: shows the props its spot got. */
-const Transcript: EntryComponent = ({ props }) => <p data-testid="transcript">{JSON.stringify(props)}</p>;
+const Transcript: UiComponent<EntryProps> = ({ props }) => <p data-testid="transcript">{JSON.stringify(props)}</p>;
 
 async function mount(params: { session?: string } = {}) {
   const core = fakeCore({
@@ -27,9 +25,9 @@ async function mount(params: { session?: string } = {}) {
     component: (_, name) => (name === "ConversationEntry" ? Transcript : undefined),
   });
   render(
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <ArchiveEntry props={{ route: "archive", params, now: NOW }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { core };
@@ -53,6 +51,7 @@ describe("the archive", () => {
     await mount();
     expect(screen.getByText("Pick a session to read it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Trip to Kyoto/ }));
+    await act(() => settle()); // the spot resolves through the layer, as in the app
     expect(JSON.parse(screen.getByTestId("transcript").textContent!)).toEqual({ bot: OLD_APP, session: "w-2", archived: true });
     expect(screen.getByRole("region", { name: "Trip to Kyoto: what to book first" }).textContent).toContain("Chat · Oct 30 · anthropic/claude-sonnet-5 · 18 messages");
   });

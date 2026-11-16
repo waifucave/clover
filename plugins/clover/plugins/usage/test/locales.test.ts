@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { LocaleSchema, placeholdersOf } from "../../../../../packages/plugin-sdk/src/formats/locale";
+import { LocaleSchema, placeholdersOf } from "@waifucave/clover-plugin-sdk";
 import { EN, english, setTranslator, t } from "../src/strings";
 import en from "../locales/en.json" with { type: "json" };
 import manifest from "../clover.json" with { type: "json" };

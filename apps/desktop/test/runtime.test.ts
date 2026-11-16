@@ -654,6 +654,25 @@ describe("each document's strings (§5.5's translations)", () => {
 });
 
 describe("a message to the main window's shell", () => {
+  test("the window's acts and what it provides go to the part that fills app.root, whichever plugin's (F2b: never by layer or id)", () => {
+    const s = setup(readUiPlugins([folderView(join(FIXTURES, "fixture-root"), 2000)] as never));
+    const view = s.rt.resolve(s.rootFrame, s.root.mount, "app.root");
+    const item = view.items[0]!;
+    if (item.kind !== "frame") throw new Error("the root part is not a frame");
+    expect(item).toMatchObject({ ref: "fixture-root#app.root" });
+    const token = new URL(item.url).searchParams.get("mount")!;
+    expect(s.rt.serveDocument(item.layer, token)).toBeDefined();
+    const rootFrame = frame(item.url, s.rootFrame);
+    s.rt.describe(rootFrame, WIN, token);
+    const m = { type: "shell-act" as const, act: { kind: "sidebar" as const } };
+    s.sent.length = 0;
+    s.rt.rootPartMessage(WIN, m as never);
+    expect(s.sent).toEqual([{ to: `${rootFrame.processId}:${rootFrame.routingId}`, m }]);
+    s.sent.length = 0;
+    s.rt.rootPartMessage(WIN + 1, m as never);
+    expect(s.sent).toEqual([]);
+  });
+
   test("a shell message goes to the window's clover shell document only (not the core root, not another window's)", () => {
     const s = setup([]);
     const shell = mountShell(s);

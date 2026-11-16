@@ -1,11 +1,10 @@
 // The composer on the runtime: sends, stops, model and level changes through the core.
+import { card, computerView, fakeApi, fakeApprovals, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView, ComputerView, SessionView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { card, computerView, fakeApi, fakeApprovals, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { BotView, ComputerView, EntryComponent, SessionView } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { ComposerEntry } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import type { SlashCommand } from "../client/slash";
 
 afterEach(cleanup);
@@ -51,16 +50,15 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
       sends.push({ to, message });
     },
     approvals,
-    ...(opts.kept ? { kept: opts.kept } : {}),
     spot: (name) => (name === "composer.action" ? { shape: "keyed" } : undefined),
     entries: opts.entries ?? [],
     component: () => opts.component,
     ...(opts.tokens ? { tokens: () => opts.tokens! } : {}),
   });
   render(
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime} spot="composer">
       <ComposerEntry props={{ bot: { id: s.kind === "bot" ? "alpha" : "codex", name: s.kind === "bot" ? "Alpha" : "Codex" }, session: s.id }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { core, approvals, sends, host };
@@ -276,11 +274,11 @@ describe("the composer entry", () => {
       expect(shown).toEqual(["/say", "/lint"]);
     });
 
-    test("a host with no commands (another plugin's composer) leaves / as plain text", async () => {
+    test("a composer whose command list the app refuses (its plugin holds no commands.run) offers none, and / is plain text", async () => {
       const { sends } = await mount();
       fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "/say hi" } });
       await act(() => settle());
-      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(screen.queryAllByRole("option")).toEqual([]);
       fireEvent.keyDown(screen.getByRole("textbox", { name: "Message to Alpha" }), { key: "Enter" });
       await act(() => settle());
       expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "/say hi" } }]);
@@ -288,18 +286,21 @@ describe("the composer entry", () => {
   });
 
   test("the draft outlives a reload of the window's document (a plugin with its own layer installed), per conversation", async () => {
-    const kept = new Map<string, string>();
-    await mount(session({}), { kept });
+    sessionStorage.clear();
+    await mount(session({}));
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "half a thought" } });
     await act(() => settle());
-    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
-    const atReload = new Map(kept);
+    // The document goes with no unmount (a reload runs no cleanup): the window's session storage as it was.
+    const atReload = Object.fromEntries(Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)!).map((k) => [k, sessionStorage.getItem(k)!]));
+    const restore = () => { sessionStorage.clear(); for (const [k, v] of Object.entries(atReload)) sessionStorage.setItem(k, v); };
     cleanup();
-    await mount(session({}), { kept: atReload });
+    restore();
+    await mount(session({}));
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("half a thought");
     // Another conversation's composer starts empty.
     cleanup();
-    await mount(session({ id: "s_other" }), { kept: new Map(atReload) });
+    restore();
+    await mount(session({ id: "s_other" }));
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
   });
 

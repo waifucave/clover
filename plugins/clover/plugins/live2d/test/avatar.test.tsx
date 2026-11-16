@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { act, render, screen } from "@testing-library/react";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { PushedSpeech } from "@waifucave/clover-plugin-vrm/lipsync";
-import type { FigureBox, FigureCue, FigureNames } from "@waifucave/clover-plugin-vrm/control";
+import { PushedSpeech } from "@waifucave/clover-plugin-sdk/ui";
+import type { AvatarBox as FigureBox, AvatarCatalogueNames as FigureNames, AvatarCue as FigureCue } from "@waifucave/clover-plugin-sdk";
 import { placeholderFiles } from "../src/placeholder/model";
 import { Live2dAvatar, VIEW_OPTIONS, type AvatarFrames, type Live2dView, type ViewFactory } from "../src/ui/Live2dAvatar";
 import { Live2dAvatarEntry } from "../src/ui/entry";
@@ -263,8 +263,8 @@ describe("no microphone, no sound of its own", () => {
 
 describe("the entry the manifest names", () => {
   test("is an export of the client entry, keyed live2d in the avatar spot", async () => {
-    expect(manifest.contributes.ui).toEqual([{ spot: "avatar", id: "live2d", key: "live2d", component: "Live2dAvatarEntry" }]);
-    expect(typeof (client as Record<string, unknown>).Live2dAvatarEntry).toBe("function");
+    expect(manifest.contributes.ui).toEqual([{ spot: "avatar", id: "live2d", key: "live2d", component: "Live2dAvatarSpot" }]);
+    expect(typeof (client as Record<string, unknown>).Live2dAvatarSpot).toBe("function");
   });
 
   test("takes the spot's props: the bot's name and its file", () => {

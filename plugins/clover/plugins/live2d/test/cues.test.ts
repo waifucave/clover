@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SwitchDriver, catalogOf, cleanName, paramNames, readTable, switchNamed, switchesOf } from "../src/cues";
-import type { FigureCue, FigureNames, FigureBox } from "@waifucave/clover-plugin-vrm/control";
+import type { AvatarBox as FigureBox, AvatarCatalogueNames as FigureNames, AvatarCue as FigureCue } from "@waifucave/clover-plugin-sdk";
 import { FigureCues } from "../src/ui/figure-cues";
 
 // A model made for a VTuber app, described the way its display info does, in its maker's language. The names are the

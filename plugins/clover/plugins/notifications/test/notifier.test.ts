@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { readFileSync } from "node:fs";
 import type { BotsApi } from "@waifucave/clover-plugin-sdk";
 import { DEFAULT_PREFS, DesktopNotifier, noticeId, noticeWords, wanted, type DesktopNotice, type DesktopNotifications, type NotifierUpdate } from "../src/notifier";
 import { english } from "../src/strings";
 import * as host from "../host/index";
 import { englishOf } from "../src/names";
-import { checkManifest } from "../../base-theme/src/manifest-check";
+import { validateManifest } from "@waifucave/clover-plugin-sdk";
 import manifest from "../clover.json" with { type: "json" };
 
 /** The plugin API's desktop door over a fake: what the host half is handed. */
@@ -151,9 +152,10 @@ describe("the host half and the manifest", () => {
     expect(manifest.contributes.notifiers).toEqual([{ id: "desktop", name: "Desktop notifications", handler: "notifier", runsOn: "each" }]);
     expect(typeof host.notifier.notify).toBe("function");
     expect(typeof host.notifier.clear).toBe("function");
-    const check = checkManifest(join(import.meta.dir, ".."), { child: true });
-    expect(check.problems).toEqual([]);
-    expect(check.kind).toBe("code");
+    const root = join(import.meta.dir, "..");
+    const report = validateManifest(readFileSync(join(root, "clover.json"), "utf8"), { folderName: basename(root), parent: { id: "clover", namespace: "clover" }, bundled: true, file: "clover.json" });
+    expect(report.issues.map((i) => `${i.severity} ${i.code} ${i.path}: ${i.message}`)).toEqual([]);
+    expect(JSON.parse(readFileSync(join(root, "clover.json"), "utf8")).host).toBeDefined();
   });
 
   test("without the app's notifications it does nothing; with them, names bots through bots.read", async () => {

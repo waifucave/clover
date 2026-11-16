@@ -3,11 +3,11 @@
 // path) through `bot.importAvatar`, and keeps the model's own credit note. What an import takes comes from the renderers'
 // `avatar.formats`; with none installed and on the section says so and offers neither packs nor an import. The user layer
 // is written through the core's door for this part (`bot.setUserLayer`, only `avatar` and `avatarCredit`).
+import { type AvatarPackEntry, type BotRef, plain } from "./local";
+import type { BotView, EntryProps, PluginSummary, PointEntry } from "@waifucave/clover-plugin-sdk";
+import { useCore, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useId, useState } from "react";
 import { displayText } from "@waifucave/clover-plugin-sdk/plain";
-import type { AvatarPackEntry, BotRef, BotView, EntryProps, PointEntry } from "../../shell/runtime/types";
-import { plain } from "../../shell/runtime/views";
-import { useCore, usePluginApi } from "./sdk";
 import { S } from "./strings";
 
 /** What the section reads of an `avatar.formats` entry (a renderer's declaration of the format it draws). */
@@ -84,7 +84,7 @@ export function AvatarSection({ props }: EntryProps<{ bot: BotRef }>) {
         format: e.value.format,
         ...(e.value.portrait ? { portraitUrl: e.value.portrait } : {}),
       }));
-    void Promise.all([api.points.entries<AvatarPackEntry>("avatar.packs").catch(() => []), core?.call("plugin.list", {}).catch(() => undefined)]).then(([entries, list]) => {
+    void Promise.all([api.points.entries<AvatarPackEntry>("avatar.packs").catch(() => []), (core?.call("plugin.list", {}) as Promise<{ plugins: PluginSummary[] }> | undefined)?.catch(() => undefined)]).then(([entries, list]) => {
       if (!live) return;
       const names = Object.fromEntries((list?.plugins ?? []).map((p) => [p.id, plain(p.name)]));
       setPacks(toChoices(entries, names));

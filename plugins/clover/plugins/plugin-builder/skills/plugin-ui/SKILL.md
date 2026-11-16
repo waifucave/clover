@@ -317,3 +317,45 @@ a login for its images won't serve them into the page; fetch those through the h
 folder, a worker, the media URL, approval cards and the app around it; WebCodecs and WebGL are checked in a plain page
 only, so test them in yours. Without `isolated`, use a single-threaded build, or a program the host half runs
 (plugin-host, "Programs").
+
+## An avatar renderer
+
+A plugin that draws the `avatar` spot for a format of its own takes its cues and reports its model and figure through
+`useAvatarControl()`, and lip-syncs from the spot's `speech` feed (`useAvatarSpeech().feed`). The helpers Clover's own
+renderers use are in `@waifucave/clover-plugin-sdk/ui`, the one SDK module a page is served (import nothing from a
+subpath of it): `SpeechRing` and `frameSource` read the frame that sounds now, `LipSync` turns it into five eased vowel
+weights (`aa`, `ih`, `ou`, `ee`, `oh`, summing to at most 1; `SHUT` is a closed mouth), and `avatarBoxFromRect` makes the
+figure's box and anchors from its bounding rectangle for `setBox`. Map the weights onto your format's own mouth.
+
+## Testing a part
+
+`@waifucave/clover-plugin-sdk/ui/testing` runs your part on the UI SDK's own runtime, over a fake layer that answers
+from what your test gives: render it with `@testing-library/react` (happy-dom) or in a gallery page of your own.
+
+```tsx
+import { act, render, screen } from "@testing-library/react";
+import { catalogSpot, fakeApi, fakeCore, runtimeWith, settle, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { MyPanel } from "../client";
+
+const core = fakeCore({ "session.get": () => ({ session: { id: "s1" } }) });
+const api = fakeApi({ settings: { compact: true } }); // a plugin API: in-memory settings, the rest stubs
+render(
+  <TestLayer runtime={runtimeWith({ api: () => api, core: () => core, spot: catalogSpot, entries: [], component: () => undefined })} pluginId="my-plugin">
+    <MyPanel props={{ session: "s1" }} tokens={{}} entry={{ pluginId: "my-plugin", id: "panel", spot: "panel" }} />
+  </TestLayer>,
+);
+await act(() => settle()); // spots and calls answer a moment later, as in Clover
+expect(core.calls.map((c) => c.method)).toEqual(["session.get"]);
+```
+
+- `runtimeWith({...})`: which spots exist (`spot`, `catalogSpot` for Clover's own), the entries that fill them and their
+  components (a `<Spot>` in your part mounts them inline), `api(pluginId)` (what `usePluginApi()` returns),
+  `core(pluginId)` (what `useCore()` reaches), `userSend`, `composerHost` (with `spot="composer"` on `TestLayer`),
+  `approvals` (`fakeApprovals`, the pending cards `useApprovals()` and `<Card>` see), `sealedText` (what a card's sealed
+  frames show; `sealedTextOf(frame)` reads it back), `t` (your strings), `tokens`, `context` (the mount context).
+- `fakeCore(handlers)` records each call (`calls`) and `emit`s core events to `useCore().on` listeners;
+  `bridgeCalls(kind)` lists what reached the app (`viewFrame`, `open`, `menu`, `userSend`…).
+- Builders for the core's views (`botView`, `sessionView`, `computerView`, `pluginSummary`, `card`…), and
+  `resolveSpot` to check which entries a spot would show.
+- What a part keeps across a reload (`useKept`) is the window's session storage: clear it between tests.
+- A card's sealed frames are iframes, as in Clover: check which frames your part placed, never their words.

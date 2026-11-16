@@ -477,7 +477,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       const f = webFrameMain.fromId(Number(processId), Number(routingId));
       return f !== undefined && f !== null && !f.detached;
     };
-    runtime.shellMessage(windowId, { type: "shell-provides", ...providedNow(shellProvides.get(windowId) ?? new Map(), state, alive) });
+    runtime.rootPartMessage(windowId, { type: "shell-provides", ...providedNow(shellProvides.get(windowId) ?? new Map(), state, alive) });
   };
   runtime.send = (frame, message: LayerMessage) => {
     const f = webFrameMain.fromId(frame.processId, frame.routingId);
@@ -800,7 +800,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
       hooks.windowDrag(s.windowId, true);
       return Promise.resolve();
     }
-    runtime.shellMessage(s.windowId, { type: "shell-act", act: r.act });
+    runtime.rootPartMessage(s.windowId, { type: "shell-act", act: r.act });
     return Promise.resolve();
   });
   on("clover:shell-report", (event, a) => {

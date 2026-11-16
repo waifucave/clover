@@ -1,8 +1,8 @@
 // What the usage entries read from the app until lane E's runtime gives them `usePluginApi().usage`: one context, so
 // the gallery and the tests hand the in-memory fake (`memoryUsage`) and E-M1 hands the plugin API's.
 
+import type { CoreClient } from "@waifucave/clover-plugin-sdk/ui";
 import { createContext, useContext, type ReactElement } from "react";
-import type { CoreClient } from "../../../shell/runtime/types";
 import type { UsageApi } from "../model/usage";
 import { UsageTab } from "./UsageTab";
 import { UsageView } from "./UsageView";

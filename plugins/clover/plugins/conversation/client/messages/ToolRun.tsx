@@ -1,3 +1,4 @@
+import { AppView } from "@waifucave/clover-plugin-sdk/ui";
 import { useId, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "../context";
 import { clip, firstLine, hostOf } from "../format";
@@ -5,7 +6,6 @@ import { IconChevron, IconFileText, IconGlobe, IconPencil, IconSparkles, IconTer
 import { StatusGlyph } from "../parts";
 import { Link } from "../Link";
 import { safeAsset } from "../links";
-import { AppView } from "../sdk";
 import { S } from "../strings";
 import { ToolResult, shortPath, writeVerb } from "../result";
 import { isOwnTool, runStatus, sharedComputer, splitPluginTool, titleFor, toolSentence, toolWords } from "../tool-phrases";

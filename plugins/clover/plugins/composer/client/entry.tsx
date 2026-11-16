@@ -15,12 +15,12 @@
 // goes to that plugin alone, as the command's args (`argsFor`); the line never goes to the bot. The result, or why it
 // didn't run, shows as a row above the box, here only: it isn't added to the conversation, so neither the bot nor any
 // other plugin reads it.
+import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useSpotEntries, useTokens, useUserSend } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { argsFor, inScope, refusalText, resultText, type SlashCommand } from "./slash";
 import { CLOVER_LEVELS } from "./levels";
 import { S } from "./strings";
-import { Spot, useApprovals, useComposerHost, useKept, usePluginApi, useSpotEntries, useTokens, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice, ComposerSlash } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -103,15 +103,21 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const [commands, setCommands] = useState<SlashCommand[] | undefined>(undefined);
   const [slashResult, setSlashResult] = useState<ComposerSlash["result"]>(undefined);
 
+  // A composer whose command list the app refuses (its plugin holds no `commands.run`) has no slash menu: a `/` line is
+  // plain text it sends like any other.
+  const [noCommands, setNoCommands] = useState(false);
   const slash: ComposerSlash | undefined =
-    host?.commands && host.runCommand
+    host !== undefined && !noCommands
       ? {
           commands,
           onOpen: () => {
             setCommands(undefined);
             host.commands!().then(
               (r) => setCommands((Array.isArray(r?.commands) ? r.commands : []).filter((c) => inScope(c, kind))),
-              () => setCommands([]),
+              () => {
+                setCommands([]);
+                setNoCommands(true);
+              },
             );
           },
           onRun: (command, rest, display) => {

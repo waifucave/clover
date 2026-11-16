@@ -1,11 +1,11 @@
 // A streamed reply's cost per word at a long transcript (45 turns, 135 rows): the projection, the timeline and the
 // draw of the view for one more word, in the test DOM. Was 33 ms a word (every row drawn again, every message's day read
 // with a new formatter); the bound leaves several times the room it needs now, and catches a return to drawing every row.
+import { TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, expect, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import { ConversationView } from "../client/ConversationView";
 import type { ConversationItem } from "../client/types";
-import { UiRuntimeProvider } from "../client/sdk";
 import { at, bot, BOT, DEVICE, FORMAT, NOW, user, SEALED_CARDS, tool } from "../gallery/fixtures";
 import { mockRuntime } from "../gallery/mock-runtime";
 afterEach(cleanup);
@@ -17,7 +17,7 @@ test("one more streamed word costs a few milliseconds at 135 rows, not every row
     history.push(bot(at(0, 1, i * 3 + 2), `answer ${i} with **bold** and a list:\n\n- one\n- two\n\nMore text here. `.repeat(3)));
   }
   const runtime = mockRuntime({ cards: SEALED_CARDS });
-  const view = (items: ConversationItem[]) => (<UiRuntimeProvider runtime={runtime}><ConversationView bot={BOT} now={NOW} device={DEVICE} format={FORMAT} items={items} onCopy={() => undefined} /></UiRuntimeProvider>);
+  const view = (items: ConversationItem[]) => (<TestLayer runtime={runtime}><ConversationView bot={BOT} now={NOW} device={DEVICE} format={FORMAT} items={items} onCopy={() => undefined} /></TestLayer>);
   let text = "";
   const r = render(view([...history]));
   const N = 60;

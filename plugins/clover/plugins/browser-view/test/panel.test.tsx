@@ -1,8 +1,8 @@
+import { bridgeCalls, runtimeWith, TestLayer, type TestRuntime } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { BrowserPanel } from "../client/BrowserPanel";
-import { PluginApiProvider } from "../client/sdk";
 import type { BrowserSpotProps } from "../client/types";
 import { fakeBrowser, type FakeBrowser } from "../gallery/fake-api";
 import { tabView } from "../gallery/fixtures";
@@ -20,11 +20,21 @@ const settle = () => sleep(150);
 const A = tabView("a", { title: "Docs preview", url: "http://localhost:4321/docs/" });
 const B = tabView("b", { title: "Plugin index", url: "https://plugins.clover.dev/" });
 
+/** One test layer per fake browser, so a re-render keeps the same layer. */
+const layers = new WeakMap<object, TestRuntime>();
+const NONE = {};
+function runtimeFor(api: FakeBrowser | undefined): TestRuntime {
+  const key = api ?? NONE;
+  let r = layers.get(key);
+  if (r === undefined) layers.set(key, (r = runtimeWith({ api: () => (api ? { browser: api } : {}) })));
+  return r;
+}
+
 function tree(api: FakeBrowser | undefined, props: BrowserSpotProps) {
   return (
-    <PluginApiProvider api={api ? { browser: api } : {}}>
+    <TestLayer runtime={runtimeFor(api)}>
       <BrowserPanel props={props} />
-    </PluginApiProvider>
+    </TestLayer>
   );
 }
 
@@ -287,19 +297,14 @@ describe("the live view", () => {
     expect(api.of("screenshot")).toEqual([]);
   });
 
-  test("the frame is where the host places the live view: useViewFrame(\"browser\") gets it, and lets go on unmount", async () => {
-    const placed: { name: string; el: HTMLElement | null }[] = [];
-    const viewFrame = (name: string) => (el: HTMLElement | null) => void placed.push({ name, el });
+  test("the frame is where the host places the live view: useViewFrame(\"browser\") tells the app its place, and lets go on unmount", async () => {
     const api = fakeBrowser([A]);
-    const view = render(
-      <PluginApiProvider api={{ browser: api }} viewFrame={viewFrame}>
-        <BrowserPanel props={{ app: "browser", bot: "alpha" }} />
-      </PluginApiProvider>,
-    );
+    const view = render(tree(api, { app: "browser", bot: "alpha" }));
     await flush();
-    expect(placed.at(-1)).toEqual({ name: "browser", el: frame() });
+    const told = () => bridgeCalls("viewFrame").filter((c) => c.args[0] === "browser");
+    expect(told().length).toBeGreaterThan(0);
     view.unmount();
-    expect(placed.at(-1)).toEqual({ name: "browser", el: null });
+    expect(told().at(-1)?.args[1]).toBeNull();
   });
 
   test("with no tab the frame says so, and nothing is shown", async () => {

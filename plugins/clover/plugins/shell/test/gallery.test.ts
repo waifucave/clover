@@ -55,11 +55,16 @@ beforeAll(async () => {
   document.body.append(root);
   const original = console.error;
   console.error = (...args: unknown[]) => {
-    errors.push(args.map(String).join(" "));
+    const line = args.map(String).join(" ");
+    // happy-dom loads no frame's page: a sealed card's frames (the app's own pages) are placed and left empty here.
+    if (/Iframe page loading is disabled/.test(line)) return;
+    errors.push(line);
   };
   try {
     (0, eval)(readFileSync(join(outdir, "main.js"), "utf8"));
     await until(() => root!.querySelector("[data-gallery-ready]") !== null, 30_000);
+    // Each screen's spots resolve through its layer, as in the app: a moment for every nested spot to answer.
+    for (let i = 0; i < 60; i++) await new Promise((r) => setTimeout(r, 10));
   } finally {
     console.error = original;
   }
@@ -134,9 +139,9 @@ describe("the gallery", () => {
     const held = frame("settings-pending-card");
     expect(held.querySelector(".cl-window__dialog")).toBeNull();
     expect(held.querySelector(".cl-window__note")?.textContent).toBe("Answer the waiting card first, then open it again.");
-    expect(held.querySelectorAll("[data-sealed-button]").length).toBe(3);
+    expect(held.querySelectorAll('iframe[data-clover-sealed^="button:"]').length).toBe(3);
     const approval = frame("approval");
-    expect(approval.querySelectorAll("[data-sealed-button]").length).toBe(3);
+    expect(approval.querySelectorAll('iframe[data-clover-sealed^="button:"]').length).toBe(3);
     expect(approval.querySelector(".cl-composer__pill")).not.toBeNull(); // the level, a label now
     // The code side folds the session's work into one summary line.
     expect(frame("code").querySelector(".cl-conv-tools__sentence")?.textContent).toBe("Ran a command, made 2 edits, and 3 more");
@@ -186,7 +191,7 @@ describe("the gallery", () => {
     const pending = units.findIndex((u) => u.hasAttribute("data-pending"));
     expect(pending).toBeGreaterThan(0);
     expect(units.length - pending).toBeGreaterThan(3);
-    expect(frame.querySelectorAll("[data-sealed-button]").length).toBe(3);
+    expect(frame.querySelectorAll('iframe[data-clover-sealed^="button:"]').length).toBe(3);
   });
 
   test("every catalog token a part names is in lane B's catalog; the rest are part-local requests", () => {

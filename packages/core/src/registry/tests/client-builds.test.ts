@@ -54,6 +54,22 @@ describe("one build: what it reads and writes (client-build-run.ts)", () => {
     expect(text.includes(root) || text.includes(homedir()) || text.includes("sourceMappingURL")).toBe(false);
   });
 
+  test("a folder avatar renderer using the SDK's mouth levels and figure box builds against the layer's one UI SDK", async () => {
+    // A third party's renderer gets the same helpers the bundled VRM and Live2D renderers use, from `…/ui` (served by
+    // every layer), never a subpath the layer doesn't serve.
+    const root = temp("clover-cb-");
+    write(root, {
+      "client/index.tsx": 'import { LipSync, SpeechRing, frameSource, SHUT, avatarBoxFromRect, useAvatarControl } from "@waifucave/clover-plugin-sdk/ui";\nexport function Avatar() { const c = useAvatarControl(); const ring = new SpeechRing(48000, 0); const lips = new LipSync(frameSource(ring, () => 0)); const w = lips.sample(1 / 60) ?? SHUT; c.setBox(avatarBoxFromRect({ width: 10, height: 10 }, { x: 0, y: 0, width: 10, height: 10 })); return <i data-aa={String(w.aa)} />; }\n',
+    });
+    const j = job(root);
+    const r = await runClientBuild(j);
+    if (!r.ok) throw new Error(r.message);
+    expect(r.imports.every((i) => (CLIENT_BARE_IMPORTS as readonly string[]).includes(i))).toBe(true);
+    expect(r.imports).toContain("@waifucave/clover-plugin-sdk/ui");
+    // The helpers come from the layer's copy, not bundled into the plugin's module.
+    expect(readFileSync(join(j.outDir, "index.js"), "utf8")).not.toContain("class LipSync");
+  });
+
   test("a macro import fails the build, closed, and nothing of the plugin's runs", async () => {
     const root = temp("clover-cb-");
     const ran = join(root, "ran.txt");

@@ -7,10 +7,10 @@
 // The session, its agents and the computers come through the plugin API. Changes, outputs, context use and connectors
 // have no plugin-API call yet: the `clover` layer reads them from the core (provisional methods, `session.changes`
 // and the rest, for lanes A and D to settle).
+import type { ComputerView, PluginApi, SessionView as Session } from "@waifucave/clover-plugin-sdk";
+import { type CoreClient, useCore, usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useState } from "react";
-import type { ComputerView, CoreClient, PluginApi, SessionView as Session } from "../../shell/runtime/types";
 import { SessionView } from "./SessionView";
-import { useCore, usePluginApi } from "./sdk";
 import type { SessionAgentStatus, SessionKind, SessionViewProps } from "./types";
 
 const LEVEL_LABELS: Record<string, string> = {

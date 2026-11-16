@@ -1,10 +1,8 @@
+import { fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { plain } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { fakeCore, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { plain } from "../../shell/runtime/views";
 import { iconUrl, PluginIndexEntry, toDetail, toInstalled, toResults } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import { Detail, Installed, PluginIcon, stateText } from "../client/Installed";
 import { ENTRIES, INDEXES, INSTALLED, INSTALLED_ICONS, INSTALLED_LOG, INSTALLED_SETTINGS, installedDetail, NOW } from "../gallery/fixtures";
 
@@ -19,7 +17,7 @@ afterEach(() => {
   devFolders = [];
 });
 
-async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", kept?: Map<string, string>) {
+async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found") {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: INSTALLED, adultConfirmed: false }),
     "plugin.ui": () => ({ plugins: Object.entries(INSTALLED_ICONS).map(([pluginId, icon]) => ({ pluginId, icon })) as never }),
@@ -62,9 +60,9 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
   });
   const routes: unknown[] = [];
   render(
-    <UiRuntimeProvider runtime={runtimeWith({ core: () => core, ...(kept ? { kept } : {}) })}>
+    <TestLayer runtime={runtimeWith({ core: () => core })}>
       <PluginIndexEntry props={{ route: "plugins", params, navigate: (r) => routes.push(r), now: NOW }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { core, routes };
@@ -525,23 +523,24 @@ describe("the Plugins page: updates and indexes", () => {
   });
 
   test("the tab the user is on outlives a reload of the window's document (installing a plugin with its own layer), per route", async () => {
-    const kept = new Map<string, string>();
-    await mount({}, "found", kept);
+    sessionStorage.clear();
+    await mount({}, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
     fireEvent.click(screen.getByRole("tab", { name: /Updates/ }));
     await act(() => settle());
-    // The document goes with no unmount (a reload runs no cleanup): the window's storage as it was.
-    const atReload = new Map(kept);
+    // The document goes with no unmount (a reload runs no cleanup): the window's session storage as it was.
+    const atReload = Object.fromEntries(Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)!).map((k) => [k, sessionStorage.getItem(k)!]));
     cleanup();
-    await mount({}, "found", atReload);
+    for (const [k, v] of Object.entries(atReload)) sessionStorage.setItem(k, v);
+    await mount({}, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Updates");
     // Left and opened again (an unmount): the first tab, as before.
     cleanup();
-    await mount({}, "found", atReload);
+    await mount({}, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
     // A link that names its own tab starts there.
     cleanup();
-    await mount({ tab: "find" }, "found", atReload);
+    await mount({ tab: "find" }, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
   });
 
@@ -618,7 +617,7 @@ describe("the Plugins page: updates and indexes", () => {
 
 describe("the words for the parts beside a bot", () => {
   test("every word is one the row's chips use (contributionLabels)", async () => {
-    const { CONTRIBUTION_LABEL_ORDER } = await import("../../../../../packages/plugin-sdk/src/manifest/labels");
+    const { CONTRIBUTION_LABEL_ORDER } = await import("@waifucave/clover-plugin-sdk");
     const { PART_WORDS } = await import("../client/Installed");
     for (const w of Object.values(PART_WORDS)) expect(CONTRIBUTION_LABEL_ORDER as readonly string[]).toContain(w);
   });

@@ -1,13 +1,11 @@
 // The column beside the conversation, on the runtime: a coding session's (`panel` keyed `session`) and a bot's slim
 // one (`bot.side`, the owner's item 90).
+import { computerView, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { SessionView } from "@waifucave/clover-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { computerView, fakeApi, fakeCore, settle } from "../../shell/runtime/testkit";
-import type { SessionView } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { BotColumn, SessionColumn } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 
 afterEach(cleanup);
 
@@ -34,7 +32,7 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
   });
   const routes: unknown[] = [];
   const opened: string[] = [];
-  render(<UiRuntimeProvider runtime={runtimeWith({ api: () => api, core: () => core })}>{node((r) => routes.push(r), (id) => opened.push(id))}</UiRuntimeProvider>);
+  render(<TestLayer runtime={runtimeWith({ api: () => api, core: () => core })}>{node((r) => routes.push(r), (id) => opened.push(id))}</TestLayer>);
   return { core, routes, opened };
 }
 

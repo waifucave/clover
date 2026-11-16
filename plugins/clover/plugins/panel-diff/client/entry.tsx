@@ -2,10 +2,10 @@
 // reads the session's diff from the core (`session.diff`: the working tree against HEAD in the session's folder, read
 // only and bounded), and puts its base, its target and the layout switch in the panel's header row. A refusal shows as
 // a line saying why, and an empty list as "No changes" with the core's notice (not a repository, another computer…).
+import { useCore } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DiffLayoutSwitch, DiffPanel, DiffTitle } from "./DiffPanel";
-import { useCore } from "./sdk";
 import { S } from "./strings";
 import type { DiffFile, DiffLayout } from "./types";
 

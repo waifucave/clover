@@ -3,11 +3,11 @@
 // `terminal` (lane J's PTY; B's `TerminalApi`), shows each terminal's output, and hands each key press and paste to
 // `input` as the trusted event itself: the app's runtime derives the bytes, brackets a paste and asks before one of
 // several lines runs. Its tabs sit in the panel's header row.
+import type { TerminalInputEvent } from "@waifucave/clover-plugin-sdk";
+import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { TerminalPanel, TerminalTabs } from "./TerminalPanel";
-import type { TerminalInputEvent } from "../../shell/runtime/types";
-import { usePluginApi } from "./sdk";
 import type { TerminalChunk, TerminalTab } from "./types";
 
 export interface TerminalEntryProps {

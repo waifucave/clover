@@ -1,14 +1,17 @@
+import { card, fakeApi, fakeApprovals, fakeCore, settle, type TestEntry as UiEntry, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
+import { catalogSpot } from "@waifucave/clover-plugin-sdk/ui/testing";
+import type { BotView } from "@waifucave/clover-plugin-sdk";
+import type { EntryComponent } from "../client/local";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { card, fakeApi, fakeApprovals, fakeCore, settle, uiPluginView } from "../../shell/runtime/testkit";
-import type { UiEntry } from "../../shell/runtime/resolve";
-import { SPOT_DECLS } from "../../shell/runtime/catalog";
-import type { BotView, EntryComponent } from "../../shell/runtime/types";
-import { runtimeWith } from "../../shell/runtime/ui";
 import { BotEditor } from "../client/BotEditor";
 import { BotEditorEntry } from "../client/entry";
-import { UiRuntimeProvider } from "../client/sdk";
 import { ALPHA, MODELS, THEMES } from "../gallery/fixtures";
+
+/** A running plugin's UI as `plugin.ui` lists it: its themes and string tables, the rest left plain. */
+const uiPluginView = (pluginId: string, themes: { id: string; file: string }[] = [], locales: { lang: string; file: string }[] = []) =>
+  ({ pluginId, name: pluginId, treeHash: "sha256-test", layer: pluginId.split("/")[0]!, assetBase: `clover-asset://${pluginId}/`, ui: [] as Record<string, unknown>[], themes, locales, bots: "all" as const });
+
 
 afterEach(cleanup);
 
@@ -29,11 +32,11 @@ async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: 
   });
   const approvals = fakeApprovals();
   const routes: unknown[] = [];
-  const runtime = runtimeWith({ api: () => api, core: () => core, approvals, spot: (name) => SPOT_DECLS[name], entries, component: (_p, name) => (name === "Section" ? Section : undefined) });
+  const runtime = runtimeWith({ api: () => api, core: () => core, approvals, spot: catalogSpot, entries, component: (_p, name) => (name === "Section" ? Section : undefined) });
   render(
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <BotEditorEntry props={{ route: "bot-editor", params: { bot: "alpha" }, navigate: (r) => routes.push(r) }} />
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   await act(() => settle());
   return { core, approvals, routes };
@@ -194,7 +197,7 @@ describe("the sections other plugins add (`bot.editor.section`)", () => {
     await mount(ALPHA_VIEW, undefined, {}, [section("clover/character")], Section);
     const drawn = screen.getByRole("region", { name: "a plugin's section" });
     expect(JSON.parse(drawn.textContent!)).toMatchObject({ bot: { id: "alpha", name: "Alpha" } });
-    const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section")].map((e) => e.getAttribute("aria-label") ?? e.querySelector(".cl-bot-editor__label")?.textContent);
+    const rows = [...document.querySelectorAll(".cl-bot-editor__rows > section, .cl-bot-editor__rows > [data-clover-spot] > [data-clover-entry] > section")].map((e) => e.getAttribute("aria-label") ?? e.querySelector(".cl-bot-editor__label")?.textContent);
     expect(rows.indexOf("a plugin's section")).toBe(rows.indexOf("Model") + 1);
     expect(rows[rows.indexOf("a plugin's section") + 1]).toBe("Theme");
   });

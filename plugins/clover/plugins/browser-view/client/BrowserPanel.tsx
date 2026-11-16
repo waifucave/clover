@@ -21,15 +21,15 @@
 // The header. Lane F's panel host hands each panel its header row (`header`); the tab row is drawn there, inside
 // `.cl-panel__head-own`, and the host's title steps aside. Without a host row (the gallery, another host) the panel
 // draws the row itself, above the toolbar.
+import { usePluginApi, useViewFrame } from "@waifucave/clover-plugin-sdk/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BrowserChrome } from "./BrowserChrome";
 import { BrowserTabs } from "./BrowserTabs";
 import { readSteps, type Steps } from "./history";
 import { useLiveView } from "./live-view";
-import { usePluginApi, useViewFrame } from "./sdk";
 import { S } from "./strings";
-import type { BrowserEntryProps, BrowserTab, TabOwner, TabView, Viewport } from "./types";
+import type { BrowserApi, BrowserEntryProps, BrowserTab, TabOwner, TabView, Viewport } from "./types";
 import { normalizeAddress, tabName } from "./url";
 
 /** The browser view's name: the panel's key. */
@@ -50,7 +50,9 @@ function describe(lead: string, error: unknown): string {
 }
 
 export function BrowserPanel({ props }: BrowserEntryProps) {
-  const api = usePluginApi()?.browser;
+  // A component's browser: its panel's members too (`show`, `hide`, `watch`, `onCdpEvent`, which the SDK serves a
+  // component), though the SDK's `PluginApi` types them absent, as for a host half.
+  const api = usePluginApi()?.browser as unknown as BrowserApi | undefined;
   const bot = props?.bot;
   const session = props?.session;
   const header = props?.header ?? null;

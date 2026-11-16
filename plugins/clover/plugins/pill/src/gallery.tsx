@@ -3,7 +3,7 @@
 // picture is the same on every run.
 
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import type { Rect, SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "@waifucave/clover-plugin-island";
+import type { Rect, SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "./surface/window";
 import { emptyDraft, type PillCard, type QuestionDraft } from "./model/cards";
 import { PILL, barLook, cardSize, contentReveal, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "./model/metrics";
 import { CHILD_PALETTES, PALETTES } from "./model/plume";

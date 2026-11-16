@@ -4,13 +4,11 @@
 // recording comes from a test source (the build's own would be the generated clip); getUserMedia is never reached.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { fakeApi, settle } from "../../shell/runtime/testkit";
-import { runtimeWith } from "../../shell/runtime/ui";
-import { UiRuntimeProvider } from "../../shell/client/sdk";
+import { fakeApi, settle, runtimeWith, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { TalkButton } from "../client";
 import { TALK_TEXT_MAX, setTalkLimit, setTalkSource, spokenText } from "../client/talk";
-import type { PluginApi } from "@waifucave/clover-plugin-sdk";
-import type { BotRef, EntryProps } from "../../shell/runtime/types";
+import type { EntryProps, PluginApi } from "@waifucave/clover-plugin-sdk";
+import type { BotRef } from "../client/local";
 
 afterEach(() => {
   cleanup();
@@ -57,14 +55,14 @@ function world(o: { listens?: boolean; heard?: { text?: string; note?: string };
   }) as unknown as PluginApi;
   // Several composers each with its own button and text box (the key binding picks the one nearest the focus).
   render(
-    <UiRuntimeProvider runtime={runtimeWith({ api: () => api, userSend: () => async (to, message) => { sent.push({ to, message }); } })}>
+    <TestLayer runtime={runtimeWith({ api: () => api, userSend: () => async (to, message) => { sent.push({ to, message }); } })}>
       {Array.from({ length: o.buttons ?? 1 }, (_, i) => (
         <div key={i} data-composer={i}>
           <textarea aria-label={`box ${i}`} />
           <TalkButton {...alpha} />
         </div>
       ))}
-    </UiRuntimeProvider>,
+    </TestLayer>,
   );
   /** Its host half passing on the held key binding's down or up. */
   const key = (phase: "down" | "up" | "cancel") => { for (const fn of heard.get(`talk-${phase}`) ?? []) fn({}); };

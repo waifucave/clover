@@ -9,7 +9,7 @@
 //   sends reaches `hub.cue`. For a framed renderer the stage's `LayerFrame` forwards each cue to the frame as
 //   `{ kind: "cue" }` and the frame's own hub sends its state up as `{ kind: "state" }`, which the parent's hub takes.
 import type { Unsubscribe } from "../api/plugin-api";
-import { cleanAvatarBox, cleanAvatarCue, cleanAvatarNames, type AvatarBox, type AvatarCatalogueNames, type AvatarCue } from "../catalogs/avatar-cues";
+import { cleanAvatarBox, cleanAvatarCue, cleanAvatarNames, type AvatarBox, type AvatarCatalogueNames, type AvatarCue, type AvatarPoint } from "../catalogs/avatar-cues";
 
 export const BOX_MIN_MS = 250;
 export const BOX_MIN_DELTA = 3;
@@ -131,3 +131,16 @@ export class AvatarControlHub {
 }
 
 export { cleanAvatarCue } from "../catalogs/avatar-cues";
+
+/** A figure's box from its bounding rectangle in the stage's pixels (for `AvatarControl.setBox`, any renderer): the
+ *  anchors at the proportions of a portrait (head top at the rectangle's top, face a fifth down, mouth a quarter, chest
+ *  two fifths), an estimate that says where the face is, not an exact landmark. */
+export function avatarBoxFromRect(canvas: { width: number; height: number }, r: { x: number; y: number; width: number; height: number }): AvatarBox {
+  const cx = r.x + r.width / 2;
+  const at = (f: number): AvatarPoint => ({ x: Math.round(cx), y: Math.round(r.y + r.height * f) });
+  return {
+    canvas: { width: Math.round(canvas.width), height: Math.round(canvas.height) },
+    figure: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+    anchors: { headTop: at(0), face: at(0.2), mouth: at(0.26), chest: at(0.42) },
+  };
+}

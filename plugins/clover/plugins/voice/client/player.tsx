@@ -5,8 +5,8 @@
 // nothing. Both messages carry the whole state (the held utterances; each bot's stop count, which only goes up), since
 // the app hands a part only the newest message of each name within a tick; on mount it asks its host half for that
 // state (`ready`), which also tells the host half it now accepts speech.
+import { usePluginApi } from "@waifucave/clover-plugin-sdk/ui";
 import { useEffect } from "react";
-import { usePluginApi } from "./sdk";
 import { SpeechCues } from "../src/levels";
 import { SpeechPlayer, type AudioContextLike } from "../src/player";
 

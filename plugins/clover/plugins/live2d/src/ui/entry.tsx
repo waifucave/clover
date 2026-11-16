@@ -2,8 +2,8 @@
 // (a URL inside the bot's plugin), the format, whether it speaks, and the speech feed — to the avatar.
 
 import type { ReactElement } from "react";
-import type { SpeechFeed } from "@waifucave/clover-plugin-vrm/lipsync";
-import type { FigureControl } from "@waifucave/clover-plugin-vrm/control";
+import type { SpeechFeed } from "@waifucave/clover-plugin-sdk/ui";
+import type { AvatarControl as FigureControl } from "@waifucave/clover-plugin-sdk/ui";
 import { Live2dAvatar } from "./Live2dAvatar";
 
 export interface AvatarSpotProps {

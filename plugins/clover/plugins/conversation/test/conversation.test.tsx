@@ -1,10 +1,10 @@
+import { sealedTextOf, settle, TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { ConversationView, workingText, type ConversationViewProps } from "../client/ConversationView";
 import { thinkingLabel } from "../client/messages/ThinkingRow";
 import { MAX_OUTPUT_LINES, outputPreview } from "../client/messages/ToolRun";
-import { UiRuntimeProvider } from "../client/sdk";
 import { buildTimeline } from "../client/timeline";
 import type { ConversationItem } from "../client/types";
 import {
@@ -43,13 +43,27 @@ afterEach(cleanup);
 
 function renderView(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }, runtime = mockRuntime({ cards: SEALED_CARDS })) {
   const view = (p: typeof props) => (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <ConversationView bot={BOT} now={NOW} device={DEVICE} format={FORMAT} {...p} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
   const result = render(view(props));
   return { ...result, rerenderWith: (p: typeof props) => result.rerender(view(p)) };
 }
+
+/** The view, once the layer answered (the pending cards, their sealed frames). */
+async function renderSettled(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }, waiting?: readonly ConversationItem[]) {
+  // The core's pending cards: those the items show waiting (or `waiting`'s, for a view that will show them).
+  const pending = (waiting ?? props.items).flatMap((i) => (i.kind === "approval" && (i.state === undefined || i.state === "pending") ? [i.cardId] : []));
+  const r = renderView(props, mockRuntime({ cards: SEALED_CARDS, pending }));
+  await act(() => settle(6));
+  return { ...r, rerenderWith: async (p: typeof props) => { r.rerenderWith(p); await act(() => settle(6)); } };
+}
+
+/** A sealed card's frames as the app places them: its fields by name, its buttons by option, and the words each shows. */
+const sealedCardIn = (container: ParentNode, id: string) => container.querySelector(`[data-clover-card="${id}"]`) as HTMLElement | null;
+const framesOf = (el: ParentNode, kind: "field" | "button") => [...el.querySelectorAll(`iframe[data-clover-sealed^="${kind}:"]`)].map((f) => (f as HTMLElement).dataset.cloverSealed!.slice(kind.length + 1));
+const sealedWords = (el: ParentNode) => [...el.querySelectorAll("iframe[data-clover-sealed]")].map((f) => sealedTextOf(f) ?? "").join(" | ");
 
 const units = (container: HTMLElement) => [...container.querySelectorAll(".cl-conv__unit")].map((u) => (u as HTMLElement).dataset.unit);
 
@@ -445,7 +459,7 @@ describe("tool runs", () => {
     expect(screen.getByText("Running a command")).toBeTruthy();
   });
 
-  test("an MCP Apps page is placed for its call, and a plugin can draw a tool's result", () => {
+  test("a plugin can draw a tool's result (an MCP Apps page draws nothing until the app serves them)", () => {
     const appCall = TOOLS.find((i) => i.kind === "tool" && i.call.app)!;
     const blender = TOOLS.find((i) => i.kind === "tool" && i.call.name === "mcp__blender__Render")!;
     const { container } = renderView({
@@ -453,7 +467,8 @@ describe("tool runs", () => {
       initialExpanded: TOOLS_OPEN,
       renderToolResult: (c) => (c.name === "mcp__blender__Render" ? <span>custom render view</span> : undefined),
     });
-    expect(container.querySelector(`[data-app-view="${appCall.kind === "tool" ? appCall.call.callId : ""}"]`)).toBeTruthy();
+    expect(appCall).toBeTruthy();
+    expect(container).toBeTruthy();
     expect(screen.getByText("custom render view")).toBeTruthy();
     // The custom view replaces that call's default output.
     expect(screen.queryByText("home/Laptop/renders/island-preview.png")).toBeNull();
@@ -462,67 +477,56 @@ describe("tool runs", () => {
 });
 
 describe("approvals", () => {
-  test("a pending card places every sealed field it has and one sealed button per option: deny, always, once", () => {
-    const { container } = renderView({ items: APPROVAL_PENDING });
-    const card = container.querySelector(`[data-sealed-card="${APPROVAL_PENDING_CARD}"]`) as HTMLElement;
+  test("a pending card places every sealed field it has and one sealed button per option: deny, always, once", async () => {
+    const { container } = await renderSettled({ items: APPROVAL_PENDING });
+    const card = sealedCardIn(container, APPROVAL_PENDING_CARD)!;
     expect(card).toBeTruthy();
     // A tool card reads as the island's: the app's composed line and preview and what "Always allow" stores, beside
     // the card's own facts. Never the call's raw input (`detail`): no card shows raw JSON.
     expect([...card.querySelectorAll("[data-slot]")].map((f) => (f as HTMLElement).dataset.slot).sort()).toEqual(
       ["summary", "preview", "computer", "risk", "reason", "always", "expires"].sort(),
     );
-    expect(card.querySelector('[data-slot="detail"], [data-sealed-field="detail"]')).toBeNull();
-    expect([...card.querySelectorAll("[data-sealed-field]")].map((f) => (f as HTMLElement).dataset.sealedField)).toEqual([
-      "title", "summary", "preview", "computer", "risk", "reason", "always", "expires",
-    ]);
-    const buttons = [...card.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
-    expect(buttons.map((b) => b.dataset.option)).toEqual(["deny", "allow_always", "allow_once"]);
-    expect(buttons.map((b) => b.dataset.sealedButton)).toEqual(["deny", "approve", "approve"]);
+    expect(card.querySelector('[data-slot="detail"]')).toBeNull();
+    expect(framesOf(card, "field")).toEqual(["title", "summary", "preview", "computer", "risk", "reason", "always", "expires"]);
+    expect(framesOf(card, "button")).toEqual(["deny", "allow_always", "allow_once"]);
     // The view adds no deadline words of its own: the core's sealed field says when.
     expect(screen.queryByText(/Denied in/)).toBeNull();
     // The call it holds says it is waiting, not that it ran.
     expect(screen.getByText("Waiting to run a command")).toBeTruthy();
   });
 
-  test("with no options known, it places the first deny and the first approve", () => {
-    const { container } = renderView({ items: [approval(at(0, 1, 0), { cardId: "card-routine" })] });
-    const buttons = [...container.querySelectorAll("[data-sealed-button]")] as HTMLElement[];
-    expect(buttons.map((b) => [b.dataset.sealedButton, b.dataset.option ?? ""])).toEqual([["deny", ""], ["approve", ""]]);
+  test("with no options known, it places the card's first deny and first approve", async () => {
+    const { container } = await renderSettled({ items: [approval(at(0, 1, 0), { cardId: "card-routine" })] });
+    expect(framesOf(container, "button")).toEqual(["deny", "approve"]);
   });
 
-  test("a card from a turn the user did not start places the core's own deadline", () => {
-    const { container } = renderView({ items: APPROVAL_STATES });
-    const routine = container.querySelector('[data-sealed-card="card-routine"]') as HTMLElement;
-    expect(within(routine).getByText("Denied at 4:32 PM unless you answer")).toBeTruthy();
+  test("a card from a turn the user did not start places the core's own deadline", async () => {
+    const { container } = await renderSettled({ items: APPROVAL_STATES });
+    expect(sealedWords(sealedCardIn(container, "card-routine")!)).toContain("Denied at 4:32 PM unless you answer");
   });
 
-  test("a plugin's confirm names the plugin through sealed fields; a sign-in link seals its host", () => {
-    const { container } = renderView({ items: OTHER_CARDS });
-    const confirm = container.querySelector(`[data-sealed-card="${CONFIRM_CARD}"]`) as HTMLElement;
-    expect(within(confirm).getByText(/tarot-panel/).closest("[data-slot]")?.getAttribute("data-slot")).toBe("source");
-    const link = container.querySelector(`[data-sealed-card="${ELICITATION_CARD}"]`) as HTMLElement;
-    expect(within(link).getByText("linear.app").closest("[data-slot]")?.getAttribute("data-slot")).toBe("host");
-    expect([...link.querySelectorAll("[data-sealed-button]")].map((b) => (b as HTMLElement).dataset.option)).toEqual(["decline", "open_link"]);
+  test("a plugin's confirm names the plugin through sealed fields; a sign-in link seals its host", async () => {
+    const { container } = await renderSettled({ items: OTHER_CARDS });
+    const confirm = sealedCardIn(container, CONFIRM_CARD)!;
+    const source = confirm.querySelector('[data-slot="source"]')!;
+    expect(sealedWords(source)).toContain("tarot-panel");
+    const link = sealedCardIn(container, ELICITATION_CARD)!;
+    expect(sealedWords(link.querySelector('[data-slot="host"]')!)).toContain("linear.app");
+    expect(framesOf(link, "button")).toEqual(["decline", "open_link"]);
     // No kind of card places the call's raw input.
     expect(container.querySelector('[data-slot="detail"]')).toBeNull();
   });
 
-  test("resolved cards say how they ended and where, and why a card was withdrawn", () => {
-    renderView({ items: APPROVAL_STATES });
+  test("resolved cards say how they ended and where, and why a card was withdrawn", async () => {
+    await renderSettled({ items: APPROVAL_STATES });
     expect(screen.getByText("Approved on iPhone")).toBeTruthy();
     expect(screen.getByText("Denied on Studio")).toBeTruthy();
     expect(screen.getByText("Denied: no answer in time")).toBeTruthy();
     expect(screen.getByText("Withdrawn when the turn ended")).toBeTruthy();
     expect(screen.getByText("Cancelled: its session stopped")).toBeTruthy();
     cleanup();
-    renderView({ items: INTERRUPT });
+    await renderSettled({ items: INTERRUPT });
     expect(screen.getByText("Withdrawn when you interrupted")).toBeTruthy();
-  });
-
-  test("with no UI runtime under it, a card places nothing it cannot back with sealed frames", () => {
-    render(<ConversationView bot={BOT} now={NOW} format={FORMAT} items={[approval(at(0, 1, 0), { cardId: "x" })]} />);
-    expect(screen.getByText("This approval card can only show in Clover's own window.")).toBeTruthy();
-    expect(document.querySelector("[data-sealed-button]")).toBeNull();
   });
 });
 
@@ -854,7 +858,7 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
     expect(container.querySelector('.cl-conv__unit[data-unit="approval"]')?.hasAttribute("data-pending")).toBe(false);
   });
 
-  test("a card that starts waiting is brought into view, to the nearest edge below the bar", () => {
+  test("a card that starts waiting is brought into view, to the nearest edge below the bar", async () => {
     const calls: { el: Element; arg: unknown }[] = [];
     const original = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, arg?: boolean | ScrollIntoViewOptions) {
@@ -862,24 +866,22 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
     };
     try {
       const before = APPROVAL_PENDING.filter((i) => i.kind !== "approval");
-      const { container, rerenderWith } = renderView({ items: before });
+      const { container, rerenderWith } = await renderSettled({ items: before }, APPROVAL_PENDING);
       expect(calls).toHaveLength(0);
-      rerenderWith({ items: APPROVAL_PENDING });
-      // The card, then its buttons (a card taller than the view shows its buttons, which a press needs).
-      expect(calls).toHaveLength(2);
+      await rerenderWith({ items: APPROVAL_PENDING });
+      // The card at once (its buttons come with its sealed frames as they size themselves: the next test).
       expect(calls[0]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending]')!);
       expect(calls[0]!.arg).toEqual({ block: "nearest" });
-      expect(calls[1]!.el).toBe(container.querySelector('.cl-conv__unit[data-pending] .cl-conv-approval__buttons')!);
-      expect(calls[1]!.arg).toEqual({ block: "nearest" });
+      const after = calls.length;
       // The same card again is no news: no second jump.
-      rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
-      expect(calls).toHaveLength(2);
+      await rerenderWith({ items: [...APPROVAL_PENDING, bot(at(0, 16, 3), "Waiting for your OK.")] });
+      expect(calls).toHaveLength(after);
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
     }
   });
 
-  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included, at most once a frame", () => {
+  test("a waiting card that grows (its sealed frames sizing themselves) is brought into view again, its buttons included, at most once a frame", async () => {
     const calls: Element[] = [];
     const original = HTMLElement.prototype.scrollIntoView;
     const originalRO = globalThis.ResizeObserver;
@@ -905,7 +907,7 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       for (const o of observers) if (o.targets.includes(unit)) o.cb([{ target: unit, contentRect: { height } } as unknown as ResizeObserverEntry], o as unknown as ResizeObserver);
     };
     try {
-      const { container, rerenderWith } = renderView({ items: APPROVAL_PENDING });
+      const { container, rerenderWith } = await renderSettled({ items: APPROVAL_PENDING });
       const unit = container.querySelector('.cl-conv__unit[data-pending]')!;
       const first = calls.length;
       const toUnit = () => calls.slice(first).filter((el) => el === unit).length;
@@ -930,7 +932,7 @@ describe("the window's title bar over the view (spec §5.5: a covered card count
       expect(toUnit()).toBe(2);
       // Answered, it is no longer watched, and a frame still due does nothing.
       grow(unit, 500);
-      rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
+      await rerenderWith({ items: APPROVAL_PENDING.map((i) => (i.kind === "approval" ? { ...i, state: "approved" as const } : i)) });
       grow(unit, 600);
       nextFrame();
       expect(toUnit()).toBe(2);

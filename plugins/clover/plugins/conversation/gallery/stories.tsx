@@ -1,11 +1,11 @@
 // Every conversation state the gallery shows. Each story is plain data rendered through the real
 // components, with the mock runtime drawing what the core would (sealed frames, MCP Apps views).
+import { TestLayer } from "@waifucave/clover-plugin-sdk/ui/testing";
 import type { ReactNode } from "react";
 import { ConversationView, type ConversationViewProps } from "../client/ConversationView";
 import type { MessageContext } from "../client/context";
 import { QuestionMessage } from "../client/messages/QuestionMessage";
 import { ThinkingRow } from "../client/messages/ThinkingRow";
-import { UiRuntimeProvider } from "../client/sdk";
 import type { BotItem, ConversationItem, ToolCall } from "../client/types";
 import {
   APPROVAL_PENDING,
@@ -33,40 +33,20 @@ import {
   STATUS_RETRYING,
   STREAMING,
   THINKING,
-  TOOL_APPS,
   TOOLS,
   TOOLS_OPEN,
   at,
   longConversation,
   thinking,
 } from "./fixtures";
-import { MockChart, mockRuntime } from "./mock-runtime";
+import { mockRuntime } from "./mock-runtime";
 import type { Story } from "./story";
 
 const noop = () => undefined;
 
-const runtime = mockRuntime({
-  cards: SEALED_CARDS,
-  apps: Object.fromEntries(
-    Object.entries(TOOL_APPS).map(([callId, app]) => [
-      callId,
-      {
-        resourceUri: app.resourceUri,
-        body: (
-          <MockChart
-            bars={[
-              { label: "Mon", value: 412 },
-              { label: "Tue", value: 388 },
-              { label: "Wed", value: 506 },
-              { label: "Thu", value: 297 },
-              { label: "Fri", value: 301 },
-            ]}
-          />
-        ),
-      },
-    ]),
-  ),
-});
+// The cards pending and their sealed frames' words (an MCP Apps view draws nothing until the app serves them: the
+// SDK's AppView is empty, so the tool's text result shows).
+const runtime = mockRuntime({ cards: SEALED_CARDS });
 
 const COMMON: Omit<ConversationViewProps, "items"> = {
   bot: BOT,
@@ -85,9 +65,9 @@ const COMMON: Omit<ConversationViewProps, "items"> = {
 
 function View(props: Partial<ConversationViewProps> & { items: readonly ConversationItem[] }) {
   return (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <ConversationView {...COMMON} {...props} />
-    </UiRuntimeProvider>
+    </TestLayer>
   );
 }
 
@@ -95,11 +75,11 @@ function View(props: Partial<ConversationViewProps> & { items: readonly Conversa
  *  still (an opened row, a half-made answer). */
 function Parts({ children }: { children: ReactNode }) {
   return (
-    <UiRuntimeProvider runtime={runtime}>
+    <TestLayer runtime={runtime}>
       <div className="cl-conv" style={{ height: "auto" }}>
         <div className="cl-conv__column">{children}</div>
       </div>
-    </UiRuntimeProvider>
+    </TestLayer>
   );
 }
 
