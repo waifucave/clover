@@ -130,9 +130,10 @@ describe("the SDK's examples install as they ship", () => {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-pngtuber") } }, APP)) as { id: string; treeHash: string };
       expect(await opened.registry.approve(r.id, r.treeHash)).toBe("approved");
       expect(opened.registry.get("example-pngtuber")?.state).toBe("running");
-      // Its points (`avatar`, `avatar.formats`) are declared by the bundled character part, which a bare registry has not got: the
-      // plugin waits for them, and the view's `avatarFormats` is tested against the part in ui.test.ts.
-      expect(opened.registry.get("example-pngtuber")?.waitingFor).toEqual(["avatar", "avatar.formats"]);
+      // Its spot `avatar` is declared by a stage, which a bare registry has not got: the plugin waits for it. `avatar.formats`
+      // is the platform's own point (no plugin declares it), so it waits for nothing; the view's `avatarFormats` is tested
+      // against the part in ui.test.ts.
+      expect(opened.registry.get("example-pngtuber")?.waitingFor).toEqual(["avatar"]);
       const built = await buildPluginModule({ entry: join(home, "plugins", "example-pngtuber", "client", "index.tsx"), outFile: join(temp("clover-d-pt-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
     } finally {
