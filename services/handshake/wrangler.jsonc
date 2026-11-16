@@ -9,7 +9,7 @@
   // from `wrangler secret put` (production) or the test harness (local).
   //
   // Observability stays off: nothing here should keep request lines, and the service learns as little as it can.
-  "name": "moss-handshake-local",
+  "name": "clover-handshake-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
@@ -40,13 +40,13 @@
   ],
   "env": {
     "production": {
-      "name": "moss-handshake",
+      "name": "clover-handshake",
       "workers_dev": false,
       "observability": { "enabled": false },
       "routes": [{ "pattern": "handshake.waifucave.com", "custom_domain": true }],
       // The account service's keys go through this binding: a Worker can't fetch another Worker's route on its own
       // zone. ACCOUNT_JWKS_URL is the path asked for, and the fallback.
-      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "moss-accounts" }],
+      "services": [{ "binding": "ACCOUNT_SERVICE", "service": "clover-accounts" }],
       "vars": {
         // waifucave's account service (services/accounts): its issuer and its keys' URL.
         "ACCOUNT_ISSUER": "https://waifucave.com/auth",

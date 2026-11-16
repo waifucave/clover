@@ -133,6 +133,12 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     regex: /\bclover\.waifucave\.com\b/g,
     why: "live infrastructure, moves with the owner's DNS: the web companion's site is served at clover.waifucave.com and clover.waifucave.com does not exist yet (stage 2)",
   },
+  {
+    id: "worker-names",
+    regex: /(?<![A-Za-z0-9_-])clover-(?:accounts|forwarder|handshake|hello|push|relay|web)(?:-local)?(?![A-Za-z0-9_-])/g,
+    files: ["services/*/wrangler.jsonc"],
+    why: "live infrastructure: the deployed Cloudflare Worker names and the service bindings that name them, which move with a deliberate deploy, so a deploy from this tree updates the live Workers and never creates new ones",
+  },
   // ── Old names a user wrote on disk outside the home, read by the one helper ───────────────────
   {
     id: "old-names",
