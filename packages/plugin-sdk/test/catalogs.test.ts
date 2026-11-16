@@ -36,7 +36,7 @@ describe("capabilities", () => {
       "hears your microphone, also while no window of it shows",
       "can ask your voice providers to transcribe, which may use your accounts with them",
       "reads Clover's settings, and changes its look, language and which plugin does each job when you press its controls",
-      "changes your bots' settings, models and keys when you press its controls",
+      "changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network",
       "sees every plugin you have, its settings and what it may do",
       "installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls",
       "changes which tools may act without asking you",

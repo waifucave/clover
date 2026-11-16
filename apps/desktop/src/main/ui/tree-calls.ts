@@ -404,6 +404,8 @@ export function pageParams(method: string, params: unknown, part: string, tokens
   }
   // Another 24 hours of code that reloads asks on the same card as adding it.
   if (method === "plugin.dev.renew") return typeof p.path === "string" ? { params: { path: p.path, card: true } } : { why: "which development folder?" };
+  // The user's age, from a page: always on a sealed card (F2: one press in a plugin's frame never declares it).
+  if (method === "plugin.confirmAdult") return { params: { card: true } };
   if (method === "plugin.dev.add") {
     const path = tokens.redeem(p.path, part, "plugin.dev.add");
     return path === undefined ? { why: "a folder comes from the folder picker (ui.pick), not from the page" } : { params: { path } };

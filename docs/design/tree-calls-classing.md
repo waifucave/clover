@@ -117,7 +117,7 @@ tree door, which `lane/a-voice-refound` waits for.
 All eight new capabilities as proposed, with these words: `app.settings` warns ("reads Clover's settings, and changes its
 look, language and which plugin does each job when you press its controls"); `plugins.read` warns ("sees every plugin you
 have, its settings and what it may do"), separate; `plugins.manage` carries `plugins.read` (`IMPLIED_CAPABILITIES`);
-`account.read` warns; `bots.avatar` now, no warning. Section 2 as proposed; `runtime.composerOf` stays (backlog).
+`account.read` warns; `bots.avatar` now, no warning. Fix round (read 52): `bots.edit`'s OK line names what it changes ("changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network"); `plugin.confirmAdult` always on a sealed card; `active-session` from the `app.root` part only; opening a place needs the press. Section 2 as proposed; `runtime.composerOf` stays (backlog).
 
 What the build changed against the table above:
 - `ui.settings` is `app.settings` OR `bots.edit` (the bot editor merges a bot's tab lists into the stored lists).

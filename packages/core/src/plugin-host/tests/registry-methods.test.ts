@@ -429,6 +429,33 @@ describe("plugin.* over the registry", () => {
     }
   });
 
+  test("plugin.confirmAdult with card (every part's call, F2) asks on a sealed card; only the user's yes declares their age", async () => {
+    const home = temp("clover-b2-adultcard-");
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets: new MemorySecretStore(), settleMs: 50 });
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, openCard: brokerCardOpener(broker) });
+    const call = (name: string, params: unknown, ctx = APP) => m[name]!(params, ctx);
+    const answer = async (card: Card, optionId: string) =>
+      broker.answer(card.id, { optionId, hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at: Date.now() } }, { role: "app" });
+    const adult = async () => ((await call("plugin.list", {})) as { adultConfirmed: boolean }).adultConfirmed;
+    try {
+      const no = (await call("plugin.confirmAdult", { card: true })) as { applied: boolean; card: string };
+      expect(no.applied).toBe(false);
+      const noCard = broker.cards().find((c) => c.id === no.card)!;
+      expect(noCard).toMatchObject({ kind: "change", change: "plugin-confirm-adult" });
+      expect(await adult()).toBe(false);
+      expect(await answer(noCard, "deny")).toBe("accepted");
+      await Bun.sleep(20);
+      expect(await adult()).toBe(false);
+      const yes = (await call("plugin.confirmAdult", { card: true })) as { applied: boolean; card: string };
+      expect(await answer(broker.cards().find((c) => c.id === yes.card)!, "approve")).toBe("accepted");
+      for (let i = 0; i < 50 && !(await adult()); i++) await Bun.sleep(10);
+      expect(await adult()).toBe(true);
+    } finally {
+      opened.close();
+    }
+  });
+
   test("a yes on a card that can't do what it asked says why for the card: a renew after the folder's 24 hours, a removal of a plugin already gone", async () => {
     const home = temp("clover-b2-cardnote-");
     const dev = join(temp("clover-b2-dev-"), "luna");

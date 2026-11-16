@@ -473,9 +473,17 @@ export function openTarget(v: unknown): OpenTarget | undefined {
 
 /** Who may ask the app to open a place (Settings at a section, a bot's editor) in the main window: a part whose plugin
  *  holds `shell.control` (its OK card says it moves Clover's window's own parts), whichever plugin it is (F2: no door
- *  checks an id). It brings the main window up, so it is the window capability's. */
+ *  checks an id), and only on the user's own press in that frame (electron.ts takes it). */
 export function mayOpen(capabilities: ReadonlySet<string>): boolean {
   return capabilities.has("shell.control");
+}
+
+/** Why a part's open of a place in the main window is refused, or undefined: the capability first, then one press of the
+ *  user's in that frame (`pressed` spends it, only once the capability holds). */
+export function openRefusal(capabilities: ReadonlySet<string>, pressed: () => boolean): string | undefined {
+  if (!mayOpen(capabilities)) return "opening a place in Clover's window takes the shell.control capability";
+  if (!pressed()) return "opening a place in Clover's window goes only right after your own key press or click";
+  return undefined;
 }
 
 /** Where a surface asked to be, kept on its display: inside the display's bounds for the `clover` tree, inside the work

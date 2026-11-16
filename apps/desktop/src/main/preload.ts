@@ -40,7 +40,7 @@ if (isRoot || isLayer) {
     menu: (mount, items, x, y) => ipcRenderer.invoke("clover:menu", { mount, items, x, y }),
     surface: (request) => ipcRenderer.send("clover:surface", request),
     surfaceEnvironment: () => ipcRenderer.invoke("clover:surface-environment", {}),
-    open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target }),
+    open: (mount, target) => ipcRenderer.invoke("clover:open", { mount, target, active: activated() }),
     viewFrame: (mount, name, rect, used) => ipcRenderer.send("clover:view-frame", { mount, name, rect, used: used === true }),
     webFrame: (mount, rect) => ipcRenderer.send("clover:web-frame", { mount, rect }),
     activeSession: (mount, session) => ipcRenderer.send("clover:active-session", { mount, session }),

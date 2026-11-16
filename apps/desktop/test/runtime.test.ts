@@ -857,6 +857,10 @@ describe("the composer spot's mount record", () => {
     expect(s.rt.composerOf(child, comp.mount)).toMatchObject({ pluginId: "fixture-composer", session: "alpha:main", bot: "alpha", windowId: WIN });
     s.rt.setProps(shell.shellFrame, comp.mount, { session: "../etc" });
     expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
+    // The window's shell is only the part in `app.root` (what the window shows, where it is, its drag): never a composer, a
+    // tab or any other part, whatever capabilities its plugin holds (F2's fix round).
+    expect(s.rt.mainShell(child, comp.mount)).toBeUndefined();
+    expect(s.rt.mainShell(shell.shellFrame, tab.mount)).toBeUndefined();
   });
 });
 

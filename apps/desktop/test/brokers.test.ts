@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SEND_HOLD_MAX_MS, SEND_RELEASE_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SEND_HOLD_MAX_MS, SEND_RELEASE_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, openRefusal, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -133,6 +133,13 @@ describe("lane G's surface host: a whole place on the screen, and places the app
     // By capability, never by id (F2).
     expect(mayOpen(new Set(["shell.control"]))).toBe(true);
     expect(mayOpen(new Set(["approvals", "overlay"]))).toBe(false);
+    // And the user's press in that frame: none, refused; without the capability the press isn't spent.
+    let spent = 0;
+    const press = (ok: boolean) => () => (spent++, ok);
+    expect(openRefusal(new Set(["shell.control"]), press(true))).toBeUndefined();
+    expect(openRefusal(new Set(["shell.control"]), press(false))).toContain("key press or click");
+    expect(openRefusal(new Set(["devices.read"]), press(true))).toContain("shell.control");
+    expect(spent).toBe(2);
   });
 });
 

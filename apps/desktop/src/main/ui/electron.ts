@@ -9,7 +9,7 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { ShellApp, ShellState } from "@waifucave/clover-plugin-sdk";
 import { cleanAvatarDown, cleanAvatarUp, cleanSpeechMessage, type LayerMessage, type OpenTarget, type SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders, withMicrophone } from "./documents";
-import { checkMenu, frameGesture, mayOpen, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
+import { checkMenu, frameGesture, openRefusal, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { avatarModelFile, builtClientFile, isInside, mediaType, modelResponse, pluginFile, userAvatarFile } from "./files";
 import { SEALED_PRESS_WORDS } from "../sealed-pages";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
@@ -561,7 +561,12 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const pluginId = runtime.partOf(sender(event).frame, mount);
     const target = openTarget(a.target);
     if (target === undefined) throw new LayerError("not a place the app opens");
-    if (!mayOpen(runtime.capabilitiesOf(sender(event).frame, mount))) throw new LayerError("opening a place in Clover's window takes the shell.control capability");
+    // It brings the main window up: `shell.control`, and the user's own press in that frame, one open per press.
+    const refused = openRefusal(runtime.capabilitiesOf(sender(event).frame, mount), () => frameGesture(a.active, () => hooks.takeGesture(sender(event).windowId)));
+    if (refused !== undefined) {
+      log(`open: ${pluginId}: refused (${refused})`);
+      throw new LayerError(refused);
+    }
     return hooks.open(pluginId, target);
   });
   // The menu broker: where the asking frame sits, from each document above it, then the menu at that point.
@@ -821,9 +826,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) return;
-    // Only the window's shell (the part in `app.root`, whichever plugin's) or a part that may move the window's own parts
-    // (`shell.control`) says what the window shows.
-    if (runtime.mainShell(s.frame, mount) === undefined && !runtime.capabilitiesOf(s.frame, mount).has("shell.control")) return;
+    // Only the window's shell (the part the core mounted in `app.root`, whichever plugin's) says what the window shows.
+    if (runtime.mainShell(s.frame, mount) === undefined) return;
     const session = a.session === null ? null : str(a.session, 128);
     if (session !== undefined) hooks.activeSession(s.windowId, session);
   });

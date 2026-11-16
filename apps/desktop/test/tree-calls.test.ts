@@ -521,7 +521,7 @@ const WORST: Record<string, Worst> = {
   "plugin.grant.remove": "harmless change", // takes a picked file or folder back: the plugin no longer reaches it
   "plugin.setScope": "harmless change", // the user's own choice of where a plugin works (bots, agents, both); the manifest's stays the default
   "plugin.setComputers": "harmless change", // ticks the computers a plugin's server runs on; code already OK'd, the core cards anything that moves a host
-  "plugin.confirmAdult": "harmless change", // the user's own statement that they are 18 or older
+  "plugin.confirmAdult": "sealed card", // the user's own statement that they are 18 or older, only on the sealed card (main sets card)
   "plugin.dev.renew": "sealed card", // main sets card: another 24 hours of code that reloads asks on the development-folder card
 };
 
@@ -812,7 +812,7 @@ describe("the Plugins page's calls as main sends them", () => {
     await expect(routeCall(busy.r)).rejects.toThrow("key dialog is open already");
   });
 
-  test("a removal, a sign-out, an index's removal and an update always go with card; listing is a read", async () => {
+  test("a removal, a sign-out, an index's removal, an update and the user's age always go with card; listing is a read", async () => {
     const removal = page("plugin.remove", { id: "tarot", card: false, extra: 1 });
     await routeCall(removal.r);
     expect(removal.sent).toEqual([{ id: "tarot", card: true }]);
@@ -830,6 +830,12 @@ describe("the Plugins page's calls as main sends them", () => {
     const index = page("plugin.index.remove", { url: "https://plugins.example.com/index.json" });
     await routeCall(index.r);
     expect(index.sent).toEqual([{ url: "https://plugins.example.com/index.json", card: true }]);
+    // The user's age: a sealed card for every holder (one press in a plugin's frame never declares it).
+    const adult = page("plugin.confirmAdult", { card: false, extra: 1 });
+    await routeCall(adult.r);
+    expect(adult.sent).toEqual([{ card: true }]);
+    const third = route({ tree: { windowId: 1, pluginId: "acme-plugins" }, caps: ["plugins.manage"], method: "plugin.confirmAdult", params: {}, gesture: true, request: async (_m, p) => p });
+    expect(await routeCall(third.r)).toEqual({ card: true });
     const listing = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "plugin.update", params: { list: true }, gesture: false });
     expect(await routeCall(listing.r)).toBe("app");
   });
