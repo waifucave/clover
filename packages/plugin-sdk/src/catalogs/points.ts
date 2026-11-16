@@ -59,7 +59,7 @@ export const CORE_POINTS: readonly CorePointInfo[] = [
   { name: "notifiers", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
     doc: "Told when a bot needs the user or has answered (which bot and session, and whether a message, a card or a question waits; never the words), so it can notify the user or wake a companion (§10). The OK card says so.", shipsWith: "waifucave push; desktop notifications" },
   { name: "companions", side: "daemon", shape: "list", kind: "code", runsOn: "the main, unless `runsOn` says otherwise",
-    doc: "Serves a remote client within the fixed list of remote calls (§10).", shipsWith: "the iOS app; moss.waifucave.com" },
+    doc: "Serves a remote client within the fixed list of remote calls (§10).", shipsWith: "the iOS app; clover.waifucave.com" },
   { name: "themes", side: "app", shape: "list", kind: "data", runsOn: "every app instance",
     doc: "Applies the base theme, the user's global theme and each bot's theme in its tab (§5.5).", shipsWith: "the base theme" },
   { name: "app.root", side: "app", shape: "single", kind: "code", runsOn: "every app instance",

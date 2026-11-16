@@ -48,6 +48,7 @@ import type { PluginRunFiles } from "./plugin-run";
 import { agentConfigPaths, autoRunPaths, CREDENTIAL_FILES, SECRET_READ_PLACES, SHELL_FILES } from "../contracts/fence";
 import { MossFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { OLD_PROJECT_DIR } from "../old-names";
 import { secretFilesFolder } from "./secret-files";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
@@ -91,7 +92,7 @@ export const PLUGIN_FENCE_SECRET_PLACES: readonly string[] = SECRET_READ_PLACES.
  *  the editors' (VS Code's tasks run on folder open; JetBrains' `.idea` the same), and MOSS's and Claude Code's own
  *  settings, MCP servers and hooks; and Husky's `.husky` and a `.githooks` folder, where a repository's `core.hooksPath`
  *  most often points. */
-export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".moss", ".husky", ".githooks"];
+export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".moss", OLD_PROJECT_DIR, ".husky", ".githooks"];
 
 /** Inside a project folder, never written by a fenced process, besides `PROJECT_WHOLE_DENIES`: anything else that
  *  runs on its own without the user running their project (the controller's rulings on #352). A project's MCP servers

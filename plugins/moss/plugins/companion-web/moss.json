@@ -2,7 +2,7 @@
   "manifest": 1,
   "name": { "en": "Web companion" },
   "description": {
-    "en": "Chat with your bots from a browser at moss.waifucave.com. The browser pairs once with this computer and then connects to it directly over WebRTC; waifucave only introduces the two, and never sees what they say."
+    "en": "Chat with your bots from a browser at clover.waifucave.com. The browser pairs once with this computer and then connects to it directly over WebRTC; waifucave only introduces the two, and never sees what they say."
   },
   "engines": { "moss": "^1.0.0" },
   "availability": { "status": "not-yet", "reason": "pairing-registry" },
@@ -23,6 +23,6 @@
     }
   },
   "contributes": {
-    "companions": [{ "id": "web", "name": { "en": "Web companion (moss.waifucave.com)" }, "handler": "companion" }]
+    "companions": [{ "id": "web", "name": { "en": "Web companion (clover.waifucave.com)" }, "handler": "companion" }]
   }
 }

@@ -127,6 +127,12 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
     files: ["plugins/alpha/**"],
     why: "the scene is called the clover meadow, after the plant it is drawn with",
   },
+  // ── Live infrastructure: the name stays until the owner moves it ──────────────────────────────
+  {
+    id: "web-companion-site",
+    regex: /\bclover\.waifucave\.com\b/g,
+    why: "live infrastructure, moves with the owner's DNS: the web companion's site is served at clover.waifucave.com and clover.waifucave.com does not exist yet (stage 2)",
+  },
   // ── Old names a user wrote on disk outside the home, read by the one helper ───────────────────
   {
     id: "old-names",

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "moss/companion-web: the computer's side of the web companion (moss.waifucave.com): browser pairing through the waifucave handshake, and each browser's WebRTC link.",
+  "description": "moss/companion-web: the computer's side of the web companion (clover.waifucave.com): browser pairing through the waifucave handshake, and each browser's WebRTC link.",
   "type": "module",
   "exports": {
     ".": "./host/index.ts",

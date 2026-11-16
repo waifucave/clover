@@ -1,6 +1,7 @@
 import { realpathSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
+import { PROJECT_DIR_NAMES } from "../old-names";
 import { join } from "node:path";
 
 export interface SandboxOptions {
@@ -107,7 +108,7 @@ export function buildSeatbeltProfile(opts: SandboxOptions): string {
   // this a single joined block of literal denies, same shape as before, just wider.
   const CONTROL_PLANE_FILES = ["permissions.local.json", "settings.json", "settings.local.json"];
   const denyRulesFileRules = roots
-    .flatMap((r) => CONTROL_PLANE_FILES.map((f) => `(deny file-write* (literal "${sbplString(canon(join(r, ".moss", f)))}"))`))
+    .flatMap((r) => PROJECT_DIR_NAMES.flatMap((dir) => CONTROL_PLANE_FILES.map((f) => `(deny file-write* (literal "${sbplString(canon(join(r, dir, f)))}"))`)))
     .join("\n");
   // SP-policies whole-branch review (Item 1, HIGH): the per-root literal denies above only cover a
   // rules store DIRECTLY under a writable root (`<root>/.moss/permissions.local.json`). A broad
@@ -123,6 +124,14 @@ export function buildSeatbeltProfile(opts: SandboxOptions): string {
   // `.moss/memory/` MEMDIR, at any depth, stays writable (filename-specific, same as the literals).
   const RULES_FILE_REGEX = String.raw`/\.[Nn][Oo][Rr][Mm][Aa]/[Pp][Ee][Rr][Mm][Ii][Ss][Ss][Ii][Oo][Nn][Ss]\.[Ll][Oo][Cc][Aa][Ll]\.[Jj][Ss][Oo][Nn]$`;
   const denyRulesFileRegex = `(deny file-write* (regex #"${RULES_FILE_REGEX}"))`;
+  // The nested-store regexes above spell one folder name; the build reads project config from `.moss` and, second, its
+  // old name (`PROJECT_DIR_NAMES`): each gets its own lines, written the same way (a name read second is fenced like the first).
+  const caseClass = (word: string): string => [...word].map((c) => (/[A-Za-z]/.test(c) ? `[${c.toUpperCase()}${c.toLowerCase()}]` : `\\${c}`)).join("");
+  const nestedRegexDenies = PROJECT_DIR_NAMES.flatMap((dir) => [
+    `/${caseClass(dir)}/${caseClass("permissions.local.json")}$`,
+    `/${caseClass(dir)}/${caseClass("settings.json")}$`,
+    `/${caseClass(dir)}/${caseClass("settings.local.json")}$`,
+  ]).map((re) => `(deny file-write* (regex #"${re}"))`);
   // CC-parity Task 6.5: the same NESTED-store hole applies to the two settings overlays once a
   // broad `Edit(<parent>)` grant is in force — `<parent>/projB/.moss/settings.local.json` sits
   // inside a writable subpath with no literal deny for it either. Two SEPARATE regex deny lines
@@ -193,6 +202,7 @@ ${denyRulesFileRules}
 ${denyRulesFileRegex}
 ${denySettingsFileRegex}
 ${denySettingsLocalFileRegex}
+${nestedRegexDenies.join("\n")}
 `;
 }
 

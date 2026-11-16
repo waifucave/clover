@@ -56,7 +56,7 @@ const relay: RelayHandler = {
 };
 const companion: CompanionHandler = {
   presence: async (args, ctx) => void (await ctx.api.storage.synced.set(`online:${args.device}`, args.online)),
-  pairing: async (args) => ({ url: `https://moss.waifucave.com/pair#${args.code}` }),
+  pairing: async (args) => ({ url: `https://clover.waifucave.com/pair#${args.code}` }),
 };
 const speak: StreamHandler<{ text: string }, Uint8Array, { words: number }> = async function* (args, ctx) {
   for (const word of args.text.split(" ")) {

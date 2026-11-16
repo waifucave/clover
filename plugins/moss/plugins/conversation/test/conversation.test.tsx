@@ -180,7 +180,7 @@ describe("user and bot messages", () => {
     const chips = [...container.querySelectorAll(".cl-conv-user__bubble .cl-conv-user__chip")].map((c) => c.textContent);
     expect(chips).toEqual(["island-a.png", "island-b.png", "notes.md"]);
     expect(screen.getByText("from iPhone")).toBeTruthy();
-    expect(screen.getByText("from moss.waifucave.com")).toBeTruthy();
+    expect(screen.getByText("from clover.waifucave.com")).toBeTruthy();
     expect(screen.getByText("arrived late")).toBeTruthy();
     // A message from this device does not repeat where it came from.
     expect(screen.queryByText(`from ${DEVICE.name}`)).toBeNull();

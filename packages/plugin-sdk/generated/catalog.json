@@ -431,7 +431,7 @@
       "kind": "code",
       "runsOn": "the main, unless `runsOn` says otherwise",
       "doc": "Serves a remote client within the fixed list of remote calls (§10).",
-      "shipsWith": "the iOS app; moss.waifucave.com"
+      "shipsWith": "the iOS app; clover.waifucave.com"
     },
     {
       "name": "themes",

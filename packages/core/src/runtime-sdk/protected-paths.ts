@@ -29,6 +29,7 @@ import { WRITE_CLASS_TOOL_NAMES, homeFenceTarget, writeTargetPathsIn } from "./c
 import { fsRootAnchored, persistencePaths } from "./mode-options";
 import { PROTECTED_ITEM_DIRS } from "./host";
 import { projectWalk } from "./project-walk";
+import { PROJECT_DIR_NAMES } from "../old-names";
 
 export { projectWalk, persistencePaths };
 
@@ -59,7 +60,7 @@ export function protectedPathsFor(home: string, trustedProjectRoot: string | nul
   if (trustedProjectRoot !== null) {
     const dirs = walk === undefined ? [trustedProjectRoot] : projectWalk(walk.cwd, trustedProjectRoot, walk.userHome ?? homedir());
     for (const dir of dirs) {
-      for (const kind of PROTECTED_ITEM_DIRS) out.push(`${fsRootAnchored(join(dir, PROJECT_DIR_NAME, kind))}/**`);
+      for (const name of PROJECT_DIR_NAMES) for (const kind of PROTECTED_ITEM_DIRS) out.push(`${fsRootAnchored(join(dir, name, kind))}/**`);
     }
   }
   return out;
@@ -86,7 +87,7 @@ function targetsOf(rules: readonly string[]): { dirs: string[]; files: string[] 
  * gives `.moss/agents`. (`protectedPathsFor` keeps the router's literal set — its ask rules are the
  * router's to widen.)
  */
-export const PROTECTED_PROJECT_SEGMENTS: readonly string[] = PROTECTED_ITEM_DIRS.map((kind) => `${PROJECT_DIR_NAME}/${kind}/`);
+export const PROTECTED_PROJECT_SEGMENTS: readonly string[] = PROJECT_DIR_NAMES.flatMap((name) => PROTECTED_ITEM_DIRS.map((kind) => `${name}/${kind}/`));
 
 /** The first protected path a write-class call names, raw spelling as the call gave it. */
 function protectedHit(input: unknown, cwd: string, rules: readonly string[]): string | undefined {

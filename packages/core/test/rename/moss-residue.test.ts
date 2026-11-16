@@ -253,6 +253,33 @@ describe("Clover→MOSS rename residue", () => {
     expect(never, `never-permitted names (${never.length}):\n${report}`).toHaveLength(0);
   }, 120_000);
 
+  test("the never-permitted patterns match what they name and not their neighbours (seeded strings, spelled in pieces so this file does not name them)", () => {
+    // No file may spell the installed Clover app's names, this one included, so each is joined from pieces.
+    const c = ["clo", "ver"].join(""), C = ["Clo", "ver"].join("");
+    const hit = (id: string, text: string): boolean => {
+      const n = MOSS_NEVER_PERMITTED.find((x) => x.id === id)!;
+      return new RegExp(n.regex.source, n.regex.flags).test(text);
+    };
+    for (const text of [`com.waifucave.${c}.core`, `com.waifucave.${c}.core.dev`, `x = "com.waifucave.${c}.core";`, `com\\.waifucave\\.${c}\\.core\\.dev`]) {
+      expect([text, hit("clover-keychain", text)]).toEqual([text, true]);
+    }
+    for (const text of [`com.waifucave.${c}.core.plist`, `com.waifucave.${c}.coreX`, `com.waifucave.${c}.core-test`, `com.waifucave.moss.core`, `com.waifucave.${c}.ios`]) {
+      expect([text, hit("clover-keychain", text)]).toEqual([text, false]);
+    }
+    for (const text of [`~/.${c}`, `~/.${c}-dev/run`, `$HOME/.${c}`, ["$", "{HOME}", "/.", c, "/settings.json"].join(""), `join(homedir(), ".${c}")`, `homedir() , '.${c}-dev'`]) {
+      expect([text, hit("clover-home", text)]).toEqual([text, true]);
+    }
+    for (const text of ["~/.moss", `~/.${c}x/..`.replace(`.${c}x`, ".moss"), "$HOME/.moss-dev", `join(homedir(), ".moss")`]) {
+      expect([text, hit("clover-home", text)]).toEqual([text, false]);
+    }
+    for (const text of [`/Applications/${C}.app`, `open /Applications/${C}.app/Contents`, `join("/Applications", "${C}.app")`, `"/Applications" , '${C}.app'`]) {
+      expect([text, hit("clover-app", text)]).toEqual([text, true]);
+    }
+    for (const text of ["/Applications/MOSS Code.app", `/Applications/${C}Tree.app`.replace(`${C}Tree`, "Other"), `~/Applications/${C}.app`.replace(`${C}.app`, "Moss.app")]) {
+      expect([text, hit("clover-app", text)]).toEqual([text, false]);
+    }
+  });
+
   test("every file a never-permitted name lists is scanned and still spells it (no stale names)", () => {
     const { spelled, scanned } = scan();
     const stale: string[] = [];

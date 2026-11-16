@@ -15,10 +15,14 @@ import {
   projectWalk, protectedPathsFor, protectedReadDenial, protectedWriteDecision, storeWriteDenial,
 } from "../../src/runtime-sdk/protected-paths";
 import { fsRootAnchored, persistencePaths } from "../../src/runtime-sdk/mode-options";
+import { OLD_PROJECT_DIR } from "../../src/old-names";
 
 const real = (p: string): string => realpathSync(mkdtempSync(join(tmpdir(), p)));
 /** The #301 review's persistence places under `userHome`, as the set spells them (persistence.test.ts). */
 const RUN_LATER = (userHome: string = homedir()): string[] => persistencePaths(userHome).map((p) => `${fsRootAnchored(p)}/**`);
+
+// The folder name the build reads second (old-names.ts): fenced like the first.
+const OLD = OLD_PROJECT_DIR;
 
 describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute spelling", () => {
   test("no trusted project: the sdk tier alone", () => {
@@ -45,6 +49,10 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
       "//Users/x/code/app/.moss/commands/**",
       "//Users/x/code/app/.moss/rules/**",
       "//Users/x/code/app/.moss/output-styles/**",
+      `//Users/x/code/app/${OLD}/skills/**`,
+      `//Users/x/code/app/${OLD}/commands/**`,
+      `//Users/x/code/app/${OLD}/rules/**`,
+      `//Users/x/code/app/${OLD}/output-styles/**`,
     ]);
     expect(set).not.toContain("//Users/x/code/app/MOSS.md");
   });
@@ -61,14 +69,26 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
       "//Users/x/code/app/packages/web/.moss/commands/**",
       "//Users/x/code/app/packages/web/.moss/rules/**",
       "//Users/x/code/app/packages/web/.moss/output-styles/**",
+      `//Users/x/code/app/packages/web/${OLD}/skills/**`,
+      `//Users/x/code/app/packages/web/${OLD}/commands/**`,
+      `//Users/x/code/app/packages/web/${OLD}/rules/**`,
+      `//Users/x/code/app/packages/web/${OLD}/output-styles/**`,
       "//Users/x/code/app/packages/.moss/skills/**",
       "//Users/x/code/app/packages/.moss/commands/**",
       "//Users/x/code/app/packages/.moss/rules/**",
       "//Users/x/code/app/packages/.moss/output-styles/**",
+      `//Users/x/code/app/packages/${OLD}/skills/**`,
+      `//Users/x/code/app/packages/${OLD}/commands/**`,
+      `//Users/x/code/app/packages/${OLD}/rules/**`,
+      `//Users/x/code/app/packages/${OLD}/output-styles/**`,
       "//Users/x/code/app/.moss/skills/**",
       "//Users/x/code/app/.moss/commands/**",
       "//Users/x/code/app/.moss/rules/**",
       "//Users/x/code/app/.moss/output-styles/**",
+      `//Users/x/code/app/${OLD}/skills/**`,
+      `//Users/x/code/app/${OLD}/commands/**`,
+      `//Users/x/code/app/${OLD}/rules/**`,
+      `//Users/x/code/app/${OLD}/output-styles/**`,
     ]);
   });
 
@@ -85,7 +105,9 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
   test("as Edit/Write rules it is exactly the router's protectedPathRules output (hand mirror at aa5201e, no walk)", () => {
     // The router's list, and MOSS's own persistence places (the #301 review) on top of it.
     const moss = new Set(RUN_LATER());
-    const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").filter((p) => !moss.has(p)).map((p) => `${t}(${p})`));
+    // The router's list names `.moss` only; the old project folder name is MOSS's own addition (a name read second is fenced like the first).
+    const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").filter((p) => !moss.has(p) && !p.includes(`/${OLD}/`)).map((p) => `${t}(${p})`));
+    expect(protectedPathsFor("/h", "/r").filter((p) => p.includes(`/${OLD}/`))).toEqual(["skills", "commands", "rules", "output-styles"].map((k) => `//r/${OLD}/${k}/**`));
     expect(protectedPathsFor("/h", "/r").filter((p) => moss.has(p))).toEqual([...moss]);
     const routerMirror = ["Edit", "Write"].flatMap((t) => [
       "//h/sdk/skills/**", "//h/sdk/commands/**", "//h/sdk/rules/**", "//h/sdk/output-styles/**", "//h/sdk/MOSS.md",

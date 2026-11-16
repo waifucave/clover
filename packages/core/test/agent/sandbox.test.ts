@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSeatbeltProfile } from "../../src/agent/sandbox";
+import { OLD_PROJECT_DIR, PROJECT_DIR_NAMES } from "../../src/old-names";
 
 function realTmp(): string { return realpathSync(mkdtempSync(join(tmpdir(), "moss-sb-"))); }
 
@@ -106,6 +107,10 @@ describe("buildSeatbeltProfile: permission-rules-file carve-out (SP-approvals fi
       join(cwd, ".moss", "permissions.local.json"),
       join(cwd, ".moss", "settings.json"),
       join(cwd, ".moss", "settings.local.json"),
+      // The folder name the build reads second is held like the first (old-names.ts).
+      join(cwd, OLD_PROJECT_DIR, "permissions.local.json"),
+      join(cwd, OLD_PROJECT_DIR, "settings.json"),
+      join(cwd, OLD_PROJECT_DIR, "settings.local.json"),
     ]);
   });
 });
@@ -153,9 +158,15 @@ describe("buildSeatbeltProfile: settings-overlay carve-out (CC-parity Task 6.5)"
       join(cwd, ".moss", "permissions.local.json"),
       join(cwd, ".moss", "settings.json"),
       join(cwd, ".moss", "settings.local.json"),
+      join(cwd, OLD_PROJECT_DIR, "permissions.local.json"),
+      join(cwd, OLD_PROJECT_DIR, "settings.json"),
+      join(cwd, OLD_PROJECT_DIR, "settings.local.json"),
       join(extra, ".moss", "permissions.local.json"),
       join(extra, ".moss", "settings.json"),
       join(extra, ".moss", "settings.local.json"),
+      join(extra, OLD_PROJECT_DIR, "permissions.local.json"),
+      join(extra, OLD_PROJECT_DIR, "settings.json"),
+      join(extra, OLD_PROJECT_DIR, "settings.local.json"),
     ]);
   });
 
@@ -184,7 +195,9 @@ describe("buildSeatbeltProfile: settings-overlay carve-out (CC-parity Task 6.5)"
     expect(p).toContain(String.raw`(deny file-write* (regex #"/\.[Nn][Oo][Rr][Mm][Aa]/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss]\.[Jj][Ss][Oo][Nn]$"))`);
     expect(p).toContain(String.raw`(deny file-write* (regex #"/\.[Nn][Oo][Rr][Mm][Aa]/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss]\.[Ll][Oo][Cc][Aa][Ll]\.[Jj][Ss][Oo][Nn]$"))`);
     const regexDenyCount = [...p.matchAll(/\(deny file-write\* \(regex/g)].length;
-    expect(regexDenyCount).toBe(3); // rules file + settings.json + settings.local.json — never merged
+    // The three above (the legacy folder name's), then the same three for `.moss` and for the name the build reads second
+    // (`PROJECT_DIR_NAMES`), each its own line — never merged.
+    expect(regexDenyCount).toBe(3 + 3 * PROJECT_DIR_NAMES.length);
     expect(p).not.toContain("|"); // SBPL alternation marker never appears anywhere in the profile
   });
 });

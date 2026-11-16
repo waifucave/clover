@@ -74,6 +74,7 @@ import { protectedPathsFor, protectedReadDenial, protectedWriteDecision, storeWr
 import { baseName, COMMAND_PREFIXES, inPlaceFiles, nestedCommandStrings, quotedOperatorsAsText, shellSegments, shellWords } from "./shell-words";
 export { shellSegments } from "./shell-words";
 import type { Mode as SessionMode } from "../agent/tools/registry";
+import { PROJECT_DIR_NAMES, PROJECT_DIR_PATTERN } from "../old-names";
 import { connectorAskReason, connectorDenialMessage, connectorFactsFor, connectorVerdict, statedServerFromHookInput, type ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 
 /** The subset of `plugins/hook-registry.ts`'s `HookFacade` this module depends on — injected
@@ -807,7 +808,7 @@ class ProtectedInodes {
     const userHome = homedir();
     let dir = from;
     for (let i = 0; i < 64; i += 1) {
-      for (const kind of ["skills", "commands", "rules", "output-styles", "agents"]) this.scanDir(join(dir, ".moss", kind), `.moss/${kind}`, 0);
+      for (const name of PROJECT_DIR_NAMES) for (const kind of ["skills", "commands", "rules", "output-styles", "agents"]) this.scanDir(join(dir, name, kind), `${name}/${kind}`, 0);
       if (dir === userHome) break;
       const parent = dirname(dir);
       if (parent === dir) break;
@@ -882,13 +883,13 @@ function existingEntry(dir: string, name: string): string | undefined {
 }
 
 /** A protected segment inside ONE write target (a single word). */
-const PROTECTED_BASH_TARGET = /\.moss\/(?:skills|commands|rules|output-styles|agents)(?=\/|$)/;
+const PROTECTED_BASH_TARGET = new RegExp(`${PROJECT_DIR_PATTERN}/(?:skills|commands|rules|output-styles|agents)(?=/|$)`);
 
 /** Round 3, minor 9: the interpreters whose one-liners count, their code flags, and a protected segment as
  *  code names it. */
 const INTERPRETERS = /^(?:python(?:\d+(?:\.\d+)?)?|node|bun|ruby|perl|deno)$/;
 const ONE_LINER_FLAG = /^(?:-[a-z]*[ce]|--eval|--print|-p)$/;
-const PROTECTED_IN_CODE = /\.moss\/(?:skills|commands|rules|output-styles|agents)(?![a-z0-9_.-])/;
+const PROTECTED_IN_CODE = new RegExp(`${PROJECT_DIR_PATTERN}/(?:skills|commands|rules|output-styles|agents)(?![a-z0-9_.-])`);
 
 /** git's subcommands that only read (round 3, minor 10). */
 const GIT_READ_SUBCOMMANDS: ReadonlySet<string> = new Set(["status", "log", "diff", "show", "blame", "ls-files", "grep"]);
@@ -1189,10 +1190,10 @@ function persistenceNeedles(): string[] {
 /** WS-21 (spec §7.1): project files the escape floor refuses in a write-shaped position, matched on the
  *  normalised command. */
 const PROJECT_WRITE_FENCED: readonly RegExp[] = [
-  /\.moss\/mcp\.json/g,
-  /\.moss\/settings[^/\s;&|()<>]*\.json/g,
+  new RegExp(`${PROJECT_DIR_PATTERN}/mcp\\.json`, "g"),
+  new RegExp(`${PROJECT_DIR_PATTERN}/settings[^/\\s;&|()<>]*\\.json`, "g"),
   // Review I7: any project's protected item directories, at any depth (review C1's shape).
-  /\.moss\/(?:skills|commands|rules|output-styles)(?=\/|[\s;&|()<>]|$)/g,
+  new RegExp(`${PROJECT_DIR_PATTERN}/(?:skills|commands|rules|output-styles)(?=/|[\\s;&|()<>]|$)`, "g"),
 ];
 /** The protected item directory names (spec §7.2), as the lowercased floor matches them. */
 const PROTECTED_KIND_NAMES: readonly string[] = ["skills", "commands", "rules", "output-styles"];

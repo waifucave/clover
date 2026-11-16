@@ -34,6 +34,7 @@ import { providerFor, testProviderNameFor } from "./provider-selection";
 import { runtimeModelId, splitTag, MOSS_TEST_PREFIX, type ModelTag } from "./model-tag";
 import { MOSS_ADVERTISED_TOOLS_0_0_4, MOSS_OWN_TOOL_NAMES } from "./tool-names";
 import type { CapabilityServerKey } from "../capabilities/names";
+import { PROJECT_DIR_NAMES } from "../old-names";
 import { coworkOfferedTools, coworkProfileWithheldTools, type CoworkGuestProfile, type CoworkGuestProfileTool, type CoworkToolInputs } from "../cowork/session-profile";
 
 /**
@@ -604,7 +605,7 @@ export function controlPlaneDenyRules(home: string): string[] {
     // Any project's control-plane files, at any depth — the project-INDEPENDENT invariant
     // (`controlPlaneFileTarget`'s own doc: "the agent must NEVER write ANY
     // `<any>/.moss/permissions.local.json`, whichever project owns it").
-    ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => fsRootAnchored(["**", ".moss", f].join("/"))),
+    ...PROJECT_DIR_NAMES.flatMap((dir) => [...CONTROL_PLANE_FILENAMES].sort().map((f) => fsRootAnchored(["**", dir, f].join("/")))),
     // The user's own global copies, whose parent is literally `<home>` rather than `<x>/.moss`.
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => fsRootAnchored(lit(join(home, f)))),
     // The daemon's control plane: sockets, pid files, the runtime state db.
@@ -621,7 +622,7 @@ export function controlPlaneDenyRules(home: string): string[] {
     // the same invariant, the same "two layers over one self-grant" posture `controlPlaneFileTarget`'s
     // own doc states for the host-side fence vs. the deny-rule fence.
     fsRootAnchored([lit(join(home, "agents")), "**"].join("/")),
-    fsRootAnchored(["**", ".moss", "agents", "**"].join("/")),
+    ...PROJECT_DIR_NAMES.map((dir) => fsRootAnchored(["**", dir, "agents", "**"].join("/"))),
     // WS-21 (spec §7.1): the shared runtime home's self-grant files, on EVERY build — `sdk/settings.json`
     // (permissions, since L3.2) and `sdk/.moss.json` (the user's MCP servers: commands the next child
     // runs) live there whether or not the router applies run homes; `sdk/agents` is the user agent tier on
@@ -633,8 +634,7 @@ export function controlPlaneDenyRules(home: string): string[] {
     fsRootAnchored([lit(join(sdkHomeFor(home), "plugins")), "**"].join("/")),
     // …and a project's own MCP server list and ANY settings tier (the spec's `settings*.json`), at any
     // depth, whichever project owns them — the same project-INDEPENDENT shape as the control-plane files.
-    fsRootAnchored(["**", ".moss", "mcp.json"].join("/")),
-    fsRootAnchored(["**", ".moss", "settings*.json"].join("/")),
+    ...PROJECT_DIR_NAMES.flatMap((dir) => [fsRootAnchored(["**", dir, "mcp.json"].join("/")), fsRootAnchored(["**", dir, "settings*.json"].join("/"))]),
     // The WHOLE `<home>/cache` (re-review M-a): WS-21's per-run folders — a run home's items, settings
     // and generated config, which the next child LOADS — and the router's quarantine. (It first held the
     // retired skills-only plugin views.) Write-fenced only; the run folders' generated config files are
@@ -1050,13 +1050,13 @@ function projectSandboxDenyWrite(cwd: string): string[] {
   try { tierRoot = projectScopeRootFor(cwd); } catch { /* as above */ }
   const out: string[] = [];
   for (const base of new Set([cwd, root, tierRoot])) {
-    for (const f of ["mcp.json", "settings.json", "settings.local.json", "agents", ...PROTECTED_ITEM_DIRS]) out.push(join(base, ".moss", f));
+    for (const name of PROJECT_DIR_NAMES) for (const f of ["mcp.json", "settings.json", "settings.local.json", "agents", ...PROTECTED_ITEM_DIRS]) out.push(join(base, name, f));
   }
   // …and the protected item directories of every directory BETWEEN the cwd and the run home's root (L2 fix
   // round 1, I2: a run home loads a nested project dir's items, so its protection covers the same walk —
   // R.3 I-1: the walk the run home makes, up to `projectScopeRootFor`). `$HOME` and above never.
   for (const dir of projectWalk(cwd, tierRoot, homedir())) {
-    for (const kind of PROTECTED_ITEM_DIRS) out.push(join(dir, ".moss", kind));
+    for (const name of PROJECT_DIR_NAMES) for (const kind of PROTECTED_ITEM_DIRS) out.push(join(dir, name, kind));
   }
   return [...new Set(out)];
 }

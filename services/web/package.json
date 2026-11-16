@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "moss.waifucave.com: the web companion. The page pairs once with a computer through the waifucave handshake and talks to it over WebRTC data channels; protocol/ is what both ends share.",
+  "description": "clover.waifucave.com: the web companion. The page pairs once with a computer through the waifucave handshake and talks to it over WebRTC data channels; protocol/ is what both ends share.",
   "type": "module",
   "exports": {
     "./protocol": "./protocol/index.ts",

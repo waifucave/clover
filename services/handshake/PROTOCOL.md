@@ -364,4 +364,4 @@ Plaintexts are UTF-8 JSON. Unknown fields are ignored, and `at` (ms) lets the re
 
 ## Cross-origin
 
-The web companion (`https://moss.waifucave.com`) calls the service from the browser. The service answers CORS preflights for that origin alone (a list, `WEB_ORIGINS`, for local emulators), allowing `authorization` and `content-type`.
+The web companion (`https://clover.waifucave.com`) calls the service from the browser. The service answers CORS preflights for that origin alone (a list, `WEB_ORIGINS`, for local emulators), allowing `authorization` and `content-type`.

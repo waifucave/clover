@@ -24,7 +24,7 @@ export const BOT = { id: "alpha", name: "Alpha" };
 export const DEVICE = { id: "dev_studio", name: "Studio" };
 const IPHONE = { id: "dev_iphone", name: "iPhone" };
 const LAPTOP = { id: "dev_laptop", name: "Laptop" };
-const WEB = { id: "dev_web", name: "moss.waifucave.com" };
+const WEB = { id: "dev_web", name: "clover.waifucave.com" };
 
 /** A time on a day relative to NOW's day (0 = today, -1 = yesterday). */
 export const at = (dayOffset: number, h: number, m: number) => Date.UTC(2026, 10, 5 + dayOffset, h, m);

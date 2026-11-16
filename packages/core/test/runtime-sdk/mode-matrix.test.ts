@@ -1,3 +1,4 @@
+import { OLD_PROJECT_DIR } from "../../src/old-names";
 import { test, expect } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -373,7 +374,7 @@ test("the control-plane deny rules cover the four write tools × the control-pla
     expect(deny).not.toContain(`${tool}(${claudeResumeTarget})`);
     for (const f of [".claude.json", ".credentials.json", ".moss.json", "backups/**"]) expect(deny).toContain(`${tool}(/${join(tmpdir(), `${RESUME_STAGING_PREFIX}*`)}/${f})`);
   }
-  expect(deny).toHaveLength(4 * 21 + 3 * 11);
+  expect(deny).toHaveLength(4 * (21 + 6) + 3 * 11);
 });
 
 // Daemon settings surface batch 3 (item 2): `settings.permissions.deny` (Skill(<name>) toggles,
@@ -382,7 +383,7 @@ test("item 2 (WS-21): the user's sdk/settings.json deny rules (userDeny) are app
   const deny = buildMossOptions(optionsInput({ home: "/h", userDeny: ["Skill(writing-skills)", "Agent(fork)"] })).permissions!.deny!;
   expect(deny.slice(-2)).toEqual(["Skill(writing-skills)", "Agent(fork)"]);
   // The fixed fence is untouched (same count this file's other test pins).
-  expect(deny).toHaveLength(4 * 21 + 3 * 11 + 2);
+  expect(deny).toHaveLength(4 * (21 + 6) + 3 * 11 + 2);
 });
 
 test("WS-21: a STALE settings.permissions.deny (a moved key) never reaches the child's deny list", () => {
@@ -393,7 +394,7 @@ test("WS-21: a STALE settings.permissions.deny (a moved key) never reaches the c
   });
   const deny = buildMossOptions(optionsInput({ home: "/h", settings })).permissions!.deny!;
   expect(deny).not.toContain("Skill(stale)");
-  expect(deny).toHaveLength(4 * 21 + 3 * 11);
+  expect(deny).toHaveLength(4 * (21 + 6) + 3 * 11);
 });
 
 test("WS-21: the user's sdk/settings.json allow rules (userAllow) reach a code child verbatim — never re-translated", () => {
@@ -408,8 +409,8 @@ test("WS-21: the user's sdk/settings.json allow rules (userAllow) reach a code c
 test("item 2: an absent settings.permissions.deny changes nothing — byte-identical to before item 2", () => {
   const withNull = buildMossOptions(optionsInput({ home: "/h", settings: null })).permissions!.deny!;
   const withUndefined = buildMossOptions(optionsInput({ home: "/h" })).permissions!.deny!;
-  expect(withNull).toHaveLength(4 * 21 + 3 * 11);
-  expect(withUndefined).toHaveLength(4 * 21 + 3 * 11);
+  expect(withNull).toHaveLength(4 * (21 + 6) + 3 * 11);
+  expect(withUndefined).toHaveLength(4 * (21 + 6) + 3 * 11);
 });
 
 // Winter Phase 10b (D1-3, W18-9): a read of a `claude-resume-*` staging root is denied — proved
@@ -489,7 +490,7 @@ test("every deny rule is //-anchored, and resolves to the fence target it names"
   expect(specs.has(`/${join(home, "cache", "runs", "*", "backups")}/**`)).toBe(true);
   expect(specs.has(`/${join(tmpdir(), "claude-resume-*", "backups")}/**`)).toBe(true);
   for (const f of [".moss.json", ".claude.json", ".credentials.json"]) expect(specs.has(`/${join(tmpdir(), "claude-resume-*", f)}`)).toBe(true);
-  expect(specs.size).toBe(29);                                       // (runtimes/** was already a READ target)
+  expect(specs.size).toBe(29 + 6);                                      // (runtimes/** was already a READ target)
   // The two inert forms must never reappear.
   for (const s of specs) {
     expect({ s, singleSlashAbsolute: /^\/[^/]/.test(s) }).toEqual({ s, singleSlashAbsolute: false });
@@ -553,6 +554,8 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
     ...persistencePaths(),
     "/repo/.moss/mcp.json", "/repo/.moss/settings.json", "/repo/.moss/settings.local.json", "/repo/.moss/agents",
     "/repo/.moss/skills", "/repo/.moss/commands", "/repo/.moss/rules", "/repo/.moss/output-styles",
+    // The folder name the build reads second (old-names.ts) is held the same way, name by name.
+    ...["mcp.json", "settings.json", "settings.local.json", "agents", "skills", "commands", "rules", "output-styles"].map((f) => `/repo/${OLD_PROJECT_DIR}/${f}`),
     // R.3 I-4: the any-depth project fence (child-only; `sandboxConfigFor`'s literal list has none).
     "/repo/**/.moss/skills", "/repo/**/.moss/commands", "/repo/**/.moss/rules", "/repo/**/.moss/output-styles", "/repo/**/.moss/agents",
   ]);

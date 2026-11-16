@@ -53,7 +53,7 @@
         "ACCOUNT_JWKS_URL": "https://waifucave.com/auth/.well-known/jwks.json",
         "HANDSHAKE_AUDIENCE": "handshake.waifucave.com",
         "HANDSHAKE_ORIGIN": "https://handshake.waifucave.com",
-        "WEB_ORIGINS": "https://moss.waifucave.com"
+        "WEB_ORIGINS": "https://clover.waifucave.com"
       },
       "durable_objects": {
         "bindings": [

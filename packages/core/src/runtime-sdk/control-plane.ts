@@ -1,6 +1,7 @@
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { readdirSync, statSync } from "node:fs";
 import { canonicalizeForWrite, resolveLeafSymlinks } from "../agent/paths";
+import { PROJECT_DIR_NAMES } from "../old-names";
 
 /**
  * The filenames that are NEVER an agent write target, whichever project owns them. A LITERAL copy
@@ -95,13 +96,13 @@ export function controlPlaneFileTarget(path: string, cwd: string): { path: strin
   // Cheap, syscall-free early-out: a target whose filename isn't SOME casing of a control-plane
   // filename can never be one, whatever its parent resolves to.
   if (!isProjectControlFilename(basename(raw0).toLowerCase())) return null;
-  if (basename(dirname(raw0)).toLowerCase() === ".moss") {
+  if (PROJECT_DIR_NAMES.includes(basename(dirname(raw0)).toLowerCase())) {
     try { return { path, canonical: canonicalizeForWrite(resolveLeafSymlinks(raw0)) }; }
     catch { return { path, canonical: raw0 }; }   // still a confirmed match; report the raw target
   }
   try {
     const canonical = canonicalizeForWrite(resolveLeafSymlinks(raw0));
-    return basename(dirname(canonical)).toLowerCase() === ".moss" ? { path, canonical } : null;
+    return PROJECT_DIR_NAMES.includes(basename(dirname(canonical)).toLowerCase()) ? { path, canonical } : null;
   } catch { return null; }
 }
 

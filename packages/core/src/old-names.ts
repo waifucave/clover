@@ -12,6 +12,12 @@ export const OLD_INSTRUCTIONS_FILE = "CLOVER.md";
 /** A folder plugin's manifest before the rename. */
 export const OLD_PLUGIN_MANIFEST = "clover.json";
 
+/** Every folder name the build reads a project's config from, the new name first. A fence that names the new project
+ *  folder names these: a name the build reads second is fenced like the first. */
+export const PROJECT_DIR_NAMES: readonly string[] = [".moss", OLD_PROJECT_DIR];
+/** The same names as one regular-expression alternative, `(?:\.moss|\.clover)`, for a fence written as a pattern. */
+export const PROJECT_DIR_PATTERN = `(?:${PROJECT_DIR_NAMES.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`;
+
 /** Every name above, for the one test that holds this file to them. */
 export const OLD_NAMES = [OLD_PROJECT_DIR, OLD_INSTRUCTIONS_FILE, OLD_PLUGIN_MANIFEST] as const;
 
