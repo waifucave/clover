@@ -9,12 +9,23 @@ on:
   # it) before it lands, so two PRs that are each green against an older main can't break it together.
   merge_group:
     types: [checks_requested]
+  # The integration branches (`lane-int/*`): lanes work on them with no pull request, so a push runs every area (as a
+  # manual run does), the acceptance run included. A lane's own branch is run by hand: workflow_dispatch with --ref.
+  push:
+    branches: ["lane-int/**"]
   workflow_dispatch:
+    inputs:
+      only:
+        description: "all: every job. acceptance: only the acceptance run (and the names and layout checks), to run it again alone"
+        type: choice
+        options: [all, acceptance]
+        default: all
 
-# One run per branch: a new push to a pull request cancels the run it supersedes (a run on main is never cancelled).
+# One run per branch: a new push to a pull request or an integration branch, or a new manual run on a branch, cancels
+# the run it supersedes (a merge-queue group's run is never cancelled; two manual runs of different `only` don't meet).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-${{ github.event.inputs.only }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 # A-M1: the `@waifucave` scope (the agent SDK's packages, `@waifucave/moss-*`, `@waifucave/mochi2d` and the owner's
 # other packages) comes from GitHub Packages, which wants a token even to read. Every job may read it with this
@@ -92,6 +103,7 @@ jobs:
         id: areas
         env:
           EVENT: ${{ github.event_name }}
+          ONLY: ${{ github.event.inputs.only }}
           GROUP_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           case "$EVENT" in
@@ -99,7 +111,8 @@ jobs:
             merge_group)
               git fetch --no-tags --depth=1 origin "$GROUP_BASE" || true
               bun scripts/ci-changes.ts --base "$GROUP_BASE" ;;
-            *) bun scripts/ci-changes.ts --all ;;
+            # A manual run of the acceptance alone: no change, so no area (the acceptance job takes none).
+            *) if [ "$ONLY" = acceptance ]; then bun scripts/ci-changes.ts --base HEAD; else bun scripts/ci-changes.ts --all; fi ;;
           esac
 
   # Always, whatever changed: the rename's residue and the live install's names over every tracked file, the rename's
@@ -148,27 +161,31 @@ jobs:
   #    sandbox (Ubuntu 24.04's AppArmor turns them off by default).
   # One job, not three, so a macOS runner (five at once on the org's plan) is taken once per change, not three times.
   # A later part still runs after an earlier one fails, so one run reports all three.
+  #
+  # Windows is its own job, `machine-windows` (the same steps, by YAML anchor): the lane gate (`lane-gate`) leaves the
+  # Windows jobs out, so a lane whose only red is a known Windows break still has a usable result, while `gate` (the
+  # merge queue's) needs them all.
   machine:
     name: ${{ matrix.target }} (workspaces, daemon, app)
     needs: changes
     # Not on a pull request (its workspaces' tests run in `workspaces-pr`, on linux-x64): the merge queue and a manual run.
-    if: github.event_name != 'pull_request' && (needs.changes.outputs.workspaces == 'true' || needs.changes.outputs.daemon == 'true' || needs.changes.outputs.app == 'true')
+    if: &machine-if github.event_name != 'pull_request' && (needs.changes.outputs.workspaces == 'true' || needs.changes.outputs.daemon == 'true' || needs.changes.outputs.app == 'true')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      # Every machine: the job runs in the merge queue and on a manual run only (a pull request takes none of them).
+      # macOS and Linux: the job runs in the merge queue, on a push to an integration branch and on a manual run only (a
+      # pull request takes none of them).
       matrix:
         include:
           - { target: darwin-arm64, runner: macos-latest }
           - { target: linux-x64, runner: ubuntu-24.04 }
           - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-latest }
-    env:
+    env: &machine-env
       WORKSPACES: ${{ needs.changes.outputs.workspaces }}
       DAEMON: ${{ needs.changes.outputs.daemon }}
       APP: ${{ needs.changes.outputs.app }}
-    steps:
+    steps: &machine-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -213,10 +230,10 @@ jobs:
         if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
         run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/moss-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
 
-      # The built daemon and app are kept only from a manual run (CI no longer runs on a push to main): nothing in a pull request or a
-      # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
+      # The built daemon and app are kept only from a manual run (a push to an integration branch skips them too): nothing in a pull request, a
+      # merge group or a lane's run downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() && env.DAEMON == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        if: ${{ !cancelled() && env.DAEMON == 'true' && github.event_name == 'workflow_dispatch' }}
         with:
           name: moss-core-${{ matrix.target }}
           path: dist/daemon/${{ matrix.target }}/
@@ -300,12 +317,27 @@ jobs:
         run: ../../scripts/ci/weston.sh bun test test/browser-stream.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && github.event_name == 'workflow_dispatch' }}
         with:
           name: moss-app-${{ matrix.target }}
           path: apps/desktop/out/dist/
           retention-days: 5
           if-no-files-found: error
+
+  # The machine job's Windows leg: the same steps (the anchor above), kept out of `lane-gate`.
+  machine-windows:
+    name: ${{ matrix.target }} (workspaces, daemon, app)
+    needs: changes
+    if: *machine-if
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: windows-x64, runner: windows-latest }
+    env: *machine-env
+    steps: *machine-steps
 
   # A pull request's workspace tests: every workspace package's `test`, as the machine job's step runs it, on linux-x64
   # alone and on a private Secret Service. About two minutes; the other machines, the daemon and the app run in the
@@ -448,17 +480,17 @@ jobs:
     name: installers · ${{ matrix.os }} (${{ matrix.what }})
     needs: changes
     # Not on a pull request: the merge queue and a manual run.
-    if: github.event_name != 'pull_request' && needs.changes.outputs.installers == 'true'
+    if: &installers-if github.event_name != 'pull_request' && needs.changes.outputs.installers == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      # Both installers: the job runs in the merge queue and on a manual run only (a pull request takes none).
+      # The macOS installer here, the Windows one in `installers-windows` (kept out of `lane-gate`): the job runs in the
+      # merge queue and on a manual run only (a pull request takes none).
       matrix:
         include:
           - { os: mac, runner: macos-latest, what: "dmg, zip" }
-          - { os: win, runner: windows-latest, what: NSIS }
-    steps:
+    steps: &installers-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -509,6 +541,19 @@ jobs:
           version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
           bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/moss-core-"$version"-*)" "$(ls apps/desktop/out/dist/moss-plugins-"$version"-*.tar.gz)"
 
+  installers-windows:
+    name: installers · ${{ matrix.os }} (${{ matrix.what }})
+    needs: changes
+    if: *installers-if
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: win, runner: windows-latest, what: NSIS }
+    steps: *installers-steps
+
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
   # suite (the macos job), so this job is the other two OSes' only run of them. It was spike-s6.yml's `tree` job (R6).
@@ -516,17 +561,17 @@ jobs:
     name: tree · ${{ matrix.runner }}
     needs: changes
     # Not on a pull request: the merge queue and a manual run.
-    if: github.event_name != 'pull_request' && needs.changes.outputs.tree == 'true'
+    if: &tree-if github.event_name != 'pull_request' && needs.changes.outputs.tree == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, windows-latest]
-    defaults:
+        runner: [ubuntu-24.04]
+    defaults: &tree-defaults
       run:
         shell: bash
-    steps:
+    steps: &tree-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -548,6 +593,19 @@ jobs:
         working-directory: packages/core
         run: bun test --timeout 30000 src/agents/tests/windows-path.test.ts
 
+  tree-windows:
+    name: tree · ${{ matrix.runner }}
+    needs: changes
+    if: *tree-if
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest]
+    defaults: *tree-defaults
+    steps: *tree-steps
+
   # The link sidecar (native/link, lane H's moss-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
   # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
   # stream, a revoke, a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind
@@ -557,17 +615,17 @@ jobs:
     name: link · ${{ matrix.runner }}
     needs: changes
     # Not on a pull request: the merge queue and a manual run.
-    if: github.event_name != 'pull_request' && needs.changes.outputs.link == 'true'
+    if: &link-if github.event_name != 'pull_request' && needs.changes.outputs.link == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runner: [windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
-    defaults:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    defaults: &link-defaults
       run:
         shell: bash
-    steps:
+    steps: &link-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -598,6 +656,19 @@ jobs:
           MOSS_LINK_BIN: ${{ github.workspace }}/native/link/target/release/moss-link${{ runner.os == 'Windows' && '.exe' || '' }}
           MOSS_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
+
+  link-windows:
+    name: link · ${{ matrix.runner }}
+    needs: changes
+    if: *link-if
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest]
+    defaults: *link-defaults
+    steps: *link-steps
 
   # The Linux repositories' signatures against the verifiers users run: a throwaway key signs a fixture Release and
   # repomd.xml as `linux-repo.ts sign` does, and gpgv and sqv must accept them and refuse a changed one.
@@ -1091,12 +1162,80 @@ jobs:
         working-directory: apple/Cowork/WinterCoworkLibkrun
         run: python3 -I -B tests/test_queue_guards.py
 
+  # The acceptance run (scripts/acceptance/run.ts): the real app driven from source, headless, over the fake model provider,
+  # on a macOS runner, one job per unit (scripts/acceptance/shards.ts: `main` is the chain that shares one home, the others
+  # are rows that need only a keyed daemon and an app). It is what a lane's integration branch has to pass besides the
+  # suites, so it runs on a push to an integration branch and on a manual run, never on a pull request or in the merge
+  # queue (the `gate` does not wait for it). scripts/ci/acceptance-unit.ts runs a unit and fails it on any row that is not
+  # PASS, on any "shown while headless" line and on a nonzero "sealed presses refused as covered or unchecked"; the table,
+  # the progress and the kept logs are the job's artifact. A hosted runner has no pinned-Bun cache and no Electron cache:
+  # setup-bun gives the pinned Bun (so heavy needs no pinned-bun, MOSS_PINNED_BUN=0), and Electron's download is cached
+  # under the lockfile. scripts/heavy's exclusive lock is free on a fresh runner and is taken as on a Mac.
+  acceptance:
+    name: acceptance · ${{ matrix.unit }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        unit: [main, workshop, plugin-app, browser]
+    env:
+      MOSS_PINNED_BUN: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # The Electron binary the app runs on (electron's install.js downloads it, which bun's install does not run).
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Acceptance · ${{ matrix.unit }}
+        run: bun scripts/ci/acceptance-unit.ts ${{ matrix.unit }} "$RUNNER_TEMP/acceptance-${{ matrix.unit }}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: acceptance-${{ matrix.unit }}
+          path: ${{ runner.temp }}/acceptance-${{ matrix.unit }}
+          retention-days: 7
+          if-no-files-found: warn
+
+  # The lane gate: what a lane's run has to pass. The same check as `gate`, over every job but the Windows ones (a lane's
+  # known Windows break must not hide a green macOS and Linux), plus the acceptance run. It runs on a push to an
+  # integration branch and on a manual run; `gate` (below) keeps needing every job, Windows included, for pull requests
+  # and the merge queue.
+  lane-gate:
+    name: lane gate
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    needs: [changes, names, machine, workspaces-pr, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift, acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed, or was not needed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null
+
   # The one check branch protection needs: it passes when every job above passed or was skipped because this change
   # does not touch its inputs, and fails when any failed or was cancelled.
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, workspaces-pr, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, machine-windows, workspaces-pr, packages, installers, installers-windows, tree, tree-windows, link, link-windows, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

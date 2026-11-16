@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { units } from "./acceptance/shards";
 import { areasFor, CI_AREA_NAMES, matches, type CiArea } from "./ci-changes";
 
 const on = (changed: string[]): CiArea[] => CI_AREA_NAMES.filter((a) => areasFor(changed)[a]);
@@ -103,30 +104,39 @@ describe("ci-changes", () => {
   test("a pull request runs only the quick Linux jobs; the merge queue and a manual run run every job; gate needs them all", () => {
     type Job = { if?: string; "runs-on"?: string; needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ runner: string }>; runner?: string[] } } };
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, Job> }).jobs;
-    type Event = "pull_request" | "merge_group" | "workflow_dispatch";
+    type Event = "pull_request" | "merge_group" | "workflow_dispatch" | "push";
     const can = (j: Job, event: Event): boolean => {
       const cond = j.if ?? "";
-      if (cond.includes("github.event_name == 'workflow_dispatch'") && event !== "workflow_dispatch") return false;
+      // The acceptance run and the lane gate: a push to an integration branch and a manual run only.
+      if (cond.includes("github.event_name == 'push' || github.event_name == 'workflow_dispatch'") && event !== "push" && event !== "workflow_dispatch") return false;
+      if (cond.includes("github.event_name == 'workflow_dispatch'") && !cond.includes("github.event_name == 'push'") && event !== "workflow_dispatch") return false;
       if (cond.includes("github.event_name == 'pull_request'") && event !== "pull_request") return false;
       if (cond.includes("github.event_name != 'pull_request'") && event === "pull_request") return false;
       return true;
     };
     const runners = (j: Job): string[] => [...(j["runs-on"] !== undefined && !j["runs-on"].includes("${{") ? [j["runs-on"]] : []), ...(j.strategy?.matrix?.include ?? []).map((r) => r.runner), ...(j.strategy?.matrix?.runner ?? [])];
     const on = (event: Event): string[] => Object.keys(jobs).filter((id) => id !== "gate" && can(jobs[id]!, event)).sort();
+    // What only a push to an integration branch and a manual run take, besides the dispatch-only jobs.
+    const LANE_ONLY = ["acceptance", "lane-gate"];
     expect(on("pull_request")).toEqual(["changes", "core-linux", "lockfiles", "names", "protocol-codegen", "scripts", "test-extension", "typecheck", "workspaces-pr"]);
     for (const id of on("pull_request")) expect([id, runners(jobs[id]!).every((r) => r.startsWith("ubuntu-24.04") && !r.endsWith("-arm"))]).toEqual([id, true]);
-    // The merge queue: every job a change can take, but the PR-only one and the dispatch-only ones.
-    expect(on("merge_group")).toEqual(Object.keys(jobs).filter((id) => !["gate", "workspaces-pr", "swift", "swift-cowork-launcher", "libkrun-queue"].includes(id)).sort());
-    for (const id of ["machine", "packages", "installers", "tree", "link", "linux-repo-signatures", "gallery", "macos"]) {
-      expect([id, on("merge_group").includes(id), on("workflow_dispatch").includes(id), on("pull_request").includes(id)]).toEqual([id, true, true, false]);
+    // The merge queue: every job a change can take, but the PR-only one, the dispatch-only ones and the lane's two.
+    expect(on("merge_group")).toEqual(Object.keys(jobs).filter((id) => !["gate", "workspaces-pr", "swift", "swift-cowork-launcher", "libkrun-queue", ...LANE_ONLY].includes(id)).sort());
+    for (const id of ["machine", "machine-windows", "packages", "installers", "installers-windows", "tree", "tree-windows", "link", "link-windows", "linux-repo-signatures", "gallery", "macos"]) {
+      expect([id, on("merge_group").includes(id), on("workflow_dispatch").includes(id), on("push").includes(id), on("pull_request").includes(id)]).toEqual([id, true, true, true, false]);
     }
-    expect(runners(jobs.machine!).sort()).toEqual(["macos-latest", "ubuntu-24.04", "ubuntu-24.04-arm", "windows-latest"]);
+    // A push to an integration branch runs what a manual run does, but for the dispatch-only jobs (the Swift kits, Cowork).
+    expect(on("push")).toEqual(on("workflow_dispatch").filter((id) => !["swift", "swift-cowork-launcher", "libkrun-queue"].includes(id)));
+    for (const id of LANE_ONLY) expect([id, on("pull_request").includes(id), on("merge_group").includes(id), on("push").includes(id), on("workflow_dispatch").includes(id)]).toEqual([id, false, false, true, true]);
+    // The machines: Windows is its own job, so the lane gate can leave it out.
+    expect(runners(jobs.machine!).sort()).toEqual(["macos-latest", "ubuntu-24.04", "ubuntu-24.04-arm"]);
+    expect(runners(jobs["machine-windows"]!)).toEqual(["windows-latest"]);
     // gate: always, and it needs every job any of the three runs can take (the dispatch-only Cowork jobs aside, which
     // were never part of it).
     const gate = jobs.gate!;
     expect(gate.if).toBe("always()");
     const needs = new Set(Array.isArray(gate.needs) ? gate.needs : [gate.needs]);
-    const ran = new Set([...on("pull_request"), ...on("merge_group"), ...on("workflow_dispatch")].filter((id) => !["swift-cowork-launcher", "libkrun-queue"].includes(id)));
+    const ran = new Set([...on("pull_request"), ...on("merge_group"), ...on("workflow_dispatch")].filter((id) => !["swift-cowork-launcher", "libkrun-queue", ...LANE_ONLY].includes(id)));
     expect([...ran].filter((id) => !needs.has(id))).toEqual([]);
     // The PR's workspaces job is the machine job's step, on linux-x64.
     expect(JSON.stringify(jobs["workspaces-pr"])).toContain("scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test");
@@ -176,7 +186,8 @@ describe("ci-changes", () => {
   test("every CI step that runs the link tests requires the sidecar, so a missing build fails instead of skipping", () => {
     const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { steps?: Array<{ run?: string; env?: Record<string, string> }> }> }).jobs;
     const steps = Object.values(jobs).flatMap((j) => j.steps ?? []).filter((s) => /bun test\b.*\bsrc\/links\b/.test(s.run ?? ""));
-    expect(steps.length).toBe(2);
+    // The macOS job's, the Linux link job's and its Windows twin's (the same steps by YAML anchor).
+    expect(steps.length).toBe(3);
     for (const s of steps) expect(s.env?.MOSS_LINK_REQUIRE_BINARY).toBe("1");
   });
 
@@ -209,7 +220,7 @@ describe("ci-changes", () => {
     const gated = Object.values(jobs).flatMap((j) => [...(j.if ?? "").matchAll(/needs\.changes\.outputs\.(\w+) == 'true'/g)].map((m) => m[1]!));
     expect([...new Set(gated)].sort()).toEqual([...CI_AREA_NAMES].sort());
     const gateNeeds = jobs.gate?.needs;
-    const all = Object.keys(jobs).filter((id) => id !== "gate" && jobs[id]!.if !== "github.event_name == 'workflow_dispatch'");
+    const all = Object.keys(jobs).filter((id) => !["gate", "acceptance", "lane-gate"].includes(id) && jobs[id]!.if !== "github.event_name == 'workflow_dispatch'");
     expect([...(Array.isArray(gateNeeds) ? gateNeeds : [])].sort()).toEqual(all.sort());
   });
 });
@@ -239,5 +250,48 @@ describe("CI on a merge-queue group", () => {
     expect(step?.env?.GROUP_BASE).toBe("${{ github.event.merge_group.base_sha }}");
     expect(step?.run).toContain('merge_group)');
     expect(step?.run).toContain('--base "$GROUP_BASE"');
+  });
+});
+
+// The lane gate: lanes work on `lane-int/*` branches with no pull request, so CI runs on a push to them and by hand on a
+// lane's own branch, and `lane-gate` is the one result a lane reads: `gate` without the Windows jobs, plus the acceptance run.
+describe("CI for the lanes", () => {
+  type Job = { if?: string; needs?: string | string[]; "runs-on"?: string; strategy?: { matrix?: { unit?: string[]; include?: Array<{ runner: string }>; runner?: string[] } } };
+  const ci = Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as {
+    on: { push?: { branches?: string[] }; workflow_dispatch?: { inputs?: Record<string, unknown> } };
+    concurrency: { group: string; "cancel-in-progress": string };
+    jobs: Record<string, Job>;
+  };
+  const needsOf = (id: string): string[] => { const n = ci.jobs[id]!.needs; return Array.isArray(n) ? n : n === undefined ? [] : [n]; };
+  const runnersOf = (j: Job): string[] => [...(j["runs-on"] !== undefined && !j["runs-on"].includes("${{") ? [j["runs-on"]] : []), ...(j.strategy?.matrix?.include ?? []).map((r) => r.runner), ...(j.strategy?.matrix?.runner ?? [])];
+
+  test("a push to an integration branch runs CI, a newer push or manual run on a ref cancels the one it supersedes, a merge group never does", () => {
+    expect(ci.on.push?.branches).toEqual(["lane-int/**"]);
+    expect(Object.keys(ci.on)).toEqual(expect.arrayContaining(["pull_request", "merge_group", "push", "workflow_dispatch"]));
+    expect(ci.concurrency["cancel-in-progress"]).toBe("${{ github.event_name != 'merge_group' }}");
+    expect(ci.concurrency.group).toContain("github.head_ref || github.ref");
+    // A manual run of the acceptance alone is its own group.
+    expect(ci.concurrency.group).toContain("github.event.inputs.only");
+    expect(Object.keys(ci.on.workflow_dispatch?.inputs ?? {})).toEqual(["only"]);
+  });
+
+  test("the lane gate is the gate without the Windows jobs, plus the acceptance run", () => {
+    const windows = Object.keys(ci.jobs).filter((id) => runnersOf(ci.jobs[id]!).some((r) => r.startsWith("windows")));
+    expect(windows.sort()).toEqual(["installers-windows", "link-windows", "machine-windows", "tree-windows"]);
+    const gate = needsOf("gate");
+    const lane = needsOf("lane-gate");
+    expect(lane.sort()).toEqual([...gate.filter((id) => !windows.includes(id)), "acceptance"].sort());
+    // Every job the full gate needs is a Windows job or the lane gate's too: nothing weakens `gate`.
+    for (const id of windows) expect([id, gate.includes(id)]).toEqual([id, true]);
+    expect(ci.jobs["lane-gate"]!.if).toContain("always()");
+    expect(ci.jobs.gate!.if).toBe("always()");
+  });
+
+  test("the acceptance run is one macOS job per unit of the four a lane's check runs, and they exist in shards.ts", () => {
+    const acceptance = ci.jobs.acceptance!;
+    expect(acceptance["runs-on"]).toBe("macos-latest");
+    expect(acceptance.strategy?.matrix?.unit).toEqual(["main", "workshop", "plugin-app", "browser"]);
+    const known = units().map((u) => u.id as string);
+    for (const u of acceptance.strategy!.matrix!.unit!) expect(known).toContain(u);
   });
 });
