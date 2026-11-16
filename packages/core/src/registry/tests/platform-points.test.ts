@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import { catalogPointDecl, validateManifest } from "@waifucave/clover-plugin-sdk";
 import type { Manifest } from "../../contracts/sdk-types";
-import { pointsApi } from "../../plugin-host/api/points";
+import { pointChanges, pointsApi } from "../../plugin-host/api/points";
 import { RegistryCore, type RegistryInput } from "../core";
 import { memoryRegistryStore } from "../state";
 
@@ -38,5 +38,22 @@ describe("the platform's data points", () => {
     expect((call("mystage", ["avatar.formats"]) as { pluginId: string; value: { format: string } }[]).map((e) => [e.pluginId, e.value.format])).toEqual([["pngtuber", "png"]]);
     expect(() => call("nosy", ["avatar.formats"])).toThrow(/platform's/);
     expect(() => call("mystage", ["avatar.packs"])).toThrow(/bots\.avatar/);
+  });
+
+  test("a change reaches the running holders of a reading capability, never a plugin without one; a filler without it fills but reads nothing", async () => {
+    const reg = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore() });
+    const plug = (id: string, caps: string[], contributes?: Manifest["contributes"]): RegistryInput => ({ id, approved: true, treeHash: `sha256:${id}`, manifest: m({ name: id, client: { entry: "client/index.js" }, capabilities: caps as Manifest["capabilities"], ...(contributes ? { contributes } : {}) }) });
+    reg.putAll([plug("holder", ["avatar.report"]), plug("editor", ["bots.avatar"]), plug("nosy", [])]);
+    const heard: [string, string][] = [];
+    const stop = pointChanges({ registry: reg, assetUrl: (id, p) => `asset://${id}/${p}` }, (id, point) => heard.push([id, point]), 5);
+    reg.putAll([plug("holder", ["avatar.report"]), plug("editor", ["bots.avatar"]), plug("nosy", []), renderer]);
+    await new Promise((r) => setTimeout(r, 60));
+    stop();
+    const formats = heard.filter(([, p]) => p === "avatar.formats").map(([id]) => id).sort();
+    expect(formats).toEqual(["editor", "holder"]);
+    // The packs go to bots.avatar's holder alone.
+    expect(heard.filter(([, p]) => p === "avatar.packs").map(([id]) => id)).toEqual([]);
+    // The renderer fills the point (it is active) without the capability to read it.
+    expect(reg.entries("avatar.formats").map((c) => [c.pluginId, c.state])).toEqual([["pngtuber", "active"]]);
   });
 });
